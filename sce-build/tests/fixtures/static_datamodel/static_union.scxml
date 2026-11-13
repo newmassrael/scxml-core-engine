@@ -9,9 +9,12 @@
   test proves it present and in its case. A union variable built where it is
   declared has a field of its case written where the case is proven, and an
   optional one takes the payload's `one` whole. A text is lifted into an
-  optional union whole, or the refusal of it kept beside it. A delivery outside
-  its type is refused whole and counted. Every out variable is what a host
-  reads back, and scenarios/static_union.json replays it.
+  optional union whole, or the refusal of it kept beside it. A shape at an index
+  of a list is taken whole into a union variable and then narrowed by its tag; an
+  index outside the list writes nothing, ends the block and raises
+  error.execution (docs/adr/0098, section 5.3). A delivery outside its type is
+  refused whole and counted. Every out variable is what a host reads back, and
+  scenarios/static_union.json replays it.
 
   The Rust backend lowers it; every other backend refuses the union by its own
   name until it lowers one (section 7). Rust compile+run gate:
@@ -32,6 +35,7 @@
   <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
   <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
   <sce:import kind="event-schema" src="event_shape_said.scxml" as="Said"/>
+  <sce:import kind="event-schema" src="event_shapes_picked.scxml" as="Picked"/>
   <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
   <datamodel>
     <!-- A union variable is built where it is declared, a case and each of its
@@ -59,6 +63,15 @@
          item 5; docs/adr/0087, section 2.1). -->
     <data id="lifted" sce:type="optional&lt;union:Shape&gt;" expr="null" sce:direction="out"/>
     <data id="lift_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+    <!-- A shape taken whole from a list's element at an index, into a union
+         that starts at a case and into one that starts absent; how many were
+         taken, and the width of a picked rect (docs/adr/0098, section 5.3). -->
+    <data id="picked" sce:type="union:Shape" sce:direction="out">
+      <sce:set name="kind" expr="Kind.dot"/>
+    </data>
+    <data id="picked_maybe" sce:type="optional&lt;union:Shape&gt;" expr="null" sce:direction="out"/>
+    <data id="picks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="picked_width" sce:type="uint16" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <transition event="shapes.sent" type="internal">
@@ -97,6 +110,20 @@
     </transition>
     <transition event="shape.said" type="internal">
       <sce:lift text="_event.data.text" schema="Shape" location="lifted" refusal="lift_why"/>
+    </transition>
+    <!-- The element at an index is read by the checked read of an index, which
+         fails outside the list: then nothing is written, the rest of the block
+         does not run, and error.execution is raised (docs/adr/0098, section
+         5.3; §scxml-4.9). The element itself is no subject a test narrows, so
+         the copy is, and is narrowed by its tag (docs/adr/0092, section 6.1
+         item 2). -->
+    <transition event="shapes.picked" type="internal">
+      <assign location="picked" expr="_event.data.many[_event.data.at]"/>
+      <assign location="picked_maybe" expr="_event.data.many[_event.data.at]"/>
+      <assign location="picks" expr="picks + 1"/>
+      <if cond="picked.kind === Kind.rect">
+        <assign location="picked_width" expr="picked.width"/>
+      </if>
     </transition>
     <!-- A delivery outside its type is refused whole: none of the content above
          runs, and error.execution says so once. -->

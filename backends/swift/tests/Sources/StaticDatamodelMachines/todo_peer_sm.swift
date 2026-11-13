@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1551,7 +1551,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (!self.vForbidden) {
 
 
-                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: TodoPeerHlcRecord = (try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1785,7 +1785,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (self.vDot.nodeId != self.vNode) {
 
 
-                if ({ () -> Bool in do { let sceValue = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: TodoPeerHlcRecord = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1799,7 +1799,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: TodoPeerOpRecord = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

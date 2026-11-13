@@ -1927,6 +1927,17 @@ pub trait StaticTarget {
         self.record_at(list, index)
             .map(|element| self.record_copy(&element, schema))
     }
+    /// The element of the composed list `list` at `index` as the value a copy of
+    /// it reads ([`crate::forge::composed_lowering::copier`]), by the checked
+    /// read that fails for an index outside the list (SCE_FORGE.md §3.4.1): a
+    /// whole union taken from a list's element (docs/adr/0098, section 5.3). The
+    /// element itself, [`Self::record_at`], where the target reads one whole by
+    /// value; a target that reads an element that owns its parts by reference
+    /// (Rust) spells its own. `None` for a target that reads no element whole.
+    fn element_at(&self, list: &str, index: &str) -> Option<crate::forge::composed_lowering::Held> {
+        self.record_at(list, index)
+            .map(crate::forge::composed_lowering::Held::place)
+    }
     /// [`Self::receiving_write`] of a value that is a record of the type `held`,
     /// for a target that names the type of the local the value is computed into.
     /// The other targets' locals are typed by what they infer, as they were.
@@ -4552,6 +4563,14 @@ impl StaticTarget for RustTarget {
         } else {
             format!("sce_forge_runtime::algorithm::at(&{list}, {index})?")
         })
+    }
+    // An element of a list of composed values (a union, docs/adr/0098, section
+    // 5.3) owns its parts, so it is read by reference through the runtime's
+    // checked read and the copy clones it out of the list.
+    fn element_at(&self, list: &str, index: &str) -> Option<crate::forge::composed_lowering::Held> {
+        Some(crate::forge::composed_lowering::Held::reference(format!(
+            "sce_forge_runtime::algorithm::at_ref(&{list}, {index})?"
+        )))
     }
     // A field of the present record of an optional one, written through the
     // runtime's `proven_mut` of a borrow of the optional: the record stays where it
@@ -18516,6 +18535,23 @@ impl StaticTarget for SwiftTarget {
             Self::then(&[failed, "return true"]),
         )
     }
+    // A composed value read through the runtime's generic `Checked.at` is held in a
+    // local that names its type, so the read's element type is the one the place
+    // holds and not one Swift infers from the closure around it.
+    fn receiving_write_of(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        held: &str,
+        failed: &str,
+    ) -> String {
+        format!(
+            "{{ () -> Bool in do {{ let sceValue: {held} = {value}; {} }} \
+             catch {{ {} }}; return false }}()",
+            write("sceValue"),
+            Self::then(&[failed, "return true"]),
+        )
+    }
     // Only a host call's arguments reach here, and its one spelling is
     // [`Self::receiving_host_call`].
     fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
@@ -19580,12 +19616,25 @@ fn lower_action(
             }
             // ... and a union variable takes a union a place holds whole, or
             // `null` where it may be absent (docs/adr/0092, section 6.1 item 5).
+            // A copy of a list's element at an index fails for an index outside
+            // the list, and then writes nothing and ends its block (docs/adr/0098,
+            // section 5.3; §scxml-4.9).
             if let Some(copy) = whole_union_copy(action, ctx, renames, rewrites)? {
-                rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
+                rewrites.note(&action.expr, action.spellings.get("expr"), &copy.value);
                 let location = action.location.trim();
                 let name = renames.get(location).copied().unwrap_or(location);
-                action.native_code = target.assign(name, &copy);
-                action.native_fails = false;
+                (action.native_code, action.native_fails) = match &copy.held_while_read {
+                    Some(held) => (
+                        target.receiving_write_of(
+                            &|value| target.assign(name, value),
+                            &copy.value,
+                            held,
+                            &failed(format!("<assign location='{location}'>")),
+                        ),
+                        true,
+                    ),
+                    None => (target.assign(name, &copy.value), false),
+                };
                 return Ok(reads_payload);
             }
             // ... and a field of a union is written where its case is proven
@@ -20903,19 +20952,31 @@ fn whole_list_copy(
     Ok(Some(copy))
 }
 
+/// The value a union variable takes whole ([`whole_union_copy`]).
+struct UnionCopy {
+    /// The copy, an expression of the variable's own type.
+    value: String,
+    /// The variable's type, where the copy reads a list's element at an index,
+    /// which fails for an index outside the list (docs/adr/0098, section 5.3):
+    /// the value is held in a local of that type while it is computed, and
+    /// written only if it did not fail. `None` for a copy that cannot fail.
+    held_while_read: Option<String>,
+}
+
 /// The value a union variable takes when an `<assign>` puts a whole union into
 /// it (docs/adr/0092, section 6.1 item 5): `null` into one that may be absent,
 /// or a copy of the union a place holds (a variable, a payload field, a loop's
-/// item, the present value of an optional one) in the variable's own type,
-/// which the value's fits, as the judge proved. `None` for an `<assign>` whose
-/// location is no union variable. Refused by name for a target that spells no
-/// composed value, and for a union reached through an index.
+/// item, the present value of an optional one, a list's element at an index) in
+/// the variable's own type, which the value's fits, as the judge proved. `None`
+/// for an `<assign>` whose location is no union variable. Refused by name for a
+/// target that spells no composed value, and for an element of a list that is
+/// itself reached through an index.
 fn whole_union_copy(
     action: &Action,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<Option<String>, GenerateError> {
+) -> Result<Option<UnionCopy>, GenerateError> {
     use crate::forge::composed_lowering as composed;
     use crate::forge::value_type::ValueType;
     let location = action.location.trim();
@@ -20957,7 +21018,12 @@ fn whole_union_copy(
         };
         let present = composed::machine_type(elem, None, &names.records, &names.enums, &*spelling)
             .map_err(refused)?;
-        return absent_value(target, &present, location).map(Some);
+        return absent_value(target, &present, location).map(|value| {
+            Some(UnionCopy {
+                value,
+                held_while_read: None,
+            })
+        });
     }
     let Some((path, from)) = crate::forge::expr::written_place(&action.expr)
         .and_then(|path| ctx.value_of(&path).map(|place| (path, place)))
@@ -20974,18 +21040,54 @@ fn whole_union_copy(
     ) else {
         return Err(refused(format!("{} spells no union", target.name())));
     };
-    if path.contains(crate::forge::value_path::ELEMENT) {
-        return Err(refused(format!(
-            "a union read through an index has no {} lowering of a whole copy yet",
-            target.name()
-        )));
-    }
     let within =
         |place: &crate::forge::value_path::Place| composed::within_of(&place.scope, &names.records);
+    let to_within = within(&to).map_err(refused)?;
+    // docs/adr/0098, section 5.3: an element at an index is read by the target's
+    // checked read, which fails for an index outside the list (SCE_FORGE.md
+    // §3.4.1, `out-of-range`); the copy is held in a value of the variable's type
+    // while it is computed, and written only if the read completed.
+    let (held, held_while_read) = if path.contains(crate::forge::value_path::ELEMENT) {
+        let element = crate::forge::expr::written_element(&action.expr)
+            .filter(|(list, _)| !list.contains(crate::forge::value_path::ELEMENT));
+        let Some((list, index)) = element else {
+            return Err(refused(format!(
+                "a union read through an index of a list itself read through an index has \
+                 no {} lowering of a whole copy yet (docs/adr/0086, section 7.3)",
+                target.name()
+            )));
+        };
+        let list = place_text(&list, ctx, renames, target, &*spelling).map_err(refused)?;
+        let index = rewrites
+            .owned(&index, ctx, renames, InferredType::Unknown)
+            .map_err(|r| {
+                refused(format!(
+                    "`{index}` has no {} lowering: {}",
+                    target.name(),
+                    r.error
+                ))
+            })?;
+        let element = target.element_at(&list, &index.text).ok_or_else(|| {
+            refused(format!(
+                "{} reads no element of a list of unions whole",
+                target.name()
+            ))
+        })?;
+        let ty = composed::machine_type(
+            &to.ty,
+            to_within.as_deref(),
+            &names.records,
+            &names.enums,
+            &*spelling,
+        )
+        .map_err(refused)?;
+        (element, Some(ty))
+    } else {
+        let held = place_text(&path, ctx, renames, target, &*spelling).map_err(refused)?;
+        (composed::Held::place(held), None)
+    };
     within(&from)
         .and_then(|from_within| {
-            let to_within = within(&to)?;
-            let held = place_text(&path, ctx, renames, target, &*spelling)?;
             composed::copier(
                 &from.ty,
                 from_within.as_deref(),
@@ -20994,10 +21096,15 @@ fn whole_union_copy(
                 &names.records,
                 &names.enums,
                 &*spelling,
-                &composed::Held::place(held),
+                &held,
             )
         })
-        .map(Some)
+        .map(|value| {
+            Some(UnionCopy {
+                value,
+                held_while_read,
+            })
+        })
         .map_err(refused)
 }
 

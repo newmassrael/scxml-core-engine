@@ -2540,7 +2540,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListHlcRecord = (try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3722,7 +3722,7 @@ break sceBlock
                 if (self.vDot.nodeId != self.vNode) {
 
 
-                if ({ () -> Bool in do { let sceValue = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListHlcRecord = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3803,7 +3803,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListOpRecord = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4493,7 +4493,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vProvisional, (try Checked.sub(UInt32(truncatingIfNeeded: self.vProvisional.count), 1)))); self.vStanding = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListProvisionalRecord = (try Checked.at(self.vProvisional, (try Checked.sub(UInt32(truncatingIfNeeded: self.vProvisional.count), 1)))); self.vStanding = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

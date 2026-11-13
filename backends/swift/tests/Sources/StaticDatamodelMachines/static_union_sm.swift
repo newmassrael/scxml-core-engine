@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_union.scxml:21 :: _machine
+// SCE-MAP: static_union.scxml:24 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -80,9 +80,10 @@ private let documentInitialTargetsOfStaticUnion: [StaticUnionTarget] = [.state(.
 public enum StaticUnionEvent: Int, Hashable, Sendable {
     case errorExecution = 0
     case shapeSaid = 1
-    case shapesSent = 2
+    case shapesPicked = 2
+    case shapesSent = 3
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 3
+    case null = 4
 }
 
 // ======================================================================
@@ -496,6 +497,7 @@ public struct StaticUnionLiftRefusalRecord: Equatable, Sendable {
 enum StaticUnionPayloadTag {
     case none
     case shapeSaid
+    case shapesPicked
     case shapesSent
 }
 
@@ -504,6 +506,14 @@ enum StaticUnionPayloadTag {
 /// values to the inject seam below.
 struct StaticUnionShapeSaidPayload {
     var text: String
+}
+
+/// The typed `_event.data` payload of `shapes.picked` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct StaticUnionShapesPickedPayload {
+    var many: [StaticUnionUnionShapeUnion]
+    var at: UInt8
 }
 
 /// The typed `_event.data` payload of `shapes.sent` (NL-to-IR Item C1 Path A): what a
@@ -538,6 +548,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticUnionPayloadTag = .none
     var pendingShapeSaidPayload: StaticUnionShapeSaidPayload!
+    var pendingShapesPickedPayload: StaticUnionShapesPickedPayload!
     var pendingShapesSentPayload: StaticUnionShapesSentPayload!
 
 
@@ -574,6 +585,14 @@ public final class StaticUnionPolicy: InvocablePolicy {
     var vLifted: StaticUnionUnionShapeUnion? = nil
     /// W3C SCXML 5.2: the `lift_why` datamodel variable, published (`sce:direction="out"`).
     var vLiftWhy: StaticUnionLiftRefusalRecord? = nil
+    /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
+    var vPicked: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.dot
+    /// W3C SCXML 5.2: the `picked_maybe` datamodel variable, published (`sce:direction="out"`).
+    var vPickedMaybe: StaticUnionUnionShapeUnion? = nil
+    /// W3C SCXML 5.2: the `picks` datamodel variable, published (`sce:direction="out"`).
+    var vPicks: UInt32 = 0
+    /// W3C SCXML 5.2: the `picked_width` datamodel variable, published (`sce:direction="out"`).
+    var vPickedWidth: UInt16 = 0
 
     /// Reports what the published `built` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -639,6 +658,22 @@ public final class StaticUnionPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var liftWhy: StaticUnionLiftRefusalRecord? { vLiftWhy }
 
+    /// Reports what the published `picked` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var picked: StaticUnionUnionShapeUnion { vPicked }
+
+    /// Reports what the published `picked_maybe` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var pickedMaybe: StaticUnionUnionShapeUnion? { vPickedMaybe }
+
+    /// Reports what the published `picks` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var picks: UInt32 { vPicks }
+
+    /// Reports what the published `picked_width` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var pickedWidth: UInt16 { vPickedWidth }
+
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
     /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
@@ -656,6 +691,8 @@ public final class StaticUnionPolicy: InvocablePolicy {
         public var vManyShapes: UInt32? = nil
         public var vMaybeWidth: UInt16? = nil
         public var vRefusals: UInt32? = nil
+        public var vPicks: UInt32? = nil
+        public var vPickedWidth: UInt16? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
@@ -693,6 +730,12 @@ public final class StaticUnionPolicy: InvocablePolicy {
         }
         if let value = params.vRefusals {
             vRefusals = value
+        }
+        if let value = params.vPicks {
+            vPicks = value
+        }
+        if let value = params.vPickedWidth {
+            vPickedWidth = value
         }
     }
 
@@ -826,6 +869,8 @@ public final class StaticUnionPolicy: InvocablePolicy {
             return "error.execution"
         case .shapeSaid:
             return "shape.said"
+        case .shapesPicked:
+            return "shapes.picked"
         case .shapesSent:
             return "shapes.sent"
         case .null:
@@ -840,6 +885,8 @@ public final class StaticUnionPolicy: InvocablePolicy {
             return .errorExecution
         case "shape.said":
             return .shapeSaid
+        case "shapes.picked":
+            return .shapesPicked
         case "shapes.sent":
             return .shapesSent
         default:
@@ -897,6 +944,9 @@ public final class StaticUnionPolicy: InvocablePolicy {
         case let payload as StaticUnionShapeSaidPayload:
             pendingPayloadTag = .shapeSaid
             pendingShapeSaidPayload = payload
+        case let payload as StaticUnionShapesPickedPayload:
+            pendingPayloadTag = .shapesPicked
+            pendingShapesPickedPayload = payload
         case let payload as StaticUnionShapesSentPayload:
             pendingPayloadTag = .shapesSent
             pendingShapesSentPayload = payload
@@ -921,6 +971,13 @@ public final class StaticUnionPolicy: InvocablePolicy {
             let payload = StaticUnionShapeSaidPayload(text: sceField0)
             pendingShapeSaidPayload = payload
             pendingPayloadTag = .shapeSaid
+        case .shapesPicked:
+            let fields = try PayloadFields.decode(metadata.data)
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> [StaticUnionUnionShapeUnion] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> StaticUnionUnionShapeUnion in try sceValue.union(tag: "kind", { (sceValue: PayloadValue) throws -> StaticUnionKindEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticUnionKindEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "Kind") }; return sceVariant }, { (sceCase: StaticUnionKindEnum, sceValue: PayloadValue) throws -> StaticUnionUnionShapeUnion in switch sceCase { case StaticUnionKindEnum.dot: return StaticUnionUnionShapeUnion.dot; case StaticUnionKindEnum.circle: return StaticUnionUnionShapeUnion.circle(try ({ (sceValue: PayloadValue) throws -> StaticUnionRadiusRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRadiusRecord in try StaticUnionRadiusRecord(radius: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("radius"))) }) })(sceValue)); case StaticUnionKindEnum.disc: return StaticUnionUnionShapeUnion.disc(try ({ (sceValue: PayloadValue) throws -> StaticUnionRadiusRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRadiusRecord in try StaticUnionRadiusRecord(radius: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("radius"))) }) })(sceValue)); case StaticUnionKindEnum.rect: return StaticUnionUnionShapeUnion.rect(try ({ (sceValue: PayloadValue) throws -> StaticUnionRectRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRectRecord in try StaticUnionRectRecord(width: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("width")), height: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("height"))) }) })(sceValue)); case StaticUnionKindEnum.label: return StaticUnionUnionShapeUnion.label(try ({ (sceValue: PayloadValue) throws -> StaticUnionLabelRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionLabelRecord in try StaticUnionLabelRecord(text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("text")), note: ({ (sceValue: PayloadValue) throws -> String? in try sceValue.optional({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) }) })(sceFields.field("note"))) }) })(sceValue)); case StaticUnionKindEnum.path: return StaticUnionUnionShapeUnion.path(try ({ (sceValue: PayloadValue) throws -> StaticUnionPathRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionPathRecord in try StaticUnionPathRecord(points: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(sceFields.field("points"))) }) })(sceValue)); } }) }) })(fields.field("many"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(fields.field("at"))
+            let payload = StaticUnionShapesPickedPayload(many: sceField0, at: sceField1)
+            pendingShapesPickedPayload = payload
+            pendingPayloadTag = .shapesPicked
         case .shapesSent:
             let fields = try PayloadFields.decode(metadata.data)
             let sceField0 = try ({ (sceValue: PayloadValue) throws -> StaticUnionUnionShapeUnion in try sceValue.union(tag: "kind", { (sceValue: PayloadValue) throws -> StaticUnionKindEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticUnionKindEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "Kind") }; return sceVariant }, { (sceCase: StaticUnionKindEnum, sceValue: PayloadValue) throws -> StaticUnionUnionShapeUnion in switch sceCase { case StaticUnionKindEnum.dot: return StaticUnionUnionShapeUnion.dot; case StaticUnionKindEnum.circle: return StaticUnionUnionShapeUnion.circle(try ({ (sceValue: PayloadValue) throws -> StaticUnionRadiusRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRadiusRecord in try StaticUnionRadiusRecord(radius: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("radius"))) }) })(sceValue)); case StaticUnionKindEnum.disc: return StaticUnionUnionShapeUnion.disc(try ({ (sceValue: PayloadValue) throws -> StaticUnionRadiusRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRadiusRecord in try StaticUnionRadiusRecord(radius: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("radius"))) }) })(sceValue)); case StaticUnionKindEnum.rect: return StaticUnionUnionShapeUnion.rect(try ({ (sceValue: PayloadValue) throws -> StaticUnionRectRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionRectRecord in try StaticUnionRectRecord(width: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("width")), height: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("height"))) }) })(sceValue)); case StaticUnionKindEnum.label: return StaticUnionUnionShapeUnion.label(try ({ (sceValue: PayloadValue) throws -> StaticUnionLabelRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionLabelRecord in try StaticUnionLabelRecord(text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("text")), note: ({ (sceValue: PayloadValue) throws -> String? in try sceValue.optional({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) }) })(sceFields.field("note"))) }) })(sceValue)); case StaticUnionKindEnum.path: return StaticUnionUnionShapeUnion.path(try ({ (sceValue: PayloadValue) throws -> StaticUnionPathRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticUnionPathRecord in try StaticUnionPathRecord(points: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(sceFields.field("points"))) }) })(sceValue)); } }) })(fields.field("one"))
@@ -1013,12 +1070,23 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .errorExecution {
+            if event == .shapesPicked {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
                         transitionIndex: 2,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .errorExecution {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 3,
                         hasActions: true,
                         isInternal: true
                     )
@@ -1151,6 +1219,39 @@ public final class StaticUnionPolicy: InvocablePolicy {
             case 2:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+                    if pendingPayloadTag != .shapesPicked {
+                        break sceBlock
+                    }
+
+
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion? = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPickedMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                if (self.vPicked.kind == StaticUnionKindEnum.rect) {
+
+
+                self.vPickedWidth = self.vPicked.provenRect.width
+
+                }
+
+                }
+            case 3:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
 
 
                 if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
@@ -1180,6 +1281,29 @@ extension Engine where Policy == StaticUnionPolicy {
                     data: payloadJSON(.text("text", text)),
                     eventType: .externalEvent,
                     typedPayload: StaticUnionShapeSaidPayload(text: text)
+                )
+            )
+        )
+    }
+
+    /// Raises `shapes.picked` with its payload, binding the event and the payload's
+    /// values in one call so the pairing of a name and a type cannot be
+    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
+    /// filled: the typed one a native expression reads, and `data`, which is what
+    /// every other reader of `_event.data` binds it from.
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseShapesPicked(many: [StaticUnionUnionShapeUnion], at: UInt8) throws {
+        try checkList("many", many, bound: 3, { scePath0, sceValue0 in switch sceValue0 { case .label(let sceCase1): try checkText(scePath0 + "/text", sceCase1.text, bound: 8); try checkOptional(scePath0 + "/note", sceCase1.note, { scePath1, sceValue1 in try checkText(scePath1, sceValue1, bound: 4) }); case .path(let sceCase1): try checkList(scePath0 + "/points", sceCase1.points, bound: 3, { _, _ in }); default: break } })
+        let scePayload = StaticUnionShapesPickedPayload(many: many, at: at)
+        raiseExternalWithMeta(
+            EventWithMetadata(
+                StaticUnionEvent.shapesPicked,
+                metadata: EventMetadata(
+                    data: recordJSON([PayloadPair.json("many", rawJSON: listJSON(scePayload.many, { (sceElement) -> String in { () -> String in switch (sceElement) as StaticUnionUnionShapeUnion { case .dot: return unionJSON(tag: "kind", variant: "dot", []); case .circle(let sceElement): return unionJSON(tag: "kind", variant: "circle", [PayloadPair.json("radius", rawJSON: WireValue.integer(Int64(sceElement.radius)).json)]); case .disc(let sceElement): return unionJSON(tag: "kind", variant: "disc", [PayloadPair.json("radius", rawJSON: WireValue.integer(Int64(sceElement.radius)).json)]); case .rect(let sceElement): return unionJSON(tag: "kind", variant: "rect", [PayloadPair.json("width", rawJSON: WireValue.integer(Int64(sceElement.width)).json), PayloadPair.json("height", rawJSON: WireValue.integer(Int64(sceElement.height)).json)]); case .label(let sceElement): return unionJSON(tag: "kind", variant: "label", [PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("note", rawJSON: optionalJSON(sceElement.note, write: { (sceElement) -> String in WireValue.text(sceElement).json }))]); case .path(let sceElement): return unionJSON(tag: "kind", variant: "path", [PayloadPair.json("points", rawJSON: listJSON(sceElement.points, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json }))]); } }() })), PayloadPair.json("at", rawJSON: WireValue.integer(Int64(scePayload.at)).json)]),
+                    eventType: .externalEvent,
+                    typedPayload: scePayload
                 )
             )
         )
@@ -1224,10 +1348,10 @@ extension StaticUnionPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "c8aae7160c566c907be2b8a15519d2845a3fcb1f4beee776eb7dc057f573b9d0",
-            revised: "50df1ca63466918d7d1c99c7d3975685a6cc8ffbf52ad6d968bf883193868735",
-            format2First: "393e1fdb3bf8c00b6afe66f251168a999d043b2f4599b3e4b80a02f0ec36959c",
-            format2Revised: "53f8ecdef3f99a3dcfa54ea7ae234a87745f1c979b3cc297ad413c2d9a953b2d",
+            first: "1da766c3b8af8cb1b2045a4bd0e5bb0ae84cae454bbdd471de86b18127df36a7",
+            revised: "037e99836580deea8a44692c7db79b495e4489f81f593bf5ae0731092f71d91d",
+            format2First: "387d1beb8808c971338d137975e3406cfc6bd43de951ab9ad5f755a0bb1f6dba",
+            format2Revised: "de193059202d3f2f610fc05c5aa085dda9d96dec11cee0a6265d01355796e4a2",
             records: [
                 SavedRecordLineage(
                     event: "lift.refusal", revision: 1,
@@ -1280,6 +1404,10 @@ extension StaticUnionPolicy: SavedPolicy {
             SavedEntry("refusals", SavedValues.of(vRefusals)),
             SavedEntry("lifted", SavedValues.optional(vLifted) { $0.toSaved() }),
             SavedEntry("lift_why", SavedValues.optional(vLiftWhy) { $0.toSaved() }),
+            SavedEntry("picked", vPicked.toSaved()),
+            SavedEntry("picked_maybe", SavedValues.optional(vPickedMaybe) { $0.toSaved() }),
+            SavedEntry("picks", SavedValues.of(vPicks)),
+            SavedEntry("picked_width", SavedValues.of(vPickedWidth)),
         ]
     }
 
@@ -1302,6 +1430,10 @@ extension StaticUnionPolicy: SavedPolicy {
         let value13 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
         let value14 = try SavedValues.optional(try saved.variable("lifted"), "lifted") { e, w in try StaticUnionUnionShapeUnion.fromSaved(e, w) }
         let value15 = try SavedValues.optional(try saved.variable("lift_why"), "lift_why") { e, w in try StaticUnionLiftRefusalRecord.fromSaved(e, w) }
+        let value16 = try StaticUnionUnionShapeUnion.fromSaved(try saved.variable("picked"), "picked")
+        let value17 = try SavedValues.optional(try saved.variable("picked_maybe"), "picked_maybe") { e, w in try StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        let value18 = try SavedValues.uint32(try saved.variable("picks"), "picks")
+        let value19 = try SavedValues.uint16(try saved.variable("picked_width"), "picked_width")
         return { [self] in
             self.vBuilt = value0
             self.vKept = value1
@@ -1319,6 +1451,10 @@ extension StaticUnionPolicy: SavedPolicy {
             self.vRefusals = value13
             self.vLifted = value14
             self.vLiftWhy = value15
+            self.vPicked = value16
+            self.vPickedMaybe = value17
+            self.vPicks = value18
+            self.vPickedWidth = value19
         }
     }
 }

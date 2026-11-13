@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -919,7 +919,7 @@ public final class StaticRecordBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vFrames, 0)); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticRecordBytesFramedRecord = (try Checked.at(self.vFrames, 0)); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -929,7 +929,7 @@ public final class StaticRecordBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vFrames, (try Checked.sub(UInt32(truncatingIfNeeded: self.vFrames.count), 1)))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticRecordBytesFramedRecord = (try Checked.at(self.vFrames, (try Checked.sub(UInt32(truncatingIfNeeded: self.vFrames.count), 1)))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

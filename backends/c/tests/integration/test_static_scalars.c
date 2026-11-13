@@ -2982,6 +2982,8 @@ VARIABLE_READER(static_union, many_width)
 VARIABLE_READER(static_union, many_shapes)
 VARIABLE_READER(static_union, maybe_width)
 VARIABLE_READER(static_union, refusals)
+VARIABLE_READER(static_union, picks)
+VARIABLE_READER(static_union, picked_width)
 
 // The number the field `field` of `shape` holds, in a case that holds that field.
 static bool static_union_shape_number(const static_union_union_union_shape_t *shape, const char *field, int64_t *out) {
@@ -3046,16 +3048,22 @@ static int static_union_shape_presence(const static_union_union_union_shape_t *s
     return -1;
 }
 
-// The union a record row names: `built`, or the present value of `kept` or `lifted`. False for a
-// union that may be absent and is.
+// The union a record row names: `built` or `picked`, or the present value of `kept`, `lifted` or
+// `picked_maybe`. False for a union that may be absent and is.
 static bool static_union_shape_of(const void *sm, const char *name, static_union_union_union_shape_t *out) {
     const static_union_t *machine = (const static_union_t *)sm;
     if (strcmp(name, "built") == 0) {
         *out = static_union_get_built(machine);
         return true;
     }
+    if (strcmp(name, "picked") == 0) {
+        *out = static_union_get_picked(machine);
+        return true;
+    }
     const sce_optional_record_static_union_union_union_shape_t held =
-        strcmp(name, "kept") == 0 ? static_union_get_kept(machine) : static_union_get_lifted(machine);
+        strcmp(name, "kept") == 0           ? static_union_get_kept(machine)
+        : strcmp(name, "picked_maybe") == 0 ? static_union_get_picked_maybe(machine)
+                                            : static_union_get_lifted(machine);
     if (!held.present) {
         return false;
     }
@@ -3079,6 +3087,8 @@ static bool static_union_shape_of(const void *sm, const char *name, static_union
 STATIC_UNION_SHAPE_READERS(built)
 STATIC_UNION_SHAPE_READERS(kept)
 STATIC_UNION_SHAPE_READERS(lifted)
+STATIC_UNION_SHAPE_READERS(picked)
+STATIC_UNION_SHAPE_READERS(picked_maybe)
 
 static bool static_union_read_record_lift_why(const void *sm, size_t index, const char *field, int64_t *out) {
     const sce_optional_record_static_union_record_lift_refusal_t held =
@@ -3133,15 +3143,15 @@ static int static_union_presence(void *sm, const char *name, size_t index, const
         }
         return strcmp(field, "bound") == 0 ? (held.present && held.value.bound.present ? 1 : 0) : -1;
     }
-    if (strcmp(name, "kept") == 0 || strcmp(name, "lifted") == 0) {
+    if (strcmp(name, "kept") == 0 || strcmp(name, "lifted") == 0 || strcmp(name, "picked_maybe") == 0) {
         const bool present = static_union_shape_of(sm, name, &shape);
         if (field == NULL) {
             return present ? 1 : 0;
         }
         return present ? static_union_shape_presence(&shape, field) : -1;
     }
-    if (strcmp(name, "built") == 0 && field != NULL) {
-        shape = static_union_get_built(machine);
+    if ((strcmp(name, "built") == 0 || strcmp(name, "picked") == 0) && field != NULL) {
+        (void)static_union_shape_of(sm, name, &shape);
         return static_union_shape_presence(&shape, field);
     }
     return -1;
@@ -3171,18 +3181,25 @@ static const name_value_t union_states[] = {
     {"idle", STATIC_UNION_STATE_IDLE},
 };
 static const variable_t union_variables[] = {
-    {"radius", static_union_read_radius},           {"width", static_union_read_width},
-    {"height", static_union_read_height},           {"labels", static_union_read_labels},
-    {"points", static_union_read_points},           {"dots", static_union_read_dots},
-    {"many_radius", static_union_read_many_radius}, {"many_width", static_union_read_many_width},
-    {"many_shapes", static_union_read_many_shapes}, {"maybe_width", static_union_read_maybe_width},
+    {"radius", static_union_read_radius},
+    {"width", static_union_read_width},
+    {"height", static_union_read_height},
+    {"labels", static_union_read_labels},
+    {"points", static_union_read_points},
+    {"dots", static_union_read_dots},
+    {"many_radius", static_union_read_many_radius},
+    {"many_width", static_union_read_many_width},
+    {"many_shapes", static_union_read_many_shapes},
+    {"maybe_width", static_union_read_maybe_width},
     {"refusals", static_union_read_refusals},
+    {"picks", static_union_read_picks},
+    {"picked_width", static_union_read_picked_width},
 };
-static const record_variable_t union_records[] = {RECORD_ROW(static_union, built),
-                                                  RECORD_ROW(static_union, kept),
-                                                  RECORD_ROW(static_union, lifted),
-                                                  RECORD_ROW(static_union, lift_why),
-                                                  {NULL, NULL, NULL, NULL}};
+static const record_variable_t union_records[] = {
+    RECORD_ROW(static_union, built),  RECORD_ROW(static_union, kept),
+    RECORD_ROW(static_union, lifted), RECORD_ROW(static_union, lift_why),
+    RECORD_ROW(static_union, picked), RECORD_ROW(static_union, picked_maybe),
+    {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_CORE_RESTORING(static_union, union_states, union_variables, static_union_text, no_lists, union_records,
                                NULL, NULL, NULL, NULL, REQUIRE_STARTED(static_union_init(&sm), STATIC_UNION_START_OK),
                                NULL, NULL, NULL, NULL, NULL, static_union_presence, static_union_save_and_restore)

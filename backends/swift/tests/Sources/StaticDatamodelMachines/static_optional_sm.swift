@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -949,7 +949,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue = StaticOptionalDueRecord(id: self.pendingDueSetPayload.id, due: self.pendingDueSetPayload.due, title: (try (self.pendingDueSetPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }), status: self.pendingDueSetPayload.status); self.vItem = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='item'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticOptionalDueRecord = StaticOptionalDueRecord(id: self.pendingDueSetPayload.id, due: self.pendingDueSetPayload.due, title: (try (self.pendingDueSetPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }), status: self.pendingDueSetPayload.status); self.vItem = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='item'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

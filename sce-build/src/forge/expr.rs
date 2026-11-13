@@ -5824,6 +5824,23 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
     place_path(&parse_to_ast(text.trim()).ok()?)
 }
 
+/// The list place and the text of the index the expression `text` reads one
+/// element at, when the whole of `text` is that read: `("_event.data.many",
+/// "at + 1")` for `_event.data.many[at + 1]`, the list's place as
+/// [`place_path`] writes it. `None` for a text that does not parse, reads
+/// something after the element (`xs[i].kind`), or indexes no place. What an
+/// `<assign>` that takes an element whole reads the element by
+/// (docs/adr/0098, section 5.3).
+pub(crate) fn written_element(text: &str) -> Option<(String, String)> {
+    let text = text.trim();
+    let ast = parse_to_ast(text).ok()?;
+    let ExprKind::Index { object, index } = &ast.kind else {
+        return None;
+    };
+    let index = text.get(index.span.clone()?)?.trim();
+    Some((place_path(object)?, index.to_string()))
+}
+
 /// The member of a C11 text buffer (`sce_static_string_<N>_t`, a text of at
 /// most `N` UTF-8 bytes and its terminator) that holds its text, which is what
 /// a C11 expression reads a text as: a `const char *`.

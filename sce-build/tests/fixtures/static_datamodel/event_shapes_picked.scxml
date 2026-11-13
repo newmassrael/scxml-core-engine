@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shapes and the index of the one to pick (docs/adr/0098, section 5.3): a list
+  of up to three shapes, which may be empty, and an index that may fall outside
+  it. `static_union.scxml` takes the shape at the index whole into a union
+  variable.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shapes_picked"
+       sce:event-name="shapes.picked">
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <datamodel>
+    <data id="many" sce:type="list&lt;union:Shape&gt;[3]" sce:direction="in"/>
+    <data id="at" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

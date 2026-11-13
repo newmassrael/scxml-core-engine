@@ -1776,6 +1776,7 @@ func staticUnion(t *testing.T) machine {
 	for _, id := range []string{
 		"built", "kept", "last_kind", "lifted", "lift_why", "refusals", "dots", "labels", "points",
 		"radius", "width", "height", "many_shapes", "many_width", "many_radius", "maybe_width",
+		"picked", "picked_maybe", "picks", "picked_width",
 	} {
 		variables[id] = func() any {
 			saved, err := static_union.StaticUnionSaveAt(engine, savedAtMs)

@@ -844,6 +844,10 @@ private func unionPayload() -> Machine {
             "refusals": { integer(policy.refusals) },
             "lifted": { policy.lifted.map(unionShape) ?? .null },
             "lift_why": { policy.liftWhy.map(why) ?? .null },
+            "picked": { unionShape(policy.picked) },
+            "picked_maybe": { policy.pickedMaybe.map(unionShape) ?? .null },
+            "picks": { integer(policy.picks) },
+            "picked_width": { integer(policy.pickedWidth) },
         ]
     }
 }

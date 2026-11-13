@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_union.scxml:21 :: _machine
+// SCE-MAP: static_union.scxml:24 :: _machine
 
 package static_union
 
@@ -139,9 +139,10 @@ type StaticUnionEvent int
 const (
 	StaticUnionEventErrorExecution StaticUnionEvent = 0
 	StaticUnionEventShapeSaid StaticUnionEvent = 1
-	StaticUnionEventShapesSent StaticUnionEvent = 2
+	StaticUnionEventShapesPicked StaticUnionEvent = 2
+	StaticUnionEventShapesSent StaticUnionEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticUnionEventNull StaticUnionEvent = 3
+	StaticUnionEventNull StaticUnionEvent = 4
 )
 
 func (e StaticUnionEvent) String() string {
@@ -150,6 +151,8 @@ func (e StaticUnionEvent) String() string {
 		return "error.execution"
 	case StaticUnionEventShapeSaid:
 		return "shape.said"
+	case StaticUnionEventShapesPicked:
+		return "shapes.picked"
 	case StaticUnionEventShapesSent:
 		return "shapes.sent"
 	case StaticUnionEventNull:
@@ -169,6 +172,7 @@ type StaticUnionPayloadTag int
 const (
 	StaticUnionPayloadTagNone StaticUnionPayloadTag = iota
 	StaticUnionPayloadTagShapeSaid
+	StaticUnionPayloadTagShapesPicked
 	StaticUnionPayloadTagShapesSent
 )
 
@@ -177,6 +181,14 @@ const (
 // the `StaticUnionRaiseShapeSaid` seam below (fields are unexported by design).
 type StaticUnionShapeSaidPayload struct {
 	text string
+}
+
+// StaticUnionShapesPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `shapes.picked`. Internal to the package; consumers inject it via
+// the `StaticUnionRaiseShapesPicked` seam below (fields are unexported by design).
+type StaticUnionShapesPickedPayload struct {
+	many []StaticUnionUnionShapeUnion
+	at uint8
 }
 
 // StaticUnionShapesSentPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -206,6 +218,34 @@ func StaticUnionRaiseShapeSaid(e *sce.Engine[StaticUnionState, StaticUnionEvent]
 			Data: sce.PayloadJSON(sce.Pair("text", text)),
 		},
 	})
+}
+
+// StaticUnionRaiseShapesPicked is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `shapes.picked` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `StaticUnionInject` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+// A value past a bound its type declares, at any depth, is refused before
+// anything is sent (docs/adr/0086, section 5.4): the seam answers the refusal,
+// naming the path to the place, and raises nothing.
+func StaticUnionRaiseShapesPicked(e *sce.Engine[StaticUnionState, StaticUnionEvent], many []StaticUnionUnionShapeUnion, at uint8) error {
+	if err := sce.CheckList("many", many, 3, func(scePath0 string, sceValue0 StaticUnionUnionShapeUnion) error { return func() error { switch sceValue0.Kind() { case StaticUnionKindEnumLabel: return func() error { if err := sce.CheckText(scePath0 + "/text", sceValue0.ProvenLabel().text, 8); err != nil { return err }; if err := optional.Check(sceValue0.ProvenLabel().note, func(sceValue1 string) error { return sce.CheckText(scePath0 + "/note", sceValue1, 4) }); err != nil { return err }; return nil }(); case StaticUnionKindEnumPath: return sce.CheckList(scePath0 + "/points", sceValue0.ProvenPath().points, 3, func(string, uint8) error { return nil }); }; return nil }() }); err != nil {
+		return err
+	}
+	scePayload := StaticUnionShapesPickedPayload{many: many, at: at}
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticUnionEvent]{
+		Event:    StaticUnionEventShapesPicked,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: scePayload,
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: string(sce.RecordJSON(sce.Pair("many", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.many)); for _, sceElement := range scePayload.many { sceItems = append(sceItems, func() sce.RawJSON { sceUnion := sceElement; switch sceUnion.Kind().String() { case "dot": return sce.UnionJSON("kind", "dot"); case "circle": sceElement := sceUnion.ProvenCircle(); return sce.UnionJSON("kind", "circle", sce.Pair("radius", sce.ValueJSON(sceElement.radius))); case "disc": sceElement := sceUnion.ProvenDisc(); return sce.UnionJSON("kind", "disc", sce.Pair("radius", sce.ValueJSON(sceElement.radius))); case "rect": sceElement := sceUnion.ProvenRect(); return sce.UnionJSON("kind", "rect", sce.Pair("width", sce.ValueJSON(sceElement.width)), sce.Pair("height", sce.ValueJSON(sceElement.height))); case "label": sceElement := sceUnion.ProvenLabel(); return sce.UnionJSON("kind", "label", sce.Pair("text", sce.ValueJSON(sceElement.text)), sce.Pair("note", func() sce.RawJSON { if sceElement, sceIs := (sceElement.note).Get(); sceIs { return sce.ValueJSON(sceElement) }; return sce.ValueJSON(nil) }())); case "path": sceElement := sceUnion.ProvenPath(); return sce.UnionJSON("kind", "path", sce.Pair("points", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement.points)); for _, sceElement := range sceElement.points { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }())); }; panic("a union's tag names no case of it") }()) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("at", sce.ValueJSON(scePayload.at)))),
+		},
+	})
+	return nil
 }
 
 // StaticUnionRaiseShapesSent is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -893,12 +933,12 @@ const StaticUnionLimitLiftPath uint32 = 256
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticUnionSavedShapeFormat2 = "393e1fdb3bf8c00b6afe66f251168a999d043b2f4599b3e4b80a02f0ec36959c"
+const StaticUnionSavedShapeFormat2 = "387d1beb8808c971338d137975e3406cfc6bd43de951ab9ad5f755a0bb1f6dba"
 
 // StaticUnionSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticUnionSavedShapeFormat2Revised = "53f8ecdef3f99a3dcfa54ea7ae234a87745f1c979b3cc297ad413c2d9a953b2d"
+const StaticUnionSavedShapeFormat2Revised = "de193059202d3f2f610fc05c5aa085dda9d96dec11cee0a6265d01355796e4a2"
 
 // StaticUnionSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -916,10 +956,10 @@ var StaticUnionSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticUnionSavedShape = sce.SavedShape{
-	First:          "c8aae7160c566c907be2b8a15519d2845a3fcb1f4beee776eb7dc057f573b9d0",
-	Revised:        "50df1ca63466918d7d1c99c7d3975685a6cc8ffbf52ad6d968bf883193868735",
-	Format2First:   "393e1fdb3bf8c00b6afe66f251168a999d043b2f4599b3e4b80a02f0ec36959c",
-	Format2Revised: "53f8ecdef3f99a3dcfa54ea7ae234a87745f1c979b3cc297ad413c2d9a953b2d",
+	First:          "1da766c3b8af8cb1b2045a4bd0e5bb0ae84cae454bbdd471de86b18127df36a7",
+	Revised:        "037e99836580deea8a44692c7db79b495e4489f81f593bf5ae0731092f71d91d",
+	Format2First:   "387d1beb8808c971338d137975e3406cfc6bd43de951ab9ad5f755a0bb1f6dba",
+	Format2Revised: "de193059202d3f2f610fc05c5aa085dda9d96dec11cee0a6265d01355796e4a2",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "lift.refusal",
@@ -996,6 +1036,10 @@ func StaticUnionSaveAt(engine *sce.Engine[StaticUnionState, StaticUnionEvent], w
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
 	variables.Set("lifted", optional.Wire(p.vLifted, func(v StaticUnionUnionShapeUnion) any { return v.ToSaved() }))
 	variables.Set("lift_why", optional.Wire(p.vLiftWhy, func(v StaticUnionLiftRefusalRecord) any { return v.ToSaved() }))
+	variables.Set("picked", p.vPicked.ToSaved())
+	variables.Set("picked_maybe", optional.Wire(p.vPickedMaybe, func(v StaticUnionUnionShapeUnion) any { return v.ToSaved() }))
+	variables.Set("picks", sce.SavedWriteUint32(p.vPicks))
+	variables.Set("picked_width", sce.SavedWriteUint16(p.vPickedWidth))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticUnionSavedShape, variables,
 		sce.SaveHistory[StaticUnionState, StaticUnionEvent](p, StaticUnionHistories),
@@ -1097,6 +1141,26 @@ func StaticUnionJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("lift_why"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadOptional(raw, "lift_why", StaticUnionLiftRefusalRecordFromSaved, optional.None[StaticUnionLiftRefusalRecord], optional.Some[StaticUnionLiftRefusalRecord]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("picked"); err != nil {
+		return err
+	} else if _, err := StaticUnionUnionShapeUnionFromSaved(raw, "picked"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("picked_maybe"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "picked_maybe", StaticUnionUnionShapeUnionFromSaved, optional.None[StaticUnionUnionShapeUnion], optional.Some[StaticUnionUnionShapeUnion]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("picks"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "picks"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("picked_width"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint16(raw, "picked_width"); err != nil {
 		return err
 	}
 	return sce.JudgeSession[StaticUnionState, StaticUnionEvent](p, grown)
@@ -1254,6 +1318,38 @@ func StaticUnionRestoreAt(policy *StaticUnionPolicy, saved *sce.SavedState, cloc
 	if err != nil {
 		return nil, err
 	}
+	raw17, err := grown.Variable("picked")
+	if err != nil {
+		return nil, err
+	}
+	read17, err := StaticUnionUnionShapeUnionFromSaved(raw17, "picked")
+	if err != nil {
+		return nil, err
+	}
+	raw18, err := grown.Variable("picked_maybe")
+	if err != nil {
+		return nil, err
+	}
+	read18, err := sce.SavedReadOptional(raw18, "picked_maybe", StaticUnionUnionShapeUnionFromSaved, optional.None[StaticUnionUnionShapeUnion], optional.Some[StaticUnionUnionShapeUnion])
+	if err != nil {
+		return nil, err
+	}
+	raw19, err := grown.Variable("picks")
+	if err != nil {
+		return nil, err
+	}
+	read19, err := sce.SavedReadUint32(raw19, "picks")
+	if err != nil {
+		return nil, err
+	}
+	raw20, err := grown.Variable("picked_width")
+	if err != nil {
+		return nil, err
+	}
+	read20, err := sce.SavedReadUint16(raw20, "picked_width")
+	if err != nil {
+		return nil, err
+	}
 	if err := sce.JudgeSession[StaticUnionState, StaticUnionEvent](policy, grown); err != nil {
 		return nil, err
 	}
@@ -1273,6 +1369,10 @@ func StaticUnionRestoreAt(policy *StaticUnionPolicy, saved *sce.SavedState, cloc
 	policy.vRefusals = read14
 	policy.vLifted = read15
 	policy.vLiftWhy = read16
+	policy.vPicked = read17
+	policy.vPickedMaybe = read18
+	policy.vPicks = read19
+	policy.vPickedWidth = read20
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -1350,6 +1450,7 @@ type StaticUnionPolicy struct {
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag StaticUnionPayloadTag
 	pendingShapeSaidPayload StaticUnionShapeSaidPayload
+	pendingShapesPickedPayload StaticUnionShapesPickedPayload
 	pendingShapesSentPayload StaticUnionShapesSentPayload
 
 	pendingEventData string
@@ -1388,6 +1489,14 @@ type StaticUnionPolicy struct {
 	vLifted optional.Of[StaticUnionUnionShapeUnion]
 	// W3C SCXML 5.2: the `lift_why` datamodel variable, published (`sce:direction="out"`).
 	vLiftWhy optional.Of[StaticUnionLiftRefusalRecord]
+	// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
+	vPicked StaticUnionUnionShapeUnion
+	// W3C SCXML 5.2: the `picked_maybe` datamodel variable, published (`sce:direction="out"`).
+	vPickedMaybe optional.Of[StaticUnionUnionShapeUnion]
+	// W3C SCXML 5.2: the `picks` datamodel variable, published (`sce:direction="out"`).
+	vPicks uint32
+	// W3C SCXML 5.2: the `picked_width` datamodel variable, published (`sce:direction="out"`).
+	vPickedWidth uint16
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -1419,6 +1528,10 @@ func NewStaticUnionPolicy() StaticUnionPolicy {
 	var vRefusals uint32 = 0
 	var vLifted optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
 	var vLiftWhy optional.Of[StaticUnionLiftRefusalRecord] = optional.None[StaticUnionLiftRefusalRecord]()
+	var vPicked StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnionDot()
+	var vPickedMaybe optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vPicks uint32 = 0
+	var vPickedWidth uint16 = 0
 	return StaticUnionPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
@@ -1441,6 +1554,10 @@ func NewStaticUnionPolicy() StaticUnionPolicy {
 		vRefusals: vRefusals,
 		vLifted: vLifted,
 		vLiftWhy: vLiftWhy,
+		vPicked: vPicked,
+		vPickedMaybe: vPickedMaybe,
+		vPicks: vPicks,
+		vPickedWidth: vPickedWidth,
 	}
 }
 
@@ -1555,6 +1672,30 @@ func (p *StaticUnionPolicy) LiftWhy() optional.Of[StaticUnionLiftRefusalRecord] 
 	return p.vLiftWhy
 }
 
+// Picked reports what the published `picked` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticUnionPolicy) Picked() StaticUnionUnionShapeUnion {
+	return p.vPicked
+}
+
+// PickedMaybe reports what the published `picked_maybe` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticUnionPolicy) PickedMaybe() optional.Of[StaticUnionUnionShapeUnion] {
+	return p.vPickedMaybe
+}
+
+// Picks reports what the published `picks` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticUnionPolicy) Picks() uint32 {
+	return p.vPicks
+}
+
+// PickedWidth reports what the published `picked_width` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticUnionPolicy) PickedWidth() uint16 {
+	return p.vPickedWidth
+}
+
 // StaticUnionInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
 // variable left nil, or absent for an optional one, keeps the value its `<data>`
@@ -1571,6 +1712,8 @@ type StaticUnionInvokeParams struct {
 	VManyShapes *uint32
 	VMaybeWidth *uint16
 	VRefusals *uint32
+	VPicks *uint32
+	VPickedWidth *uint16
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -1608,6 +1751,12 @@ func (p *StaticUnionPolicy) AcceptParams(params StaticUnionInvokeParams) {
 	}
 	if params.VRefusals != nil {
 		p.vRefusals = *params.VRefusals
+	}
+	if params.VPicks != nil {
+		p.vPicks = *params.VPicks
+	}
+	if params.VPickedWidth != nil {
+		p.vPickedWidth = *params.VPickedWidth
 	}
 }
 
@@ -1741,6 +1890,8 @@ func (p *StaticUnionPolicy) GetEventFromName(name string) (StaticUnionEvent, boo
 		return StaticUnionEventErrorExecution, true
 	case "shape.said":
 		return StaticUnionEventShapeSaid, true
+	case "shapes.picked":
+		return StaticUnionEventShapesPicked, true
 	case "shapes.sent":
 		return StaticUnionEventShapesSent, true
 	}
@@ -1825,6 +1976,9 @@ func (p *StaticUnionPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case StaticUnionShapeSaidPayload:
 		p.pendingPayloadTag = StaticUnionPayloadTagShapeSaid
 		p.pendingShapeSaidPayload = v
+	case StaticUnionShapesPickedPayload:
+		p.pendingPayloadTag = StaticUnionPayloadTagShapesPicked
+		p.pendingShapesPickedPayload = v
 	case StaticUnionShapesSentPayload:
 		p.pendingPayloadTag = StaticUnionPayloadTagShapesSent
 		p.pendingShapesSentPayload = v
@@ -1860,6 +2014,32 @@ func (p *StaticUnionPolicy) LiftTypedPayload(event StaticUnionEvent, meta *sce.E
 		}
 		p.pendingShapeSaidPayload = payload
 		p.pendingPayloadTag = StaticUnionPayloadTagShapeSaid
+	case StaticUnionEventShapesPicked:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StaticUnionShapesPickedPayload
+		{
+			sceValue, err := fields.Field("many")
+			if err != nil {
+				return err
+			}
+			if payload.many, err = sce.ReadList(sceValue, 3, func(sceValue sce.PayloadValue) (StaticUnionUnionShapeUnion, error) { return sce.ReadUnion(sceValue, "kind", func(sceValue sce.PayloadValue) (StaticUnionKindEnum, error) { return func() (StaticUnionKindEnum, error) { sceName, err := sceValue.Name(); if err != nil { return 0, err }; switch sceName { case "dot": return StaticUnionKindEnumDot, nil; case "circle": return StaticUnionKindEnumCircle, nil; case "disc": return StaticUnionKindEnumDisc, nil; case "rect": return StaticUnionKindEnumRect, nil; case "label": return StaticUnionKindEnumLabel, nil; case "path": return StaticUnionKindEnumPath, nil; }; return 0, sceValue.UnknownVariant(sceName, "Kind") }() }, func(sceTag StaticUnionKindEnum, sceValue sce.PayloadValue) (StaticUnionUnionShapeUnion, error) { switch sceTag { case StaticUnionKindEnumDot: return StaticUnionUnionShapeUnionDot(), nil; case StaticUnionKindEnumCircle: sceCase, err := func() (StaticUnionRadiusRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return StaticUnionRadiusRecord{}, err }; var sceOut StaticUnionRadiusRecord; { sceValue, err := sceRecord.Field("radius"); if err != nil { return StaticUnionRadiusRecord{}, err }; if sceOut.radius, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return StaticUnionRadiusRecord{}, err } }; return sceOut, nil }(); if err != nil { return StaticUnionUnionShapeUnion{}, err }; return StaticUnionUnionShapeUnionCircle(sceCase), nil; case StaticUnionKindEnumDisc: sceCase, err := func() (StaticUnionRadiusRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return StaticUnionRadiusRecord{}, err }; var sceOut StaticUnionRadiusRecord; { sceValue, err := sceRecord.Field("radius"); if err != nil { return StaticUnionRadiusRecord{}, err }; if sceOut.radius, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return StaticUnionRadiusRecord{}, err } }; return sceOut, nil }(); if err != nil { return StaticUnionUnionShapeUnion{}, err }; return StaticUnionUnionShapeUnionDisc(sceCase), nil; case StaticUnionKindEnumRect: sceCase, err := func() (StaticUnionRectRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return StaticUnionRectRecord{}, err }; var sceOut StaticUnionRectRecord; { sceValue, err := sceRecord.Field("width"); if err != nil { return StaticUnionRectRecord{}, err }; if sceOut.width, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return StaticUnionRectRecord{}, err } }; { sceValue, err := sceRecord.Field("height"); if err != nil { return StaticUnionRectRecord{}, err }; if sceOut.height, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return StaticUnionRectRecord{}, err } }; return sceOut, nil }(); if err != nil { return StaticUnionUnionShapeUnion{}, err }; return StaticUnionUnionShapeUnionRect(sceCase), nil; case StaticUnionKindEnumLabel: sceCase, err := func() (StaticUnionLabelRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return StaticUnionLabelRecord{}, err }; var sceOut StaticUnionLabelRecord; { sceValue, err := sceRecord.Field("text"); if err != nil { return StaticUnionLabelRecord{}, err }; if sceOut.text, err = sceValue.Text(8); err != nil { return StaticUnionLabelRecord{}, err } }; { sceValue, err := sceRecord.Field("note"); if err != nil { return StaticUnionLabelRecord{}, err }; if sceOut.note, err = optional.Read(sceValue, func(sceValue sce.PayloadValue) (string, error) { return sceValue.Text(4) }); err != nil { return StaticUnionLabelRecord{}, err } }; return sceOut, nil }(); if err != nil { return StaticUnionUnionShapeUnion{}, err }; return StaticUnionUnionShapeUnionLabel(sceCase), nil; case StaticUnionKindEnumPath: sceCase, err := func() (StaticUnionPathRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return StaticUnionPathRecord{}, err }; var sceOut StaticUnionPathRecord; { sceValue, err := sceRecord.Field("points"); if err != nil { return StaticUnionPathRecord{}, err }; if sceOut.points, err = sce.ReadList(sceValue, 3, func(sceValue sce.PayloadValue) (uint8, error) { return sce.ValueUnsigned[uint8](sceValue) }); err != nil { return StaticUnionPathRecord{}, err } }; return sceOut, nil }(); if err != nil { return StaticUnionUnionShapeUnion{}, err }; return StaticUnionUnionShapeUnionPath(sceCase), nil; }; panic("the tag's reader answered no variant of its enum") }) }); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("at")
+			if err != nil {
+				return err
+			}
+			if payload.at, err = sce.ValueUnsigned[uint8](sceValue); err != nil {
+				return err
+			}
+		}
+		p.pendingShapesPickedPayload = payload
+		p.pendingPayloadTag = StaticUnionPayloadTagShapesPicked
 	case StaticUnionEventShapesSent:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -1915,7 +2095,7 @@ func (p *StaticUnionPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) ExecuteEntryActions(state StaticUnionState, engine *sce.Engine[StaticUnionState, StaticUnionEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1928,7 +2108,7 @@ func (p *StaticUnionPolicy) ExecuteEntryActions(state StaticUnionState, engine *
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticUnionState, StaticUnionEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1936,7 +2116,7 @@ func (p *StaticUnionPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) ExecuteExitActions(state StaticUnionState, engine *sce.Engine[StaticUnionState, StaticUnionEvent], configurationBeforeExit []StaticUnionState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1953,7 +2133,7 @@ func (p *StaticUnionPolicy) ExecuteExitActions(state StaticUnionState, engine *s
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) BindCurrentEvent(event StaticUnionEvent, engine *sce.Engine[StaticUnionState, StaticUnionEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1963,7 +2143,7 @@ func (p *StaticUnionPolicy) BindCurrentEvent(event StaticUnionEvent, engine *sce
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) FirstEnabledTransition(state StaticUnionState, event StaticUnionEvent, engine *sce.Engine[StaticUnionState, StaticUnionEvent]) (sce.EnabledTransition[StaticUnionState, sce.HistoryID], bool) {
 	switch state {
 	case StaticUnionStateIdle:
@@ -1987,11 +2167,21 @@ func (p *StaticUnionPolicy) FirstEnabledTransition(state StaticUnionState, event
 				}, true
 			}
 		}
-		if event == StaticUnionEventErrorExecution {
+		if event == StaticUnionEventShapesPicked {
 			{
 				return sce.EnabledTransition[StaticUnionState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticUnionEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticUnionState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 3,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -2003,13 +2193,13 @@ func (p *StaticUnionPolicy) FirstEnabledTransition(state StaticUnionState, event
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_union.scxml:21
+//line static_union.scxml:24
 func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, transitionIndex int, engine *sce.Engine[StaticUnionState, StaticUnionEvent]) {
 	switch source {
 	case StaticUnionStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_union.scxml:64
+//line static_union.scxml:77
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticUnionPayloadTagShapesSent {
@@ -2112,7 +2302,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 
 			}()
 		case 1:
-//line static_union.scxml:98
+//line static_union.scxml:111
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticUnionPayloadTagShapeSaid {
@@ -2125,7 +2315,41 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 
 			}()
 		case 2:
-//line static_union.scxml:103
+//line static_union.scxml:120
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticUnionPayloadTagShapesPicked {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Some(scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; p.vPickedMaybe = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+	if p.vPicked.Kind() == StaticUnionKindEnumRect {
+
+
+	p.vPickedWidth = p.vPicked.ProvenRect().width
+
+	}
+
+			}()
+		case 3:
+//line static_union.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

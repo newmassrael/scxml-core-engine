@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+// source-hash: 138d54bef1f6b9b0e78600cb129e88342af00344f9fa58b6a90edf9adcaeb40d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_union.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_union.scxml:21 :: _machine
+// SCE-MAP: static_union.scxml:24 :: _machine
 
 package com.sce.integration.static_datamodel.static_union
 
@@ -27,6 +27,7 @@ sealed interface StaticUnionEvent : Event {
         data object Said : Shape
     }
     sealed interface Shapes : StaticUnionEvent {
+        data object Picked : Shapes
         data object Sent : Shapes
     }
 }
@@ -41,6 +42,15 @@ sealed interface StaticUnionEvent : Event {
 // payload for `shape.said`. Consumers inject it via the `raiseShapeSaid` seam
 // on the machine — they never name this class directly.
 data class StaticUnionShapeSaidPayload(val text: String)
+
+// StaticUnionShapesPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `shapes.picked`. Consumers inject it via the `raiseShapesPicked` seam
+// on the machine — they never name this class directly.
+data class StaticUnionShapesPickedPayload(val many: List<StaticUnionUnionShapeUnion>, val at: UByte) {
+    init {
+        com.sce.runtime.ValueBounds.list("many", many, 3) { _, _ -> }
+    }
+}
 
 // StaticUnionShapesSentPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `shapes.sent`. Consumers inject it via the `raiseShapesSent` seam
@@ -393,6 +403,26 @@ class StaticUnionStateMachine(
 
     /** What the published `lift_why` holds. */
     val liftWhy: StaticUnionLiftRefusalRecord? get() = vLiftWhy
+    /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
+    private var vPicked: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.DOT
+
+    /** What the published `picked` holds. */
+    val picked: StaticUnionUnionShapeUnion get() = vPicked
+    /** W3C SCXML 5.2: the `picked_maybe` datamodel variable, published (`sce:direction="out"`). */
+    private var vPickedMaybe: StaticUnionUnionShapeUnion? = null
+
+    /** What the published `picked_maybe` holds. */
+    val pickedMaybe: StaticUnionUnionShapeUnion? get() = vPickedMaybe
+    /** W3C SCXML 5.2: the `picks` datamodel variable, published (`sce:direction="out"`). */
+    private var vPicks: UInt = 0.toUInt()
+
+    /** What the published `picks` holds. */
+    val picks: UInt get() = vPicks
+    /** W3C SCXML 5.2: the `picked_width` datamodel variable, published (`sce:direction="out"`). */
+    private var vPickedWidth: UShort = 0.toUShort()
+
+    /** What the published `picked_width` holds. */
+    val pickedWidth: UShort get() = vPickedWidth
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -411,6 +441,8 @@ class StaticUnionStateMachine(
         var manyShapes: UInt? = null
         var maybeWidth: UShort? = null
         var refusals: UInt? = null
+        var picks: UInt? = null
+        var pickedWidth: UShort? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -430,6 +462,8 @@ class StaticUnionStateMachine(
         params.manyShapes?.let { vManyShapes = it }
         params.maybeWidth?.let { vMaybeWidth = it }
         params.refusals?.let { vRefusals = it }
+        params.picks?.let { vPicks = it }
+        params.pickedWidth?.let { vPickedWidth = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -450,6 +484,10 @@ class StaticUnionStateMachine(
         val refusals: UInt,
         val lifted: StaticUnionUnionShapeUnion?,
         val liftWhy: StaticUnionLiftRefusalRecord?,
+        val picked: StaticUnionUnionShapeUnion,
+        val pickedMaybe: StaticUnionUnionShapeUnion?,
+        val picks: UInt,
+        val pickedWidth: UShort,
     )
 
     /**
@@ -482,6 +520,10 @@ class StaticUnionStateMachine(
         refusals = vRefusals,
         lifted = vLifted,
         liftWhy = vLiftWhy,
+        picked = vPicked,
+        pickedMaybe = vPickedMaybe,
+        picks = vPicks,
+        pickedWidth = vPickedWidth,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -511,10 +553,10 @@ class StaticUnionStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "c8aae7160c566c907be2b8a15519d2845a3fcb1f4beee776eb7dc057f573b9d0",
-        revised = "50df1ca63466918d7d1c99c7d3975685a6cc8ffbf52ad6d968bf883193868735",
-        format2First = "393e1fdb3bf8c00b6afe66f251168a999d043b2f4599b3e4b80a02f0ec36959c",
-        format2Revised = "53f8ecdef3f99a3dcfa54ea7ae234a87745f1c979b3cc297ad413c2d9a953b2d",
+        first = "1da766c3b8af8cb1b2045a4bd0e5bb0ae84cae454bbdd471de86b18127df36a7",
+        revised = "037e99836580deea8a44692c7db79b495e4489f81f593bf5ae0731092f71d91d",
+        format2First = "387d1beb8808c971338d137975e3406cfc6bd43de951ab9ad5f755a0bb1f6dba",
+        format2Revised = "de193059202d3f2f610fc05c5aa085dda9d96dec11cee0a6265d01355796e4a2",
         records = listOf(
             RecordLineage(
                 event = "lift.refusal",
@@ -587,6 +629,10 @@ class StaticUnionStateMachine(
         variables += "refusals" to SavedValues.of(vRefusals)
         variables += "lifted" to SavedValues.optional(vLifted) { it.toSaved() }
         variables += "lift_why" to SavedValues.optional(vLiftWhy) { it.toSaved() }
+        variables += "picked" to vPicked.toSaved()
+        variables += "picked_maybe" to SavedValues.optional(vPickedMaybe) { it.toSaved() }
+        variables += "picks" to SavedValues.of(vPicks)
+        variables += "picked_width" to SavedValues.of(vPickedWidth)
     }
 
     /** [save] at the host's wall clock now. */
@@ -637,6 +683,10 @@ class StaticUnionStateMachine(
         val saved14 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         val saved15 = SavedValues.optional(savedGrown.variable("lifted"), "lifted") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
         val saved16 = SavedValues.optional(savedGrown.variable("lift_why"), "lift_why") { e, w -> StaticUnionLiftRefusalRecord.fromSaved(e, w) }
+        val saved17 = StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("picked"), "picked")
+        val saved18 = SavedValues.optional(savedGrown.variable("picked_maybe"), "picked_maybe") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        val saved19 = SavedValues.uint32(savedGrown.variable("picks"), "picks")
+        val saved20 = SavedValues.uint16(savedGrown.variable("picked_width"), "picked_width")
         return {
             vBuilt = saved1
             vKept = saved2
@@ -654,6 +704,10 @@ class StaticUnionStateMachine(
             vRefusals = saved14
             vLifted = saved15
             vLiftWhy = saved16
+            vPicked = saved17
+            vPickedMaybe = saved18
+            vPicks = saved19
+            vPickedWidth = saved20
         }
     }
 
@@ -687,6 +741,10 @@ class StaticUnionStateMachine(
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         SavedValues.optional(savedGrown.variable("lifted"), "lifted") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
         SavedValues.optional(savedGrown.variable("lift_why"), "lift_why") { e, w -> StaticUnionLiftRefusalRecord.fromSaved(e, w) }
+        StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("picked"), "picked")
+        SavedValues.optional(savedGrown.variable("picked_maybe"), "picked_maybe") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("picks"), "picks")
+        SavedValues.uint16(savedGrown.variable("picked_width"), "picked_width")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -695,6 +753,7 @@ class StaticUnionStateMachine(
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
     private var pendingShapeSaidPayload: StaticUnionShapeSaidPayload? = null
+    private var pendingShapesPickedPayload: StaticUnionShapesPickedPayload? = null
     private var pendingShapesSentPayload: StaticUnionShapesSentPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
@@ -708,9 +767,11 @@ class StaticUnionStateMachine(
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticUnionEvent, metadata: EventMetadata) {
         pendingShapeSaidPayload = null
+        pendingShapesPickedPayload = null
         pendingShapesSentPayload = null
         when (val tp = metadata.typedPayload) {
             is StaticUnionShapeSaidPayload -> pendingShapeSaidPayload = tp
+            is StaticUnionShapesPickedPayload -> pendingShapesPickedPayload = tp
             is StaticUnionShapesSentPayload -> pendingShapesSentPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
@@ -718,6 +779,9 @@ class StaticUnionStateMachine(
                 if (event == StaticUnionEvent.Shape.Said) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingShapeSaidPayload = StaticUnionShapeSaidPayload(fields.string("text", 96))
+                } else if (event == StaticUnionEvent.Shapes.Picked) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingShapesPickedPayload = StaticUnionShapesPickedPayload(fields.field("many").let { it.list(3) { when (it.union("kind", { when (val sceName = it.name()) { "dot" -> StaticUnionKindEnum.DOT; "circle" -> StaticUnionKindEnum.CIRCLE; "disc" -> StaticUnionKindEnum.DISC; "rect" -> StaticUnionKindEnum.RECT; "label" -> StaticUnionKindEnum.LABEL; "path" -> StaticUnionKindEnum.PATH; else -> throw it.unknownVariant(sceName, "Kind") } }) { sceCase, _ -> sceCase }) { StaticUnionKindEnum.DOT -> StaticUnionUnionShapeUnion.DOT; StaticUnionKindEnum.CIRCLE -> StaticUnionUnionShapeUnion.CIRCLE(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.DISC -> StaticUnionUnionShapeUnion.DISC(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.RECT -> StaticUnionUnionShapeUnion.RECT(it.let { it.record(null) { StaticUnionRectRecord(width = it.field("width").let { it.uint16() }, height = it.field("height").let { it.uint16() }) } }); StaticUnionKindEnum.LABEL -> StaticUnionUnionShapeUnion.LABEL(it.let { it.record(null) { StaticUnionLabelRecord(text = it.field("text").let { it.string(8) }, note = it.field("note").let { it.optional { it.string(4) } }) } }); StaticUnionKindEnum.PATH -> StaticUnionUnionShapeUnion.PATH(it.let { it.record(null) { StaticUnionPathRecord(points = it.field("points").let { it.list(3) { it.uint8() } }) } }) } } }, fields.field("at").let { it.uint8() })
                 } else if (event == StaticUnionEvent.Shapes.Sent) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingShapesSentPayload = StaticUnionShapesSentPayload(fields.field("one").let { when (it.union("kind", { when (val sceName = it.name()) { "dot" -> StaticUnionKindEnum.DOT; "circle" -> StaticUnionKindEnum.CIRCLE; "disc" -> StaticUnionKindEnum.DISC; "rect" -> StaticUnionKindEnum.RECT; "label" -> StaticUnionKindEnum.LABEL; "path" -> StaticUnionKindEnum.PATH; else -> throw it.unknownVariant(sceName, "Kind") } }) { sceCase, _ -> sceCase }) { StaticUnionKindEnum.DOT -> StaticUnionUnionShapeUnion.DOT; StaticUnionKindEnum.CIRCLE -> StaticUnionUnionShapeUnion.CIRCLE(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.DISC -> StaticUnionUnionShapeUnion.DISC(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.RECT -> StaticUnionUnionShapeUnion.RECT(it.let { it.record(null) { StaticUnionRectRecord(width = it.field("width").let { it.uint16() }, height = it.field("height").let { it.uint16() }) } }); StaticUnionKindEnum.LABEL -> StaticUnionUnionShapeUnion.LABEL(it.let { it.record(null) { StaticUnionLabelRecord(text = it.field("text").let { it.string(8) }, note = it.field("note").let { it.optional { it.string(4) } }) } }); StaticUnionKindEnum.PATH -> StaticUnionUnionShapeUnion.PATH(it.let { it.record(null) { StaticUnionPathRecord(points = it.field("points").let { it.list(3) { it.uint8() } }) } }) } }, fields.field("many").let { it.listWithin(1, 3) { when (it.union("kind", { when (val sceName = it.name()) { "dot" -> StaticUnionKindEnum.DOT; "circle" -> StaticUnionKindEnum.CIRCLE; "disc" -> StaticUnionKindEnum.DISC; "rect" -> StaticUnionKindEnum.RECT; "label" -> StaticUnionKindEnum.LABEL; "path" -> StaticUnionKindEnum.PATH; else -> throw it.unknownVariant(sceName, "Kind") } }) { sceCase, _ -> sceCase }) { StaticUnionKindEnum.DOT -> StaticUnionUnionShapeUnion.DOT; StaticUnionKindEnum.CIRCLE -> StaticUnionUnionShapeUnion.CIRCLE(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.DISC -> StaticUnionUnionShapeUnion.DISC(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.RECT -> StaticUnionUnionShapeUnion.RECT(it.let { it.record(null) { StaticUnionRectRecord(width = it.field("width").let { it.uint16() }, height = it.field("height").let { it.uint16() }) } }); StaticUnionKindEnum.LABEL -> StaticUnionUnionShapeUnion.LABEL(it.let { it.record(null) { StaticUnionLabelRecord(text = it.field("text").let { it.string(8) }, note = it.field("note").let { it.optional { it.string(4) } }) } }); StaticUnionKindEnum.PATH -> StaticUnionUnionShapeUnion.PATH(it.let { it.record(null) { StaticUnionPathRecord(points = it.field("points").let { it.list(3) { it.uint8() } }) } }) } } }, fields.field("maybe").let { it.optional { when (it.union("kind", { when (val sceName = it.name()) { "dot" -> StaticUnionKindEnum.DOT; "circle" -> StaticUnionKindEnum.CIRCLE; "disc" -> StaticUnionKindEnum.DISC; "rect" -> StaticUnionKindEnum.RECT; "label" -> StaticUnionKindEnum.LABEL; "path" -> StaticUnionKindEnum.PATH; else -> throw it.unknownVariant(sceName, "Kind") } }) { sceCase, _ -> sceCase }) { StaticUnionKindEnum.DOT -> StaticUnionUnionShapeUnion.DOT; StaticUnionKindEnum.CIRCLE -> StaticUnionUnionShapeUnion.CIRCLE(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.DISC -> StaticUnionUnionShapeUnion.DISC(it.let { it.record(null) { StaticUnionRadiusRecord(radius = it.field("radius").let { it.uint16() }) } }); StaticUnionKindEnum.RECT -> StaticUnionUnionShapeUnion.RECT(it.let { it.record(null) { StaticUnionRectRecord(width = it.field("width").let { it.uint16() }, height = it.field("height").let { it.uint16() }) } }); StaticUnionKindEnum.LABEL -> StaticUnionUnionShapeUnion.LABEL(it.let { it.record(null) { StaticUnionLabelRecord(text = it.field("text").let { it.string(8) }, note = it.field("note").let { it.optional { it.string(4) } }) } }); StaticUnionKindEnum.PATH -> StaticUnionUnionShapeUnion.PATH(it.let { it.record(null) { StaticUnionPathRecord(points = it.field("points").let { it.list(3) { it.uint8() } }) } }) } } })
@@ -740,6 +804,23 @@ class StaticUnionStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = EventPayload.encode(mapOf("text" to text))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `shapes.picked` — binds the event name and the payload field values in one call.
+    fun raiseShapesPicked(many: List<StaticUnionUnionShapeUnion>, at: UByte) {
+        val scePayload = StaticUnionShapesPickedPayload(many, at)
+        send(
+            StaticUnionEvent.Shapes.Picked,
+            EventMetadata(
+                type = "external",
+                typedPayload = scePayload,
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("many" to com.sce.runtime.EventPayload.listJson(scePayload.many) { (it).let { when (it) { StaticUnionUnionShapeUnion.DOT -> com.sce.runtime.EventPayload.unionJson("kind", "dot", emptyMap()); is StaticUnionUnionShapeUnion.CIRCLE -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "circle", mapOf<String, Any?>("radius" to com.sce.runtime.EventPayload.valueJson(it.radius))) }; is StaticUnionUnionShapeUnion.DISC -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "disc", mapOf<String, Any?>("radius" to com.sce.runtime.EventPayload.valueJson(it.radius))) }; is StaticUnionUnionShapeUnion.RECT -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "rect", mapOf<String, Any?>("width" to com.sce.runtime.EventPayload.valueJson(it.width), "height" to com.sce.runtime.EventPayload.valueJson(it.height))) }; is StaticUnionUnionShapeUnion.LABEL -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "label", mapOf<String, Any?>("text" to com.sce.runtime.EventPayload.valueJson(it.text), "note" to ((it.note)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)))) }; is StaticUnionUnionShapeUnion.PATH -> it.value.let { com.sce.runtime.EventPayload.unionJson("kind", "path", mapOf<String, Any?>("points" to com.sce.runtime.EventPayload.listJson(it.points) { com.sce.runtime.EventPayload.valueJson(it) })) } } } }, "at" to com.sce.runtime.EventPayload.valueJson(scePayload.at))).json
             )
         )
     }
@@ -817,6 +898,15 @@ class StaticUnionStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<StaticUnionState, HistoryId>(
+            StaticUnionState.Idle,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
 
@@ -843,6 +933,7 @@ class StaticUnionStateMachine(
     override fun resolveEventByName(name: String): StaticUnionEvent? = when (name) {
         "error.execution" -> StaticUnionEvent.Error.Execution
         "shape.said" -> StaticUnionEvent.Shape.Said
+        "shapes.picked" -> StaticUnionEvent.Shapes.Picked
         "shapes.sent" -> StaticUnionEvent.Shapes.Sent
         else -> null
     }
@@ -852,6 +943,7 @@ class StaticUnionStateMachine(
     override fun eventNameOf(event: StaticUnionEvent): String? = when (event) {
         is StaticUnionEvent.Error.Execution -> "error.execution"
         is StaticUnionEvent.Shape.Said -> "shape.said"
+        is StaticUnionEvent.Shapes.Picked -> "shapes.picked"
         is StaticUnionEvent.Shapes.Sent -> "shapes.sent"
     }
 
@@ -874,7 +966,8 @@ class StaticUnionStateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticUnionState, event: StaticUnionEvent?): EnabledTransition<StaticUnionState, HistoryId>? = when {
         event is StaticUnionEvent.Shapes.Sent -> TransitionsPart0.transitionIdleAt0
         event is StaticUnionEvent.Shape.Said -> TransitionsPart0.transitionIdleAt1
-        event is StaticUnionEvent.Error.Execution -> TransitionsPart0.transitionIdleAt2
+        event is StaticUnionEvent.Shapes.Picked -> TransitionsPart0.transitionIdleAt2
+        event is StaticUnionEvent.Error.Execution -> TransitionsPart0.transitionIdleAt3
         else -> null
     }
 
@@ -883,7 +976,7 @@ class StaticUnionStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_union.scxml:21 :: _machine
+    // SCE-MAP: static_union.scxml:24 :: _machine
     override fun onEntry(state: StaticUnionState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticUnionState.Idle -> onEntryOfIdle()
@@ -892,11 +985,11 @@ class StaticUnionStateMachine(
 
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: static_union.scxml:63 :: idle :: _state_body
+                // SCE-MAP: static_union.scxml:76 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_union.scxml:21 :: _machine
+    // SCE-MAP: static_union.scxml:24 :: _machine
     override fun onExit(state: StaticUnionState) {
         when (state) {
             is StaticUnionState.Idle -> onExitOfIdle()
@@ -905,13 +998,13 @@ class StaticUnionStateMachine(
 
 
     private fun onExitOfIdle() {
-                // SCE-MAP: static_union.scxml:63 :: idle :: _state_body
+                // SCE-MAP: static_union.scxml:76 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_union.scxml:21 :: _machine
+    // SCE-MAP: static_union.scxml:24 :: _machine
     override fun executeTransitionContent(source: StaticUnionState, transitionIndex: Int) {
         when (source) {
             is StaticUnionState.Idle -> transitionContentOfIdle(transitionIndex)
@@ -929,13 +1022,14 @@ class StaticUnionStateMachine(
             0 -> transitionContentOfIdleAt0()
             1 -> transitionContentOfIdleAt1()
             2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: static_union.scxml:64 :: idle :: _transition_0
+                // SCE-MAP: static_union.scxml:77 :: idle :: _transition_0
                 if (pendingShapesSentPayload == null) {
                     return
                 }
@@ -1007,7 +1101,7 @@ class StaticUnionStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: static_union.scxml:98 :: idle :: _transition_1
+                // SCE-MAP: static_union.scxml:111 :: idle :: _transition_1
                 if (pendingShapeSaidPayload == null) {
                     return
                 }
@@ -1016,7 +1110,32 @@ class StaticUnionStateMachine(
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: static_union.scxml:103 :: idle :: _transition_2
+                // SCE-MAP: static_union.scxml:120 :: idle :: _transition_2
+                if (pendingShapesPickedPayload == null) {
+                    return
+                }
+
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vPickedMaybe = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked_maybe'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (vPicked.kind == StaticUnionKindEnum.RECT) {
+
+            vPickedWidth = vPicked.provenRect().width
+            }
+    }
+
+    private fun transitionContentOfIdleAt3() {
+                // SCE-MAP: static_union.scxml:130 :: idle :: _transition_3
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
