@@ -15,11 +15,13 @@
 // (backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs).
 //
 // A hosted POSIX program: it starts a process and waits for it, names its
-// scratch directories by its process id, and makes them through the runtime's
-// `sce_directory_make`, which the POSIX tier it links implements.
+// scratch directories by its process id, makes them through the runtime's
+// `sce_directory_make`, which the POSIX tier it links implements, and lists the
+// directories of the logs through `opendir`.
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <dirent.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -60,12 +62,18 @@ static int failures = 0;
 
 // The most bytes a path, a command line or a text read here takes: a scratch
 // directory's path, its directory of logs, and a log's path in that, each with
-// room for the one it is made of and what it adds.
+// room for the one it is made of and what it adds; a file's path in a directory
+// of logs or of expected logs has room for the name of any entry of it, whose
+// `d_name` holds 256 bytes. A directory of logs or of expected logs holds at
+// most NAMES_MAX files, each named in fewer than NAME_SIZE bytes.
 #define PATH_SIZE 1024u
 #define LOGS_SIZE (PATH_SIZE + 16u)
 #define LOG_PATH_SIZE (LOGS_SIZE + 64u)
+#define ENTRY_PATH_SIZE (LOGS_SIZE + 320u)
 #define COMMAND_SIZE 4096u
 #define TEXT_SIZE 8192u
+#define NAMES_MAX 16u
+#define NAME_SIZE 128u
 
 // The text of the file at `path` into the TEXT_SIZE bytes at `out`, terminated;
 // empty where there is none.
@@ -90,29 +98,86 @@ static void stream_text(FILE *file, char *out) {
     out[len] = '\0';
 }
 
-// The test log every runtime writes of `answers_the_job`, without the one newline
-// its file ends in, which no canonical text holds.
-static void shared_log(char *out) {
-    char path[PATH_SIZE];
-    (void)snprintf(path, sizeof(path),
-                   "%s/sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json",
-                   SCE_PROJECT_ROOT);
-    const size_t len = file_text(path, out);
-    CHECK(len > 0u && out[len - 1u] == '\n', "the shared log ends in one newline");
-    if (len > 0u && out[len - 1u] == '\n') {
-        out[len - 1u] = '\0';
-    }
-}
-
-// The directory of the suite's committed traces.
+// The directory of the suite's committed traces, `<test case>.json` each.
 static void traces_dir(char *out) {
     (void)snprintf(out, PATH_SIZE, "%s/sce-build/tests/fixtures/test_profile/runtime/traces", SCE_PROJECT_ROOT);
 }
+
+// The directory of the expected log of each committed trace, `<test case>.json`
+// each: the canonical log a reviewed run wrote of it, with one newline after it.
+static void expected_logs_dir(char *out) {
+    (void)snprintf(out, PATH_SIZE, "%s/sce-build/tests/fixtures/test_profile/runtime/expected_logs", SCE_PROJECT_ROOT);
+}
+
+// The world that selects every test case of the suite, so that the runner
+// replays every trace of the directory.
+static const char *const EVERY_FEATURE[] = {"--world", "ptcs,removal,guard"};
+
+// The lines the runner prints in the world of every feature: each case of the
+// suite, in its order, with the verdict it ends with.
+static const char EVERY_VERDICT[] =
+    "answers_the_job pass\nserves_a_ptc pass\nkeeps_a_ptc inconc\nanswers_before_the_guard error\n";
 
 // Whether anything is at `path`.
 static bool exists(const char *path) {
     struct stat held;
     return stat(path, &held) == 0;
+}
+
+// The names of the files of a directory, each without the suffix it is read by,
+// sorted.
+typedef struct names_s {
+    size_t count;
+    char name[NAMES_MAX][NAME_SIZE];
+} names_t;
+
+static int name_order(const void *a, const void *b) {
+    return strcmp((const char *)a, (const char *)b);
+}
+
+// The name of every file of `dir`, without `suffix`, into `*out`, sorted; a name
+// that does not end in `suffix` fails the test and is kept whole, so the sets of
+// names differ.
+static void file_names(const char *dir, const char *suffix, names_t *out) {
+    out->count = 0u;
+    DIR *opened = opendir(dir);
+    if (opened == NULL) {
+        CHECK(false, "the directory %s is read", dir);
+        return;
+    }
+    const size_t suffix_len = strlen(suffix);
+    for (struct dirent *entry = readdir(opened); entry != NULL; entry = readdir(opened)) {
+        const char *name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        const size_t len = strlen(name);
+        if (out->count >= NAMES_MAX || len >= NAME_SIZE) {
+            CHECK(false, "%s holds at most %u files, each named in fewer than %u bytes: %s", dir, NAMES_MAX, NAME_SIZE,
+                  name);
+            continue;
+        }
+        const bool suffixed = len > suffix_len && strcmp(name + len - suffix_len, suffix) == 0;
+        CHECK(suffixed, "%s/%s ends in %s", dir, name, suffix);
+        const size_t kept = suffixed ? len - suffix_len : len;
+        memcpy(out->name[out->count], name, kept);
+        out->name[out->count][kept] = '\0';
+        ++out->count;
+    }
+    (void)closedir(opened);
+    qsort(out->name, out->count, sizeof(out->name[0]), name_order);
+}
+
+// The text of the expected log at `path` of the case `test_case` into the
+// TEXT_SIZE bytes at `out`, without the one newline its file ends in, which no
+// canonical text holds.
+static void expected_log(const char *path, const char *test_case, char *out) {
+    const size_t len = file_text(path, out);
+    CHECK(len + 1u < TEXT_SIZE, "the expected log of %s is read whole in %u bytes", test_case, TEXT_SIZE);
+    CHECK(len > 0u && out[len - 1u] == '\n', "the expected log of %s ends in one newline", test_case);
+    if (len > 0u && out[len - 1u] == '\n') {
+        out[len - 1u] = '\0';
+    }
 }
 
 // The directory of this run of the test that `name` keeps apart from every
@@ -123,12 +188,24 @@ static void scratch_path(const char *name, char *out) {
                    (long)getpid(), name);
 }
 
-// What a test leaves in its scratch directory `dir`, removed: the log of the
-// suite's one unguarded case, the directory of the logs, the streams of a run,
-// and the directory itself.
+// What a test leaves in its scratch directory `dir`, removed: every file of the
+// directory of the logs, that directory, the streams of a run, and the directory
+// itself.
 static void scratch_removed(const char *dir) {
-    static const char *const LEFT[] = {"logs/answers_the_job.log.json", "logs", "out", "err"};
-    char path[PATH_SIZE];
+    static const char *const LEFT[] = {"logs", "out", "err"};
+    char logs[LOGS_SIZE];
+    char path[ENTRY_PATH_SIZE];
+    (void)snprintf(logs, sizeof(logs), "%s/logs", dir);
+    DIR *opened = opendir(logs);
+    if (opened != NULL) {
+        for (struct dirent *entry = readdir(opened); entry != NULL; entry = readdir(opened)) {
+            if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                (void)snprintf(path, sizeof(path), "%s/%s", logs, entry->d_name);
+                (void)remove(path);
+            }
+        }
+        (void)closedir(opened);
+    }
     for (size_t i = 0u; i < sizeof(LEFT) / sizeof(LEFT[0]); ++i) {
         (void)snprintf(path, sizeof(path), "%s/%s", dir, LEFT[i]);
         (void)remove(path);
@@ -242,34 +319,66 @@ static bool no_line_of_err_in_out(const char *err, const char *out) {
 static char want[TEXT_SIZE];
 static char log_text[TEXT_SIZE];
 
+// docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every log the runner wrote into `logs`,
+// `<case>.log.json`, is the expected log of its case byte for byte, and the
+// runner wrote a log for every expected log and nothing else.
+static void every_log_is_its_expected_log(const char *logs) {
+    static names_t expected;
+    static names_t written;
+    char expected_dir[PATH_SIZE];
+    char path[ENTRY_PATH_SIZE];
+    expected_logs_dir(expected_dir);
+    file_names(expected_dir, ".json", &expected);
+    file_names(logs, ".log.json", &written);
+    for (size_t i = 0u; i < written.count; ++i) {
+        const char *test_case = written.name[i];
+        (void)snprintf(path, sizeof(path), "%s/%s.json", expected_dir, test_case);
+        if (!exists(path)) {
+            CHECK(false, "the case %s has no expected log %s", test_case, path);
+            continue;
+        }
+        expected_log(path, test_case, want);
+        (void)snprintf(path, sizeof(path), "%s/%s.log.json", logs, test_case);
+        const size_t len = file_text(path, log_text);
+        CHECK(len + 1u < TEXT_SIZE, "the log of %s is read whole in %u bytes", test_case, TEXT_SIZE);
+        CHECK(strcmp(log_text, want) == 0, "the log of %s is not its expected log:\n  wrote %s\n  want  %s", test_case,
+              log_text, want);
+    }
+    bool same = expected.count == written.count;
+    for (size_t i = 0u; same && i < expected.count; ++i) {
+        same = strcmp(expected.name[i], written.name[i]) == 0;
+    }
+    CHECK(same,
+          "the runner wrote a log of each case that has an expected log, and of no other: %zu written, %zu expected",
+          written.count, expected.count);
+}
+
 // The message the run of `answers_the_job` sends when the job given is 9.
 static const char JOB_NINE[] =
     "\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}";
 
 // docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case its
 // world selects against its trace and writes `<case>.log.json`, the canonical
-// log with nothing after it, and prints each case's verdict; a module parameter's
-// value on its command line replaces its default, and one the suite does not
-// declare is refused with exit status 2 before any case runs.
+// log with nothing after it, and prints each case's verdict. In the world of
+// every feature it replays every trace of the directory, and each log it writes
+// is its case's expected log (§12, §13.1 S2). A module parameter's value on its
+// command line replaces its default, and one the suite does not declare is
+// refused with exit status 2 before any case runs.
 static void a_runner_program_writes_the_log_of_each_trace(void) {
     static program_run_t run;
     char streams[PATH_SIZE];
     char dir[PATH_SIZE];
     char logs[LOGS_SIZE];
     char path[LOG_PATH_SIZE];
-    shared_log(want);
     scratch("streams", streams);
 
-    scratch("default", dir);
+    scratch("every", dir);
     (void)snprintf(logs, sizeof(logs), "%s/logs", dir);
-    run_program(logs, streams, NULL, 0u, &run);
+    run_program(logs, streams, EVERY_FEATURE, 2u, &run);
     CHECK(run.status == 0, "exit status %d: %s", run.status, run.err);
-    CHECK(strcmp(run.out, "answers_the_job pass\n") == 0, "the standard output is the contract's lines alone: %s",
-          run.out);
+    CHECK(strcmp(run.out, EVERY_VERDICT) == 0, "the standard output is the contract's lines alone: %s", run.out);
     CHECK(no_line_of_err_in_out(run.err, run.out), "no diagnostic is on the standard output");
-    (void)snprintf(path, sizeof(path), "%s/answers_the_job.log.json", logs);
-    (void)file_text(path, log_text);
-    CHECK(strcmp(log_text, want) == 0, "the log is the shared one:\n  wrote %s\n  want  %s", log_text, want);
+    every_log_is_its_expected_log(logs);
     scratch_removed(dir);
 
     static const char *const OVERRIDDEN[] = {"--world", "", "--module-parameter", "job=9"};
@@ -326,23 +435,21 @@ static void run_in_process(const char *logs, const char *const *args, size_t cou
 }
 
 // docs/SCE_TTCN3_LANE.md §4: the suite's runner, run in this process with its
-// streams given, does what the program does: the twin of the C++
+// streams given, does what the program does, every trace of the directory
+// replayed to its expected log among it: the twin of the C++
 // `TheSuitesRunnerWritesTheLogOfEachTrace`.
 static void the_suites_runner_writes_the_log_of_each_trace(void) {
     static program_run_t run;
     char dir[PATH_SIZE];
     char logs[LOGS_SIZE];
     char path[LOG_PATH_SIZE];
-    shared_log(want);
 
-    scratch("in-process-default", dir);
+    scratch("in-process-every", dir);
     (void)snprintf(logs, sizeof(logs), "%s/logs", dir);
-    run_in_process(logs, NULL, 0u, &run);
+    run_in_process(logs, EVERY_FEATURE, 2u, &run);
     CHECK(run.status == 0, "exit status %d: %s", run.status, run.err);
-    CHECK(strcmp(run.out, "answers_the_job pass\n") == 0, "%s", run.out);
-    (void)snprintf(path, sizeof(path), "%s/answers_the_job.log.json", logs);
-    (void)file_text(path, log_text);
-    CHECK(strcmp(log_text, want) == 0, "the log is the shared one:\n  wrote %s\n  want  %s", log_text, want);
+    CHECK(strcmp(run.out, EVERY_VERDICT) == 0, "%s", run.out);
+    every_log_is_its_expected_log(logs);
     scratch_removed(dir);
 
     static const char *const OVERRIDDEN[] = {"--world", "", "--module-parameter", "job=9"};

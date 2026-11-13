@@ -24,6 +24,7 @@
 
 #include "answers_the_job.h"
 #include "asking_configuration.h"
+#include "integration/RuntimeSuiteExpectedLogs.h"
 #include "job_reply.h"
 #include "job_request.h"
 #include "keeping_configuration.h"
@@ -269,9 +270,11 @@ std::string fileText(const std::filesystem::path &path) {
 /// docs/SCE_TTCN3_LANE.md §4: the suite's runner, given the directories of the
 /// traces and of the logs, runs each test case its world selects against its
 /// trace, writes `<case>.log.json`, the canonical log with nothing after it,
-/// and prints each case's verdict; a module parameter's value on its command
-/// line replaces its default, and one the suite does not declare is refused
-/// with exit status 2 before any case runs.
+/// and prints each case's verdict. In the world of every feature it replays
+/// every trace of the directory, and each log it writes is its case's expected
+/// log (§12, §13.1 S2). A module parameter's value on its command line
+/// replaces its default, and one the suite does not declare is refused with
+/// exit status 2 before any case runs.
 TEST(ATestSuite, TheSuitesRunnerWritesTheLogOfEachTrace) {
     const auto runner = [](const std::filesystem::path &logs, std::vector<std::string> more, std::string &out,
                            std::string &err) {
@@ -288,10 +291,10 @@ TEST(ATestSuite, TheSuitesRunnerWritesTheLogOfEachTrace) {
     };
     std::string out;
     std::string err;
-    const std::filesystem::path logs = logDir("default");
-    ASSERT_EQ(runner(logs, {}, out, err), 0) << err;
-    EXPECT_EQ(out, "answers_the_job pass\n");
-    EXPECT_EQ(fileText(logs / "answers_the_job.log.json"), sharedLog("answers_the_job"));
+    const std::filesystem::path logs = logDir("every");
+    ASSERT_EQ(runner(logs, {"--world", RuntimeSuiteExpectedLogs::kEveryFeature}, out, err), 0) << err;
+    EXPECT_EQ(out, RuntimeSuiteExpectedLogs::kEveryVerdict);
+    RuntimeSuiteExpectedLogs::expectEveryLogIsItsExpectedLog(logs);
     std::filesystem::remove_all(logs);
 
     const std::filesystem::path overridden = logDir("overridden");

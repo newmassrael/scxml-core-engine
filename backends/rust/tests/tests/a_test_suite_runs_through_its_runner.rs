@@ -248,10 +248,84 @@ const ANSWERS_THE_JOB_TRACE: &str = include_str!(
     "../../../../sce-build/tests/fixtures/test_profile/runtime/traces/answers_the_job.json"
 );
 
-/// The directory of the suite's committed traces.
-fn traces_dir() -> std::path::PathBuf {
+/// The directory of the suite's committed fixtures of a run.
+fn runtime_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../sce-build/tests/fixtures/test_profile/runtime/traces")
+        .join("../../../sce-build/tests/fixtures/test_profile/runtime")
+}
+
+/// The directory of the suite's committed traces, `<test case>.json` each.
+fn traces_dir() -> std::path::PathBuf {
+    runtime_dir().join("traces")
+}
+
+/// The directory of the expected log of each committed trace, `<test
+/// case>.json` each: the canonical log a reviewed run wrote of it, with one
+/// newline after it.
+fn expected_logs_dir() -> std::path::PathBuf {
+    runtime_dir().join("expected_logs")
+}
+
+/// The world that selects every test case of the suite, so that the runner
+/// replays every trace of the directory.
+const EVERY_FEATURE: &str = "ptcs,removal,guard";
+
+/// The name of every file in `dir`, sorted.
+fn file_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("the directory {} is read: {e}", dir.display()))
+        .map(|entry| {
+            entry
+                .expect("an entry of the directory is read")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every log the runner wrote into
+/// `logs`, `<case>.log.json`, is the expected log of its case byte for byte,
+/// and the runner wrote a log for every expected log and nothing else.
+fn assert_every_log_is_its_expected_log(logs: &std::path::Path) {
+    let expected: Vec<String> = file_names(&expected_logs_dir())
+        .iter()
+        .map(|name| {
+            name.strip_suffix(".json")
+                .unwrap_or_else(|| panic!("the expected log {name} is a .json file"))
+                .to_string()
+        })
+        .collect();
+    let written = file_names(logs);
+    for name in &written {
+        let case = name
+            .strip_suffix(".log.json")
+            .unwrap_or_else(|| panic!("the runner wrote {name}, which is no log of a case"));
+        let path = expected_logs_dir().join(format!("{case}.json"));
+        let want = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "the case {case} has no expected log {}: {e}",
+                path.display()
+            )
+        });
+        let log = std::fs::read_to_string(logs.join(name)).expect("the written log is read");
+        assert_eq!(
+            log,
+            want.strip_suffix('\n')
+                .unwrap_or_else(|| panic!("the expected log of {case} ends in one newline")),
+            "the log of {case} is not its expected log"
+        );
+    }
+    let written: Vec<String> = written
+        .iter()
+        .map(|name| name.trim_end_matches(".log.json").to_string())
+        .collect();
+    assert_eq!(
+        written, expected,
+        "the runner wrote a log of each case that has an expected log, and of no other"
+    );
 }
 
 /// docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
@@ -306,14 +380,15 @@ fn run_program(logs: &std::path::Path, args: &[&str]) -> std::process::Output {
 
 /// docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
 /// its world selects against its trace and writes `<case>.log.json`, the
-/// canonical log with nothing after it, and prints each case's verdict; a
-/// module parameter's value on its command line replaces its default, and one
-/// the suite does not declare is refused with exit status 2 before any case
-/// runs.
+/// canonical log with nothing after it, and prints each case's verdict. In the
+/// world of every feature it replays every trace of the directory, and each
+/// log it writes is its case's expected log (§12, §13.1 S2). A module
+/// parameter's value on its command line replaces its default, and one the
+/// suite does not declare is refused with exit status 2 before any case runs.
 #[test]
 fn the_suites_runner_program_writes_the_log_of_each_trace() {
-    let logs = log_dir("default");
-    let output = run_program(&logs, &[]);
+    let logs = log_dir("every");
+    let output = run_program(&logs, &["--world", EVERY_FEATURE]);
     assert!(
         output.status.success(),
         "{}",
@@ -321,16 +396,10 @@ fn the_suites_runner_program_writes_the_log_of_each_trace() {
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "answers_the_job pass\n"
+        "answers_the_job pass\nserves_a_ptc pass\nkeeps_a_ptc inconc\n\
+         answers_before_the_guard error\n"
     );
-    let log = std::fs::read_to_string(logs.join("answers_the_job.log.json"))
-        .expect("the log of the case is written");
-    assert_eq!(
-        log,
-        ANSWERS_THE_JOB_LOG
-            .strip_suffix('\n')
-            .expect("the shared log ends in one newline")
-    );
+    assert_every_log_is_its_expected_log(&logs);
     std::fs::remove_dir_all(&logs).expect("the logs are removed");
 
     let logs = log_dir("overridden");

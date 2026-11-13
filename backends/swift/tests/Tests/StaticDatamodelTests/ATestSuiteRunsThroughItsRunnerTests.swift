@@ -14,9 +14,10 @@ import XCTest
 // `scripts/regen_static_datamodel_swift.sh`), each the members of an enum named by its document, and the
 // components are the machines it writes from the components there. Only the system adapter, which plays
 // the system under test, is written here; the same suite is also replayed from the committed trace of
-// `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5), through `SceTestProfile.runSuiteWithTraces` and
-// through the suite's runner program (§4), run in place and as a process: the executable target
-// `RuntimeSuiteRunner`, whose `main.swift` calls the suite's entry.
+// `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5) through `SceTestProfile.runSuiteWithTraces`, and from
+// every committed trace, each to its expected log, through the suite's runner program (§4), run in
+// place and as a process: the executable target `RuntimeSuiteRunner`, whose `main.swift` calls the
+// suite's entry.
 //
 // Each test is the twin of the Rust case of the same name in
 // `backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs`, itself the twin of the C++ gtest
@@ -137,6 +138,62 @@ private func tracesDir() -> URL {
 /// The bytes of the text of the file at `url`.
 private func contents(_ url: URL) throws -> [UInt8] {
     Array(try Data(contentsOf: url))
+}
+
+/// The world that selects every test case of the suite, so that the runner replays every trace of the
+/// directory.
+private let everyFeature = "ptcs,removal,guard"
+
+/// The lines the runner prints in the world of every feature: each case of the suite, in its order, with
+/// the verdict it ends with.
+private let everyVerdict =
+    "answers_the_job pass\nserves_a_ptc pass\nkeeps_a_ptc inconc\nanswers_before_the_guard error\n"
+
+/// The directory of the expected log of each committed trace, `<test case>.json` each: the canonical log
+/// a reviewed run wrote of it, with one newline after it.
+private func expectedLogsDir() -> URL {
+    repoRoot().appendingPathComponent("sce-build/tests/fixtures/test_profile/runtime/expected_logs")
+}
+
+/// docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every log the runner wrote into `logs`, `<case>.log.json`, is
+/// the expected log of its case byte for byte, and the runner wrote a log for every expected log and
+/// nothing else. The twin of `assert_every_log_is_its_expected_log` (Rust). Names are compared by their
+/// bytes, never by Swift's comparison of texts.
+private func assertEveryLogIsItsExpectedLog(_ logs: URL) throws {
+    let files = FileManager.default
+    func sortedNames(_ dir: URL) throws -> [[UInt8]] {
+        try files.contentsOfDirectory(atPath: dir.path).map { Array($0.utf8) }
+            .sorted { $0.lexicographicallyPrecedes($1) }
+    }
+    let expected = try sortedNames(expectedLogsDir()).map { name -> [UInt8] in
+        XCTAssertTrue(
+            name.count > 5 && name.suffix(5).elementsEqual(".json".utf8),
+            "the expected log \(String(decoding: name, as: UTF8.self)) is a .json file")
+        return Array(name.dropLast(5))
+    }
+    var written: [[UInt8]] = []
+    for name in try sortedNames(logs) {
+        let text = String(decoding: name, as: UTF8.self)
+        guard name.count > 9 && name.suffix(9).elementsEqual(".log.json".utf8) else {
+            XCTFail("the runner wrote \(text), which is no log of a case")
+            written.append(name)
+            continue
+        }
+        let testCase = String(decoding: name.dropLast(9), as: UTF8.self)
+        written.append(Array(name.dropLast(9)))
+        let path = expectedLogsDir().appendingPathComponent("\(testCase).json")
+        guard files.fileExists(atPath: path.path) else {
+            XCTFail("the case \(testCase) has no expected log \(path.path)")
+            continue
+        }
+        let want = try contents(path)
+        XCTAssertEqual(want.last, UInt8(ascii: "\n"), "the expected log of \(testCase) ends in one newline")
+        XCTAssertEqual(
+            try contents(logs.appendingPathComponent(text)), Array(want.dropLast()),
+            "the log of \(testCase) is not its expected log")
+    }
+    XCTAssertEqual(
+        written, expected, "the runner wrote a log of each case that has an expected log, and of no other")
 }
 
 /// The reason `read` is refused for, or nil where it reads.
@@ -289,13 +346,14 @@ final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
     }
 
     /// The suite's runner program run in place (`runRunner`, over Foundation's files), given `args`
-    /// after the directories of the traces and of the logs.
-    private func runInPlace(_ logs: URL, _ args: [String]) -> ProgramRun {
+    /// after the directories of the traces, the committed ones unless `traces` names others, and of the
+    /// logs.
+    private func runInPlace(_ logs: URL, _ args: [String], traces: URL = tracesDir()) -> ProgramRun {
         var out: [String] = []
         var err: [String] = []
         let status = runRunner(
             suite: RuntimeSuite.suite(), parameter: RuntimeSuite.moduleParameter(id:literal:),
-            args: ["--trace-dir", tracesDir().path, "--log-dir", logs.path] + args,
+            args: ["--trace-dir", traces.path, "--log-dir", logs.path] + args,
             files: FoundationRunnerFiles(), out: { out.append($0) }, err: { err.append($0) })
         let output = out.map { $0 + "\n" }.joined()
         return ProgramRun(status: status, output: Array(output.utf8), err: err)
@@ -303,17 +361,18 @@ final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
 
     /// docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case its world selects
     /// against its trace and writes `<case>.log.json`, the canonical log with nothing after it, and
-    /// prints each case's verdict; a module parameter's value on its command line replaces its default,
-    /// and one the suite does not declare, or that is no value of its type, is refused with exit status 2
-    /// before any case runs. The twin of `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
+    /// prints each case's verdict. In the world of every feature it replays every trace of the directory,
+    /// and each log it writes is its case's expected log (§12, §13.1 S2). A module parameter's value on
+    /// its command line replaces its default, and one the suite does not declare, or that is no value of
+    /// its type, is refused with exit status 2 before any case runs. The twin of
+    /// `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
     func testTheSuitesRunnerProgramWritesTheLogOfEachTrace() throws {
         let scratch = try scratchDir()
-        let logs = scratch.appendingPathComponent("default-logs")
-        let run = runInPlace(logs, [])
+        let logs = scratch.appendingPathComponent("every-logs")
+        let run = runInPlace(logs, ["--world", everyFeature])
         XCTAssertEqual(run.status, 0, "\(run.err)")
-        XCTAssertEqual(run.out, ["answers_the_job pass"])
-        XCTAssertEqual(
-            try contents(logs.appendingPathComponent("answers_the_job.log.json")), Array(try answersTheJobLog().utf8))
+        XCTAssertEqual(run.output, Array(everyVerdict.utf8))
+        try assertEveryLogIsItsExpectedLog(logs)
 
         let overridden = scratch.appendingPathComponent("overridden-logs")
         let given = runInPlace(overridden, ["--world", "", "--module-parameter", "job=9"])
@@ -339,11 +398,17 @@ final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
 
     /// P13, §4: a test case whose trace is missing ends with `error` and its log is written, the reason on
     /// the standard error, and the program exits 0, since the verdict is the log's; a command line that
-    /// is not the runner's, and a log directory that cannot be made, exit 2.
+    /// is not the runner's, and a log directory that cannot be made, exit 2. The directory of the traces
+    /// holds the committed trace of `answers_the_job` alone, so `serves_a_ptc`'s is missing.
     func testATestCaseWhoseTraceIsMissingEndsInErrorAndItsLogIsWritten() throws {
         let scratch = try scratchDir()
+        let traces = scratch.appendingPathComponent("traces")
+        try FileManager.default.createDirectory(at: traces, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: tracesDir().appendingPathComponent("answers_the_job.json"),
+            to: traces.appendingPathComponent("answers_the_job.json"))
         let logs = scratch.appendingPathComponent("logs")
-        let run = runInPlace(logs, ["--world", "ptcs"])
+        let run = runInPlace(logs, ["--world", "ptcs"], traces: traces)
         XCTAssertEqual(run.status, 0, "\(run.err)")
         XCTAssertEqual(run.out, ["answers_the_job pass", "serves_a_ptc error"])
         let refusedLog =
@@ -393,16 +458,13 @@ final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
             let errors = String(decoding: try contents(err), as: UTF8.self).split(separator: "\n").map(String.init)
             return ProgramRun(status: process.terminationStatus, output: try contents(out), err: errors)
         }
-        let run = try program("default", [])
+        let run = try program("every", ["--world", everyFeature])
         XCTAssertEqual(run.status, 0, "\(run.err)")
-        XCTAssertEqual(
-            run.output, Array("answers_the_job pass\n".utf8), "the standard output is the contract's lines alone")
+        XCTAssertEqual(run.output, Array(everyVerdict.utf8), "the standard output is the contract's lines alone")
         // The standard error may hold diagnostics, whatever they say: none of its lines is one of the
         // standard output's.
         XCTAssertTrue(run.err.allSatisfy { !run.out.contains($0) }, "\(run.err)")
-        XCTAssertEqual(
-            try contents(scratch.appendingPathComponent("default-logs/answers_the_job.log.json")),
-            Array(try answersTheJobLog().utf8))
+        try assertEveryLogIsItsExpectedLog(scratch.appendingPathComponent("every-logs"))
         let refused = try program("undeclared", ["--module-parameter", "limit=1"])
         XCTAssertEqual(refused.status, 2)
         XCTAssertEqual(refused.output, [], "a refused command line prints nothing on the standard output")

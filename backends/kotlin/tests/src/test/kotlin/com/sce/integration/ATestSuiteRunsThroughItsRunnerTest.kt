@@ -10,9 +10,9 @@
 // `scripts/regen_static_datamodel_kotlin.sh`), and the components are the
 // machines it writes from the components there. Only the system adapter, which
 // plays the system under test, is written here; the same suite is also replayed
-// from the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5),
-// through `com.sce.runtime.test.runSuiteWithTraces` and through the suite's
-// runner program (§4).
+// from the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5)
+// through `com.sce.runtime.test.runSuiteWithTraces`, and from every committed
+// trace, each to its expected log, through the suite's runner program (§4).
 //
 // Each case is the twin of the Rust case of the same name in
 // backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs
@@ -74,6 +74,23 @@ class ATestSuiteRunsThroughItsRunnerTest {
 
         /** How long the system under test takes to answer a request. */
         const val ANSWER_DELAY: Duration = 500L
+
+        /**
+         * The world that selects every test case of the suite, so that the
+         * runner replays every trace of the directory.
+         */
+        const val EVERY_FEATURE = "ptcs,removal,guard"
+
+        /**
+         * The lines the runner prints in the world of every feature: each case
+         * of the suite, in its order, with the verdict it ends with.
+         */
+        val EVERY_VERDICT = listOf(
+            "answers_the_job pass",
+            "serves_a_ptc pass",
+            "keeps_a_ptc inconc",
+            "answers_before_the_guard error",
+        )
     }
 
     /**
@@ -214,6 +231,45 @@ class ATestSuiteRunsThroughItsRunnerTest {
         File(repoRoot(), "sce-build/tests/fixtures/test_profile/runtime/traces")
 
     /**
+     * The directory of the expected log of each committed trace, `<test
+     * case>.json` each: the canonical log a reviewed run wrote of it, with one
+     * newline after it.
+     */
+    private fun expectedLogsDir(): File =
+        File(repoRoot(), "sce-build/tests/fixtures/test_profile/runtime/expected_logs")
+
+    /**
+     * docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every log the runner wrote into
+     * [logs], `<case>.log.json`, is the expected log of its case byte for byte,
+     * and the runner wrote a log for every expected log and nothing else. The
+     * twin of `assert_every_log_is_its_expected_log` (Rust).
+     */
+    private fun assertEveryLogIsItsExpectedLog(logs: File) {
+        val expected = (expectedLogsDir().list() ?: error("${expectedLogsDir()} is not a directory")).sorted().map {
+            assertTrue(it.endsWith(".json"), "the expected log $it is a .json file")
+            it.removeSuffix(".json")
+        }
+        val written = (logs.list() ?: error("$logs is not a directory")).sorted().map { name ->
+            assertTrue(name.endsWith(".log.json"), "the runner wrote $name, which is no log of a case")
+            val testCase = name.removeSuffix(".log.json")
+            val want = File(expectedLogsDir(), "$testCase.json")
+            assertTrue(want.isFile, "the case $testCase has no expected log $want")
+            val text = want.readText()
+            assertTrue(
+                text.endsWith("\n") && !text.endsWith("\n\n"),
+                "the expected log of $testCase ends in one newline",
+            )
+            assertEquals(
+                text.removeSuffix("\n"),
+                File(logs, name).readText(),
+                "the log of $testCase is not its expected log",
+            )
+            testCase
+        }
+        assertEquals(expected, written, "the runner wrote a log of each case that has an expected log, and of no other")
+    }
+
+    /**
      * docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
      * committed trace of `answers_the_job` writes the test log every runtime
      * writes of it, byte for byte: the configuration's unit reads the reply from
@@ -269,16 +325,16 @@ class ATestSuiteRunsThroughItsRunnerTest {
 
     /**
      * The suite's runner program run in place ([runRunner], over the
-     * platform's files), given [args] after the directories of the traces and
-     * of the logs.
+     * platform's files), given [args] after the directories of the traces,
+     * the committed ones unless [traces] names others, and of the logs.
      */
-    private fun runInPlace(logs: File, vararg args: String): ProgramRun {
+    private fun runInPlace(logs: File, vararg args: String, traces: File = tracesDir()): ProgramRun {
         val out = mutableListOf<String>()
         val err = mutableListOf<String>()
         val status = runRunner(
             suite = runtimeSuite(),
             parameter = ::runtimeModuleParameter,
-            args = listOf("--trace-dir", tracesDir().path, "--log-dir", logs.path) + args,
+            args = listOf("--trace-dir", traces.path, "--log-dir", logs.path) + args,
             files = JvmRunnerFiles,
             out = { out.add(it) },
             err = { err.add(it) },
@@ -289,19 +345,21 @@ class ATestSuiteRunsThroughItsRunnerTest {
     /**
      * docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
      * its world selects against its trace and writes `<case>.log.json`, the
-     * canonical log with nothing after it, and prints each case's verdict; a
-     * module parameter's value on its command line replaces its default, and
-     * one the suite does not declare, or that is no value of its type, is
-     * refused with exit status 2 before any case runs. The twin of
+     * canonical log with nothing after it, and prints each case's verdict. In
+     * the world of every feature it replays every trace of the directory, and
+     * each log it writes is its case's expected log (§12, §13.1 S2). A module
+     * parameter's value on its command line replaces its default, and one the
+     * suite does not declare, or that is no value of its type, is refused with
+     * exit status 2 before any case runs. The twin of
      * `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
      */
     @Test
     fun theSuitesRunnerProgramWritesTheLogOfEachTrace() {
         val logs = logDir()
-        val run = runInPlace(logs)
+        val run = runInPlace(logs, "--world", EVERY_FEATURE)
         assertEquals(0, run.status, "${run.err}")
-        assertEquals(listOf("answers_the_job pass"), run.out)
-        assertEquals(answersTheJobLog(), File(logs, "answers_the_job.log.json").readText())
+        assertEquals(EVERY_VERDICT, run.out)
+        assertEveryLogIsItsExpectedLog(logs)
         logs.parentFile.deleteRecursively()
 
         val overridden = logDir()
@@ -334,12 +392,16 @@ class ATestSuiteRunsThroughItsRunnerTest {
      * P13, §4: a test case whose trace is missing ends with `error` and its log
      * is written, the reason on the standard error, and the program exits 0,
      * since the verdict is the log's; a command line that is not the runner's,
-     * and a log directory that cannot be made, exit 2.
+     * and a log directory that cannot be made, exit 2. The directory of the
+     * traces holds the committed trace of `answers_the_job` alone, so
+     * `serves_a_ptc`'s is missing.
      */
     @Test
     fun aTestCaseWhoseTraceIsMissingEndsInErrorAndItsLogIsWritten() {
+        val traces = Files.createTempDirectory("sce-runtime-suite-traces").toFile()
+        File(tracesDir(), "answers_the_job.json").copyTo(File(traces, "answers_the_job.json"))
         val logs = logDir()
-        val run = runInPlace(logs, "--world", "ptcs")
+        val run = runInPlace(logs, "--world", "ptcs", traces = traces)
         assertEquals(0, run.status, "${run.err}")
         assertEquals(listOf("answers_the_job pass", "serves_a_ptc error"), run.out)
         assertEquals(
@@ -353,6 +415,7 @@ class ATestSuiteRunsThroughItsRunnerTest {
             "${run.err}",
         )
         logs.parentFile.deleteRecursively()
+        traces.deleteRecursively()
 
         val usage = runRunner(
             suite = runtimeSuite(),
@@ -398,13 +461,13 @@ class ATestSuiteRunsThroughItsRunnerTest {
             assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the runner program ends")
             ProgramRun(process.exitValue(), out.readLines(), err.readLines())
         }
-        val run = program("default", emptyList())
+        val run = program("every", listOf("--world", EVERY_FEATURE))
         assertEquals(0, run.status, "${run.err}")
-        assertEquals(listOf("answers_the_job pass"), run.out, "the standard output is the contract's lines alone")
+        assertEquals(EVERY_VERDICT, run.out, "the standard output is the contract's lines alone")
         // The standard error may hold diagnostics, whatever they say: none of
         // its lines is one of the standard output's.
         assertTrue(run.err.filter { it.isNotEmpty() }.none { it in run.out }, "${run.err}")
-        assertEquals(answersTheJobLog(), File(scratch, "default-logs/answers_the_job.log.json").readText())
+        assertEveryLogIsItsExpectedLog(File(scratch, "every-logs"))
         val refused = program("undeclared", listOf("--module-parameter", "limit=1"))
         assertEquals(2, refused.status)
         assertTrue(refused.err.any { it.contains("the suite declares no module parameter 'limit'") }, "${refused.err}")

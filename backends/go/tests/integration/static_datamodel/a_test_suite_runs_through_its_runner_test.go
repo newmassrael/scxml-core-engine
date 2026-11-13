@@ -10,10 +10,10 @@
 // there, each in the package its configuration's table imports it from (regen:
 // `scripts/regen_static_datamodel_go.sh`). Only the system adapter, which plays
 // the system under test, is written here; the same suite is also replayed from
-// the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5),
-// through testprofile.RunSuiteWithTraces, through the runner in place
-// (testprofile.RunRunner) and through the suite's runner program (§4) as a
-// process.
+// the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5)
+// through testprofile.RunSuiteWithTraces, and from every committed trace, each
+// to its expected log, through the runner in place (testprofile.RunRunner) and
+// through the suite's runner program (§4) as a process.
 //
 // Each test is the twin of the Rust case of the same name in
 // backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs, named
@@ -33,6 +33,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -353,13 +354,93 @@ type suiteProgramRun struct {
 }
 
 // suiteRunInPlace is the suite's runner program run in place
-// (testprofile.RunRunner), given args after the directories of the traces and
-// of the logs.
+// (testprofile.RunRunner), given args after the directories of the committed
+// traces and of the logs.
 func suiteRunInPlace(logs string, args ...string) suiteProgramRun {
+	return suiteRunInPlaceFrom(suiteTracesDir(), logs, args...)
+}
+
+// suiteRunInPlaceFrom is the suite's runner program run in place, given args
+// after the directories traces and logs.
+func suiteRunInPlaceFrom(traces, logs string, args ...string) suiteProgramRun {
 	var out, err bytes.Buffer
-	line := append([]string{"--trace-dir", suiteTracesDir(), "--log-dir", logs}, args...)
+	line := append([]string{"--trace-dir", traces, "--log-dir", logs}, args...)
 	status := testprofile.RunRunner(runtime_suite.Suite(), runtime_suite.ModuleParameter, line, &out, &err)
 	return suiteProgramRun{status: status, out: out.String(), err: err.String()}
+}
+
+// suiteEveryFeature is the world that selects every test case of the suite, so
+// that the runner replays every trace of the directory.
+const suiteEveryFeature = "ptcs,removal,guard"
+
+// suiteEveryVerdict is what the runner prints in the world of every feature:
+// each case of the suite, in its order, with the verdict it ends with.
+const suiteEveryVerdict = "answers_the_job pass\nserves_a_ptc pass\nkeeps_a_ptc inconc\n" +
+	"answers_before_the_guard error\n"
+
+// suiteExpectedLogsDir is the directory of the expected log of each committed
+// trace, `<test case>.json` each: the canonical log a reviewed run wrote of it,
+// with one newline after it.
+func suiteExpectedLogsDir() string {
+	return filepath.Join("..", "..", "..", "..", "..", "sce-build", "tests", "fixtures", "test_profile", "runtime",
+		"expected_logs")
+}
+
+// suiteFileNames are the names of the files in dir, sorted.
+func suiteFileNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("the directory %s is read: %v", dir, err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names
+}
+
+// suiteEveryLogIsItsExpectedLog holds every log the runner wrote into logs,
+// `<case>.log.json`, to the expected log of its case byte for byte, and the
+// runner to have written a log for every expected log and nothing else
+// (docs/SCE_TTCN3_LANE.md §12, §13.1 S2). The twin of
+// `assert_every_log_is_its_expected_log` (Rust).
+func suiteEveryLogIsItsExpectedLog(t *testing.T, logs string) {
+	t.Helper()
+	var expected []string
+	for _, name := range suiteFileNames(t, suiteExpectedLogsDir()) {
+		testCase, ok := strings.CutSuffix(name, ".json")
+		if !ok {
+			t.Errorf("the expected log %s is a .json file", name)
+		}
+		expected = append(expected, testCase)
+	}
+	var written []string
+	for _, name := range suiteFileNames(t, logs) {
+		testCase, ok := strings.CutSuffix(name, ".log.json")
+		written = append(written, testCase)
+		if !ok {
+			t.Errorf("the runner wrote %s, which is no log of a case", name)
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(suiteExpectedLogsDir(), testCase+".json"))
+		if err != nil {
+			t.Errorf("the case %s has no expected log: %v", testCase, err)
+			continue
+		}
+		want, ended := strings.CutSuffix(string(raw), "\n")
+		if !ended {
+			t.Errorf("the expected log of %s ends in one newline", testCase)
+		}
+		if got := suiteLogText(t, filepath.Join(logs, name)); got != want {
+			t.Errorf("the log of %s is\n%s\nnot its expected log\n%s", testCase, got, want)
+		}
+	}
+	if !reflect.DeepEqual(written, expected) {
+		t.Errorf("the runner wrote a log of each case that has an expected log, and of no other: wrote %v, "+
+			"expected %v", written, expected)
+	}
 }
 
 // suiteLogText is the text of the log file at path, failing the test where it
@@ -375,23 +456,23 @@ func suiteLogText(t *testing.T, path string) string {
 
 // docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case its
 // world selects against its trace and writes `<case>.log.json`, the canonical
-// log with nothing after it, and prints each case's verdict; a module
-// parameter's value on its command line replaces its default, and one the
-// suite does not declare, or that is no value of its type, is refused with exit
-// status 2 before any case runs. The twin of
-// `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
+// log with nothing after it, and prints each case's verdict. In the world of
+// every feature it replays every trace of the directory, and each log it writes
+// is its case's expected log (§12, §13.1 S2). A module parameter's value on its
+// command line replaces its default, and one the suite does not declare, or
+// that is no value of its type, is refused with exit status 2 before any case
+// runs. The twin of `the_suites_runner_program_writes_the_log_of_each_trace`
+// (Rust).
 func TestATestSuiteRunsThroughItsRunner_TheSuitesRunnerProgramWritesTheLogOfEachTrace(t *testing.T) {
 	logs := filepath.Join(t.TempDir(), "logs")
-	run := suiteRunInPlace(logs)
+	run := suiteRunInPlace(logs, "--world", suiteEveryFeature)
 	if run.status != 0 {
 		t.Fatalf("status %d: %s", run.status, run.err)
 	}
-	if run.out != "answers_the_job pass\n" {
+	if run.out != suiteEveryVerdict {
 		t.Errorf("the standard output is %q", run.out)
 	}
-	if got := suiteLogText(t, filepath.Join(logs, "answers_the_job.log.json")); got != suiteAnswersTheJobLog(t) {
-		t.Errorf("the log is\n%s", got)
-	}
+	suiteEveryLogIsItsExpectedLog(t, logs)
 
 	overridden := filepath.Join(t.TempDir(), "logs")
 	given := suiteRunInPlace(overridden, "--world", "", "--module-parameter", "job=9")
@@ -427,10 +508,19 @@ func TestATestSuiteRunsThroughItsRunner_TheSuitesRunnerProgramWritesTheLogOfEach
 
 // P13, §4: a test case whose trace is missing ends with `error` and its log is
 // written, the reason on the standard error, and the program exits 0, since
-// the verdict is the log's.
+// the verdict is the log's. The directory of the traces holds the committed
+// trace of answers_the_job alone, so serves_a_ptc's is missing.
 func TestATestSuiteRunsThroughItsRunner_ATestCaseWhoseTraceIsMissingEndsInErrorAndItsLogIsWritten(t *testing.T) {
+	traces := t.TempDir()
+	raw, err := os.ReadFile(filepath.Join(suiteTracesDir(), "answers_the_job.json"))
+	if err != nil {
+		t.Fatalf("the committed trace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(traces, "answers_the_job.json"), raw, 0o644); err != nil {
+		t.Fatalf("the trace is copied: %v", err)
+	}
 	logs := filepath.Join(t.TempDir(), "logs")
-	run := suiteRunInPlace(logs, "--world", "ptcs")
+	run := suiteRunInPlaceFrom(traces, logs, "--world", "ptcs")
 	if run.status != 0 {
 		t.Fatalf("status %d: %s", run.status, run.err)
 	}
@@ -480,11 +570,11 @@ func suiteProgram(t *testing.T, logs string, args ...string) suiteProgramRun {
 // `theSuitesUnitIsTheRunnerProgram`.
 func TestATestSuiteRunsThroughItsRunner_TheSuitesUnitIsTheRunnerProgram(t *testing.T) {
 	logs := filepath.Join(t.TempDir(), "logs")
-	run := suiteProgram(t, logs)
+	run := suiteProgram(t, logs, "--world", suiteEveryFeature)
 	if run.status != 0 {
 		t.Fatalf("status %d: %s", run.status, run.err)
 	}
-	if run.out != "answers_the_job pass\n" {
+	if run.out != suiteEveryVerdict {
 		t.Errorf("the standard output is the contract's lines alone: %q", run.out)
 	}
 	// The standard error may hold the engine's diagnostics, whatever they say:
@@ -494,9 +584,7 @@ func TestATestSuiteRunsThroughItsRunner_TheSuitesUnitIsTheRunnerProgram(t *testi
 			t.Errorf("a line of the standard error is one of the standard output's: %s", line)
 		}
 	}
-	if got := suiteLogText(t, filepath.Join(logs, "answers_the_job.log.json")); got != suiteAnswersTheJobLog(t) {
-		t.Errorf("the log is\n%s", got)
-	}
+	suiteEveryLogIsItsExpectedLog(t, logs)
 
 	overridden := filepath.Join(t.TempDir(), "logs")
 	given := suiteProgram(t, overridden, "--world", "", "--module-parameter", "job=9")
