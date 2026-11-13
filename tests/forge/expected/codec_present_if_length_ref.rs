@@ -273,6 +273,10 @@ impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource fo
     }
 }
 
+/// The group `CodecPresentIfLengthRefFlagsHasPayload` as `CodecPresentIfLengthRefParts` holds it.
+#[allow(dead_code)]
+pub type CodecPresentIfLengthRefFlagsHasPayloadParts<'a> = CodecPresentIfLengthRefFlagsHasPayload<::sce_forge_runtime::codec::Bytes<'a, 32>>;
+
 /// A value of `CodecPresentIfLengthRef` held in the types a caller already has: a source
 /// ([`CodecPresentIfLengthRefSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -282,7 +286,7 @@ pub struct CodecPresentIfLengthRefParts<'a> {
     /// The `flags` field.
     pub flags: u8,
     /// The fields `flags.has_payload` decides, held together (docs/adr/0065 §6 R4).
-    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload<::sce_forge_runtime::codec::Bytes<'a, 32>>,
+    pub flags_has_payload: CodecPresentIfLengthRefFlagsHasPayloadParts<'a>,
 }
 
 impl<'a> CodecPresentIfLengthRefSource for CodecPresentIfLengthRefParts<'a> {

@@ -12163,7 +12163,40 @@ fn rust_group_storage(
         entry.insert("rs_as_borrowed_into_stmt".into(), as_borrowed.into());
 
         if emit_views {
-            entry.insert("view_rs_type".into(), type_in("view_rs_type").into());
+            // A group whose elements vary is named once for the view,
+            // `{Group}View`, as the owned form is: its field reads as one type
+            // and not as the whole instantiation (`clippy::type_complexity`).
+            let args: Vec<String> = members
+                .iter()
+                .filter(|f| member_varies(f))
+                .map(|f| member_ty(f, "view_rs_type"))
+                .collect();
+            let view_ty = if args.is_empty() {
+                type_in("view_rs_type")
+            } else {
+                let alias = format!("{ty}View");
+                let lt = if args.iter().any(|a| a.contains("'a")) {
+                    "<'a>"
+                } else {
+                    ""
+                };
+                entry.insert(
+                    "view_rs_alias".into(),
+                    format!(
+                        "/// The group `{ty}` as `{struct_name}View` holds it.\n\
+                         #[allow(dead_code)]\n\
+                         pub type {alias}{lt} = {ty}<{}>;",
+                        args.join(", ")
+                    )
+                    .into(),
+                );
+                if optional {
+                    format!("Option<{alias}{lt}>")
+                } else {
+                    format!("{alias}{lt}")
+                }
+            };
+            entry.insert("view_rs_type".into(), view_ty.into());
             let into_builder = into_dest(
                 &format!("{RUNTIME_CODEC}::Lent<'a, D>"),
                 &|f, src, dest| {

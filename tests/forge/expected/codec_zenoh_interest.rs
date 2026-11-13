@@ -329,6 +329,10 @@ impl<T: CodecZenohInterestSource + ?Sized> CodecZenohInterestSource for &T {
     }
 }
 
+/// The group `CodecZenohInterestHeaderCurrentOrFuture` as `CodecZenohInterestParts` holds it.
+#[allow(dead_code)]
+pub type CodecZenohInterestHeaderCurrentOrFutureParts<'a> = CodecZenohInterestHeaderCurrentOrFuture<&'a super::codec_zenoh_interest_body::CodecZenohInterestBodyParts<'a>>;
+
 /// A value of `CodecZenohInterest` held in the types a caller already has: a source
 /// ([`CodecZenohInterestSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -342,7 +346,7 @@ pub struct CodecZenohInterestParts<'a> {
     /// The `extensions` field.
     pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], { usize::MAX }, 1>>,
     /// The fields `header.CURRENT || header.FUTURE` decides, held together (docs/adr/0065 §6 R4).
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<&'a super::codec_zenoh_interest_body::CodecZenohInterestBodyParts<'a>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFutureParts<'a>>,
 }
 
 impl<'a> CodecZenohInterestSource for CodecZenohInterestParts<'a> {
@@ -507,12 +511,16 @@ impl ListWalk<0> for CodecZenohInterestExtensionsWalk {
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
 }
 
+/// The group `CodecZenohInterestHeaderCurrentOrFuture` as `CodecZenohInterestView` holds it.
+#[allow(dead_code)]
+pub type CodecZenohInterestHeaderCurrentOrFutureView<'a> = CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBodyView<'a>>;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohInterestView<'a> {
     pub header: u8,
     pub id: u64,
-    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFuture<CodecZenohInterestBodyView<'a>>>,
+    pub header_current_or_future: Option<CodecZenohInterestHeaderCurrentOrFutureView<'a>>,
     pub extensions: Option<Bounded<ListView<'a, CodecZenohInterestExtensionsWalk, 0>, { usize::MAX }, 1>>,
 }
 

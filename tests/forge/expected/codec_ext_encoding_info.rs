@@ -268,6 +268,10 @@ impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
     }
 }
 
+/// The group `CodecExtEncodingInfoCombinedIdHasSchema` as `CodecExtEncodingInfoParts` holds it.
+#[allow(dead_code)]
+pub type CodecExtEncodingInfoCombinedIdHasSchemaParts<'a> = CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'a, 64>>;
+
 /// A value of `CodecExtEncodingInfo` held in the types a caller already has: a source
 /// ([`CodecExtEncodingInfoSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -277,7 +281,7 @@ pub struct CodecExtEncodingInfoParts<'a> {
     /// The `combined_id` field.
     pub combined_id: u32,
     /// The fields `combined_id.has_schema` decides, held together (docs/adr/0065 §6 R4).
-    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema<::sce_forge_runtime::codec::Bytes<'a, 64>>,
+    pub combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchemaParts<'a>,
 }
 
 impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfoParts<'a> {

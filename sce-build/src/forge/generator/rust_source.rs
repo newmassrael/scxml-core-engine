@@ -3108,6 +3108,49 @@ impl<'a> Plan<'a> {
         }
     }
 
+    /// `group_held_in` with a group whose elements vary named once for the
+    /// form `form` holds it in, `{Group}{form}`, as the owned form is named
+    /// `{Group}Owned<S>`: the form's field reads as one type and not as the
+    /// whole instantiation (`clippy::type_complexity`). The definition of the
+    /// name, if the group has one, and the type the form's field holds.
+    fn group_named_in(
+        &self,
+        group: &GateGroup,
+        form: &str,
+        ty: &dyn Fn(&CodecField) -> String,
+    ) -> (Option<String>, String) {
+        let args: Vec<String> = self
+            .group_members(group)
+            .into_iter()
+            .filter(|f| Self::member_varies(f))
+            .map(ty)
+            .collect();
+        if args.is_empty() {
+            return (None, self.group_held_in(group, ty));
+        }
+        let group_ty = self.group_type(group);
+        let alias = format!("{group_ty}{form}");
+        let lt = if args.iter().any(|a| a.contains("'a")) {
+            "<'a>"
+        } else {
+            ""
+        };
+        let definition = format!(
+            "/// The group `{group_ty}` as `{name}{form}` holds it.\n\
+             #[allow(dead_code)]\n\
+             pub type {alias}{lt} = {group_ty}<{}>;\n\n",
+            args.join(", "),
+            name = self.name(),
+        );
+        let named = format!("{alias}{lt}");
+        let held = if group.absent.is_some() {
+            format!("Option<{named}>")
+        } else {
+            named
+        };
+        (Some(definition), held)
+    }
+
     /// The type of an element of a group while it is there: what the source
     /// presents (`value_type`), a stated length as its number.
     fn member_value_type(&self, field: &CodecField) -> String {
@@ -4212,22 +4255,26 @@ impl<'a> Plan<'a> {
                 ty = self.parts_field_type(field),
             ));
         }
+        let mut aliases = String::new();
         for group in &self.encode.roles.groups {
+            let (alias, ty) = self.group_named_in(group, "Parts", &|f| {
+                // The chain of the memberships as the slice every arm
+                // refines.
+                match (holds_chain(group, f), self.child(f)) {
+                    (true, Some(child)) => format!("&'a [{}]", child.parts_type),
+                    _ => self.parts_value_type(f),
+                }
+            });
+            if let Some(alias) = alias {
+                aliases.push_str(&alias);
+            }
             members.push_str(&format!(
                 "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    pub {accessor}: {ty},\n",
                 gate = gates_label(group),
                 accessor = self.group_accessor(group),
-                ty = self.group_held_in(group, &|f| {
-                    // The chain of the memberships as the slice every arm
-                    // refines.
-                    match (holds_chain(group, f), self.child(f)) {
-                        (true, Some(child)) => format!("&'a [{}]", child.parts_type),
-                        _ => self.parts_value_type(f),
-                    }
-                }),
             ));
         }
-        let mut out = String::new();
+        let mut out = aliases;
         if self.m().variant.is_some() {
             members.push_str(&format!(
                 "    /// The arm of the variant this value holds.\n    pub body: {}{},\n",

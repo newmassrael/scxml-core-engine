@@ -401,6 +401,10 @@ impl<T: CodecChainHasEnvelopeSource + ?Sized> CodecChainHasEnvelopeSource for &T
     }
 }
 
+/// The group `CodecChainHasEnvelopeExtensionsHas0x2` as `CodecChainHasEnvelopeParts` holds it.
+#[allow(dead_code)]
+pub type CodecChainHasEnvelopeExtensionsHas0x2Parts<'a> = CodecChainHasEnvelopeExtensionsHas0x2<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_slice::CodecChainHasSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>;
+
 /// A value of `CodecChainHasEnvelope` held in the types a caller already has: a source
 /// ([`CodecChainHasEnvelopeSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -410,7 +414,7 @@ pub struct CodecChainHasEnvelopeParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The fields `extensions.has(0x2)` decides, held together (docs/adr/0065 §6 R4).
-    pub extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_slice::CodecChainHasSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>,
+    pub extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2Parts<'a>,
 }
 
 impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelopeParts<'a> {

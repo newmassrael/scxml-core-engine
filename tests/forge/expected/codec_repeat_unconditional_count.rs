@@ -328,6 +328,10 @@ impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCo
     }
 }
 
+/// The group `CodecRepeatUnconditionalCountOptionsH` as `CodecRepeatUnconditionalCountParts` holds it.
+#[allow(dead_code)]
+pub type CodecRepeatUnconditionalCountOptionsHParts<'a> = CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>, ::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>>;
+
 /// A value of `CodecRepeatUnconditionalCount` held in the types a caller already has: a source
 /// ([`CodecRepeatUnconditionalCountSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -337,7 +341,7 @@ pub struct CodecRepeatUnconditionalCountParts<'a> {
     /// The `options` field.
     pub options: u8,
     /// The fields `options.H` decides, held together (docs/adr/0065 §6 R4).
-    pub options_h: CodecRepeatUnconditionalCountOptionsH<::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>, ::sce_forge_runtime::codec::Bounded<&'a [super::codec_repeat_elem::CodecRepeatElemParts], 64>>,
+    pub options_h: CodecRepeatUnconditionalCountOptionsHParts<'a>,
 }
 
 impl<'a> CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCountParts<'a> {

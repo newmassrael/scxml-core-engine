@@ -433,6 +433,10 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
     }
 }
 
+/// The group `CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide` as `CodecChainHasTaggedParts` holds it.
+#[allow(dead_code)]
+pub type CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideParts<'a> = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts]>;
+
 /// A value of `CodecChainHasTagged` held in the types a caller already has: a source
 /// ([`CodecChainHasTaggedSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -442,7 +446,7 @@ pub struct CodecChainHasTaggedParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The fields `entries.has(0x7) || entries.has(0x9) || header.wide` decides, held together (docs/adr/0065 §6 R4).
-    pub entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<&'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts]>,
+    pub entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideParts<'a>,
 }
 
 impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedParts<'a> {

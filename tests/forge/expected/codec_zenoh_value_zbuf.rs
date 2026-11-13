@@ -296,6 +296,10 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
     }
 }
 
+/// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufParts` holds it.
+#[allow(dead_code)]
+pub type CodecZenohValueZbufAfterShmParts<'a> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>;
+
 /// A value of `CodecZenohValueZbuf` held in the types a caller already has: a source
 /// ([`CodecZenohValueZbufSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -303,7 +307,7 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohValueZbufParts<'a> {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
-    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>,
+    pub after_shm: CodecZenohValueZbufAfterShmParts<'a>,
 }
 
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
@@ -459,10 +463,14 @@ impl ListWalk<0> for CodecZenohValueZbufSlicesWalk {
     fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
 }
 
+/// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufView` holds it.
+#[allow(dead_code)]
+pub type CodecZenohValueZbufAfterShmView<'a> = CodecZenohValueZbufAfterShm<Bounded<ListView<'a, CodecZenohValueZbufSlicesWalk, 0>, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>;
+
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohValueZbufView<'a> {
-    pub after_shm: CodecZenohValueZbufAfterShm<Bounded<ListView<'a, CodecZenohValueZbufSlicesWalk, 0>, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>,
+    pub after_shm: CodecZenohValueZbufAfterShmView<'a>,
     pub slice_count: Option<u64>,
 }
 

@@ -409,6 +409,10 @@ impl<T: CodecChainHasMarkerSource + ?Sized> CodecChainHasMarkerSource for &T {
     }
 }
 
+/// The group `CodecChainHasMarkerExtensionsHas0x12` as `CodecChainHasMarkerParts` holds it.
+#[allow(dead_code)]
+pub type CodecChainHasMarkerExtensionsHas0x12Parts<'a> = CodecChainHasMarkerExtensionsHas0x12<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>;
+
 /// A value of `CodecChainHasMarker` held in the types a caller already has: a source
 /// ([`CodecChainHasMarkerSource`]) whose lists are slices within their bounds and whose
 /// bodies are references.
@@ -418,7 +422,7 @@ pub struct CodecChainHasMarkerParts<'a> {
     /// The `header` field.
     pub header: u8,
     /// The fields `extensions.has(0x12)` decides, held together (docs/adr/0065 §6 R4).
-    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], ::sce_forge_runtime::codec::Bounded<&'a [super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 256>>,
+    pub extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12Parts<'a>,
 }
 
 impl<'a> CodecChainHasMarkerSource for CodecChainHasMarkerParts<'a> {

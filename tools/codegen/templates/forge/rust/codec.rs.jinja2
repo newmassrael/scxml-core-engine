@@ -636,6 +636,12 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 {{ field.view_walk_item }}
 {% endif %}
 {% endfor %}
+{% for field in fields %}
+{% if field.view_rs_alias is defined %}
+{{ field.view_rs_alias }}
+
+{% endif %}
+{% endfor %}
 #[allow(dead_code)]
 {{ codec_struct_derives_attr }}
 pub struct {{ struct_name }}View{{ view_lifetime }} {
