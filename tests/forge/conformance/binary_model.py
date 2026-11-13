@@ -100,7 +100,9 @@ What the model reads so far, and refuses by name past it:
   and a flag bound to the start is derived from it. A list a group holds is
   stated so in its arm: the flag is derived from its start where the value
   holds an arm that holds the list, and is the value's own where it holds
-  another or none, as where a gate leaves a list out. An input they do not say
+  another or none, as where a gate leaves a list out; a codec's own input
+  bound to it is said by its start where the value holds an arm that holds
+  it, and by nothing where it holds another or none. An input they do not say
   is no law's: the list is its entries alone, each handed the parent's input
   or the value's own flag, or what the entry before is, as the walk writes it.
   A codec handed an input its value does not say takes it at its encode as
@@ -1537,12 +1539,26 @@ def content(f: Field, value) -> bytes:
     return bytes(value)
 
 
+def stated_element(codec: Codec, source: dict, f: Field):
+    """What `source`, a value of `codec` as a case states it, holds of the
+    element `f`: its member, or, for an element a group holds, its member in
+    the arm the value holds, `None` where that arm does not hold it or the
+    value holds no arm (docs/adr/0065 §6 R4b)."""
+    for group in codec.groups():
+        if any(m.id == f.id for m in group.members()):
+            held_arm = source[group.label]
+            return None if held_arm is None else held_arm.get(f.id)
+    return source.get(f.id)
+
+
 def said_input(codec: Codec, source: dict, name: str) -> int | None:
     """The value `source` says of the flag input `name` of `codec`, or `None`
     where it says none (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4a): a field it
     presents gated on the input alone, present exactly where the gate holds;
-    the arm of a group the input decides; or a body, always there, the input is
-    handed on to and whose codec says it."""
+    the arm of a group the input decides; a body, always there, the input is
+    handed on to and whose codec says it; the start of a list held to a law
+    over it (R8), where the value holds the list, in the arm of its group for
+    one a group holds; or the arm of a variant the input is handed to."""
     grouped = {m.id for g in codec.groups() for m in g.members()}
     for group in codec.groups():
         if [c.label() for c in group.clauses] == [name] and group.clauses[0].is_input():
@@ -1564,12 +1580,14 @@ def said_input(codec: Codec, source: dict, name: str) -> int | None:
                     if said is not None:
                         return said
     # The start of a list that hands the input to its entries (R8), where the
-    # value holds the list, and the arm of a variant the input is handed to.
+    # value holds the list, in the arm of its group for one a group holds; and
+    # the arm of a variant the input is handed to.
     for f in codec.fields:
-        if f.lawful() and source.get(f.id) is not None:
+        held_list = stated_element(codec, source, f) if f.lawful() else None
+        if held_list is not None:
             for child_input in f.started():
                 if f.binds[child_input] == name:
-                    return source[f.id]["start"][child_input]
+                    return held_list["start"][child_input]
         if f.size == "variant":
             arm = arm_held(codec, f, source[f.id])
             for child_input, bound in arm.binds.items():
@@ -2349,6 +2367,14 @@ def write(stem: str, sources: list[tuple], refused: list[tuple] | None = None) -
     for source, note, *rest in sources:
         inputs = rest[0] if rest else None
         frame = encode(codec, source, inputs)
+        # The value says each input it says as the case hands it, which each
+        # harness holds it to (`{Codec}Wire::input_<name>`, docs/adr/0065 §6
+        # R4a); a value that says nothing of an input agrees with any (R4e).
+        for name in codec.inputs:
+            said = said_input(codec, source, name)
+            if said is not None and said != inputs[name]:
+                raise AssertionError(f"{stem}: {source} says `{name}` is {said}, and the "
+                                     f"case hands {inputs[name]}")
         case = stated(source, inputs)
         again = decode(codec, frame, inputs, case.get("tag"))
         if again != source:
@@ -2926,6 +2952,37 @@ FIXTURES = {
         "a list held to its law on one side of a gate (docs/adr/0065 §6 R4b, R8): the arm "
         "where L is set holds level and the list, whose start is W; the other holds note, "
         "and there W is the value's own.",
+    ),
+    "codec_repeat_flag_forward_group": Fixture(
+        [
+            ({"head": 0x01, "head.L": {"arm": 0, "entries": {
+                "start": {"wide": 0},
+                "entries": [flag_entry(1, 5, 0, False), flag_entry(2, 6, 0, False)]}}},
+             "L set by the arm that holds the list, its start the input handed clear: two "
+             "short entries", {"wide": 0}),
+            ({"head": 0x01, "head.L": {"arm": 0, "entries": {
+                "start": {"wide": 1}, "entries": [flag_entry(3, 0x1234, 1, False)]}}},
+             "the input handed set: the start says it, the entry long", {"wide": 1}),
+            ({"head": 0x01, "head.L": {"arm": 0, "entries": {
+                "start": {"wide": 1}, "entries": []}}},
+             "no entry and the input set: the start says it, not the entries", {"wide": 1}),
+            ({"head": 0x01, "head.L": {"arm": 0, "entries": {
+                "start": {"wide": 0}, "entries": []}}},
+             "no entry and the input clear: the count zero", {"wide": 0}),
+            ({"head": 0x00, "head.L": {"arm": 1, "note": 9}},
+             "the arm of note: L clear, the value says nothing of the input, handed clear",
+             {"wide": 0}),
+            ({"head": 0x00, "head.L": {"arm": 1, "note": 0xFF}},
+             "the arm of note says nothing of the input, handed set", {"wide": 1}),
+            ({"head": 0xFF, "head.L": {"arm": 0, "entries": {
+                "start": {"wide": 1}, "entries": [flag_entry(4, 0x7F, 1, False)]}}},
+             "the bits beside L are kept, L set by the arm", {"wide": 1}),
+            ({"head": 0xFE, "head.L": {"arm": 1, "note": 0}},
+             "the bits beside L are kept, L clear by the arm of note", {"wide": 0}),
+        ],
+        "a list on one side of a gate held to the law its entries say the codec's own input "
+        "by (docs/adr/0065 §6 R4b, R8): the arm where L is set holds the list, whose start "
+        "says wide; the other holds note, and there the value says nothing of wide.",
     ),
     "codec_chain_prev_carrier": Fixture(
         [
