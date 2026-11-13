@@ -854,6 +854,27 @@ old encode, the old encode and its templates are removed in the same landing.
    refused case. The census holds the codec printed, and a holder of the shape that it used to refuse printed
    whole. Kotlin, Go, Python and C11 compile the codec as they compile every codec whose cases are `sources` alone,
    and Swift where its generator writes it; the codec joins `entries_that_take_a_flag_compile_on_every_backend`.
+
+   *The forty-fourth C++ landing, 2026-11-13:* the second form enters with its document and cases (§5): a list a
+   gate decides, held to its law, that shares its count with a list always there (docs/adr/0065 §6 R5, R8). The
+   new resource `codec_repeat_flag_aligned_group` is the shape of `codec_repeat_unconditional_count` whose gated
+   `weights` are handed `head.W` as the input they say. The arm where `head.H` holds holds the two as one
+   `Aligned`, its second list a `Lawful` of the law, as the value holds such a list alone; the bound flag is the
+   start of the list the encode kept off that arm, and the bit the value presents in the arm of `links` alone. The
+   C++ printer already held each list of a pair as the arms present it and made the pair by `make` of the two the
+   decode read, a `Lawful` having a size, so the refusal named nothing the printer lacked. The Rust printer's pair
+   did not compile: `Aligned::new` takes two lists that count their entries (`Counted`), which `Lawful` did not;
+   the runtime now counts a `Lawful` as the list it holds. Its eager decode pairs the two by value, not through the
+   pair's door of the 2026-11-05 amendment of ADR 0065 §6: `refill_first` gives the second list as many default
+   entries as the first, which need not follow its law, so the door takes no second list held to one. The list
+   always there of such two, held to a law itself, stays refused by name, narrower than before
+   (`cpp_source::grouped_law_forms`): no document uses it, no case states it, and the Rust printer, whose encode
+   reads the start of a list no gate decides as always there while the group binds it as an `Option`, does not
+   write it either; the census holds the refusal, and a holder of the form it used to refuse printed whole.
+   `binary_model.py` already read the shape, a lawful list stated by its id in the arm beside the list it shares
+   its count with. The catalog gains 8 sources and no refused case. Kotlin, Go, Python and C11 compile the codec
+   as they compile every codec whose cases are `sources` alone, and Swift where its generator writes it; the codec
+   and its `codec_repeat_elem` join `entries_that_take_a_flag_compile_on_every_backend`.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
