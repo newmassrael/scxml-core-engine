@@ -533,12 +533,13 @@ Also missing from every run:
 
 ### 12.3 The refusals of ADR 0091 §3
 
-Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnostic, with one exception:
+Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnostic, with one exception, whose
+reason is recorded below the table:
 
 | Refusal | Fixture (`refused_*.scxml`) |
 |---|---|
 | a native expression | `component_native_condition` |
-| a construct that raises a script-engine cause | **none**. `test-profile/script-engine` is declared in `sce-build/src/forge/diagnostic.rs`, and no code outside that file raises it |
+| a construct that raises a script-engine cause | **none**: no test component reaches `test-profile/script-engine`, since an earlier refusal or the data model stops every cause first (below) |
 | a `datamodel` that is not `sce-static` | `component_datamodel`, `port_type_datamodel` |
 | a `cond` that reads the received message | `component_cond_reads_message` |
 | `<parallel>`, `<history>`, `<script>` | `component_parallel`, `component_history`, `component_script` |
@@ -551,6 +552,36 @@ Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnos
 | an `<invoke>` of anything but a test component | `component_invoke_not_component`, `component_invoke_type` |
 | a transition that is not one branch kind | `component_branch_event`, `component_branch_two_kinds` |
 | a done branch whose target keeps the invoking state active | `component_done_branch_stays` |
+
+`test-profile/script-engine` is raised by `refuse_script_engine` (`sce-build/src/test_component/rules.rs`), which
+the parser asks of a test component after the script-engine analysis (`sce-build/src/script_engine_analyzer.rs`).
+It is a backstop: it holds a test component's manifest to `needs_script_engine = false` whatever cause the analysis
+names later. Its unit test, `a_test_component_that_needs_a_script_engine_is_refused_by_its_cause` in the same file,
+gives a test component's model a cause and holds the refusal's code and `actual`. No document reaches it, for this
+reason, checked on 2026-11-13 against the parser:
+
+- A test component's data model is `sce-static`; `crate::test_component::read` refuses any other as
+  `test-profile/datamodel` (`component_datamodel`) before the rest of the document is read.
+- Under `sce-static` the analysis drops every cause whose expression the data model types and lowers
+  (`ScriptEngineCauseKind::is_typed_under_static`): `datamodel-variable-init`, `transition-guard`,
+  `send-param-expr`, `if-condition`, `elseif-condition`, `assign-action`, `log-expr`, `host-invoke-expr`,
+  `donedata-param`, `donedata-content`, `hybrid-invoke`, `foreach-action`, `static-invoke-namelist`,
+  `send-namelist`, `cancel-expr`, `send-content-expr`, `mesh-rpc-request-expr` and `mesh-rpc-srcexpr`.
+- Each of the five causes left is refused first by `check_document`, which the parser asks of a test component
+  before its states are read, or is never raised:
+
+| Cause (wire `kind`) | Where it is stopped first | Fixture |
+|---|---|---|
+| `global-script` | a `<script>`: `test-profile/component-construct` | `component_script` |
+| `unresolved-external-script` | a `<script src>`: the same refusal | `component_script` |
+| `inline-script-action` | a `<script>` in executable content: the same refusal | `component_script` |
+| `send-dynamic-attr` | not raised under `sce-static`; on a component's `<send>`, `eventexpr`, `targetexpr`, `typeexpr`, `delayexpr` and `idlocation` are refused as `test-profile/send` | `component_send_delay` |
+| `child-invoke-needs-script-engine` | raised only for an `<invoke>` of the SCXML processor, which a component may not write: `test-profile/invoke`, or `validation/missing-attribute` where it writes no `type` | `component_invoke_type` |
+
+A PTC's own `<invoke type="http://sce.dev/ext/test-component">` is read as an invocation the runtime serves, whose
+child the parser does not read, so it raises no cause either. A PTC document that is itself refused is refused where
+a test configuration reads its components (`open_component` in `sce-build/src/forge/test_profile_assembly.rs`), not
+in the component that invokes it, which is accepted on its own.
 
 ### 12.4 What the corpus must gain (slice S2)
 
@@ -570,7 +601,7 @@ Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnos
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
   their rows run as well as export;
 - a fixture that raises `test-profile/script-engine`, or a recorded reason why no profile document can reach that
-  refusal once `datamodel` is held to `sce-static`.
+  refusal once `datamodel` is held to `sce-static`: done, the reason is recorded in §12.3.
 
 ## 13. The slices
 
