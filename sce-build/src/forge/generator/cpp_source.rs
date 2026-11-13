@@ -38,8 +38,8 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// Every form of `plan` the C++ printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole. They are a
 /// number a C++ value has no type for yet (a float or a bool), a list a group
-/// holds held to a law that shares its count with another list
-/// ([`grouped_law_forms`]), a chain of slots whose entries are held to an
+/// holds always there held to a law, sharing its count with a list a gate
+/// decides ([`grouped_law_forms`]), a chain of slots whose entries are held to an
 /// input, which the Rust printer does not write either, and a codec held that
 /// is refused for one of these.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
@@ -108,8 +108,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // bound to every entry from the start of the list the arm the value holds
     // keeps, the value says an input of the codec's own bound to every entry
     // by that start, read off the arm, and the decode holds the list it read
-    // to the law from the start the frame gave, before it makes the arm
-    // ([`grouped_law_forms`] names the one it does not hold a list to there).
+    // to the law from the start the frame gave, before it makes the arm; a
+    // list a gate decides that shares its count with another is held so in
+    // their `Aligned` ([`grouped_law_forms`] names the list it does not hold
+    // to a law there).
     // A float and a bool have no C++ type, as an element of one has not.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
@@ -366,19 +368,20 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
 /// the bit the value presents where it holds another arm or none; an input of
 /// the codec's own is said by that start, read off the arm the value holds
 /// ([`said_input`]), and by nothing where it holds another arm or none; an
-/// input a chain supplies from the entry before starts fixed. The printer does
-/// not hold to a law a list that shares its count with another (R5), which an
-/// arm holds as one `Aligned` of the two lists.
+/// input a chain supplies from the entry before starts fixed. The list a gate
+/// decides that shares its count with a list always there (R5) is held so too,
+/// in the one `Aligned` of the two the arm that holds both holds, which counts
+/// a `Lawful` as the list it holds. The list always there of such two is not
+/// printed held to a law: it is in every arm of the group, a shape no document
+/// uses and no case states (docs/adr/0081 §5), and the Rust printer, whose
+/// encode reads the start of a list no gate decides as always there while the
+/// group binds it as an `Option`, does not write it either.
 fn grouped_law_forms(group: &GateGroup, id: &str) -> Vec<String> {
     let mut forms = Vec::new();
-    if group
-        .aligned
-        .as_ref()
-        .is_some_and(|(first, second)| first == id || second == id)
-    {
+    if group.aligned.as_ref().is_some_and(|(first, _)| first == id) {
         forms.push(format!(
-            "field '{id}': a list held to the law its entries say their inputs by, sharing \
-             its count with another list a gate decides, has no C++ lowering"
+            "field '{id}': a list always there held to the law its entries say their inputs \
+             by, sharing its count with a list a gate decides, has no C++ lowering"
         ));
     }
     forms
@@ -5378,6 +5381,44 @@ mod tests {
             stem,
             &code,
             "encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(",
+        );
+    }
+
+    /// A list a gate decides that shares its count with a list always there,
+    /// and whose entries say the flag it hands them, is held to its law in the
+    /// `Aligned` of the two the arm holds: the pair's second list is a
+    /// `Lawful` of the law, the flag is the start of the list the encode kept
+    /// off that arm, and the decode holds the list it read to the law from the
+    /// flag the frame gave before it pairs the two.
+    #[test]
+    fn a_list_held_to_its_law_is_paired_with_the_list_it_shares_its_count_with() {
+        let stem = "codec_repeat_flag_aligned_group";
+        let code = cpp_of(stem);
+        let law = "using CodecRepeatFlagAlignedGroupWeightsLaw = ";
+        let pair = "CodecRepeatFlagAlignedGroupWeightsLaw>> links_weights_{};\n";
+        holds(stem, &code, law);
+        holds(stem, &code, pair);
+        assert!(
+            code.find(law) < code.find(pair),
+            "{stem}: the law is defined before the arm that holds the pair:\n{code}"
+        );
+        holds(
+            stem,
+            &code,
+            "        if (_r_weights.has_value()) {\n\
+             \x20           _f_head = (_f_head & ~0x1ull) | \
+             static_cast<std::uint64_t>(static_cast<std::size_t>((*_r_weights).start()));\n\
+             \x20       }\n",
+        );
+        holds(
+            stem,
+            &code,
+            "CodecRepeatFlagAlignedGroupWeightsLaw>::make((((head >> 0) & 0x1) != 0), *_l_weights);\n",
+        );
+        holds(
+            stem,
+            &code,
+            "CodecRepeatFlagAlignedGroupWeightsLaw>>::make(*_b_links, *_b_weights);\n",
         );
     }
 
