@@ -1411,9 +1411,26 @@ fn invoked_component(
 /// parsed model ([`crate::script_engine_analyzer`]) names each cause; the
 /// first is refused where it was written.
 ///
-/// Every cause the analysis names under `sce-static` is a construct
-/// [`check_document`] refuses first today; this holds the manifest to the
-/// rule whatever cause the analysis learns to name.
+/// No test component reaches this refusal today. A test component's data
+/// model is `sce-static` (`crate::test_component::read` refuses any other as
+/// `test-profile/datamodel`), and under it the analysis keeps only the causes
+/// `ScriptEngineCauseKind::is_typed_under_static` does not lower, five, each
+/// refused first or never raised:
+///
+/// - `global-script`, `unresolved-external-script` and `inline-script-action`
+///   are a `<script>`, which [`check_document`] refuses as
+///   `test-profile/component-construct`;
+/// - `send-dynamic-attr` is not raised under `sce-static`, and on a
+///   component's `<send>` [`check_document`] refuses `eventexpr`,
+///   `targetexpr`, `typeexpr`, `delayexpr` and `idlocation` as
+///   `test-profile/send`;
+/// - `child-invoke-needs-script-engine` is raised only for an `<invoke>` of
+///   the SCXML processor, which [`check_document`] refuses on a component
+///   (`test-profile/invoke`); a PTC's invoke is of the test-component type,
+///   whose child the parser does not read.
+///
+/// This holds the manifest to the rule whatever cause the analysis learns to
+/// name.
 pub(crate) fn refuse_script_engine(
     model: &SCXMLModel,
     diag_label: &str,
