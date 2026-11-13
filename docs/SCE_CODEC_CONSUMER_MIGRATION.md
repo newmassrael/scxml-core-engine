@@ -1582,6 +1582,21 @@ section above names among the refused ones (`codec_repeat_flag_group` of the res
   (`a list on one side of a gate, held to the law its entries say the codec's own input <name> by`), and a list
   held to a law that shares its count with another list a gate decides.
 
+## A list in the arm of a gate says the codec's own input it hands its entries (ADR 0081 step 4)
+
+Landing: the commits that add this section. No codec of the repository changes: none used the form
+(`codec_repeat_flag_forward_group` of the resources is the one that does now).
+
+- Rust: a codec whose own flag input is bound to every entry of a list one side of a gate holds says the input by
+  the list's start (docs/adr/0065 §6 R4b, R8). `{Codec}::input_{i}(src)` read that start through an accessor of
+  the list's own, which the source trait has not for a member of a group, so such a codec did not compile. It now
+  reads the start off the group's accessor: `Some` where the value holds the arm that holds the list, `None` in
+  any other arm. A source changes nothing.
+- C++: such a codec is printed; it was refused by the clause `a list on one side of a gate, held to the law its
+  entries say the codec's own input <name> by`, which is gone. `input_<name>(src)` answers a
+  `std::optional<std::uint8_t>`, read off the group the source presents, which it reads once; the encode takes no
+  argument for the input.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

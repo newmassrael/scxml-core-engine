@@ -835,6 +835,25 @@ old encode, the old encode and its templates are removed in the same landing.
    on a flag and read from as many bytes as a VLE size before it says. The catalog gains 4 sources and no refused
    case: the encode is total. Kotlin, Go, Python and C11 compile the codec, and Swift where its generator writes
    it; each writes the size as the value holds it, as it writes every length, until it prints the plan (§3).
+
+   *The forty-third C++ landing, 2026-11-13:* the first of the two forms the forty-second landing left refused by
+   name enters the printer together with its document and its cases (§5): a list on one side of a gate whose law
+   is over an input of the codec's own (docs/adr/0065 §6 R4b, R8). The new resource
+   `codec_repeat_flag_forward_group` is the hand-over of `codec_chain_flag_forward` in a group: the codec's own
+   `wide` bound to every element of a repeat on the side of `head.L` that holds it, the other side holding `note`.
+   The value says `wide` by the list's start where it holds the arm that holds the list, and nothing of it in the
+   other arm (R4e). Reading it found a defect of the Rust printer, which no document had reached: its
+   `input_<name>` read the start through an accessor of the list's own, which the source trait has not for a
+   member of a group, so the codec did not compile. Both printers now read the start off the group the source
+   presents: Rust matches the group's accessor on the arm that holds the list, `None` in any other arm; C++ reads
+   the group once in `input_<name>` and answers the start where the arm the value holds holds the list, and the
+   encode reads what it kept of that arm. `binary_model.py` read a lawful list's start only where the value
+   states the list at its top, so it missed the input a grouped list says; it now reads it in the arm, and holds
+   each source to saying every input it says as the case hands it, as each harness holds the value
+   (`{Codec}Wire::input_<name>`), which every case of the catalog already met. The catalog gains 8 sources and no
+   refused case. The census holds the codec printed, and a holder of the shape that it used to refuse printed
+   whole. Kotlin, Go, Python and C11 compile the codec as they compile every codec whose cases are `sources` alone,
+   and Swift where its generator writes it; the codec joins `entries_that_take_a_flag_compile_on_every_backend`.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
