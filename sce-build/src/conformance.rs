@@ -3298,7 +3298,12 @@ fn read_union_shape(
         // which the fragment qualifies as it qualifies any type of a fixture.
         type_name: match language {
             Language::C11 => crate::forge::generator::union_unit_type(&model.name, language),
-            _ => crate::filters::to_pascal_case(model.name.clone()),
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => crate::filters::to_pascal_case(model.name.clone()),
         },
         tag_member: union_tag_member(language, &model.tag)
             .map_err(|why| format!("union `{union_fixture}`: {why}"))?,

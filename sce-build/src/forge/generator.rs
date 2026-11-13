@@ -42707,7 +42707,18 @@ fn lower_algorithm_stmt(
                     {
                         Some(expr::kotlin_buffer_reader(elem)?)
                     }
-                    _ => None,
+                    // Kotlin over anything else, and every other backend, walks
+                    // the source as it is.
+                    (
+                        Language::Kotlin
+                        | Language::Rust
+                        | Language::Cpp
+                        | Language::Go
+                        | Language::Python
+                        | Language::C11
+                        | Language::Swift,
+                        ..,
+                    ) => None,
                 };
                 let header = match lang {
                     Language::Rust if item_is_borrowed => {
