@@ -509,16 +509,8 @@ mod tests {
     #[test]
     fn a_module_parameter_is_refused_where_the_suites_tables_are_not_generated() {
         let suites = crate::forge::codegen_matrix::TEST_SUITE_BACKENDS;
-        for language in [
-            Language::Rust,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-            Language::C11,
-            Language::Swift,
-        ] {
-            assert!(suites.contains(&language), "{language:?}");
+        for language in Language::ALL {
+            assert!(suites.contains(language), "{language:?}");
         }
         let mut model = component();
         if let Some(profile) = model.test_component.as_mut() {

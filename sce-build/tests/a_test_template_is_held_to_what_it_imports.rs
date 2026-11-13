@@ -478,9 +478,9 @@ fn line_of(text: &str, token: &str) -> u32 {
 /// parameter's, holds its record is refused by name before any backend
 /// generates it (`validation/attribute-rule-violated`, on the `sce:type` that
 /// reaches it), on every backend that generates a template
-/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++, Kotlin, Go, Python,
-/// C11 and Swift). The documents are a test's alone, written into a directory
-/// of their own.
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`, which is every backend of
+/// `Language::ALL`). The documents are a test's alone, written into a
+/// directory of their own.
 #[test]
 fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates_templates() {
     let dir = tempfile::tempdir().expect("a directory for the documents");
@@ -499,18 +499,7 @@ fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates
             line_of(PARAMETER_FIELDLESS, "<data id=\"spare\""),
         ),
     ];
-    assert_eq!(
-        TEST_TEMPLATE_BACKENDS,
-        [
-            Language::Rust,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-            Language::C11,
-            Language::Swift
-        ]
-    );
+    assert_eq!(TEST_TEMPLATE_BACKENDS, Language::ALL);
     for (name, text, ty, line) in cases {
         let path = dir.path().join(name);
         std::fs::write(&path, text).expect("the template");

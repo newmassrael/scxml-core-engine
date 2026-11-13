@@ -1269,8 +1269,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Rust, C++, Kotlin, Go,
-    /// Python, C11 and Swift emit one, in [`Language::ALL`]'s order.
+    /// dispatch that refuses the document by name. Every backend of
+    /// [`Language::ALL`] emits one, in its order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1284,15 +1284,7 @@ mod tests {
         }
         assert_eq!(
             emitting(ForgeKind::Union).collect::<Vec<_>>(),
-            [
-                Language::Rust,
-                Language::Cpp,
-                Language::Kotlin,
-                Language::Go,
-                Language::Python,
-                Language::C11,
-                Language::Swift
-            ]
+            Language::ALL
         );
         for &lang in UNION_BACKENDS {
             let times = UNION_BACKENDS.iter().filter(|l| **l == lang).count();
@@ -1322,8 +1314,8 @@ mod tests {
 
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a
     /// union only where it generates the union's unit the algorithm names, and
-    /// names it once. Every generated backend lowers one, in the order each
-    /// landed.
+    /// names it once. Every backend of [`Language::ALL`] lowers one; the list
+    /// keeps the order each landed in.
     #[test]
     fn an_algorithm_over_a_union_is_lowered_where_its_unit_is_generated() {
         for &lang in ALGORITHM_UNION_BACKENDS {
@@ -1334,18 +1326,15 @@ mod tests {
                 .count();
             assert_eq!(times, 1, "{lang:?}");
         }
-        assert_eq!(
-            ALGORITHM_UNION_BACKENDS,
-            [
-                Language::Rust,
-                Language::Cpp,
-                Language::Kotlin,
-                Language::Go,
-                Language::Swift,
-                Language::Python,
-                Language::C11
-            ]
-        );
+        // Every backend lowers one: a backend added to `Language` is held here
+        // until it joins the list or is excepted beside this loop with why.
+        for &lang in Language::ALL {
+            assert!(
+                ALGORITHM_UNION_BACKENDS.contains(&lang),
+                "{lang:?} lowers no algorithm over a union"
+            );
+        }
+        assert_eq!(ALGORITHM_UNION_BACKENDS.len(), Language::ALL.len());
     }
 
     /// A sweep over every backend asks the ones that emit something and write
