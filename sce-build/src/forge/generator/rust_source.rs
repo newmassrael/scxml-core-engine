@@ -2298,6 +2298,11 @@ impl<'a> Plan<'a> {
                 partly,
                 ..
             } => {
+                // A list a group holds has no accessor of its own: it is read
+                // off the arm the value holds (docs/adr/0065 §6 R4b).
+                if let Some(group) = self.encode.roles.group_of(list) {
+                    return self.grouped_start(group, list, input, *partly, value);
+                }
                 let field = self
                     .m()
                     .fields
@@ -2315,6 +2320,86 @@ impl<'a> Plan<'a> {
                 }
             }
         }
+    }
+
+    /// The start of the list `list`, a member of `group` held to the law its
+    /// entries say the input `input` by, as an expression over `value` (a
+    /// reference to a source of this codec), read off the arm of the group the
+    /// value holds (docs/adr/0065 §6 R4b, R8): where an arm holds the list, as
+    /// an element of its own or with the list it shares its count with (R5),
+    /// the start of it; where the value holds another arm or none, nothing,
+    /// which `partly` says it may.
+    fn grouped_start(
+        &self,
+        group: &GateGroup,
+        list: &str,
+        input: &str,
+        partly: bool,
+        value: &str,
+    ) -> String {
+        let held = format!(
+            "{}::{}({value})",
+            self.trait_name,
+            self.group_accessor(group)
+        );
+        let said = |start: String| {
+            if partly {
+                format!("Some({start})")
+            } else {
+                start
+            }
+        };
+        // Each arm that holds the list, with the name it holds it under and
+        // the read of the list off what it holds there, `_l`.
+        let holding: Vec<(&GroupArm, String, &str)> = group
+            .arms
+            .iter()
+            .filter_map(|arm| {
+                self.arm_held(group, arm).find_map(|f| {
+                    let second = self.second_of(group, arm, f);
+                    let read = if f.id == list {
+                        if second.is_some() {
+                            "_l.first()"
+                        } else {
+                            "_l"
+                        }
+                    } else if second.is_some_and(|s| s.id == list) {
+                        "_l.second()"
+                    } else {
+                        return None;
+                    };
+                    Some((arm, self.held_name(group, arm, f), read))
+                })
+            })
+            .collect();
+        let start = |read: &str| law_start(&self.encode.roles, list, input, read);
+        let pattern = |arm: &GroupArm, name: &str| {
+            format!("{} {{ {name}: _l, .. }}", self.arm_path(group, arm))
+        };
+        // A group of one arm the value holds or not: the start of the list it
+        // holds, mapped through the `Option`.
+        if let ([(arm, name, read)], false) = (holding.as_slice(), group.is_sum()) {
+            let (pattern, start) = (pattern(arm, name), start(read));
+            return if group.absent.is_some() {
+                format!("{held}.map(|{pattern}| {start})")
+            } else {
+                format!("{{ let {pattern} = {held}; {} }}", said(start))
+            };
+        }
+        let mut cases: Vec<String> = holding
+            .iter()
+            .map(|(arm, name, read)| {
+                format!(
+                    "{} => {},",
+                    Self::held(group, &pattern(arm, name)),
+                    said(start(read))
+                )
+            })
+            .collect();
+        if holding.len() < group.arms.len() || group.absent.is_some() {
+            cases.push("_ => None,".to_string());
+        }
+        format!("match {held} {{ {} }}", cases.join(" "))
     }
 
     /// Whether the list `field` is held to the law of its entries' inputs
@@ -2501,7 +2586,12 @@ impl<'a> Plan<'a> {
                 }
                 InputSource::List { list, partly, .. } => {
                     let start = format!("the start of `{list}`, which every entry of it says");
-                    if *partly {
+                    if *partly && self.encode.roles.group_of(list).is_some() {
+                        format!(
+                            "{start}, read off the arm the value holds, and `None` where it holds \
+                             an arm that does not hold the list, or none"
+                        )
+                    } else if *partly {
                         format!("{start}, and `None` while the list is absent")
                     } else {
                         start
