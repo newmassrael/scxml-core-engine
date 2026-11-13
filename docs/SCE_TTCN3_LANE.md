@@ -154,7 +154,7 @@ in each program's usage. Design choice: a change to one is announced as a change
 |---|---|
 | `sce-codegen export-ttcn3` | writes the two modules, the manifest and the witness of one suite, all or nothing (TP §9.5) |
 | `sce-ttcn3-validate <suite.scxml> <export directory>` | exit 0 with no violation, 1 with one or more, 2 when an input is not read (TP §9.4) |
-| `sce-codegen check-trace <suite> <trace>` (S1, design choice, not yet in place) | refuses a trace that does not fit the suite (§10.2) |
+| `sce-codegen check-trace <suite> <trace>` (S1, design choice) | refuses a trace that does not fit the suite (§10.2), every refusal a `test-profile/trace-*` record: exit 0 when the trace fits, writing nothing; 1 when it does not; any other status is the one `SCE_ERROR_CONTRACT.md` §6 gives the record that says an input was not read (the suite refused, a file not read, the command line) |
 | each backend's runner of a generated suite (S1; in place on all seven backends) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
 
 Every backend's runner takes one command line, so the downstream's lane calls the seven alike (design choice):
@@ -295,8 +295,20 @@ Slice S1 landed the surface as `SCE_WIRE_CONTRACTS.md` requires every surface to
 
 The reader refuses a text that is not JSON, not of the shape, out of the order of §10.2, or not the trace's one
 canonical spelling; whether each input fits the test case, the other refusals of §10.2, is read by the test case's
-configuration as the trace is played (§10.5). SCE's check of a trace against a suite without running it, offered as a
-command of `sce-codegen` (design choice: `sce-codegen check-trace <suite> <trace>`, §4), is still to come.
+configuration as the trace is played (§10.5). SCE's check of a trace against a suite without running it is in place
+as a command of `sce-codegen` (design choice: `sce-codegen check-trace <suite> <trace>`, §4), in
+`sce-build/src/ttcn3_export/trace_check.rs`. It reads the suite as `export-ttcn3` reads it, and the trace with the Rust
+reader, `Trace::parse`, so a text that is no trace is refused in that reader's words and nothing else of it is read
+(`test-profile/trace-text`). It then reports every other refusal of §10.2: a trace of another suite, or of a test case
+the suite does not run (`test-profile/trace-test-case`); an input on a port that is no system port of the test case's
+configuration (`test-profile/trace-port`), or of a type the `in` list of that port's type does not name
+(`test-profile/trace-type`), both read from the table every backend's unit of the configuration writes its `input`
+from; and a value that does not belong to its type (`test-profile/trace-value`), read by the runtime's own reader of
+each form (`sce_rust_runtime::test::from_canonical`) in the order the generated Rust reader of the record reads it, so
+the first refusal of a value is the one the runner gives, in its words. Which types have a form is decided by the one
+walk of the form (`canonical_form`). Each refusal is placed in the trace file and names the place it is about by its
+JSON pointer (`/inputs/0/value/code`); `sce-build/tests/a_trace_is_checked_against_its_suite.rs` holds each refusal and
+holds the committed trace of `answers_the_job`, and a trace of every form of the every-form fixtures, to fit.
 
 ### 10.5 Native trace replay
 
@@ -523,9 +535,9 @@ listed in DD §13.2.
 - Files: `schemas/`, the command in `sce-build/src/bin/sce_codegen.rs`, `SCE_WIRE_CONTRACTS.md`,
   `docs/SCE_TEST_PROFILE.md`, the seven test runtimes and their generators, and the generated test trees those
   generators write.
-- In place: the surface (§10.4), the shared walk of both directions and all seven backends (§10.5): on each its
-  readers, its player, its runner and its program, held by the trace of `answers_the_job` to the expected log. To
-  come: `sce-codegen check-trace`.
+- In place, so S1 is complete: the surface (§10.4), the shared walk of both directions and all seven backends
+  (§10.5): on each its readers, its player, its runner and its program, held by the trace of `answers_the_job` to the
+  expected log; and `sce-codegen check-trace` (§4, §10.4), which refuses each case of §10.2.
 
 **S2: a corpus with traces and expected logs.**
 
