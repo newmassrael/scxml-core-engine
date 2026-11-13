@@ -5,7 +5,7 @@
 //! the suite it is of without running it (docs/SCE_TTCN3_LANE.md §4, §10.2).
 //!
 //! What it holds:
-//!   * the committed trace of `answers_the_job` fits the runtime suite, and a
+//!   * every committed trace of the runtime suite fits it, and a
 //!     trace of each test case of the every-form fixtures, the union form
 //!     among them, fits a suite of them: exit 0 and nothing written;
 //!   * each refusal of §10.2 is its own `test-profile/trace-*` code, exit 1:
@@ -153,16 +153,43 @@ fn assert_record(record: &Value, trace: &Path, code: &str, message: &str, actual
     assert_eq!(record["actual"].as_str(), actual, "{record}");
 }
 
-/// docs/SCE_TTCN3_LANE.md §10.4: the committed trace of `answers_the_job`,
-/// which every backend's runner replays, fits the runtime suite: exit 0, and
-/// nothing written to either stream.
+/// docs/SCE_TTCN3_LANE.md §10.4, §12: every committed trace of the runtime
+/// suite, which every backend's runner replays, fits it: exit 0, and nothing
+/// written to either stream. The trace of each test case the suite runs is
+/// among them.
 #[test]
-fn the_committed_trace_of_answers_the_job_fits_the_runtime_suite() {
-    let trace = runtime_dir().join("traces/answers_the_job.json");
-    let checked = check_trace(&runtime_suite(), &trace);
-    assert_eq!(checked.status, 0, "{}", checked.stderr);
-    assert!(checked.stdout.is_empty(), "{}", checked.stdout);
-    assert!(checked.stderr.is_empty(), "{}", checked.stderr);
+fn every_committed_trace_fits_the_runtime_suite() {
+    let mut traces: Vec<PathBuf> = std::fs::read_dir(runtime_dir().join("traces"))
+        .expect("the traces are a directory")
+        .map(|entry| entry.expect("an entry of the traces").path())
+        .collect();
+    traces.sort();
+    let names: Vec<String> = traces
+        .iter()
+        .map(|trace| {
+            trace
+                .file_name()
+                .expect("a trace is a file")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "answers_before_the_guard.json",
+            "answers_the_job.json",
+            "keeps_a_ptc.json",
+            "serves_a_ptc.json"
+        ],
+        "a trace of each test case of the runtime suite, and nothing else"
+    );
+    for trace in &traces {
+        let checked = check_trace(&runtime_suite(), trace);
+        assert_eq!(checked.status, 0, "{}: {}", trace.display(), checked.stderr);
+        assert!(checked.stdout.is_empty(), "{}", checked.stdout);
+        assert!(checked.stderr.is_empty(), "{}", checked.stderr);
+    }
 }
 
 // ── The every-form fixtures ──────────────────────────────────────
