@@ -67,7 +67,8 @@ What the model reads so far, and refuses by name past it:
   on: set on every entry but the last, so such a chain holds one or more. Two
   lists of one count, one always there and one gated on a flag, are a group
   of that flag (R5) whose arm where it holds holds both, each stated by its
-  id and of one length; other lists of one count are not read yet;
+  id and of one length, a list held to a law (below) as such a list is;
+  other lists of one count are not read yet;
 * a field of an enum the codec imports (`sce:type="enum:<alias>"`,
   `<sce:import kind="enum">`), written as the enum's carrier (its
   `sce:underlying-type`) and stated by the name of the variant it holds; an
@@ -2983,6 +2984,38 @@ FIXTURES = {
         "a list on one side of a gate held to the law its entries say the codec's own input "
         "by (docs/adr/0065 §6 R4b, R8): the arm where L is set holds the list, whose start "
         "says wide; the other holds note, and there the value says nothing of wide.",
+    ),
+    "codec_repeat_flag_aligned_group": Fixture(
+        [
+            ({"head": 0x02, "head.H": {"arm": 0, "links": [{"seq": 1}, {"seq": 2}],
+                                       "weights": {"start": {"wide": 0}, "entries": [
+                                           flag_entry(1, 5, 0, False),
+                                           flag_entry(2, 6, 0, False)]}}},
+             "H set: two links and two short weights, one count, W clear by the start"),
+            ({"head": 0x03, "head.H": {"arm": 0, "links": [{"seq": 0x1234}],
+                                       "weights": {"start": {"wide": 1}, "entries": [
+                                           flag_entry(3, 0xABCD, 1, False)]}}},
+             "the start set: the weight long, W derived set"),
+            ({"head": 0x03, "head.H": {"arm": 0, "links": [],
+                                       "weights": {"start": {"wide": 1}, "entries": []}}},
+             "no entry and the start set: W follows the start, not the entries"),
+            ({"head": 0x02, "head.H": {"arm": 0, "links": [],
+                                       "weights": {"start": {"wide": 0}, "entries": []}}},
+             "no entry and the start clear: the count zero, W clear"),
+            ({"head": 0x00, "head.H": {"arm": 1, "links": [{"seq": 7}]}},
+             "H clear: the links alone, W the value's own and clear"),
+            ({"head": 0x01, "head.H": {"arm": 1, "links": []}},
+             "H clear and W set: no weights derive W, so the value's bit is kept"),
+            ({"head": 0xFE, "head.H": {"arm": 0, "links": [{"seq": 9}],
+                                       "weights": {"start": {"wide": 0}, "entries": [
+                                           flag_entry(4, 0x7F, 0, False)]}}},
+             "the bits beside W and H are kept, H set by the arm"),
+            ({"head": 0xFD, "head.H": {"arm": 1, "links": [{"seq": 3}, {"seq": 4}]}},
+             "the bits beside W and H are kept, W the value's own and set, H clear"),
+        ],
+        "two lists of one count, the gated one held to its law (docs/adr/0065 §6 R5, R8): "
+        "the arm where H is set holds the links and the weights, whose start is W; the other "
+        "holds the links alone, and there W is the value's own.",
     ),
     "codec_chain_prev_carrier": Fixture(
         [

@@ -3696,18 +3696,20 @@ fn chain_has_codecs_compile_on_every_backend() {
 }
 
 /// The documents the flag-taking-entry fixtures import, then the fixtures:
-/// three that hand the flag to the entries of a TLV chain and four that hand
-/// it to the elements of a repeat, plain, gated, and on one side of a gate
-/// beside the fields it decides with the repeat, the flag a carrier's or the
-/// codec's own input.
+/// three that hand the flag to the entries of a TLV chain and five that hand
+/// it to the elements of a repeat, plain, gated, on one side of a gate beside
+/// the fields it decides with the repeat, the flag a carrier's or the codec's
+/// own input, and sharing its count with a list always there.
 const FLAG_ENTRY_SET: &[&str] = &[
     "codec_chain_flag_entry.scxml",
+    "codec_repeat_elem.scxml",
     "codec_chain_flag_carrier.scxml",
     "codec_chain_flag_forward.scxml",
     "codec_repeat_flag_carrier.scxml",
     "codec_repeat_flag_gated.scxml",
     "codec_repeat_flag_group.scxml",
     "codec_repeat_flag_forward_group.scxml",
+    "codec_repeat_flag_aligned_group.scxml",
 ];
 
 /// A chain or a repeat applies one entry codec many times, and that codec can

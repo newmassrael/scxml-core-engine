@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a list held to its law that shares its count with
+     another list.
+
+     The shape of `codec_repeat_unconditional_count`, its gated list's
+     elements handed W as their `wide` input. `links` is always on the wire
+     and its length is written once; `weights` is there only where H is set,
+     of as many elements, each laid out by W. The two lists are one group of
+     H (docs/adr/0065 §6 R5): the arm where H is set holds both as two lists
+     of one count, the other `links` alone. The elements of `weights` say the
+     input W hands them, so that list is held to the law they say it by (R8):
+     W is its start where the value holds the arm that holds it, and the bit
+     the value presents where it holds `links` alone.
+
+     Wire shape:
+       byte 0  : head      (bit 0 = W, bit 1 = H)
+       byte 1  : links_len (uint8, always there)
+       then    : links     (`links_len` elements of codec_repeat_elem)
+       H set   : weights   (`links_len` elements, each laid out by W) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_flag_aligned_group">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+      <sce:flag name="H" bit="1"/>
+    </sce:flags>
+    <sce:field id="links_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="links" type="codec_repeat_elem" sce:byte="2"
+                count="links_len" max-count="4"/>
+    <sce:repeat id="weights" type="codec_chain_flag_entry" sce:byte="3"
+                count="links_len" max-count="4"
+                sce:present-if="head.H"/>
+  </datamodel>
+</scxml>

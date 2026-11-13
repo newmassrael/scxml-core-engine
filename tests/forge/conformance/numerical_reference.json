@@ -44908,6 +44908,20 @@
         {"source": {"head": 255, "head.L": {"arm": 0, "entries": {"start": {"wide": 1}, "entries": [{"header": 4, "wide": {"arm": 0, "long_value": 127}}]}}}, "inputs": {"wide": 1}, "encoded": [255, 1, 4, 0, 127], "note": "the bits beside L are kept, L set by the arm"},
         {"source": {"head": 254, "head.L": {"arm": 1, "note": 0}}, "inputs": {"wide": 0}, "encoded": [254, 0], "note": "the bits beside L are kept, L clear by the arm of note"}
       ]
+    },
+    "codec_repeat_flag_aligned_group": {
+      "fixture": "CodecRepeatFlagAlignedGroup",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. two lists of one count, the gated one held to its law (docs/adr/0065 \u00a76 R5, R8): the arm where H is set holds the links and the weights, whose start is W; the other holds the links alone, and there W is the value's own.",
+      "sources": [
+        {"source": {"head": 2, "head.H": {"arm": 0, "links": [{"seq": 1}, {"seq": 2}], "weights": {"start": {"wide": 0}, "entries": [{"header": 1, "wide": {"arm": 1, "short_value": 5}}, {"header": 2, "wide": {"arm": 1, "short_value": 6}}]}}}, "encoded": [2, 2, 0, 1, 0, 2, 1, 5, 2, 6], "note": "H set: two links and two short weights, one count, W clear by the start"},
+        {"source": {"head": 3, "head.H": {"arm": 0, "links": [{"seq": 4660}], "weights": {"start": {"wide": 1}, "entries": [{"header": 3, "wide": {"arm": 0, "long_value": 43981}}]}}}, "encoded": [3, 1, 18, 52, 3, 171, 205], "note": "the start set: the weight long, W derived set"},
+        {"source": {"head": 3, "head.H": {"arm": 0, "links": [], "weights": {"start": {"wide": 1}, "entries": []}}}, "encoded": [3, 0], "note": "no entry and the start set: W follows the start, not the entries"},
+        {"source": {"head": 2, "head.H": {"arm": 0, "links": [], "weights": {"start": {"wide": 0}, "entries": []}}}, "encoded": [2, 0], "note": "no entry and the start clear: the count zero, W clear"},
+        {"source": {"head": 0, "head.H": {"arm": 1, "links": [{"seq": 7}]}}, "encoded": [0, 1, 0, 7], "note": "H clear: the links alone, W the value's own and clear"},
+        {"source": {"head": 1, "head.H": {"arm": 1, "links": []}}, "encoded": [1, 0], "note": "H clear and W set: no weights derive W, so the value's bit is kept"},
+        {"source": {"head": 254, "head.H": {"arm": 0, "links": [{"seq": 9}], "weights": {"start": {"wide": 0}, "entries": [{"header": 4, "wide": {"arm": 1, "short_value": 127}}]}}}, "encoded": [254, 1, 0, 9, 4, 127], "note": "the bits beside W and H are kept, H set by the arm"},
+        {"source": {"head": 253, "head.H": {"arm": 1, "links": [{"seq": 3}, {"seq": 4}]}}, "encoded": [253, 2, 0, 3, 0, 4], "note": "the bits beside W and H are kept, W the value's own and set, H clear"}
+      ]
     }
   },
   "string_lookups": {
