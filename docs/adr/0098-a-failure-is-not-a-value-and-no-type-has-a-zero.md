@@ -260,6 +260,24 @@ once, and section 3.4.1's paragraph on the contract cites it.
 compile verdict is the Swift packages (`scripts/test_swift_backend.sh`), run where the toolchain `bx.toml` pins
 (`[platform.linux.tools.swift]`, Swift 6.4) is installed, and on the CI lane that installs it.
 
+## Decided while landing steps 3 and 4 (2026-11-13)
+
+1. **The element is read by the read every lane already has.** `StaticTarget::element_at` is the checked read of
+   an index (`record_at`, which names it for a list of records) on every lane but Rust, whose element owns its parts
+   and is read by reference (`at_ref`) and cloned out of the list. The copy is the union copier's, and the write is
+   the lane's own receiving write of a value held in a local of the variable's type, so a read outside the list
+   writes nothing, raises `error.execution` and ends the block on every lane.
+2. **A list itself reached through an index stays refused by name**, as the whole copy and the loop over such a list
+   are (ADR 0086 section 7.3): `place_text` spells no element, and the refusal names the construct.
+3. **Step 4 lands the index read, its failure and the narrowing of the copy** in `static_union` (the event
+   `shapes.picked`), replayed on all eight lanes. Two of its items rest on lowerings this ADR did not land:
+   - A record that holds a union is held by a statechart only as `optional<record:R>` written whole by a lift (ADR
+     0087 "Landing order" item 8, `ComposedLowering::records`), which Rust and Kotlin lower and the other lanes
+     refuse by name. Its fixture follows that item on each lane.
+   - An algorithm's slot holds no `list<union:U>` on any lane (ADR 0092, a union inside another type), and the
+     conformance manifest has no argument of that type, so the conformance algorithm over one follows that
+     extension.
+
 ## Consequences
 
 - Swift needs no value nobody wrote, for any type. The two refusals go, and so does the reason any later type
