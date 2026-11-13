@@ -38,7 +38,7 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// Every form of `plan` the C++ printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole. They are a
 /// number a C++ value has no type for yet (a float or a bool), a list a group
-/// holds held to a law the printer does not read off an arm
+/// holds held to a law that shares its count with another list
 /// ([`grouped_law_forms`]), a chain of slots whose entries are held to an
 /// input, which the Rust printer does not write either, and a codec held that
 /// is refused for one of these.
@@ -106,10 +106,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // two (R5). A list held to a law is held to it in each arm that holds it,
     // as it is held alone (docs/adr/0065 §6 R8): the encode derives a flag
     // bound to every entry from the start of the list the arm the value holds
-    // keeps, and the decode holds the list it read to the law from the start
-    // the frame gave, before it makes the arm ([`grouped_law_forms`] names
-    // the laws it does not read off an arm). A float and a bool have no C++
-    // type, as an element of one has not.
+    // keeps, the value says an input of the codec's own bound to every entry
+    // by that start, read off the arm, and the decode holds the list it read
+    // to the law from the start the frame gave, before it makes the arm
+    // ([`grouped_law_forms`] names the one it does not hold a list to there).
+    // A float and a bool have no C++ type, as an element of one has not.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
         // of the kinds the arm says (R6b), optionally where a gate of its own
@@ -131,7 +132,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 Value::Body { .. } | Value::List { .. } => {
                     forms.extend(held_codec_forms(imports, id, &value));
                     if matches!(&value, Value::List { law, .. } if !law.is_none()) {
-                        forms.extend(grouped_law_forms(plan, group, id));
+                        forms.extend(grouped_law_forms(group, id));
                     }
                 }
                 Value::Scalar(t) => forms.push(untyped_scalar(id, t)),
@@ -155,7 +156,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // alone, off the group gated on it, off the body always there that says it
     // in every value or in some of its values only, off the arm of the variant
     // the value holds (§6 R4d, R4e), or off the start of the list held to it
-    // (§6 R8). The roles forward only an input of a body no gate decides
+    // (§6 R8), in the arm the value holds for a list a group holds. The roles
+    // forward only an input of a body no gate decides
     // ([`FORWARD_IS_UNGATED`]), and derive a flag from a body only where the
     // body says it in every value ([`SAYS_IN_EVERY_VALUE`]).
     // A body that says it in some of its values only answers no value from the
@@ -361,14 +363,13 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
 /// Each arm that holds such a list holds it as the value holds one alone, a
 /// `Lawful` of its law: a flag of the codec's own bound to every entry is
 /// derived from the start of the list the arm the value holds keeps, and is
-/// the bit the value presents where it holds another arm or none; an input a
-/// chain supplies from the entry before starts fixed. The printer does not
-/// hold to a law a list that shares its count with another (R5), which an arm
-/// holds as one `Aligned` of the two lists, nor a list whose law is over an
-/// input of the codec's own, which the value says by the list's start
-/// ([`said_input`]) and which the printer reads off a source through the
-/// list's own accessor, while a group's member is read off its arm.
-fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<String> {
+/// the bit the value presents where it holds another arm or none; an input of
+/// the codec's own is said by that start, read off the arm the value holds
+/// ([`said_input`]), and by nothing where it holds another arm or none; an
+/// input a chain supplies from the entry before starts fixed. The printer does
+/// not hold to a law a list that shares its count with another (R5), which an
+/// arm holds as one `Aligned` of the two lists.
+fn grouped_law_forms(group: &GateGroup, id: &str) -> Vec<String> {
     let mut forms = Vec::new();
     if group
         .aligned
@@ -379,14 +380,6 @@ fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<
             "field '{id}': a list held to the law its entries say their inputs by, sharing \
              its count with another list a gate decides, has no C++ lowering"
         ));
-    }
-    for law in super::rust_source::list_laws(&plan.roles, id) {
-        if let InputValue::Input { name } = &law.against {
-            forms.push(format!(
-                "field '{id}': a list on one side of a gate, held to the law its entries say \
-                 the codec's own input `{name}` by, has no C++ lowering"
-            ));
-        }
     }
     forms
 }
@@ -491,7 +484,9 @@ enum Read {
 /// that forwards it says, read through that body's codec. [`unlowered`] refuses
 /// every other way a value says one. An input the arms of the variant say is
 /// read off `_r_body`, the body as the value holds it, which the encode and the
-/// input's own function bind before they read it.
+/// input's own function bind before they read it; one the start of a list a
+/// group holds says, off the arm the value holds, which the input's own
+/// function reads off the group it binds as `_r_<group>`.
 fn said_input(
     plan: &EncodePlan<'_>,
     imports: &[ImportContext],
@@ -579,7 +574,6 @@ fn said_input(
             partly,
             ..
         } => {
-            let e = element(list);
             let laws = super::rust_source::list_laws(&plan.roles, list);
             let start = |lawful: &str| {
                 let start = format!("{lawful}.start()");
@@ -593,6 +587,26 @@ fn said_input(
                     format!("static_cast<std::uint8_t>(std::get<{at}>({start}))")
                 }
             };
+            // A list a group holds is read off the arm the value holds that
+            // holds it (docs/adr/0065 §6 R4b): in the encode, off what it kept
+            // of the arm (`_r_<list>`); in the input's own function, off the
+            // group it binds (`_r_<group>`). It says nothing where the value
+            // holds another arm or none.
+            if let Some((group, member)) = groups
+                .iter()
+                .find_map(|g| g.member(list).map(|member| (g, member)))
+            {
+                let kept = member.local();
+                return match (at, partly) {
+                    (Read::Encode, false) => start(&format!("(*{kept})")),
+                    (Read::Encode, true) => format!(
+                        "({kept}.has_value() ? {} : std::uint8_t{{0}})",
+                        start(&format!("(*{kept})"))
+                    ),
+                    (Read::Source, _) => group.said_off_arms(&member.name, *partly, &start),
+                };
+            }
+            let e = element(list);
             let (local, name) = (e.local(), &e.name);
             match (at, partly) {
                 (Read::Encode, false) => start(&local),
@@ -1739,6 +1753,67 @@ impl<'p> GroupPart<'p> {
             ),
             None => format!("static_cast<std::uint8_t>({in_arm})"),
         }
+    }
+
+    /// The member whose field is `id`, where the group holds it.
+    fn member(&self, id: &str) -> Option<&Presented<'p>> {
+        self.members.iter().find(|m| m.field.id == id)
+    }
+
+    /// What `member`, a list an arm of the group holds held to a law, says
+    /// through `said` of the list, read off the group a source presents, which
+    /// the reader binds as `_r_<group>` (docs/adr/0065 §6 R4b, R8): `said` of
+    /// the list where the value holds an arm that holds it, as a member of its
+    /// own or with the list it shares its count with (R5), and nothing where it
+    /// holds another arm or none. Where it is not `partly` said, every arm
+    /// holds the list, and the answer is no `std::optional`.
+    fn said_off_arms(&self, member: &str, partly: bool, said: &dyn Fn(&str) -> String) -> String {
+        let held = format!("_r_{}", self.name);
+        let mut answer = String::from("(");
+        for (i, arm) in self.arms.iter().enumerate() {
+            // The arm the value holds where it holds this one, and the test
+            // that it does.
+            let (test, value) = if !self.group.is_sum() {
+                (format!("{held}.has_value()"), format!("(*{held})"))
+            } else if self.optional() {
+                (
+                    format!("({held}.has_value() && {held}->index() == {i}u)"),
+                    format!("std::get<{i}>(*{held})"),
+                )
+            } else {
+                (
+                    format!("{held}.index() == {i}u"),
+                    format!("std::get<{i}>({held})"),
+                )
+            };
+            let read = arm.members.iter().find_map(|m| {
+                if m.name == member {
+                    return Some(format!("source::{member}({value})"));
+                }
+                let lists = m.aligned.as_ref()?;
+                let side = if lists.first == member {
+                    "first"
+                } else if lists.second == member {
+                    "second"
+                } else {
+                    return None;
+                };
+                Some(format!("source::{}({value}).{side}()", m.name))
+            });
+            let Some(read) = read else { continue };
+            let start = said(&read);
+            if partly {
+                answer.push_str(&format!("{test} ? std::optional<std::uint8_t>({start}) : "));
+            } else {
+                answer.push_str(&format!("{test} ? {start} : "));
+            }
+        }
+        if partly {
+            answer.push_str("std::optional<std::uint8_t>{})");
+        } else {
+            answer.push_str("std::uint8_t{0})");
+        }
+        answer
     }
 
     /// When the value holds `arm`, in words: each gate and whether it holds.
@@ -4408,14 +4483,22 @@ pub(super) fn render(
         } else {
             ("std::uint8_t", "")
         };
-        // An input the arms say is read off the body, read once.
-        let body = if matches!(
-            plan.roles.inputs[&said.input.name],
-            InputSource::EveryArm { .. } | InputSource::SomeArms { .. }
-        ) {
-            "    const auto& _r_body = source::body(src);\n"
-        } else {
-            ""
+        // An input the arms say is read off the body, read once; one a list a
+        // group holds says, off the group, read once.
+        let body = match &plan.roles.inputs[&said.input.name] {
+            InputSource::EveryArm { .. } | InputSource::SomeArms { .. } => {
+                "    const auto& _r_body = source::body(src);\n".to_string()
+            }
+            InputSource::List { list, .. } => groups
+                .iter()
+                .find(|g| g.member(list).is_some())
+                .map_or_else(String::new, |g| {
+                    format!(
+                        "    const auto& _r_{name} = source::{name}(src);\n",
+                        name = g.name
+                    )
+                }),
+            _ => String::new(),
         };
         before.push_str(&format!(
             "/// The flag input `{}` a source of `{struct_name}` says, which its encode is not\n\
@@ -5266,6 +5349,35 @@ mod tests {
             stem,
             &code,
             "CodecRepeatFlagGroupEntriesLaw>::make((((head >> 0) & 0x1) != 0), *_l_entries);\n",
+        );
+    }
+
+    /// A list a group holds whose entries say the codec's own input it hands
+    /// them says that input by its start, read off the arm the value holds:
+    /// the input's own function reads the group once and answers the start of
+    /// the list where the value holds the arm that holds it and nothing
+    /// otherwise, and the encode is not handed the input.
+    #[test]
+    fn an_input_a_list_a_group_holds_says_is_read_off_the_arm() {
+        let stem = "codec_repeat_flag_forward_group";
+        let code = cpp_of(stem);
+        holds(
+            stem,
+            &code,
+            "[[nodiscard]] std::optional<std::uint8_t> input_wide(const S& src)",
+        );
+        holds(
+            stem,
+            &code,
+            "    const auto& _r_head_l = source::head_l(src);\n\
+             \x20   return (_r_head_l.index() == 0u ? std::optional<std::uint8_t>(\
+             static_cast<std::uint8_t>(source::entries(std::get<0>(_r_head_l)).start())) : \
+             std::optional<std::uint8_t>{});\n",
+        );
+        holds(
+            stem,
+            &code,
+            "encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(",
         );
     }
 

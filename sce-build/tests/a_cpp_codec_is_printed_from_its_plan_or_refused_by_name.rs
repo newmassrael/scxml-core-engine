@@ -106,6 +106,7 @@ const PRINTED: &[&str] = &[
     "codec_repeat_basic",
     "codec_repeat_elem",
     "codec_repeat_flag_carrier",
+    "codec_repeat_flag_forward_group",
     "codec_repeat_flag_gated",
     "codec_repeat_flag_group",
     "codec_repeat_present_if_basic",
@@ -505,12 +506,25 @@ fn copy_resources(dir: &Path, stems: &[&str]) {
     }
 }
 
+/// Holds that the C++ backend prints the codec at `path` whole: no form of it
+/// is one the printer does not lower.
+fn assert_printed(path: &Path) {
+    let unlowered = cpp_codec_unlowered_file(path, &[], &ForgeCompileOptions::default())
+        .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()))
+        .expect("the document is a codec");
+    assert!(
+        unlowered.is_empty(),
+        "{} is printed whole, and is refused by {unlowered:?}",
+        path.display()
+    );
+}
+
 /// A list on one side of a gate whose entries say the codec's own input it
-/// hands them is refused by the list's field: the value says the input by the
-/// list's start, which the printer reads off a source through the list's own
-/// accessor, while a group's member is read off the arm that holds it.
+/// hands them is printed: the value says the input by the list's start, read
+/// off the arm the value holds that holds the list, and says nothing of it
+/// where it holds the other arm.
 #[test]
-fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_refused() {
+fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_printed() {
     let dir = tempfile::tempdir().expect("tempdir");
     copy_resources(dir.path(), &["codec_chain_flag_entry"]);
     let holder = dir.path().join("holder.scxml");
@@ -536,11 +550,7 @@ fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_refused() {
         ),
     )
     .expect("write the holding codec");
-    assert_refused_by(
-        &holder,
-        "codec 'holder': field 'entries': a list on one side of a gate, held to the law its \
-         entries say the codec's own input `handed_wide` by, has no C++ lowering",
-    );
+    assert_printed(&holder);
 }
 
 /// A list held to a law that shares its count with another list, the two of
