@@ -437,8 +437,8 @@ func (p *{{ machine_name }}Policy) SetParamValueInScriptEngine(name string, valu
 // invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
 // `expr`, `src` or content, which is not evaluated. A value the session cannot
 // hold is the error of that `<data>`'s initialization (§scxml-5.3):
-// error.execution, and the `<data>` is left as one whose own expression failed
-// is left, unset (docs/adr/0098).
+// error.execution, and the `<data>` left unset, as one whose own expression
+// failed is left (docs/adr/0098).
 func (p *{{ machine_name }}Policy) declareHandedValue(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
 {% if 'error.execution' in model.events %}

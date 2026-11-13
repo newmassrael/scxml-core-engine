@@ -1296,19 +1296,40 @@ type {{ machine_name }}InvokeParams struct {
 {% endfor %}
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *{{ machine_name }}Policy) AcceptParams(params {{ machine_name }}InvokeParams) {
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+{# The variables are declared again in document order, as the constructor
+   declares them (`StaticTarget::initial_field_ref`): a variable handed a value
+   is declared with it, every other one with its own initial value, which reads
+   only the variables declared before it and can neither fail nor act (one
+   that could fail is refused where it is written), so declaring it a second
+   time is not observable. A module parameter keeps what its component filled. #}
+func (p *{{ machine_name }}Policy) AcceptParams(handed {{ machine_name }}InvokeParams) {
 {% for field in static_fields %}
-{% if field.seeded and field.saved_kind == 'optional' %}
-	if params.V{{ field.id | to_pascal_case }}.IsPresent() {
-		p.{{ field.name }} = params.V{{ field.id | to_pascal_case }}
+{% if field.module_parameter %}
+	{{ field.name }} := p.{{ field.name }}
+{% elif field.seeded and field.saved_kind == 'optional' %}
+	var {{ field.name }} {{ field.ty }}
+	if handed.V{{ field.id | to_pascal_case }}.IsPresent() {
+		{{ field.name }} = handed.V{{ field.id | to_pascal_case }}
+	} else {
+		{{ field.name }} = {{ field.init }}
 	}
 {% elif field.seeded %}
-	if params.V{{ field.id | to_pascal_case }} != nil {
-		p.{{ field.name }} = *params.V{{ field.id | to_pascal_case }}
+	var {{ field.name }} {{ field.ty }}
+	if handed.V{{ field.id | to_pascal_case }} != nil {
+		{{ field.name }} = *handed.V{{ field.id | to_pascal_case }}
+	} else {
+		{{ field.name }} = {{ field.init }}
 	}
+{% else %}
+	var {{ field.name }} {{ field.ty }} = {{ field.init }}
 {% endif %}
+{% endfor %}
+{% for field in static_fields %}
+	p.{{ field.name }} = {{ field.name }}
 {% endfor %}
 }
 {% endif %}
