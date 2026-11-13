@@ -235,6 +235,32 @@ fn two_lists_of_one_count_are_filled_where_their_arm_holds_them() {
     );
 }
 
+/// Two lists of one count whose second is held to a law are not filled in their
+/// pair: the pair's door gives the second as many default entries as the first,
+/// which need not follow the law (docs/adr/0065 §6 R8), so the decode reads both
+/// lists into locals, the second from the flag it hands its entries, and pairs
+/// them by value, where the one count is held with the law.
+#[test]
+fn two_lists_of_one_count_whose_second_is_lawful_are_paired_by_value() {
+    let name = "codec_repeat_flag_aligned_group";
+    let body = eager_decode(name);
+    assert!(
+        !body.contains("refill_second("),
+        "{name} fills a list held to its law through the pair's door:\n{body}"
+    );
+    assert_contains(
+        name,
+        &body,
+        "weights.insert(Default::default()).refill_from(",
+    );
+    assert_contains(
+        name,
+        &body,
+        "links_weights: ::sce_forge_runtime::codec::Aligned::new(links, weights.expect(\"the gate \
+         read the list\")).expect(\"one count read both lists\")",
+    );
+}
+
 /// A group of scalars builds nothing in place, so its arm is assembled from its
 /// elements' locals as before.
 #[test]

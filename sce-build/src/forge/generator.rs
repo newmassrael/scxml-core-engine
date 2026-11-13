@@ -12351,7 +12351,8 @@ struct GroupDecode<'a> {
 ///   holding it). There the gate holds, since the arm the gates installed holds
 ///   the field, so the statement's other branch cannot run;
 /// - two lists of one count are filled in their pair where the arm holds both
-///   (`Aligned::refill_first`, `Aligned::refill_second`);
+///   (`Aligned::refill_first`, `Aligned::refill_second`), the second held to no
+///   law;
 /// - the chain whose memberships are gates is read into the arm the decode
 ///   expects, the one where it holds no kind of entry, through
 ///   `decode_chain_in` (`decode_placed_in` for a bare entry's place), which
@@ -12463,7 +12464,11 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
             .and_then(|(first, _)| field_of(first))
         {
             // The second of two lists of one count, in the pair of each arm that
-            // holds it.
+            // holds it. One held to its law is filled from its start
+            // (`refill_from`), which the pair's door does not take: the door
+            // gives the second list as many default entries as the first, which
+            // need not follow the law (docs/adr/0065 §6 R8), so such a group is
+            // decoded by value.
             let refill = format!("{place}.insert(Default::default()).refill(");
             if !stmt.contains(&refill) {
                 return None;

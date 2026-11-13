@@ -28,7 +28,7 @@
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use crate::bounded::{Bounded, BoundedIter, Entries, Fewest};
+use crate::bounded::{Bounded, BoundedIter, Counted, Entries, Fewest};
 use crate::codec::CodecError;
 use crate::membership::Key;
 use crate::storage::{HeldList, SceList};
@@ -310,6 +310,15 @@ impl<L, A: Law> Deref for Lawful<L, A> {
 
     fn deref(&self) -> &L {
         &self.list
+    }
+}
+
+/// A list held to its law counts its entries as the list it holds does, so a
+/// list that shares its count with another is held to that count and to its
+/// law at once (docs/adr/0065 §6 R5, R8): the two hold as one `Aligned`.
+impl<L: Counted, A: Law> Counted for Lawful<L, A> {
+    fn count(&self) -> usize {
+        Counted::count(&self.list)
     }
 }
 
@@ -622,6 +631,25 @@ mod tests {
         assert_eq!(walk.len(), 2);
         let read: heapless::Vec<Entry, 4> = walk.into_iter().copied().collect();
         assert_eq!(read.as_slice(), &all);
+    }
+
+    #[test]
+    fn a_list_held_to_its_law_shares_its_count_with_another() {
+        let all = [e(true, 1), e(true, 2)];
+        let lawful = || {
+            let list = Bounded::<&[Entry], 4>::new(&all[..]).expect("within the bound");
+            Lawful::<_, Every>::new(true, list).expect("every entry says the start")
+        };
+        assert_eq!(Counted::count(&lawful()), 2);
+        let one = Bounded::<&[u16], 4>::new(&[7]).expect("within the bound");
+        assert!(crate::bounded::Aligned::new(one, lawful()).is_none());
+        let two = Bounded::<&[u16], 4>::new(&[7, 8]).expect("within the bound");
+        let aligned = crate::bounded::Aligned::new(two, lawful()).expect("one count");
+        assert_eq!(aligned.len(), 2);
+        // A walk of each is held as the walks a source presents are.
+        let walks = crate::bounded::Aligned::new(aligned.first().iter(), aligned.second().walk());
+        let (_, second) = walks.expect("a walk keeps its list's count").into_parts();
+        assert!(second.start());
     }
 
     #[test]
