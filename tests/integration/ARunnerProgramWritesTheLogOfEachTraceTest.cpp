@@ -17,14 +17,11 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#ifndef SCE_PROJECT_ROOT
-#define SCE_PROJECT_ROOT "."
-#endif
+#include "integration/RuntimeSuiteExpectedLogs.h"
 
 #ifndef SCE_RUNTIME_SUITE_RUNNER
 #error "the build gives the path of the runner program as SCE_RUNTIME_SUITE_RUNNER"
@@ -32,25 +29,7 @@
 
 namespace {
 
-/// The text of the file at @p path, or empty where there is none.
-std::string fileText(const std::filesystem::path &path) {
-    std::ifstream in(path, std::ios::binary);
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
-/// The test log every runtime writes of `answers_the_job`, without the one
-/// newline its file ends in, which no canonical text holds.
-std::string sharedLog() {
-    std::string text = fileText(std::string(SCE_PROJECT_ROOT) +
-                                "/sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json");
-    EXPECT_FALSE(text.empty() || text.back() != '\n') << "the shared log ends in one newline";
-    if (!text.empty() && text.back() == '\n') {
-        text.pop_back();
-    }
-    return text;
-}
+using RuntimeSuiteExpectedLogs::bytesOf;
 
 /// @p text in single quotes, as the shell reads one word.
 std::string quoted(const std::string &text) {
@@ -92,10 +71,9 @@ std::filesystem::path scratch(const std::string &name) {
 /// then @p args.
 ProgramRun runProgram(const std::filesystem::path &logs, const std::filesystem::path &streams,
                       const std::vector<std::string> &args) {
-    std::string command =
-        quoted(SCE_RUNTIME_SUITE_RUNNER) + " --trace-dir " +
-        quoted(std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/test_profile/runtime/traces") +
-        " --log-dir " + quoted(logs.string());
+    std::string command = quoted(SCE_RUNTIME_SUITE_RUNNER) + " --trace-dir " +
+                          quoted(RuntimeSuiteExpectedLogs::tracesDir().string()) + " --log-dir " +
+                          quoted(logs.string());
     for (const std::string &arg : args) {
         command += " " + quoted(arg);
     }
@@ -105,24 +83,26 @@ ProgramRun runProgram(const std::filesystem::path &logs, const std::filesystem::
     const int waited = std::system(command.c_str());
     ProgramRun run;
     run.status = (waited != -1 && WIFEXITED(waited)) ? WEXITSTATUS(waited) : -1;
-    run.out = fileText(out);
-    run.err = fileText(err);
+    run.out = bytesOf(out);
+    run.err = bytesOf(err);
     return run;
 }
 
 /// docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
 /// its world selects against its trace and writes `<case>.log.json`, the
-/// canonical log with nothing after it, and prints each case's verdict; a
-/// module parameter's value on its command line replaces its default, and one
-/// the suite does not declare is refused with exit status 2 before any case
-/// runs.
+/// canonical log with nothing after it, and prints each case's verdict. In the
+/// world of every feature it replays every trace of the directory, and each
+/// log it writes is its case's expected log (§12, §13.1 S2). A module
+/// parameter's value on its command line replaces its default, and one the
+/// suite does not declare is refused with exit status 2 before any case runs.
 TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
     const std::filesystem::path streams = scratch("streams");
 
-    const std::filesystem::path logs = scratch("default") / "logs";
-    const ProgramRun first = runProgram(logs, streams, {});
+    const std::filesystem::path logs = scratch("every") / "logs";
+    const ProgramRun first = runProgram(logs, streams, {"--world", RuntimeSuiteExpectedLogs::kEveryFeature});
     ASSERT_EQ(first.status, 0) << first.err;
-    EXPECT_EQ(first.out, "answers_the_job pass\n") << "the standard output is the contract's lines alone";
+    EXPECT_EQ(first.out, RuntimeSuiteExpectedLogs::kEveryVerdict)
+        << "the standard output is the contract's lines alone";
     // The standard error may hold the engine's diagnostics, whatever they say:
     // none of its lines is one of the standard output's.
     std::istringstream diagnostics(first.err);
@@ -131,12 +111,12 @@ TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
             EXPECT_EQ(first.out.find(line + "\n"), std::string::npos) << line;
         }
     }
-    EXPECT_EQ(fileText(logs / "answers_the_job.log.json"), sharedLog());
+    RuntimeSuiteExpectedLogs::expectEveryLogIsItsExpectedLog(logs);
 
     const std::filesystem::path overridden = scratch("overridden") / "logs";
     const ProgramRun second = runProgram(overridden, streams, {"--world", "", "--module-parameter", "job=9"});
     ASSERT_EQ(second.status, 0) << second.err;
-    const std::string log = fileText(overridden / "answers_the_job.log.json");
+    const std::string log = bytesOf(overridden / "answers_the_job.log.json");
     EXPECT_NE(log.find("\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}"),
               std::string::npos)
         << "the request names the job of the value given: " << log;
@@ -147,7 +127,7 @@ TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
     EXPECT_NE(third.err.find("the suite declares no module parameter 'limit'"), std::string::npos) << third.err;
     EXPECT_FALSE(std::filesystem::exists(undeclared)) << "no case ran, so no log was written";
 
-    for (const std::string name : {"streams", "default", "overridden", "undeclared"}) {
+    for (const std::string name : {"streams", "every", "overridden", "undeclared"}) {
         std::filesystem::remove_all(scratchPath(name));
     }
 }

@@ -979,9 +979,12 @@ apply_sce_test_policies(runtime_suite_runner)
 # natively only: the Emscripten tree's programs run under Node, where none is.
 if(NOT EMSCRIPTEN)
     add_executable(runtime_suite_runner_test integration/ARunnerProgramWritesTheLogOfEachTraceTest.cpp)
+    # tests/ for integration/RuntimeSuiteExpectedLogs.h, the rule the in-process
+    # runner's test shares: every log written is its case's expected log.
     target_include_directories(runtime_suite_runner_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
     )
     target_link_libraries(runtime_suite_runner_test
         PRIVATE

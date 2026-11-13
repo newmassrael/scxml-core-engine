@@ -22,13 +22,15 @@ verdicts and ``NOW``. What the generator writes for each table is held by
 ``sce-build/tests/a_test_suite_is_generated_in_python.rs``.
 
 The suite is also replayed from the committed trace of ``answers_the_job``
-(docs/SCE_TTCN3_LANE.md §10.5), through ``run_suite_with_traces``, through the
-runner in place (``run_runner``) and through the suite's unit run as its own
-program (§4), as the Rust, Kotlin and C++ suites are.
+(docs/SCE_TTCN3_LANE.md §10.5) through ``run_suite_with_traces``, and from
+every committed trace, each to its expected log, through the runner in place
+(``run_runner``) and through the suite's unit run as its own program (§4), as
+the Rust, Kotlin and C++ suites are.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -285,34 +287,80 @@ class ProgramRun:
         self.err = err
 
 
-def run_in_place(logs: Path, *given: str) -> ProgramRun:
+def run_in_place(logs: Path, *given: str, traces: Path = TRACES_DIR) -> ProgramRun:
     """The suite's runner program run in place (``run_runner``), given
-    ``given`` after the directories of the traces and of the logs."""
+    ``given`` after the directories of the traces, the committed ones unless
+    ``traces`` names others, and of the logs."""
     out: List[str] = []
     err: List[str] = []
     status = run_runner(
         runtime_suite.suite(),
         runtime_suite.module_parameter,
-        ["--trace-dir", str(TRACES_DIR), "--log-dir", str(logs), *given],
+        ["--trace-dir", str(traces), "--log-dir", str(logs), *given],
         out.append,
         err.append,
     )
     return ProgramRun(status, out, err)
 
 
+#: The directory of the expected log of each committed trace, ``<test
+#: case>.json`` each: the canonical log a reviewed run wrote of it, with one
+#: newline after it.
+EXPECTED_LOGS_DIR = ANSWERS_THE_JOB_LOG.parent
+
+#: The world that selects every test case of the suite, so that the runner
+#: replays every trace of the directory.
+EVERY_FEATURE = "ptcs,removal,guard"
+
+#: The lines the runner prints in the world of every feature: each case of the
+#: suite, in its order, with the verdict it ends with.
+EVERY_VERDICT = [
+    "answers_the_job pass",
+    "serves_a_ptc pass",
+    "keeps_a_ptc inconc",
+    "answers_before_the_guard error",
+]
+
+
+def assert_every_log_is_its_expected_log(written_dir: Path) -> None:
+    """docs/SCE_TTCN3_LANE.md §12, §13.1 S2: every log the runner wrote into
+    ``written_dir``, ``<case>.log.json``, is the expected log of its case byte
+    for byte, and the runner wrote a log for every expected log and nothing
+    else. The twin of the Rust ``assert_every_log_is_its_expected_log``."""
+    expected: List[str] = []
+    for name in sorted(path.name for path in EXPECTED_LOGS_DIR.iterdir()):
+        assert name.endswith(".json"), f"the expected log {name} is a .json file"
+        expected.append(name[: -len(".json")])
+    written: List[str] = []
+    for name in sorted(path.name for path in written_dir.iterdir()):
+        assert name.endswith(".log.json"), f"the runner wrote {name}, which is no log of a case"
+        test_case = name[: -len(".log.json")]
+        written.append(test_case)
+        want = EXPECTED_LOGS_DIR / f"{test_case}.json"
+        assert want.is_file(), f"the case {test_case} has no expected log {want}"
+        text = want.read_bytes()
+        assert text.endswith(b"\n") and not text.endswith(b"\n\n"), (
+            f"the expected log of {test_case} ends in one newline"
+        )
+        assert (written_dir / name).read_bytes() == text[:-1], f"the log of {test_case} is not its expected log"
+    assert written == expected, "the runner wrote a log of each case that has an expected log, and of no other"
+
+
 def test_the_suites_runner_program_writes_the_log_of_each_trace(tmp_path: Path) -> None:
     """docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
     its world selects against its trace and writes ``<case>.log.json``, the
-    canonical log with nothing after it, and prints each case's verdict; a
-    module parameter's value on its command line replaces its default, and one
-    the suite does not declare, or that is no value of its type, is refused with
+    canonical log with nothing after it, and prints each case's verdict. In the
+    world of every feature it replays every trace of the directory, and each
+    log it writes is its case's expected log (§12, §13.1 S2). A module
+    parameter's value on its command line replaces its default, and one the
+    suite does not declare, or that is no value of its type, is refused with
     exit status 2 before any case runs. The twin of the Rust case of the same
     name."""
-    logs = tmp_path / "default"
-    run = run_in_place(logs)
+    logs = tmp_path / "every"
+    run = run_in_place(logs, "--world", EVERY_FEATURE)
     assert run.status == 0, run.err
-    assert run.out == ["answers_the_job pass"]
-    assert (logs / "answers_the_job.log.json").read_bytes().decode("utf-8") == answers_the_job_log()
+    assert run.out == EVERY_VERDICT
+    assert_every_log_is_its_expected_log(logs)
 
     overridden = tmp_path / "overridden"
     given = run_in_place(overridden, "--world", "", "--module-parameter", "job=9")
@@ -337,9 +385,14 @@ def test_the_suites_runner_program_writes_the_log_of_each_trace(tmp_path: Path) 
 def test_a_test_case_whose_trace_is_missing_ends_in_error_and_its_log_is_written(tmp_path: Path) -> None:
     """P13, §4: a test case whose trace is missing ends with ``error`` and its
     log is written, the reason on the standard error, and the program exits 0,
-    since the verdict is the log's."""
+    since the verdict is the log's. The directory of the traces holds the
+    committed trace of ``answers_the_job`` alone, so ``serves_a_ptc``'s is
+    missing."""
+    traces = tmp_path / "traces"
+    traces.mkdir()
+    shutil.copyfile(TRACES_DIR / "answers_the_job.json", traces / "answers_the_job.json")
     logs = tmp_path / "logs"
-    run = run_in_place(logs, "--world", "ptcs")
+    run = run_in_place(logs, "--world", "ptcs", traces=traces)
     assert run.status == 0, run.err
     assert run.out == ["answers_the_job pass", "serves_a_ptc error"]
     assert (logs / "serves_a_ptc.log.json").read_text(encoding="utf-8") == (
@@ -383,12 +436,12 @@ def test_the_suites_unit_is_the_runner_program(tmp_path: Path) -> None:
             check=False,
         )
 
-    run = program("default")
+    run = program("every", "--world", EVERY_FEATURE)
     assert run.returncode == 0, run.stderr
-    assert run.stdout == "answers_the_job pass\n", "the standard output is the contract's lines alone"
-    assert (tmp_path / "default-logs" / "answers_the_job.log.json").read_bytes().decode(
-        "utf-8"
-    ) == answers_the_job_log()
+    assert run.stdout == "".join(f"{line}\n" for line in EVERY_VERDICT), (
+        "the standard output is the contract's lines alone"
+    )
+    assert_every_log_is_its_expected_log(tmp_path / "every-logs")
 
     given = program("given", "--module-parameter", "job=9")
     assert given.returncode == 0, given.stderr
