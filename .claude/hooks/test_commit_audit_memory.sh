@@ -424,10 +424,64 @@ touch "$md/MEMORY.md"
 err="$(invoke_hook "$proj")"
 assert_blocks_with "window-rewritten-index" "MEMORY.md: broken link to does_not_exist.md" "$err" || failures=$((failures + 1))
 
+# ── Case 25: a wikilink to a frontmatter name: alone resolves ──
+# The harness memory format takes the frontmatter name: as a file's id,
+# so a link may name a file by it where the file name says otherwise.
+proj="$(make_project case-wikilink-by-name)"
+md="$(memdir_for "$proj")"
+cat > "$md/adr_0091.md" <<'MEMO'
+---
+name: adr-0091-test-profile-ttcn3-export
+description: a file whose name differs from its file name
+status: landed
+type: project
+---
+
+body
+MEMO
+cat > "$md/source_landed.md" <<'MEMO'
+---
+name: source
+description: refers to a file by its frontmatter name
+status: landed
+type: project
+---
+
+See [[adr-0091-test-profile-ttcn3-export]] for context.
+MEMO
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "wikilink-by-name-ok" "$err" || failures=$((failures + 1))
+
+# ── Case 26: a wikilink that is neither a file name nor a name: blocks ──
+proj="$(make_project case-wikilink-by-neither)"
+md="$(memdir_for "$proj")"
+cat > "$md/adr_0091.md" <<'MEMO'
+---
+name: adr-0091-test-profile-ttcn3-export
+description: a file whose name differs from its file name
+status: landed
+type: project
+---
+
+body
+MEMO
+cat > "$md/source_landed.md" <<'MEMO'
+---
+name: source
+description: refers to a name no file has
+status: landed
+type: project
+---
+
+See [[adr-0091-test-profile]] for context.
+MEMO
+err="$(invoke_hook "$proj")"
+assert_blocks_with "wikilink-by-neither" "dangling wikilink [[adr-0091-test-profile]]" "$err" || failures=$((failures + 1))
+
 if [ "$failures" -gt 0 ]; then
     echo "" >&2
     echo "$failures memory-lifecycle test case(s) failed." >&2
     exit 1
 fi
 
-echo "OK: 24 memory lifecycle contract cases verified against live hook."
+echo "OK: 26 memory lifecycle contract cases verified against live hook."

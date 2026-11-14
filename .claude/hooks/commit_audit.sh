@@ -810,10 +810,32 @@ for f in sorted(MEMORY_DIR.rglob("*.md")):
     else:
         outside_window.extend(found)
 
-# Build slug set for dangling [[wikilink]] gate.
+def read_name(path):
+    """The top-level frontmatter name: of a memory file, or None."""
+    try:
+        lines = path.read_text().splitlines()
+    except Exception:
+        return None
+    if not lines or lines[0] != "---":
+        return None
+    for line in lines[1:]:
+        if line == "---":
+            break
+        m = re.match(r"^name:\s*(\S+)\s*$", line)
+        if m:
+            return m.group(1).strip("\x27\x22")
+    return None
+
+# Build slug set for dangling [[wikilink]] gate. A memory file has two
+# names a link may use: its file name, and the name: of its frontmatter,
+# which the harness memory format takes as the file id. Both are slugged
+# alike (lower case, _ as -), and neither stands in for the other.
 slugs = set()
 for f in MEMORY_DIR.rglob("*.md"):
     slugs.add(f.stem.replace("_", "-").lower())
+    name = read_name(f)
+    if name:
+        slugs.add(name.replace("_", "-").lower())
 
 def strip_code(content):
     content = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
