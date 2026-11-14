@@ -12,7 +12,7 @@
   optional union whole, or the refusal of it kept beside it. A shape at an index
   of a list is taken whole into a union variable and then narrowed by its tag; an
   index outside the list writes nothing, ends the block and raises
-  error.execution (docs/adr/0098, section 5.3). A delivery outside its type is
+  error.execution (docs/adr/0099, section 5.3). A delivery outside its type is
   refused whole and counted. Every out variable is what a host reads back, and
   scenarios/static_union.json replays it.
 
@@ -65,7 +65,7 @@
     <data id="lift_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
     <!-- A shape taken whole from a list's element at an index, into a union
          that starts at a case and into one that starts absent; how many were
-         taken, and the width of a picked rect (docs/adr/0098, section 5.3). -->
+         taken, and the width of a picked rect (docs/adr/0099, section 5.3). -->
     <data id="picked" sce:type="union:Shape" sce:direction="out">
       <sce:set name="kind" expr="Kind.dot"/>
     </data>
@@ -113,7 +113,7 @@
     </transition>
     <!-- The element at an index is read by the checked read of an index, which
          fails outside the list: then nothing is written, the rest of the block
-         does not run, and error.execution is raised (docs/adr/0098, section
+         does not run, and error.execution is raised (docs/adr/0099, section
          5.3; §scxml-4.9). The element itself is no subject a test narrows, so
          the copy is, and is narrowed by its tag (docs/adr/0092, section 6.1
          item 2). -->
