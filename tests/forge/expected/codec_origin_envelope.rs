@@ -563,24 +563,33 @@ impl<S: CodecOriginEnvelopeStorage> CodecOriginEnvelopeOwned<S> {
     }
 }
 
+/// What the origin projection of `CodecOriginEnvelope` asks of a storage profile
+/// beside CodecOriginEnvelopeStorage: that it is an origin profile, and
+/// that each byte string and text of `CodecOriginEnvelope` and of the codecs it
+/// holds is built from the origin by the container the profile holds it in.
+#[allow(dead_code)]
+pub trait CodecOriginEnvelopeOrigin: CodecOriginEnvelopeStorage + ::sce_forge_runtime::codec::OriginStorage + ::sce_forge_runtime::codec::OriginStr<CodecOriginEnvelopeNoteField> + super::codec_origin_leaf::CodecOriginLeafOrigin {}
+
+impl<S: CodecOriginEnvelopeStorage + ::sce_forge_runtime::codec::OriginStorage + ::sce_forge_runtime::codec::OriginStr<CodecOriginEnvelopeNoteField> + super::codec_origin_leaf::CodecOriginLeafOrigin> CodecOriginEnvelopeOrigin for S {}
+
 #[allow(dead_code)]
 impl<'a, D> CodecOriginEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginEnvelopeLentStorage {
     /// Project this borrowed view into an owned [`CodecOriginEnvelopeOwned`]
-    /// whose byte and text containers are made by the profile's
-    /// `OriginStorage` from each slice AND `origin`, the buffer the
-    /// view was decoded from. A profile that shares that buffer builds
-    /// containers that refer back to it instead of copying out of it; what the
+    /// whose byte and text containers are each built from the slice AND
+    /// `origin`, the buffer the view was decoded from, by the
+    /// container the profile holds that field in. A container that shares
+    /// that buffer refers back to it instead of copying out of it; what the
     /// origin is, and what to do with a slice that does not come from it, is
-    /// the profile's to say.
+    /// the profile's to say, field by field.
     ///
     /// `try_into_owned_in` stays the copying projection. Every codec this one
     /// embeds, repeats or dispatches to must have been generated with
     /// `--owned-origin` as well.
-    pub fn try_into_owned_in_origin<S: CodecOriginEnvelopeStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginEnvelopeOwned<S>, CodecError> {
+    pub fn try_into_owned_in_origin<S: CodecOriginEnvelopeOrigin>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginEnvelopeOwned<S>, CodecError> {
         Ok(CodecOriginEnvelopeOwned {
             hdr: self.hdr,
             note_len: self.note_len,
-            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStorage>::str_from::<CodecOriginEnvelopeNoteField>(origin, self.note.into_inner()))?,
+            note: ::sce_forge_runtime::codec::Bounded::from_built_text(<S as ::sce_forge_runtime::codec::OriginStr<CodecOriginEnvelopeNoteField>>::str_from(origin, self.note.into_inner()))?,
             m: self.m,
             required: self.required.try_into_owned_in_origin::<S>(origin)?,
             optional: self.optional.map(|_v| _v.try_into_owned_in_origin::<S>(origin)).transpose()?,
