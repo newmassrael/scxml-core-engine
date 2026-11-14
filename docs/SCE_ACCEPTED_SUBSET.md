@@ -711,7 +711,7 @@ enum, `Equatable` and `Sendable`, one case per variant (holding the case's recor
 nothing for an empty case) spelled as the tag's own Swift enum spells the variant, a
 `kind` property and a `proven<Case>` property per case that holds a record, and, as
 members of the enum, `revision`, `dataMaxLen`, `schemaID` and `jsonSchema`; a field of
-the union at any depth is that enum. No type has a zero (docs/adr/0098), so a Swift
+the union at any depth is that enum. No type has a zero (docs/adr/0099), so a Swift
 payload, whatever its fields hold, is built whole by its initialiser of every field. A
 case named for a word Swift reserves, for a
 member of the enum, or as another case is refused by name. Every other backend
