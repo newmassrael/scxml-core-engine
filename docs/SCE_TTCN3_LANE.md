@@ -472,8 +472,24 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   suite's runner program replays the whole directory of traces in the world of every feature
   (`ptcs,removal,guard`), and so does the runner run in the process on every backend but Rust; each backend's test
   holds every log written to its expected log byte for byte, and the set of logs written to the set of expected
-  logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4). No mapped message type of any suite has
-  a codec document (DD §8.4).
+  logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4).
+- **Every message type a mapped port of the corpus carries has a codec document, but two that no format holds.**
+  The documents are `sce-build/tests/fixtures/test_profile/codecs/<record>_codec.scxml` (design choice: one
+  directory for the corpus, so a record that several suites carry has one codec, named by the record as the trace and
+  the log name it, with `_codec` after it so that the codec's unit and the record's never share a name). Each is a
+  CBOR map (`SCE_FORGE.md` §4.6.1) or one content-line component (§4.6.4) whose entries are the record's fields by
+  their ids, each entry of its field's type, `optional<T>` where the field may be absent, and a text's or a byte
+  string's bound its `sce:max-size`: the binding reads a field by the entry of its id (DD §8.4).
+  `sce-build/tests/a_mapped_message_type_has_its_codec_document.rs` walks each suite of the corpus to the record
+  types its system ports carry (`sce-build/tests/common/lane_corpus.rs`), and holds each to its codec document
+  through the parser's own model of the codec, and every codec document to a record a mapped port carries.
+  Two records have none, since a field of each is of a type neither format holds: `job_status` (`codes`, a list of
+  integers: CBOR holds only a list of records of scalars, and content-line no list of integers) and `order_placed`
+  (`lines`, `customer` and `payment`: a list of records holding an enum, a record within the record and a union).
+  The test names each with that field and holds the field to have no form. So `job_suite`, `orders_suite` and
+  `nested_suite`, whose mapped ports carry them, run natively and cannot yet run in the lane: the lane needs a CBOR
+  form of a list of integers, of a record within a record and of a union (the open question of §14), or suites
+  whose mapped ports carry records the two formats hold.
 
 ### 12.2 The rows of ADR 0091 §2
 
@@ -556,7 +572,8 @@ in the component that invokes it, which is accepted on its own.
 
 - a trace and an expected log for every test case of each suite made runnable below (`runtime_suite`'s are in
   place, §12.1);
-- a codec document for every message type a mapped port carries, in CBOR or content-line;
+- a codec document for every message type a mapped port carries, in CBOR or content-line: done for every type a
+  format holds (§12.1); `job_status` and `order_placed` wait on a CBOR form of the types they hold (§14);
 - runnable suites that cover the "missing" column of §12.2, including the two `error` cases;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
   their rows run as well as export;
@@ -622,6 +639,12 @@ replayed through S1. Step 6 stays the step that holds the law over the whole cor
   would be a check of its own. D3's tests decode SCE's bytes for a few shapes. A check over the corpus is not part of
   this design.
 - **Positional binary codecs.** They have no reference binding (DD §8.4).
+- **The record types no codec format holds.** A field of the profile's type grammar may be a list of integers, a
+  record within the record or a union, and a mapped port may carry such a record (`job_status`, `order_placed`,
+  §12.1), but a CBOR codec holds no list but one of records of scalars, and content-line none of the three. Until the
+  CBOR grammar of `SCE_FORGE.md` §4.6.1 gains a form of each, on every backend that generates a CBOR codec, a suite
+  whose mapped ports carry such a record runs natively and not in the lane. The grammar's growth is a decision of
+  its own, with its ADR; this design does not make it.
 - **A second TTCN-3 tool.** Running the suite on a second tool, by a binding of the same interface, remains the
   stronger form of C1 (answer 1). It is not planned.
 

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/SCE_TTCN3_LANE.md §12, SCE_FORGE.md §4.6.1: the codec of the record
+  voucher_payment (imports/voucher_payment.scxml), which orders_suite's mapped
+  port sends out. One CBOR map: the voucher's code, a byte string of at most
+  four bytes as its type bounds it, under key 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="voucher_payment_codec" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="voucher_code" sce:type="bytes" sce:key="0" sce:max-size="4" sce:direction="out"/>
+  </datamodel>
+</scxml>
