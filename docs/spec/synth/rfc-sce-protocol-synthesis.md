@@ -614,7 +614,7 @@ The per-field model:
 | Field shape | Static WCET contribution |
 |---|---|
 | Fixed-width (`u8`/`u16`/`u32`/`u64`, fixed-size byte arrays, struct of fixed-width fields) | constant (1–2 cycles per access; folded into a single cost coefficient) |
-| `vle_uK` | `ceil(K / 7) × platform.vle_decode_cycles_per_byte / platform.clock_freq_mhz` (3 bytes for `u16`, 5 for `u32`, 10 for `u64`) |
+| `vle_uK` | `9 × platform.vle_decode_cycles_per_byte / platform.clock_freq_mhz` at every `K`: a decode reads one ZInt64 of up to 9 bytes whatever the width and then bounds the value (Appendix B), so an adversarial peer can pad any `vle_*` field to 9 bytes |
 | `len-prefix` byte string with declared `max-bytes` | `max_bytes × platform.memcpy_cycles_per_byte / platform.clock_freq_mhz` (treated as a copy when `parse-mode="own"`; bounded slice construction only when `parse-mode="borrow"`) |
 | TLV chain with `max-depth=N`, `max-payload-per-entry=B` | `N × (platform.tlv_chain_per_entry_overhead_us + per-entry-body-WCET(B))` |
 | `<sce:repeat count="n">` with build-time-known `max(n)` | `max(n) × per-element-aggregate-WCET` |
@@ -671,7 +671,7 @@ AP targets (`scheduler.kind: tokio` / `rt`) do not require codec aggregate
 WCET; the runtime is preemptive and a slow parse blocks only one task.
 
 **Diagnostics:**
-- `codec/vle-width-overflow` — `vle_u32` field receiving value >2^32
+- `codec/vle-width-overflow` — a decode of a `vle_uK` field reads a ZInt whose value is past `2^K - 1` (a `vle_u32` field receiving 2^32 or more); a longer encoding of a value the field holds is no overflow
 - `codec/variant-arm-unreachable` — tag value not in any arm and no `<sce:default>`
 - `codec/present-if-refs-later-field` — forward reference
 - `codec/len-prefix-refs-non-int` — length must be integer
@@ -4639,11 +4639,26 @@ the trailing `write_u8` then emits the remaining value as one full
 8-bit byte with no continuation flag. A u64 VLE is therefore at most
 `ceil((64 - 1) / 7) = 9` bytes — the canonical Zenoh ZInt form, in which
 bit 63 rides in the 9th byte's high bit rather than spilling into a 10th
-byte (matching `zenoh` and `zenoh-pico`). The decoder mirrors this: it
-reads the byte at shift `7 * (VLE_LEN - 1)` as a full 8 data bits with
-no continuation check. On MCU the `max-iter` bound becomes a
-`_Static_assert` friend; the generator can unroll or keep the loop based
-on a size-vs-speed attribute.
+byte (matching `zenoh` and `zenoh-pico`). On MCU the `max-iter` bound
+becomes a `_Static_assert` friend; the generator can unroll or keep the
+loop based on a size-vs-speed attribute.
+
+**The wire is a ZInt64 at every width; the type bounds the value.** A
+`vle_u16` or `vle_u32` field is the same ZInt on the wire as a
+`vle_u64`; its narrower type bounds the value it holds, not the encoding.
+The decoder of every width reads one ZInt as upstream Zenoh reads every
+one: up to eight bytes of 7 data bits and a continuation flag, then, if
+the chain reaches it, a 9th byte of a full 8 data bits with no
+continuation check, and never a 10th. It then refuses a value past the
+field's width (`codec/vle-width-overflow`). So a narrow decode accepts
+every encoding of a value its type holds, the padded ones included
+(`81 80 80 00`, the value 1 in four bytes, reads as 1 in a `vle_u16`
+field, as it does in `zenoh`), and refuses `80 80 04` (65536) in one; it
+never refuses a value for the length of its encoding. The encoder writes
+the minimal encoding, which for a `W`-bit value is at most
+`ceil((W - 1) / 7)` bytes (3 for `u16`, 5 for `u32`, 9 for `u64`): that
+figure bounds what an encode writes and sizes an encode buffer, and is
+no bound on what a decode reads, which is up to 9 bytes at every width.
 
 ---
 

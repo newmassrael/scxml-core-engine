@@ -222,7 +222,11 @@
 
   <!-- Codec field bit-size: fixed integer, "tail", "length-ref", or "vle".
        "vle" pairs with sce:type ∈ {uint16, uint32, uint64} and selects
-       the base-128 variable-length encoding (RFC §synth-5-B App. B). -->
+       the canonical Zenoh ZInt, matching zenoh / zenoh-pico (RFC §synth-5-B
+       App. B). The wire is a ZInt64 at every width, of 1 to 9 bytes; the
+       type bounds the value: a decode reads every encoding of a value the
+       type holds and refuses a value past its width, never a longer
+       encoding, and an encode writes the minimal one. -->
   <xs:simpleType name="bitSizeType">
     <xs:union>
       <xs:simpleType>
