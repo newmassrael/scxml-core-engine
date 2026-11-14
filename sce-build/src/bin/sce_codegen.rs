@@ -22,7 +22,7 @@ use sce_build::cli_error::CliError;
 use sce_build::cli_language::LanguageRoute;
 use sce_build::filters;
 use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, Located};
+use sce_build::forge::error::{ForgeError, Located, RelatedRole};
 use sce_build::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
 };
@@ -921,27 +921,50 @@ fn human_location<E: ToDiagnostics>(err: &E) -> String {
     }
 }
 
-/// Write the chain under a refusal already written in `human` form, one
-/// `reached from` line per reference, the outermost first.
-fn report_reached_from_human() {
-    for site in reached_from() {
-        match site.location.line {
-            Some(line) => eprintln!("  reached from {}:{line}", site.location.file),
-            None => eprintln!("  reached from {}", site.location.file),
+/// Write the route under a refusal already written in `human` form, one
+/// `reached from` line per reference, the outermost first: the chain of the
+/// run, then the references the refusal carries itself — the `<invoke>` of a
+/// statechart whose parse read the child the refusal was raised in.
+fn report_reached_from_human<E: ToDiagnostics>(err: &E) {
+    let carried = err
+        .to_diagnostics()
+        .into_iter()
+        .next()
+        .map(|diag| diag.related)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|site| site.role == RelatedRole::ReachedFrom)
+        .map(|site| (site.location.file, site.location.line));
+    let chain = reached_from()
+        .into_iter()
+        .map(|site| (site.location.file, site.location.line));
+    for (file, line) in chain.chain(carried) {
+        match line {
+            Some(line) => eprintln!("  reached from {file}:{line}"),
+            None => eprintln!("  reached from {file}"),
         }
     }
 }
 
 /// Emit one NDJSON record per diagnostic of `err`, each carrying the chain as
-/// its `reached-from` related sites (SCE_ERROR_CONTRACT §2.4).
+/// its `reached-from` related sites (SCE_ERROR_CONTRACT §2.4). The chain is
+/// the outer part of the route, so it goes ahead of the `reached-from` sites
+/// the record carries itself, and the route reads outermost first.
 fn emit_ndjson_with_reached_from<E: ToDiagnostics>(err: &E) {
     let chain = reached_from();
     for mut diag in err.to_diagnostics() {
+        let first_step = diag
+            .related
+            .iter()
+            .position(|site| site.role == RelatedRole::ReachedFrom)
+            .unwrap_or(diag.related.len());
+        let carried = diag.related.split_off(first_step);
         diag.related.extend(
             chain
                 .iter()
                 .map(sce_build::forge::diagnostic::Related::from),
         );
+        diag.related.extend(carried);
         emit_ndjson(&diag);
     }
 }
@@ -1069,7 +1092,7 @@ impl ErrorFormat {
         match self {
             ErrorFormat::Human => {
                 eprintln!("{}{human_prefix}{err}", human_location(err));
-                report_reached_from_human();
+                report_reached_from_human(err);
             }
             ErrorFormat::Json => {
                 // One NDJSON line per diagnostic. Most errors produce
@@ -8844,8 +8867,9 @@ fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildRefe
 /// `src` names) is not beside the copy: the child's generation, the parse of
 /// its machine and the plan of it (`--plan-children`) found none, so the
 /// machine the child's machine names had no generation. A candidate the run
-/// finds nowhere is said; a `src` child found nowhere is the one an
-/// unreadable `src` is (the parse gave it an engine and no names).
+/// finds nowhere is said; a `src` child found nowhere is one the parse gave
+/// an engine and no names. A child that is found and refused never reaches
+/// this: the parse of the document that names it refused that document.
 fn child_documents_to_stage(
     model: &SCXMLModel,
     document: &Path,

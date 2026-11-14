@@ -60,6 +60,13 @@ The accepted surface comprises:
   declaring `ecmascript` currently obliges.
 - **Invoke**: `<invoke type="scxml">` with inline `<content>` or
   external `src`, static param binding via `<param>` and `<finalize>`.
+  A child named by `src`, or listed in a hybrid invoke's
+  `sce:candidates`, that the build finds is read with its parent, with
+  the parent's include directories: a child that is refused refuses its
+  parent, with the child's own record at its own row and the parent's
+  reference as a `reached-from` site (SCE_ERROR_CONTRACT §2.4), as an
+  in-line child that is refused does. A child the build does not find is
+  given a script engine and declares no names.
 - **HTTP event processor**: `<send type="BasicHTTPEventProcessor">`
   for W3C §C.2 conformance (all five backends tested against the
   `HttpAotTest` harness).

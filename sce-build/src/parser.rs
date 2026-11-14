@@ -5616,16 +5616,29 @@ impl SCXMLParser {
             // is an input of this document's output, so it joins the deps a
             // `--write-deps` build regenerates on.
             if base_dir.is_some() || !self.candidate_roots.is_empty() {
+                // A candidate that does not parse refuses this document, with
+                // its entry of `sce:candidates` as the site it was reached from.
+                let listed = AttributeSpelling::of(
+                    elem,
+                    Some(crate::forge::model::SCE_NAMESPACE),
+                    "candidates",
+                );
                 for candidate in &mut candidates {
+                    let named_at =
+                        ChildReference::of(elem, listed.as_ref(), &candidate.path, source_name);
                     let written = Path::new(&candidate.path);
                     match locate_child_document(&self.candidate_roots, base_dir, written) {
                         Some(found) => {
-                            populate_candidate_metadata(Some(found.as_path()), candidate);
+                            self.populate_candidate_metadata(
+                                Some(found.as_path()),
+                                &named_at,
+                                candidate,
+                            )?;
                             self.preprocessor_deps
                                 .push(crate::confine::canonicalize(&found).unwrap_or(found));
                         }
-                        // Unreadable: answered as an unreadable static `src`.
-                        None => populate_candidate_metadata(None, candidate),
+                        // Not found: answered as a static `src` that is not there.
+                        None => self.populate_candidate_metadata(None, &named_at, candidate)?,
                     }
                 }
             }
@@ -5837,7 +5850,10 @@ impl SCXMLParser {
             // Populate child-side metadata (script-engine flag, datamodel
             // variable list). For inline children the model is already
             // parsed in-memory; external (`src=`) children are read from
-            // disk, found as a candidate is ([`locate_child_document`]).
+            // disk, found as a candidate is ([`locate_child_document`]). A
+            // child read from disk that does not parse refuses this
+            // document, as an in-line one does, with the `src` that names it
+            // as the site it was reached from.
             if let Some(inline_model) = scxml_info.inline_child.as_deref() {
                 populate_child_metadata_from_model(inline_model, &mut scxml_info.common);
             } else if let (true, Some(written)) = (
@@ -5845,7 +5861,13 @@ impl SCXMLParser {
                 scxml_info.child_document_path(),
             ) {
                 let found = locate_child_document(&self.candidate_roots, base_dir, &written);
-                parse_child_metadata(found.as_deref(), &mut scxml_info.common);
+                let named_at = ChildReference::of(
+                    elem,
+                    scxml_info.src_spelling.as_ref(),
+                    &scxml_info.src,
+                    source_name,
+                );
+                self.parse_child_metadata(found.as_deref(), &named_at, &mut scxml_info.common)?;
             }
 
             return Ok(Some(Invoke::Scxml(scxml_info)));
@@ -8918,7 +8940,7 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
 /// Populate child-side invoke metadata from an already-parsed
 /// [`SCXMLModel`]. Shared by the in-memory inline-child path
 /// (`parse_invoke` → `ScxmlInvokeInfo::inline_child`) and the on-disk
-/// external path ([`parse_child_metadata`]), so both invoke flavours
+/// external path ([`SCXMLParser::parse_child_metadata`]), so both invoke flavours
 /// derive the same `child_needs_script_engine` / `child_datamodel_vars`
 /// / `child_needs_event_scheduler` from the same walker.
 fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut InvokeSessionCommon) {
@@ -8987,50 +9009,138 @@ pub fn locate_child_document(
         .find(|path| crate::confine::exists(path))
 }
 
-/// The metadata of the child whose document is `child_path`; a child with no
-/// document (`None`) or one that is not there is given an engine and declares
-/// nothing.
-fn parse_child_metadata(child_path: Option<&Path>, common: &mut InvokeSessionCommon) {
-    let Some(child_path) = child_path.filter(|path| crate::confine::exists(path)) else {
-        common.child_needs_script_engine = true;
-        common.child_datamodel_vars = Some(Vec::new());
-        return;
-    };
-    match SCXMLParser::new().parse_file(&child_path.to_string_lossy()) {
-        Ok(child_model) => populate_child_metadata_from_model(&child_model, common),
-        Err(_) => {
-            common.child_needs_script_engine = true;
-            common.child_datamodel_vars = Some(Vec::new());
+/// Where a statechart names a child document it starts — the `src` of an
+/// `<invoke>`, or one entry of its `sce:candidates` — as a refusal raised in
+/// that child carries it: a `reached-from` site (SCE_ERROR_CONTRACT §2.4).
+struct ChildReference {
+    location: crate::forge::error::SourceLocation,
+    /// The reference as the document spells it, when it is written on the
+    /// row `location` names (SCE_ERROR_CONTRACT §3.1.1).
+    actual: Option<String>,
+}
+
+impl ChildReference {
+    /// The reference `written`, a whitespace-separated token of the attribute
+    /// value `spelling` holds (the whole of a `src`, one entry of
+    /// `sce:candidates`), on the `<invoke>` `elem` of the document labelled
+    /// `source_name`: placed where the token is written, or on the `<invoke>`
+    /// itself, with no `actual`, when the value cannot be read back to the
+    /// text it was written as.
+    fn of(
+        elem: &roxmltree::Node,
+        spelling: Option<&AttributeSpelling>,
+        written: &str,
+        source_name: &str,
+    ) -> Self {
+        let token = spelling.and_then(|spelling| {
+            let start = token_offset(&spelling.decoded()?, written)?;
+            spelling.locate(start..start + written.len())
+        });
+        match token {
+            Some(token) => Self {
+                location: crate::forge::error::SourceLocation {
+                    file: source_name.to_string(),
+                    line: Some(token.row),
+                    col: Some(token.col),
+                },
+                actual: token.on_one_row().map(str::to_string),
+            },
+            None => {
+                let at = elem.document().text_pos_at(elem.range().start);
+                Self {
+                    location: crate::forge::error::SourceLocation {
+                        file: source_name.to_string(),
+                        line: Some(at.row),
+                        col: Some(at.col),
+                    },
+                    actual: None,
+                }
+            }
         }
     }
 }
 
-/// §scxml-6.4: a hybrid invoke's candidate is a child like any other, so it
-/// is described by the same derivation a static child is — one owner for
-/// "does this document need an engine" and "which names may it be given".
-///
-/// A candidate the build cannot read (`None`, or a file that is not there) is
-/// answered the way [`parse_child_metadata`] answers an unreadable `src`: it
-/// is given an engine and declares nothing, so nothing is seeded into it.
-fn populate_candidate_metadata(
-    candidate_path: Option<&Path>,
-    candidate: &mut crate::model::InvokeCandidate,
-) {
-    let mut common = InvokeSessionCommon::default();
-    parse_child_metadata(candidate_path, &mut common);
-    candidate.child_needs_script_engine = common.child_needs_script_engine;
-    candidate.child_datamodel_vars = common.child_datamodel_vars;
-    candidate.child_static_variables = common.child_static_variables;
-    candidate.child_is_static = common.child_is_static;
-    candidate.child_declares_host_acts = common.child_declares_host_acts;
-    candidate.child_declares_host_duties = common.child_declares_host_duties;
-    candidate.child_has_send_to_parent = common.child_has_send_to_parent;
-    candidate.child_ends_with_done_data = common.child_ends_with_done_data;
-    candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
-    candidate.child_mesh = common.child_mesh;
-    candidate.child_saves = common.child_saves;
-    candidate.child_swift_saves = common.child_swift_saves;
-    candidate.child_receives = common.child_receives;
+/// Where `token` stands in `value` as a whole whitespace-separated token: the
+/// byte offset of the first occurrence that no other character but whitespace
+/// touches, so `a.scxml` is not found inside `data.scxml`.
+fn token_offset(value: &str, token: &str) -> Option<usize> {
+    let separates = |next: Option<char>| next.filter(|c| !c.is_whitespace()).is_none();
+    value
+        .match_indices(token)
+        .map(|(start, _)| start)
+        .find(|&start| {
+            separates(value[..start].chars().next_back())
+                && separates(value[start + token.len()..].chars().next())
+        })
+}
+
+impl SCXMLParser {
+    /// The metadata of the child whose document is `child_path`, which the
+    /// document being parsed names at `named_at`.
+    ///
+    /// A child with no document (`None`) or one that is not there is given an
+    /// engine and declares nothing. A child that is there is read with the
+    /// include directories this document is read with, as the run that stages
+    /// it reads it (`sce-codegen generate`); one that is refused refuses this
+    /// document too, with the child's own record — its code, its words, its
+    /// row in its own file — carrying `named_at` as the site it was reached
+    /// from. Turning that refusal into a child that needs an engine would tell
+    /// the author of a parse error, an import that resolves nowhere or a
+    /// construct the child may not hold that the child needs a script engine.
+    fn parse_child_metadata(
+        &self,
+        child_path: Option<&Path>,
+        named_at: &ChildReference,
+        common: &mut InvokeSessionCommon,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        let Some(child_path) = child_path.filter(|path| crate::confine::exists(path)) else {
+            common.child_needs_script_engine = true;
+            common.child_datamodel_vars = Some(Vec::new());
+            return Ok(());
+        };
+        let child_model = Self::new()
+            .with_include_dirs(self.include_dirs.clone())
+            .parse_file(&child_path.to_string_lossy())
+            .map_err(|refusal| {
+                refusal.reached_through(named_at.location.clone(), named_at.actual.clone())
+            })?;
+        populate_child_metadata_from_model(&child_model, common);
+        Ok(())
+    }
+
+    /// §scxml-6.4: a hybrid invoke's candidate is a child like any other, so
+    /// it is described by the same derivation a static child is — one owner
+    /// for "does this document need an engine" and "which names may it be
+    /// given".
+    ///
+    /// A candidate the build does not find (`None`, or a file that is not
+    /// there) is answered the way [`Self::parse_child_metadata`] answers a
+    /// `src` that is not there: it is given an engine and declares nothing, so
+    /// nothing is seeded into it. One that is there and is refused refuses
+    /// the document that lists it, as a `src` child does.
+    fn populate_candidate_metadata(
+        &self,
+        candidate_path: Option<&Path>,
+        named_at: &ChildReference,
+        candidate: &mut crate::model::InvokeCandidate,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        let mut common = InvokeSessionCommon::default();
+        self.parse_child_metadata(candidate_path, named_at, &mut common)?;
+        candidate.child_needs_script_engine = common.child_needs_script_engine;
+        candidate.child_datamodel_vars = common.child_datamodel_vars;
+        candidate.child_static_variables = common.child_static_variables;
+        candidate.child_is_static = common.child_is_static;
+        candidate.child_declares_host_acts = common.child_declares_host_acts;
+        candidate.child_declares_host_duties = common.child_declares_host_duties;
+        candidate.child_has_send_to_parent = common.child_has_send_to_parent;
+        candidate.child_ends_with_done_data = common.child_ends_with_done_data;
+        candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
+        candidate.child_mesh = common.child_mesh;
+        candidate.child_saves = common.child_saves;
+        candidate.child_swift_saves = common.child_swift_saves;
+        candidate.child_receives = common.child_receives;
+        Ok(())
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -9092,9 +9202,20 @@ mod tests {
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><final id="c"/></scxml>"#,
         )
         .unwrap();
+        let named_at = ChildReference {
+            location: crate::forge::error::SourceLocation {
+                file: "parent.scxml".to_string(),
+                line: Some(1),
+                col: Some(1),
+            },
+            actual: None,
+        };
         let read = |root: Root, path: &Path| {
             let mut common = InvokeSessionCommon::default();
-            within_for_test(root, || parse_child_metadata(Some(path), &mut common));
+            within_for_test(root, || {
+                SCXMLParser::new().parse_child_metadata(Some(path), &named_at, &mut common)
+            })
+            .expect("a child that is read and one that is not there refuse nothing");
             (
                 common.child_needs_script_engine,
                 common.child_datamodel_vars,
@@ -9109,6 +9230,257 @@ mod tests {
         // The control: a child that is read says what it is, and a missing one does not.
         assert_ne!(free, missing, "the child is read without a folder");
         assert_eq!(refused, missing, "the child's being there is said");
+    }
+
+    /// Where `needle` starts in `text`, as the 1-based row and column a
+    /// record names.
+    fn place_of(text: &str, needle: &str) -> (Option<u32>, Option<u32>) {
+        let offset = text.find(needle).expect("the text holds the needle");
+        let before = &text[..offset];
+        let row = before.matches('\n').count() + 1;
+        let col = offset - before.rfind('\n').map_or(0, |n| n + 1) + 1;
+        (Some(row as u32), Some(col as u32))
+    }
+
+    /// The `reached-from` sites of `refusal`, as (file name, row, column,
+    /// actual), in the order the refusal carries them.
+    fn route_of(
+        refusal: &crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> Vec<(String, Option<u32>, Option<u32>, Option<String>)> {
+        use crate::forge::error::RelatedRole;
+        refusal
+            .related()
+            .iter()
+            .filter(|site| site.role == RelatedRole::ReachedFrom)
+            .map(|site| {
+                let name = Path::new(&site.location.file)
+                    .file_name()
+                    .expect("a file name")
+                    .to_string_lossy()
+                    .into_owned();
+                (
+                    name,
+                    site.location.line,
+                    site.location.col,
+                    site.actual.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// A child whose `<cancel>` names neither `sendid` nor `sendidexpr`, which
+    /// the parse of the child refuses on the `<cancel>`'s row.
+    const REFUSED_CHILD: &str = "<?xml version=\"1.0\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"c\">
+  <state id=\"c\">
+    <onentry><cancel/></onentry>
+  </state>
+</scxml>
+";
+
+    /// A child that is there and is refused refuses the statechart that names
+    /// it by `src`, with the child's own refusal at the child's own row and
+    /// the `src` as the site it was reached from — not a child that needs a
+    /// script engine.
+    #[test]
+    fn a_src_child_that_is_refused_refuses_its_parent_in_its_own_words() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let parent_text = "<?xml version=\"1.0\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"s\">
+  <state id=\"s\">
+    <invoke id=\"kid\" type=\"http://www.w3.org/TR/scxml/\" src=\"child.scxml\"/>
+  </state>
+</scxml>
+";
+        std::fs::write(dir.path().join("child.scxml"), REFUSED_CHILD).unwrap();
+        let parent = dir.path().join("parent.scxml");
+        std::fs::write(&parent, parent_text).unwrap();
+
+        let refusal = SCXMLParser::new()
+            .parse_file(&parent.to_string_lossy())
+            .expect_err("a child that is refused refuses its parent");
+
+        assert!(
+            refusal.location.file.ends_with("child.scxml"),
+            "the refusal is placed in the child: {refusal:?}"
+        );
+        assert_eq!(
+            (refusal.location.line, refusal.location.col),
+            place_of(REFUSED_CHILD, "<cancel/>"),
+            "at the child's own row: {refusal:?}"
+        );
+        assert!(
+            matches!(
+                &refusal.error,
+                crate::forge::error::ForgeError::Validation(validation)
+                    if matches!(**validation, crate::forge::error::ValidationError::RequireEither { .. })
+            ),
+            "the child's own refusal, not a stand-in for it: {refusal:?}"
+        );
+        let (row, col) = place_of(parent_text, "child.scxml");
+        assert_eq!(
+            route_of(&refusal),
+            [(
+                "parent.scxml".to_string(),
+                row,
+                col,
+                Some("child.scxml".to_string())
+            )],
+            "reached from the parent's `src`: {refusal:?}"
+        );
+    }
+
+    /// A candidate of a hybrid invoke that is there and is refused refuses the
+    /// statechart that lists it, reached from its own entry of
+    /// `sce:candidates`.
+    #[test]
+    fn a_candidate_that_is_refused_refuses_the_statechart_that_lists_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let parent_text = "<?xml version=\"1.0\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" version=\"1.0\" initial=\"s\" datamodel=\"ecmascript\">
+  <datamodel><data id=\"which\" expr=\"'fine.scxml'\"/></datamodel>
+  <state id=\"s\">
+    <invoke type=\"http://www.w3.org/TR/scxml/\" srcexpr=\"which\"
+            sce:candidates=\"fine.scxml child.scxml\"/>
+  </state>
+</scxml>
+";
+        std::fs::write(
+            dir.path().join("fine.scxml"),
+            "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"f\"><final id=\"f\"/></scxml>",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("child.scxml"), REFUSED_CHILD).unwrap();
+        let parent = dir.path().join("parent.scxml");
+        std::fs::write(&parent, parent_text).unwrap();
+
+        let refusal = SCXMLParser::new()
+            .parse_file(&parent.to_string_lossy())
+            .expect_err("a candidate that is refused refuses the statechart that lists it");
+
+        assert!(
+            refusal.location.file.ends_with("child.scxml"),
+            "the refusal is placed in the candidate: {refusal:?}"
+        );
+        let (row, col) = place_of(parent_text, "child.scxml");
+        assert_eq!(
+            route_of(&refusal),
+            [(
+                "parent.scxml".to_string(),
+                row,
+                col,
+                Some("child.scxml".to_string())
+            )],
+            "reached from the candidate's own entry, not the first one: {refusal:?}"
+        );
+    }
+
+    /// A refusal two children down carries the whole route, the document the
+    /// parse began with first.
+    #[test]
+    fn a_refusal_in_a_grandchild_carries_the_route_outermost_first() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let invoking = |src: &str| {
+            format!(
+                "<?xml version=\"1.0\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"s\">
+  <state id=\"s\">
+    <invoke type=\"http://www.w3.org/TR/scxml/\" src=\"{src}\"/>
+  </state>
+</scxml>
+"
+            )
+        };
+        let parent_text = invoking("child.scxml");
+        let child_text = invoking("grandchild.scxml");
+        std::fs::write(dir.path().join("grandchild.scxml"), REFUSED_CHILD).unwrap();
+        std::fs::write(dir.path().join("child.scxml"), &child_text).unwrap();
+        let parent = dir.path().join("parent.scxml");
+        std::fs::write(&parent, &parent_text).unwrap();
+
+        let refusal = SCXMLParser::new()
+            .parse_file(&parent.to_string_lossy())
+            .expect_err("a grandchild that is refused refuses its grandparent");
+
+        assert!(
+            refusal.location.file.ends_with("grandchild.scxml"),
+            "{refusal:?}"
+        );
+        let (parent_row, parent_col) = place_of(&parent_text, "child.scxml");
+        let (child_row, child_col) = place_of(&child_text, "grandchild.scxml");
+        assert_eq!(
+            route_of(&refusal),
+            [
+                (
+                    "parent.scxml".to_string(),
+                    parent_row,
+                    parent_col,
+                    Some("child.scxml".to_string())
+                ),
+                (
+                    "child.scxml".to_string(),
+                    child_row,
+                    child_col,
+                    Some("grandchild.scxml".to_string())
+                ),
+            ],
+            "{refusal:?}"
+        );
+    }
+
+    /// A child is read with the include directories its parent is read with,
+    /// as the run that stages the child reads it: a fragment the child
+    /// includes from one of them is found, and the child says what it is.
+    #[test]
+    fn a_child_is_read_with_its_parents_include_directories() {
+        let documents = tempfile::TempDir::new().unwrap();
+        let fragments = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            fragments.path().join("frag.xml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<fragment><transition event=\"tick\" target=\"b\" xmlns=\"http://www.w3.org/2005/07/scxml\"/></fragment>
+",
+        )
+        .unwrap();
+        std::fs::write(
+            documents.path().join("child.scxml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\" version=\"1.0\" initial=\"a\">
+  <state id=\"a\"><xi:include href=\"frag.xml\"/></state>
+  <final id=\"b\"/>
+</scxml>
+",
+        )
+        .unwrap();
+        let parent = documents.path().join("parent.scxml");
+        std::fs::write(
+            &parent,
+            "<?xml version=\"1.0\"?>
+<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"s\">
+  <state id=\"s\">
+    <invoke id=\"kid\" type=\"http://www.w3.org/TR/scxml/\" src=\"child.scxml\"/>
+  </state>
+</scxml>
+",
+        )
+        .unwrap();
+
+        let model = SCXMLParser::new()
+            .with_include_dirs(vec![fragments.path().to_path_buf()])
+            .parse_file(&parent.to_string_lossy())
+            .unwrap_or_else(|refusal| panic!("the child's fragment is found: {refusal:?}"));
+        let child = model
+            .invokes
+            .iter()
+            .find_map(|invoke| match invoke {
+                Invoke::Scxml(info) => Some(info),
+                _ => None,
+            })
+            .expect("the parent invokes its child");
+        assert!(
+            !child.common.child_needs_script_engine,
+            "a child read whole is no child that needs an engine"
+        );
     }
 
     /// Every state the accept-side naming rule catches is reported, once:

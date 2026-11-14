@@ -177,7 +177,19 @@ pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
     inner: &ForgeError,
 ) -> Vec<Diagnostic> {
     if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = inner {
-        return xsd_errors.to_diagnostics();
+        // Each violation is placed by libxml2, but the sites the refusal
+        // relates to are every violation's: a child document the parse of
+        // its parent read is reached through the parent's `<invoke>`,
+        // whichever of the child's rows was refused.
+        let related = outer.diagnostic_related();
+        return xsd_errors
+            .to_diagnostics()
+            .into_iter()
+            .map(|mut diagnostic| {
+                diagnostic.related.extend(related.iter().cloned());
+                diagnostic
+            })
+            .collect();
     }
     if let ForgeError::Validation(validation) = inner {
         if let crate::forge::error::ValidationError::UnreadSceAttributes(unread) = &**validation {
