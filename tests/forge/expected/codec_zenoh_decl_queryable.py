@@ -100,11 +100,7 @@ class CodecZenohDeclQueryable:
         if self.ext_type is not None:
             w.write_u8(self.ext_type & 0xFF)
         if self.ext_value is not None:
-            _vle = int(self.ext_value)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.ext_value))
 
     def encode_to_bytes(self, n: int, z: int) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

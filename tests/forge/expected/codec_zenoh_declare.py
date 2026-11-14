@@ -133,11 +133,7 @@ class CodecZenohDeclare:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.header & 0xFF)
         if self.interest_id is not None:
-            _vle = int(self.interest_id)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u32(int(self.interest_id))
         if self.extensions is not None:
             for _e in self.extensions:
                 _e.encode(w)

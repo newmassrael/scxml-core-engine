@@ -87,11 +87,7 @@ class CodecPresentIfVle:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.flags & 0xFF)
         if self.optional_id is not None:
-            _vle = int(self.optional_id)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.optional_id))
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

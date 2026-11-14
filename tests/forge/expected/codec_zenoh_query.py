@@ -149,11 +149,7 @@ class CodecZenohQuery:
         if self.consolidation is not None:
             w.write_u8(self.consolidation & 0xFF)
         if self.parameters_len is not None:
-            _vle = int(self.parameters_len)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.parameters_len))
         if self.parameters is not None:
             w.write_bytes(self.parameters)
         if self.extensions is not None:

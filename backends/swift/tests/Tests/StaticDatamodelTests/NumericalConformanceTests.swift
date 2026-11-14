@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ebedc4a8df9c203d48faa182aa817e4a2c8742ba3aab608142a81b588bd4f50d
+// source-hash: 1ee4c478fcd6af0bb675edd6c8e90348072aad4cd4e5fb9446a5e52706545b90
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -1029,9 +1029,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             status: try oracleInteger(decoded.member("status"), as: UInt8.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_little_endian case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_little_endian case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecLittleEndian.decode(&cursor)
@@ -1056,9 +1062,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleInteger(decoded.member("payload"), as: UInt16.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_simple_frame case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_simple_frame case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecSimpleFrame.decode(&cursor)
@@ -1083,9 +1095,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             direction: try oracleInteger(decoded.member("direction"), as: UInt8.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_subbyte case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_subbyte case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecSubbyte.decode(&cursor)
@@ -1109,9 +1127,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             reading: try oracleInteger(decoded.member("reading"), as: UInt16.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_optional_field_attributes case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_optional_field_attributes case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecOptionalFieldAttributes.decode(&cursor)
@@ -1136,9 +1160,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleBytes(decoded.member("payload"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_tail case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_tail case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecTail.decode(&cursor)
@@ -1163,14 +1193,82 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleBytes(decoded.member("payload"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_length_ref case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_length_ref case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecLengthRef.decode(&cursor)
         #expect(roundTripped == value, "codec_length_ref case \(index) decode")
         #expect(cursor.remaining == 0, "codec_length_ref case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_vle_zint_u16
+
+@Test func codecVleZintU16MatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_vle_zint_u16")
+    #expect(!cases.isEmpty, "codec_vle_zint_u16: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_vle_zint_u16 case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecVleZintU16(
+            value: try oracleInteger(decoded.member("value"), as: UInt16.self)
+        )
+
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_vle_zint_u16 case \(index) encode")
+        }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecVleZintU16.decode(&cursor)
+        #expect(roundTripped == value, "codec_vle_zint_u16 case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_vle_zint_u16 case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_vle_zint_u32
+
+@Test func codecVleZintU32MatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_vle_zint_u32")
+    #expect(!cases.isEmpty, "codec_vle_zint_u32: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_vle_zint_u32 case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecVleZintU32(
+            value: try oracleInteger(decoded.member("value"), as: UInt32.self)
+        )
+
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_vle_zint_u32 case \(index) encode")
+        }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecVleZintU32.decode(&cursor)
+        #expect(roundTripped == value, "codec_vle_zint_u32 case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_vle_zint_u32 case \(index) decode consumed the frame and nothing else")
     }
 }
 
@@ -1188,9 +1286,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             value: try oracleInteger(decoded.member("value"), as: UInt64.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_vle_zint_u64 case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_vle_zint_u64 case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecVleZintU64.decode(&cursor)
@@ -1213,9 +1317,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             reason: try oracleInteger(decoded.member("reason"), as: UInt8.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_close case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_close case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohClose.decode(&cursor)
@@ -1239,9 +1349,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleBytes(decoded.member("payload"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_frame case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_frame case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohFrame.decode(&cursor)
@@ -1264,9 +1380,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             qos: try oracleInteger(decoded.member("qos"), as: UInt8.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_qos_byte case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_qos_byte case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecQosByte.decode(&cursor)
@@ -1288,9 +1410,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let value = CodecZenohKeepAlive(
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_keep_alive case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_keep_alive case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohKeepAlive.decode(&cursor)
@@ -1314,9 +1442,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             locator: try oracleText(decoded.member("locator"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_locator case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_locator case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohLocator.decode(&cursor)
@@ -1339,9 +1473,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleInteger(decoded.member("payload"), as: UInt8.self)
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_put case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_put case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohPut.decode(&cursor)
@@ -1363,9 +1503,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let value = CodecZenohDel(
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_del case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_del case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohDel.decode(&cursor)
@@ -1389,9 +1535,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleBytes(decoded.member("payload"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_fragment case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_fragment case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohFragment.decode(&cursor)
@@ -1413,9 +1565,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let value = CodecZenohDeclFinal(
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_zenoh_decl_final case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_zenoh_decl_final case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecZenohDeclFinal.decode(&cursor)
@@ -1439,9 +1597,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             payload: try oracleBytes(decoded.member("payload"))
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_length_ref_dotted_basic case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_length_ref_dotted_basic case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecLengthRefDottedBasic.decode(&cursor)
@@ -5164,9 +5328,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
             urgent: try oracleOptional(decoded.member("urgent")) { try oracleTruth($0) }
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "codec_cbor_map case \(index) encode")
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_cbor_map case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try CodecCborMap.decode(&cursor)

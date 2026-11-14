@@ -92,11 +92,7 @@ class CodecZenohOpenBody:
         w.write_vle_u64(self.lease)
         w.write_vle_u64(self.initial_sn)
         if self.cookie_len is not None:
-            _vle = int(self.cookie_len)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.cookie_len))
         if self.cookie is not None:
             w.write_bytes(self.cookie)
 

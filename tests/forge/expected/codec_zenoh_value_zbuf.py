@@ -123,17 +123,9 @@ class CodecZenohValueZbuf:
         if self.value is not None:
             w.write_bytes(self.value)
         if self.encoding is not None:
-            _vle = int(self.encoding)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.encoding))
         if self.slice_count is not None:
-            _vle = int(self.slice_count)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.slice_count))
         if self.slices is not None:
             for _e in self.slices:
                 _e.encode(w)
