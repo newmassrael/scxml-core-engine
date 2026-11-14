@@ -534,8 +534,7 @@ impl Reader<'_, '_> {
             return (i + 1, true);
         }
         let (mut depth, mut open) = (0usize, 0usize);
-        for j in i..end {
-            let line = &self.lines[j];
+        for (j, line) in self.lines.iter().enumerate().take(end).skip(i) {
             if line.opens_conditional() {
                 open += 1;
             } else if line.continues_conditional() || line.closes_conditional() {
@@ -568,8 +567,7 @@ impl Reader<'_, '_> {
     /// The `#endif` of the conditional `#if` line `i` opens, before `end`.
     fn endif_of(&self, i: usize, end: usize) -> Option<usize> {
         let mut depth = 0usize;
-        for j in i..end {
-            let line = &self.lines[j];
+        for (j, line) in self.lines.iter().enumerate().take(end).skip(i) {
             if line.opens_conditional() {
                 depth += 1;
             } else if line.closes_conditional() {
@@ -716,8 +714,7 @@ impl Reader<'_, '_> {
         // The directives of this conditional, at its own depth.
         let mut directives = vec![start];
         let mut depth = 0usize;
-        for j in start + 1..endif {
-            let line = &self.lines[j];
+        for (j, line) in self.lines.iter().enumerate().take(endif).skip(start + 1) {
             if line.opens_conditional() {
                 depth += 1;
             } else if line.closes_conditional() {
