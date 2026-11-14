@@ -1,9 +1,10 @@
-# ADR 0098 — A failure is not a value, and no type has a zero
+# ADR 0099 — A failure is not a value, and no type has a zero
 
 - Status: Accepted (2026-11-12). Written and accepted under the owner's standing rule (the most long-term correct
   structure, textbook in its foundations, cost ignored; decided, not asked); the owner asked for it to be built the
-  same day. "Landing order" lists the steps. The number is the next free one after 0097 on `origin/main` as fetched
-  on 2026-11-12 (0094 is taken on a branch).
+  same day. "Landing order" lists the steps. (Numbered 0098 when first written, as the next free one after 0097 on
+  `origin/main` as fetched on 2026-11-12, 0094 being taken on a branch; renumbered 0099 on 2026-11-14 because ADR
+  0098, the value an invoke hands its child, had landed under 0098 earlier the same day.)
 - Date: 2026-11-12
 - Amends:
   - SCE_FORGE.md section 3.4.1, "The integer arithmetic contract": a failure has no value and nothing stands in for
