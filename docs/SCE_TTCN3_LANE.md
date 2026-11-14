@@ -503,8 +503,24 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   suite's runner program replays the whole directory of traces in the world of every feature
   (`ptcs,removal,guard`), and so does the runner run in the process on every backend but Rust; each backend's test
   holds every log written to its expected log byte for byte, and the set of logs written to the set of expected
-  logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4). No mapped message type of any suite has
-  a codec document (DD §8.4).
+  logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4).
+- **Every message type a mapped port of the corpus carries has a codec document, but two that no format holds.**
+  The documents are `sce-build/tests/fixtures/test_profile/codecs/<record>_codec.scxml` (design choice: one
+  directory for the corpus, so a record that several suites carry has one codec, named by the record as the trace and
+  the log name it, with `_codec` after it so that the codec's unit and the record's never share a name). Each is a
+  CBOR map (`SCE_FORGE.md` §4.6.1) or one content-line component (§4.6.4) whose entries are the record's fields by
+  their ids, each entry of its field's type, `optional<T>` where the field may be absent, and a text's or a byte
+  string's bound its `sce:max-size`: the binding reads a field by the entry of its id (DD §8.4).
+  `sce-build/tests/a_mapped_message_type_has_its_codec_document.rs` walks each suite of the corpus to the record
+  types its system ports carry (`sce-build/tests/common/lane_corpus.rs`), and holds each to its codec document
+  through the parser's own model of the codec, and every codec document to a record a mapped port carries.
+  Two records have none, since a field of each is of a type neither format holds: `job_status` (`codes`, a list of
+  integers: CBOR holds only a list of records of scalars, and content-line no list of integers) and `order_placed`
+  (`lines`, `customer` and `payment`: a list of records holding an enum, a record within the record and a union).
+  The test names each with that field and holds the field to have no form. So `job_suite`, `orders_suite` and
+  `nested_suite`, whose mapped ports carry them, run natively and cannot yet run in the lane: the lane needs a CBOR
+  form of a list of integers, of a record within a record and of a union (the open question of §14), or suites
+  whose mapped ports carry records the two formats hold.
 
 ### 12.2 The rows of ADR 0091 §2
 
@@ -591,7 +607,8 @@ in the component that invokes it, which is accepted on its own.
   content-line, and positional once ADR 0100 and ADR 0102's step 8 land, so that every message crossing the system
   interface passes through a codec on both sides. An event schema on a system port stays legal in the profile, its
   encoding left to the test system, but the reference set has no codec for it, so no runnable suite of the corpus
-  carries one;
+  carries one. The codec documents of every message type a format holds today are in place (§12.1); `job_status` and
+  `order_placed` wait on the CBOR forms of ADR 0101;
 - for each codec kind, traces whose inputs are given as `octets` (ADR 0102 §2.1), a frame the codec refuses among
   them, whose test case both sides end with `error` at the frame's instant (ADR 0102 §2.3); and a trace that gives a
   codec type's input as a `value`, which both sides encode and decode;
