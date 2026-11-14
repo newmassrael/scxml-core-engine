@@ -3600,12 +3600,10 @@ def workspace_rust_versions(repo_root: Path) -> dict[str, list[str]]:
     `cargo metadata` reports and `scripts/gates/rust-version.sh` builds by.
     """
     root_text = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
-    members_block = re.search(r"^members\s*=\s*\[(.*?)\]", root_text, re.M | re.S)
-    members = re.findall(r'"([^"]+)"', members_block.group(1)) if members_block else []
     workspace = re.search(r'^\[workspace\.package\][^\[]*?^rust-version\s*=\s*"([^"]+)"',
                           root_text, re.M | re.S)
     declared: dict[str, list[str]] = {}
-    for member in members:
+    for member in workspace_members(repo_root):
         manifest = repo_root / member / "Cargo.toml"
         if not manifest.is_file():
             continue
@@ -3620,6 +3618,54 @@ def workspace_rust_versions(repo_root: Path) -> dict[str, list[str]]:
             continue
         declared.setdefault(version, []).append(member)
     return declared
+
+
+def workspace_members(repo_root: Path) -> list[str]:
+    """The `members` list of the root manifest, as written there."""
+    root_text = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    members_block = re.search(r"^members\s*=\s*\[(.*?)\]", root_text, re.M | re.S)
+    return re.findall(r'"([^"]+)"', members_block.group(1)) if members_block else []
+
+
+# A manifest that inherits the workspace's lints: a `[lints]` table whose first
+# key, past blank and comment lines, is `workspace = true`. Cargo allows no
+# other key beside it.
+INHERITS_WORKSPACE_LINTS = re.compile(
+    r"^\[lints\][ \t]*\n(?:[ \t]*(?:#[^\n]*)?\n)*workspace[ \t]*=[ \t]*true[ \t]*$", re.M)
+
+
+def workspace_lint_failures(repo_root: Path) -> list[str]:
+    """Every workspace member that does not inherit `[workspace.lints]`.
+
+    The root manifest's `[workspace.lints.rust]` denies every rustc warning,
+    and a member is held to it only by `[lints] workspace = true`. One without
+    the table builds on rustc's defaults: a warning in it fails nothing but a
+    clippy sweep that happens to compile that code, and cargo reports the
+    missing table only as a warning of its own. Ten members had none until
+    2026-11-14, among them every crate of the shared list and the Mesh crate,
+    whose `zenoh` and `conformance` features no clippy sweep compiles.
+    """
+    root_text = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    if not re.search(r"^\[workspace\.lints\.rust\]", root_text, re.M):
+        return ["the root Cargo.toml has no [workspace.lints.rust] table, so there "
+                "is no workspace lint policy for a member to inherit"]
+    members = workspace_members(repo_root)
+    failures: list[str] = []
+    for member in members:
+        manifest = repo_root / member / "Cargo.toml"
+        if not manifest.is_file():
+            failures.append(f"{member} is a workspace member with no Cargo.toml")
+            continue
+        if not INHERITS_WORKSPACE_LINTS.search(manifest.read_text(encoding="utf-8")):
+            failures.append(
+                f"{member}/Cargo.toml does not inherit the workspace lints: add "
+                f"`[lints]` with `workspace = true`, or a rustc warning in it fails "
+                f"no build")
+    # A lower bound, so a members list the parse stopped finding cannot pass.
+    if len(members) < 20:
+        failures.append(f"read {len(members)} workspace member(s) from the root "
+                        f"Cargo.toml; a broken parse passes by reading none")
+    return failures
 
 
 def msrv_release(version: str):
@@ -5386,6 +5432,13 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     failures.extend(f"every-lane-installs-the-pinned-rust: {f}"
                     for f in moving_rust_failures(repo_root))
+
+    # every-workspace-member-inherits-the-workspace-lints. The clippy gate's
+    # `-D warnings` reaches only what its sweep compiles; the workspace's own
+    # deny reaches every build of a member that inherits it.
+    cases += 1
+    failures.extend(f"every-workspace-member-inherits-the-workspace-lints: {f}"
+                    for f in workspace_lint_failures(repo_root))
 
     if failures:
         for f in failures:
