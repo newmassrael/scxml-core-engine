@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TTCN3_LANE.md §12.2, §12.4: the suite of what runtime_suite
+     leaves out of every run: signed and 64-bit integers in a message, the
+     verdicts `fail` and `none`, a test case that can never end and a dynamic
+     error. Every test case runs in a world with no feature. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="boundary_suite">
+  <sce:import kind="test-case" src="exchanges_signed_numbers.scxml" as="ExchangesSignedNumbers"/>
+  <sce:import kind="test-case" src="answers_another_job.scxml" as="AnswersAnotherJob"/>
+  <sce:import kind="test-case" src="sets_no_verdict.scxml" as="SetsNoVerdict"/>
+  <sce:import kind="test-case" src="never_ends.scxml" as="NeverEnds"/>
+  <sce:import kind="test-case" src="sends_to_a_removed_ptc.scxml" as="SendsToARemovedPtc"/>
+  <sce:module-parameter id="job" type="uint32" value="7"/>
+  <sce:execute test-case="ExchangesSignedNumbers" guard="5s"/>
+  <sce:execute test-case="AnswersAnotherJob" guard="5s"/>
+  <sce:execute test-case="SetsNoVerdict"/>
+  <sce:execute test-case="NeverEnds"/>
+  <sce:execute test-case="SendsToARemovedPtc"/>
+</scxml>

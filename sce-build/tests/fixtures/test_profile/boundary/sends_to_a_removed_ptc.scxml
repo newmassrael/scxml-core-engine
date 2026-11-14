@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.7, §5.2 (P13): the MTC removes its PTC and
+     then sends on the port connected to it, a dynamic error, so the test case
+     ends with `error` at the instant of the send. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="sends_to_a_removed_ptc"
+       sce:configuration="Removing">
+  <sce:import kind="test-configuration" src="removing_configuration.scxml" as="Removing"/>
+</scxml>

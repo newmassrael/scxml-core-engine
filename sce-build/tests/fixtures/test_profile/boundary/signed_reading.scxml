@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TTCN3_LANE.md §12.2: a reading of signed and 64-bit integers, a
+     field of each signed width and an unsigned one past what a signed 64-bit
+     integer holds, so a run carries each of them in a message. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="signed_reading"
+       sce:event-name="signed.reading">
+  <datamodel>
+    <data id="delta" sce:type="int8" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+    <data id="level" sce:type="int32" sce:direction="in"/>
+    <data id="stamp" sce:type="int64" sce:direction="in"/>
+    <data id="total" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

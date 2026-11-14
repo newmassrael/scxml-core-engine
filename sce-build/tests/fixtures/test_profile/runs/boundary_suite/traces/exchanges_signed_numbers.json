@@ -1,0 +1,1 @@
+{"inputs":[{"at":"250","port":"sut","type":"signed_reading","value":{"delta":"-5","level":"-70000","offset":"300","stamp":"-9000000000","total":"18000000000000000000"}}],"schema":"sce-test-trace.v1","suite":"boundary_suite","test_case":"exchanges_signed_numbers"}

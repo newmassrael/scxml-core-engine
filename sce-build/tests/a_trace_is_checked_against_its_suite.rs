@@ -192,6 +192,70 @@ fn every_committed_trace_fits_the_runtime_suite() {
     }
 }
 
+/// A suite of the corpus whose runs stand under `test_profile/runs/<suite>`
+/// (docs/SCE_TTCN3_LANE.md §12): its unit name, its document, and the test
+/// cases it executes, in its order, each of which has a trace.
+struct CorpusRuns {
+    suite: &'static str,
+    document: &'static str,
+    cases: &'static [&'static str],
+}
+
+const CORPUS_RUNS: &[CorpusRuns] = &[CorpusRuns {
+    suite: "boundary_suite",
+    document: "tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+    cases: &[
+        "exchanges_signed_numbers",
+        "answers_another_job",
+        "sets_no_verdict",
+        "never_ends",
+        "sends_to_a_removed_ptc",
+    ],
+}];
+
+/// docs/SCE_TTCN3_LANE.md §10.4, §12: every committed trace of each other
+/// suite of the corpus fits its suite: exit 0, and nothing written to either
+/// stream; and the traces are those of the test cases the suite executes, and
+/// nothing else.
+#[test]
+fn every_committed_trace_of_the_corpus_fits_its_suite() {
+    for runs in CORPUS_RUNS {
+        let dir = manifest_dir()
+            .join("tests/fixtures/test_profile/runs")
+            .join(runs.suite)
+            .join("traces");
+        let mut traces: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("{} is a directory: {e}", dir.display()))
+            .map(|entry| entry.expect("an entry of the traces").path())
+            .collect();
+        traces.sort();
+        let names: Vec<String> = traces
+            .iter()
+            .map(|trace| {
+                trace
+                    .file_stem()
+                    .expect("a trace is a file")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        let mut cases: Vec<&str> = runs.cases.to_vec();
+        cases.sort_unstable();
+        assert_eq!(
+            names, cases,
+            "a trace of each test case of {}, and nothing else",
+            runs.suite
+        );
+        let suite = manifest_dir().join(runs.document);
+        for trace in &traces {
+            let checked = check_trace(&suite, trace);
+            assert_eq!(checked.status, 0, "{}: {}", trace.display(), checked.stderr);
+            assert!(checked.stdout.is_empty(), "{}", checked.stdout);
+            assert!(checked.stderr.is_empty(), "{}", checked.stderr);
+        }
+    }
+}
+
 // ── The every-form fixtures ──────────────────────────────────────
 
 /// An order paid by card: two lines, a note and no priority.

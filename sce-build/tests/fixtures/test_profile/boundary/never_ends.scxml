@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §5.2 (P13), §12.4: the MTC waits for a reply the
+     system under test never sends, with no timer and no guard, so the test
+     case can never end and the runtime ends it with `error` at 0. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="never_ends"
+       sce:configuration="Stalled">
+  <sce:import kind="test-configuration" src="stalled_configuration.scxml" as="Stalled"/>
+</scxml>

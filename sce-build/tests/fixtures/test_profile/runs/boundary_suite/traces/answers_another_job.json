@@ -1,0 +1,1 @@
+{"inputs":[{"at":"500","port":"sut","type":"job_reply","value":{"code":"0","job":"8"}}],"schema":"sce-test-trace.v1","suite":"boundary_suite","test_case":"answers_another_job"}

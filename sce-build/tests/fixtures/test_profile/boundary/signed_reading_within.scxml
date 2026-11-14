@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.1, §11.4: the readings the tester accepts:
+     ranges whose bounds are negative, an int64 below what a 32-bit integer
+     holds and a uint64 above what an int64 holds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="signed_reading_within"
+       sce:type="record:SignedReading">
+  <sce:import kind="event-schema" src="signed_reading.scxml" as="SignedReading"/>
+  <sce:record-match>
+    <sce:value-range field="delta">
+      <sce:lower value="-128"/>
+      <sce:upper value="-1"/>
+    </sce:value-range>
+    <sce:any-value field="offset"/>
+    <sce:value-range field="level">
+      <sce:upper value="-1"/>
+    </sce:value-range>
+    <sce:value-range field="stamp">
+      <sce:upper value="-4294967296"/>
+    </sce:value-range>
+    <sce:value-range field="total">
+      <sce:lower value="9223372036854775808"/>
+    </sce:value-range>
+  </sce:record-match>
+</scxml>

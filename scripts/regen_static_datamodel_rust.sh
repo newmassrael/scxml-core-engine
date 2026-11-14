@@ -184,6 +184,17 @@ TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc 
 # enums and union they hold are generated above. The port type writes no file.
 TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
 TRACE_FORMS=(form_extras forms_listener forms_configuration replays_every_form)
+# The corpus's suite of what runtime_suite leaves out of every run (docs/SCE_TTCN3_LANE.md
+# §12.2): signed and 64-bit integers, the verdicts `fail` and `none`, a test case that can
+# never end and a dynamic error. Its record, templates, components, configurations, test
+# cases and suite, beside the runtime's records, templates and asking_configuration,
+# which it reuses; tests/the_corpus_replays_to_its_expected_logs.rs runs its runner program.
+BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
+BOUNDARY=(signed_reading signed_reading_sent signed_reading_within)
+BOUNDARY+=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
+BOUNDARY+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
+BOUNDARY+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
+BOUNDARY+=(sends_to_a_removed_ptc boundary_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -221,6 +232,9 @@ done
 for document in "${TRACE_FORMS[@]}"; do
     "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l rust -o "$TMP/"
 done
+for document in "${BOUNDARY[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$document.scxml" -l rust -o "$TMP/"
+done
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -244,4 +258,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} ${TRACE_FORMS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} ${TRACE_FORMS[*]} ${BOUNDARY[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"

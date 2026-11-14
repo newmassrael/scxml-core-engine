@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.7: the tester exchanges a reading of signed
+     and 64-bit integers with the system under test and passes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="exchanges_signed_numbers"
+       sce:configuration="Signed">
+  <sce:import kind="test-configuration" src="signed_configuration.scxml" as="Signed"/>
+</scxml>

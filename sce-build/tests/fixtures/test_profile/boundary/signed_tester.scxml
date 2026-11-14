@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: a main test component that sends a
+     reading of signed and 64-bit integers to the system under test and passes
+     on a reading the template accepts, or fails when its timer runs out. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="signed_tester"
+       datamodel="sce-static" initial="exchanging">
+  <sce:import kind="test-port-type" src="signed_port.scxml" as="SignedPort"/>
+  <sce:import kind="test-template" src="signed_reading_sent.scxml" as="ReadingSent"/>
+  <sce:import kind="test-template" src="signed_reading_within.scxml" as="ReadingWithin"/>
+  <sce:test-port id="sut" type="SignedPort"/>
+  <sce:test-timer id="deadline" duration="1s"/>
+  <state id="exchanging">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="ReadingSent"/>
+      <sce:start-timer timer="deadline"/>
+    </onentry>
+    <transition sce:receive="sut" sce:test-template="ReadingWithin" target="passed">
+      <sce:stop-timer timer="deadline"/>
+      <sce:setverdict value="pass"/>
+    </transition>
+    <transition sce:timeout="deadline" target="failed">
+      <sce:setverdict value="fail" reason="'no reading in range in time'"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+  <final id="failed"/>
+</scxml>
