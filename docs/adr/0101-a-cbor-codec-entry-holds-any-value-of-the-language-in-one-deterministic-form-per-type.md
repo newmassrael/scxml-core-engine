@@ -5,10 +5,14 @@
   entry's type is the language's one value type, the wire form of each type, a decode that accepts every well-formed
   encoding and refuses only what is no value of the type, the size calculus over every type, the scope over the seven
   backends and the TTCN-3 lane, and that no existing CBOR document changes meaning. Where the six are silent this
-  record decides, and says so in place: a float entry (section 1.1), the sign of an enum's number (section 2.1),
-  indefinite lengths and a text written in chunks (section 3.1), the refusal kinds (section 3.2), a text or byte
-  string with no bound (section 1.3), one new diagnostic code (section 6). Nothing of it has landed; "Landing
-  order" lists the steps.
+  record decides, and says so in place: a text or byte string with no bound (section 1.3), the refusal kinds
+  (section 3.3), one new diagnostic code (section 6). On review the same day the owner decided five more points,
+  written in place: a float entry is kept (section 1.1); an enum is the integer of its declared number, major type 1
+  below zero (section 2.1); the decode reads a stated profile of CBOR, definite lengths only, and is
+  variation-tolerant within it (section 3.1), which narrows the first decision; every runtime's decode names its
+  refusal, by a separate item that lands before this record's backend steps ("Landing order"); and a signed union
+  takes this record's shape, by an amendment of ADR 0092 section 5.3 before its step 7 (section 2.5). Nothing of it
+  has landed; "Landing order" lists the steps.
 - Date: 2026-11-14
 - Amends:
   - ADR 0086 section 1.7 ("A codec entry keeps a type of its own"): it now holds for a content-line codec alone;
@@ -16,6 +20,9 @@
     content-line entry" keeps its content-line half;
   - ADR 0092 section 1.1 item 3: its bullet refusing a union in a CBOR or content-line codec's entry keeps its
     content-line half;
+  - ADR 0092 section 5.3 and its row of `C` in section 5.1: a signed union is a map of one entry keyed by its case's
+    variant name, as a codec writes it (section 2.5). The amendment is a commit of its own, landing before ADR 0092's
+    step 7;
   - ADR 0077 section 7: a bound "absent where the protocol states none" stays a reading of a positional or
     content-line codec's frame; a CBOR codec's text and byte string state their bound, as every value type's do
     (section 1.3);
@@ -48,7 +55,10 @@
   - the TTCN-3 corpus: two codec documents beside `sce-build/tests/fixtures/test_profile/`, and the coverage test
     that holds every mapped message type to a codec document;
   - SCE_FORGE.md section 4.6.1, docs/SCE_TTCN3_LANE.md, docs/SCE_CODEC_CONSUMER_MIGRATION.md.
-- Related: ADR 0044 (revisions of a schema), ADR 0047 (the number a variant declares), ADR 0055 (a value that may
+- Related: ADR 0049 (a decoded Rust codec is a view over its wire bytes, kept by the profile of section 3.1); the
+  item that gives every runtime's decode a typed refusal, which lands before this record's backend steps ("Landing
+  order"); the amendment of ADR 0092 section 5.3 (above); ADR 0044 (revisions of a schema), ADR 0047 (the number a
+  variant declares), ADR 0055 (a value that may
   be absent; section 8, a codec's optional entry), ADR 0058 and ADR 0065 (the one encode, declared totality), ADR
   0077 (a declared bound is part of a field's type), ADR 0078 (a consumer follows SCE one landing at a time), ADR
   0081 (a codec's encode is planned once), ADR 0085 (the envelope's causal context, step 3a), ADR 0086 (one type
@@ -139,12 +149,19 @@ section 3 and Appendix F) from a valid one (it also meets the data model's rules
 twice, section 5.3.1 and section 5.6) and from one an application expects. A decoder's refusals fall into these three
 classes, and naming each class apart tells a peer that sent garbage from one that sent a value outside the protocol.
 
-**One encoding to write, every encoding to read.** Preferred serialization (RFC 8949 section 4.1) writes every head
+**One encoding to write, its variations to read.** Preferred serialization (RFC 8949 section 4.1) writes every head
 and length in its shortest form, a float in its shortest exact width, and a definite length wherever the length is
 known; core deterministic encoding (section 4.2.1) adds that a map's keys are sorted by the bytes of their
 encodings, so one value has one string of bytes. Section 4.1 also names the reader's side: a decoder that does not
 rely on receiving preferred serializations is "variation-tolerant", and a full decoder is variation-tolerant by
 definition. A reader that refused a non-preferred encoding would refuse a value, not an error.
+
+**A protocol states its profile.** RFC 8949 section 5 leaves a CBOR-based protocol to state what its decoders take,
+and indefinite lengths are the facility a streaming encoder needs (section 3.2, section 5.1), which preferred
+serialization does not use where the length is known and core deterministic encoding does not use at all. A
+protocol of whole messages that takes definite lengths only, and every other variation, is a decoder of a stated
+profile, not a decoder that refuses values: a definite-length encoding of every value exists, and every conforming
+encoder can write it.
 
 **CDDL describes items, not bytes.** A CDDL rule (RFC 8610) matches data items of the generic data model; it says
 nothing of their serialization, and a map's members match in any order (section 3.5.3). A bareword key is a text
@@ -169,8 +186,9 @@ learns case by case; `list<record:R>` holding what `list<uint8>` may not is that
 
 **A CBOR codec's entry is a value of the language: any type of the one type grammar, at any depth. Each type has one
 wire form, written in RFC 8949's core deterministic encoding, whose tree is the tree of the canonical value form of a
-message (docs/SCE_TEST_PROFILE.md section 12.5). A decode reads every well-formed encoding of a value of the type and
-refuses what is no such value, each refusal by a name of its class. Every entry has a largest encoding the build
+message (docs/SCE_TEST_PROFILE.md section 12.5). A decode reads the profile of definite lengths, and within it every
+well-formed encoding of a value of the type; it refuses an indefinite length and what is no value of the type, each
+refusal by a name of its class. Every entry has a largest encoding the build
 computes, and the encode buffer is sized by it. A content-line codec keeps its own entry type. Every backend
 generates every such codec, the cross-backend corpus holds them to one set of bytes and refusals, and the two
 message types of the TTCN-3 corpus get their codec documents.**
@@ -188,10 +206,11 @@ message types of the TTCN-3 corpus get their codec documents.**
 
    Every constructor at every depth: a list of integers, a list of lists, a record holding a list of unions of
    records, an optional record. The owner's decision names integers, `bool`, texts, byte strings, enums, records,
-   unions, optionals and lists; the grammar it names also holds `float32` and `float64`, and this record keeps them:
-   a float has one deterministic form (RFC 8949 section 4.2.1 with section 4.1), the one ADR 0086 section 9.2 already
-   signs, and leaving it out would be the non-orthogonality this record removes. What the type grammar refuses
-   stays refused (ADR 0086 section 1.5): `optional<optional<T>>` and a type that contains itself.
+   unions, optionals and lists; the grammar it names also holds `float32` and `float64`, and the owner confirmed on
+   review that they are kept: a float has one deterministic form (RFC 8949 section 4.2.1 with section 4.1), the
+   one ADR 0086 section 9.2 already signs, and leaving it out would be the non-orthogonality this record removes.
+   What the type grammar refuses stays refused (ADR 0086 section 1.5): `optional<optional<T>>` and a type that
+   contains itself.
 2. **What the codec adds to the type.** The entry keeps what is a fact of the codec and not of the value:
    - `sce:key`, its key in the codec's own map, `0`-`23`, unique within the codec (section 2.2);
    - `sce:length` on a `bytes` or `optional<bytes>` entry whose type writes no bracket: the exact length, which is
@@ -246,9 +265,10 @@ message types of the TTCN-3 corpus get their codec documents.**
    | `optional<T>` as a record's field or a codec's entry | the field's form when present; absent, the key is not written |
    | `union:U` | a map of exactly one entry, keyed by the case's variant name as a text string, whose value is the case's record as a map, or the empty map (`a0`) for a case that holds none |
 
-   The enum's sign is decided here, where the owner's decision says "the unsigned of its declared value": for an
-   unsigned carrier the two are one rule, and for a signed carrier the type has negative values, which section 1.1's
-   "any type" makes the codec carry. The encode of `codec_cbor_signed_enum` then refuses nothing (section 8).
+   The enum's sign was confirmed by the owner on review, where the first statement of the decision said "the
+   unsigned of its declared value": for an unsigned carrier the two are one rule, and for a signed carrier the type
+   has negative values, which section 1.1's "any type" makes the codec carry. The encode of `codec_cbor_signed_enum`
+   then refuses nothing (section 8).
 2. **The codec's own map.** The codec is the outermost record, keyed by its entries' `sce:key`s: a definite-length
    map of the present entries in ascending key order, an absent optional entry not written. Its keys are unsigned
    integers because they are the codec's numbering of its entries, which the document states, where a nested
@@ -264,7 +284,7 @@ message types of the TTCN-3 corpus get their codec documents.**
      the one nested map keyed by an integer. It is the tree of TP section 12.5, of X.697's `CHOICE` and of TTCN-3's
      union value, so a binding maps it to a TTCN-3 union by name, with no table of numbers. ADR 0092 section 2.2
      chose the tag beside the fields for the JSON wire and rejected this spelling for three reasons, and none holds
-     here: an unknown tag is refused at the union and not stepped over (section 3.2); one level deeper costs a CBOR
+     here: an unknown tag is refused at the union and not stepped over (section 3.3); one level deeper costs a CBOR
      reader nothing, where the measured cost there was a model's constrained decoding; an empty case's `{}` is one
      byte, `a0`.
    - *An absent field is left out; an absent element is `null`.* A map names its members, so absence is a member
@@ -280,12 +300,16 @@ message types of the TTCN-3 corpus get their codec documents.**
    own map nothing else; at the codec's own map the log's field id and the codec's `sce:key` name one entry. The
    identity is deliberate: a decoded message, the value a run logs and the value a trace replays are one value, and a
    binding that reads a codec's CBOR writes the log's tree without a second mapping.
-5. **The signed form is another encoding, and stays one.** The trust layer's bytes (ADR 0086 section 9) encode a
+5. **The signed form differs in one place, an absent field.** The trust layer's bytes (ADR 0086 section 9) encode a
    value for a signature, not for a wire: an absent optional is `null` under a key that stays in the map, so a
    record's keys are a function of its schema's revision alone, and a field a later revision added is written as its
-   default. A codec carries what a sender sent, and a key absent from a map is how CBOR protocols spell absence. The
-   two forms differ in that one place and in the union's (section 2.3; ADR 0092 section 5.3, step 7 not landed, see
-   "Open questions" 1). Nothing signed changes here.
+   default. A codec carries what a sender sent, and a key absent from a map is how CBOR protocols spell absence. That
+   difference stays, each form for its reason. The union's does not (decided by the owner on review): ADR 0092
+   section 5.3 gave a signed union the tag's number beside the case's fields, and its step 7, which would write it,
+   has not landed, so no signed bytes depend on it. ADR 0092 section 5.3 and its row of `C` in section 5.1 are
+   amended, in a commit of their own before that step 7, to this record's shape: a map of one entry keyed by the
+   case's variant name, whose value is the case's record or the empty map. The trust layer's encoder and the codec
+   then share the union's writer and its row of `C` (section 4.1). Nothing signed today changes.
 6. **The form in CDDL.** The rule, by type (`B` the bound, `M` the lower count, `L` an exact length, `k` an entry's
    key):
 
@@ -361,31 +385,37 @@ message types of the TTCN-3 corpus get their codec documents.**
    | elapsed_ms 1500, codes [1, 2], tag 7, count 3, note and retry absent | the `job_status` codec | `a4 00 19 05 dc 02 82 01 02 03 07 05 03` |
    | order_id 42, one line {sku "A1", quantity 2, color blue}, customer {"Ann", vip}, payment `cash`, note and priority absent | the `order_placed` codec | `a4 00 18 2a 01 81 a3 63 73 6b 75 62 41 31 65 63 6f 6c 6f 72 02 68 71 75 61 6e 74 69 74 79 02 04 a2 63 76 69 70 f5 69 66 75 6c 6c 5f 6e 61 6d 65 63 41 6e 6e 05 a1 64 63 61 73 68 a0` |
 
-### 3. A variation-tolerant decode, a deterministic encode
+### 3. A decode of a stated profile, variation-tolerant within it, and a deterministic encode
 
-1. **What a decode accepts.** Every well-formed encoding (RFC 8949 section 3) of a value of the entry's type, as a
-   variation-tolerant decoder does (section 4.1): a head or a length in a longer form than its shortest; a float in a
-   wider precision than its shortest, where the value is one the type holds (a `float32` given as a double that is
-   exactly a single); a map's keys in any order; and an indefinite-length array, map, text string or byte string
-   (section 3.2), read up to its break. A text written in chunks is the concatenation of its chunks. A key a record or
-   the codec does not declare is stepped over with its value, as today, an indefinite one included, to the nesting
-   depth of 16 the skip already holds (`CborTooDeep` past it). The decode accepts a value it would never write: a
-   sender that wrote it longer said the same thing, and section 4.1 makes a full decoder variation-tolerant by
-   definition.
-
-   The owner's decision is "decode accepts any well-formed encoding". The tree refuses an indefinite length today
-   (Context), and the corpus pins that refusal; this record takes the decision as written and moves those cases
-   from refused to accepted (section "Conformance"). It is the one widening of what an existing codec reads (section
-   8).
-2. **What a decode refuses**, each by the class RFC 8949 section 1.2 puts it in, and by one name per runtime:
+1. **The profile: definite lengths only.** A SCE CBOR codec reads and writes the definite-length encoding of CBOR:
+   an array, a map, a text string and a byte string carry their count or length in their head. An indefinite-length
+   item (RFC 8949 section 3.2) is refused as `CborMalformed`, at any depth and in a value the codec steps over too,
+   as the tree refuses it today. The reason is ADR 0049, which this record keeps: a decoded Rust codec is a view over
+   its wire bytes, so a top-level text or byte string is one slice of the input (`Text<'a, N>`, `Bytes<'a, N, M>`,
+   `Bounded` over a slice), and a string written in chunks stands in several runs of the input, which no slice holds.
+   RFC 8949 section 5 lets a protocol state its profile, and this one costs no sender a value: every value has a
+   definite-length encoding, the one every conforming encoder writes where it knows the length (section 4.1), and a
+   codec's message is written whole. The owner's first statement of the decision, "decode accepts any well-formed
+   encoding", is narrowed so on review (2026-11-14).
+2. **What a decode accepts within the profile.** Every well-formed definite-length encoding (RFC 8949 section 3) of a
+   value of the entry's type, as a variation-tolerant decoder does (section 4.1): a head or a length in a longer form
+   than its shortest; a float in a wider precision than its shortest, where the value is one the type holds (a
+   `float32` given as a double that is exactly a single); a map's keys in any order. A key a record or the codec does
+   not declare is stepped over with its value, as today, to the nesting depth of 16 the skip already holds
+   (`CborTooDeep` past it). The decode accepts a value it would never write: a sender that wrote it longer said the
+   same thing. Nothing in this item widens what an existing codec reads (section 8): longer heads and any key order
+   are read today, and no existing codec holds a float.
+3. **What a decode refuses**, each by the class RFC 8949 section 1.2 puts it in, or as outside the profile, and by
+   one name per runtime:
 
    | Refusal | Class | Kind (corpus name) |
    |---|---|---|
-   | an item that is not well-formed (RFC 8949 Appendix F): reserved additional information 28-30, a break outside an indefinite item, a chunk of another major type or of indefinite length inside an indefinite string, a simple value in the two-byte form below 32 | not well-formed | `CborMalformed` (`cbor-malformed`) |
+   | an item that is not well-formed (RFC 8949 Appendix F): reserved additional information 28-30, a break code, a simple value in the two-byte form below 32 | not well-formed | `CborMalformed` (`cbor-malformed`), as today |
+   | an indefinite-length array, map, text string or byte string, at any depth | outside the profile (item 1) | `CborMalformed` (`cbor-malformed`), as today |
    | the input ends inside an item | not well-formed | `NeedMoreBytes`, as today |
    | an item of a major type, a simple value or a tag the type at that place does not take: a text where a number stands, a negative integer where an unsigned type stands, `null` where the place is not a list's optional element, a tagged item (a bignum among them: the types are defined over the basic generic data model), a top-level key that is not an unsigned integer, a record's or a union's key that is not a text string | expected | `CborWrongType` (`cbor-wrong-type`), new |
    | a map that holds one of its declared keys twice, at any depth | invalid (RFC 8949 section 5.6) | `CborDuplicateKey` (`cbor-duplicate-key`), new |
-   | a text that is not UTF-8, a chunk included (a chunk ends at a code point, section 3.2.3) | invalid (section 5.3.1) | `InvalidUtf8`, as today |
+   | a text that is not UTF-8 | invalid (section 5.3.1) | `InvalidUtf8`, as today |
    | a required entry or a record's field that is not optional, absent | expected | `CborRequiredKeyMissing` (`cbor-required-key-missing`), as today |
    | a union's map whose one key names no case | expected | `CborUnknownVariant` (`cbor-unknown-variant`), new |
    | a union's map of no entry or of more than one | expected | `CborUnionEntries` (`cbor-union-entries`), new |
@@ -394,43 +424,34 @@ message types of the TTCN-3 corpus get their codec documents.**
    | a number a closed enum does not declare | expected | `UndeclaredEnumValue`, as today |
    | an undeclared value nested past 16 levels | expected | `CborTooDeep` (`cbor-too-deep`), as today |
 
-   The spellings follow each runtime's convention (SCE_FORGE.md section 4.6.1): Rust `CodecError::CborWrongType`,
+   Every runtime names each kind in its decode's typed refusal: Rust `CodecError::CborWrongType`,
    `CborDuplicateKey`, `CborUnknownVariant`, `CborUnionEntries`; Go `codec.ErrCborWrongType`, `ErrCborDuplicateKey`,
    `ErrCborUnknownVariant`, `ErrCborUnionEntries`; Swift `cborWrongType`, `cborDuplicateKey`, `cborUnknownVariant`,
    `cborUnionEntries`; C11 `SCE_FORGE_CODEC_CBOR_WRONG_TYPE`, `_DUPLICATE_KEY`, `_UNKNOWN_VARIANT`,
-   `_UNION_ENTRIES`; the C++ runtime's `CodecError` gains the four. A Kotlin, Python or C++ decode answers absence
-   for every refusal, its codec convention, so those three are held to refusing, not to the name ("Open questions"
-   2). Two refusals change their name: a key given twice and an item of another major type, both `CborMalformed`
-   until now, which named them as not being CBOR.
+   `_UNION_ENTRIES`; and C++, Kotlin and Python in the typed refusal their decode returns once the item that gives
+   every runtime's decode one has landed (C++ `CodecError`, Kotlin `CodecError`, Python an exception of
+   `sce_forge_runtime.cbor`), which lands before this record's backend steps ("Landing order"). Until that item, a
+   decode on those three answers absence for every refusal, the codec convention SCE_FORGE.md section 4.6.1 states.
+   The corpus holds all seven to each refusal's name. Two refusals change their name: a key given twice and an item
+   of another major type, both `CborMalformed` until now, which named them as not being CBOR.
 
    *The order of the checks.* A list's count is judged against its bound and its lower count before any element is
-   decoded (ADR 0077 section 2), and an indefinite array's elements are counted as they come, refused at the first one
-   past the bound before it is decoded. A text's or byte string's length is judged before its bytes are read, and a
-   chunked one's running length after each chunk. A union's map is judged for one entry before its key is read
-   (an indefinite one at the second key), then its key, then the case's record. Duplicates are found among the keys a
-   map declares, by one mark per declared key; a key the map does not declare is stepped over and not remembered, so
-   a map that repeats an undeclared key is read as if it held it once. That is the one invalid map the decode does not
-   refuse: finding it would need memory in proportion to the input, which a bounded reader does not have.
-3. **Why the refusals are about the value.** A refusal says that what arrived is not a value of the protocol. An
-   encoding that is not the deterministic one still is, so refusing it would refuse a value. The bytes that must be
-   canonical are the bytes a signature covers, and SCE never verifies a signature over received bytes: the trust
-   layer re-encodes the typed value it read (ADR 0086 section 9.1), so a variant encoding gives an attacker no second
-   string to sign. Two backends given one value write one string of bytes, because every encode writes the
-   deterministic form; two backends given one string of bytes read one value, because every decode reads the data
-   model. The cost is that an input's length is not bounded by `C(T)` (section 4.3).
-4. **A Rust view of a text written in chunks.** The Rust borrowed form presents a top-level text or byte string
-   entry as a view of the input (`Text<'a, N>`, `Bytes<'a, N, M>`, `Bounded` over a slice). A text written in chunks
-   stands in several runs of the input, so no one slice holds it. The CBOR codec's view of a text and a byte string
-   becomes the runs of the input the string stands in, one run for a definite-length string: still a view, still no
-   copy, still `Bounded` by the string's total length. Its readers (display, equality, iteration over the bytes, the
-   copy into the owned mirror) read the runs in order; an accessor for one slice answers where the string is one
-   run, and a consumer that needs one slice of any string takes the owned mirror, which every CBOR codec now has
-   (every text is bounded, section 1.3). The positional codecs' `Text` and `Bytes` do not change. The Mesh's reads of
-   the envelope move with it: `source` and `event_type` are read through `to_string`, which reads the runs, and
-   `data`, read as one slice today (`backends/rust/mesh/src/router.rs`, `into_inner`), is read as one slice where it
-   is one run and copied out of its runs otherwise, within its bound. This is a change to the public
-   type of a generated Rust CBOR codec, migrated per ADR 0078 in docs/SCE_CODEC_CONSUMER_MIGRATION.md. Every other
-   backend holds an owned text and copies the chunks into it, refusing past the bound as they come.
+   decoded (ADR 0077 section 2). A text's or byte string's length is judged before its bytes are read. A union's map
+   is judged for one entry before its key is read, then its key, then the case's record. Duplicates are found among
+   the keys a map declares, by one mark per declared key; a key the map does not declare is stepped over and not
+   remembered, so a map that repeats an undeclared key is read as if it held it once. That is the one invalid map the
+   decode does not refuse: finding it would need memory in proportion to the input, which a bounded reader does not
+   have.
+4. **Why the refusals are about the value, within the profile.** A refusal says that what arrived is not a value of
+   the protocol, or is not written in the protocol's profile. An encoding that is not the deterministic one, inside
+   the profile, still writes a value, so refusing it would refuse a value. The bytes that must be canonical are the
+   bytes a signature covers, and SCE never verifies a signature over received bytes: the trust layer re-encodes the
+   typed value it read (ADR 0086 section 9.1), so a variant encoding gives an attacker no second string to sign. Two
+   backends given one value write one string of bytes, because every encode writes the deterministic form; two
+   backends given one string of bytes read one value, because every decode reads the data model within one profile.
+   The Rust view stays a slice of the input (ADR 0049), and the Mesh's reads of the envelope
+   (`backends/rust/mesh/src/router.rs`, `into_inner`) are unchanged. The cost of the variations the profile keeps is
+   that an input's length is not bounded by `C(T)` (section 4.3).
 5. **The encode.** It writes the deterministic form of section 2 and nothing else, on every backend, so it never
    writes an indefinite length, a longer head, or a wider float. It refuses only a value outside the entry's type
    where the backend's types do not exclude it (ADR 0086 section 7.1's table): a list below its lower count on every
@@ -459,8 +480,9 @@ message types of the TTCN-3 corpus get their codec documents.**
    | the codec, entries `e1..en` | `h(n) + Σ (1 + C(Te))`, each key one byte (`sce:key` is below 24); an exact-length entry `h(L) + L` |
 
    Every row but two is ADR 0086 section 2.1's. The optional row is that table's value counted where a key is left
-   out, which is never larger. The union row differs from ADR 0092 section 5.1's, which measures the signed form of
-   that ADR's section 5.3; the build keeps both measures, one per form, and the codec reads this one.
+   out, which is never larger. The union row replaces ADR 0092 section 5.1's, which measured the tag beside the case's
+   fields, by the amendment of section 2.5, so the codec and the signed form read one union row (in
+   `value_type.rs`'s `case_size`); until that amendment lands the codec's walk computes this row itself.
 2. **Tight, and the bound of the encode buffer.** A value at its largest (every list full, every text at its bound,
    every number at its longest head, every optional present, every union in its largest case) encodes to exactly
    `C(T)`, so `<NAME>_MAX_BYTES` is `C` of the codec, which sizes C11's encode buffer, a broadcast log's slot (ADR
@@ -469,9 +491,9 @@ message types of the TTCN-3 corpus get their codec documents.**
    constant. Worked: the `job_status` codec is `1 + (1 + 5) + (1 + 34) + (1 + 9) + (1 + 2) + (1 + 2) + (1 + 5) = 64`
    bytes; `union:Payment` is `max(30, 7, 28) = 30`, its `card` case.
 3. **An input is not bounded by `C(T)`.** A variant encoding is longer than the deterministic one (a 9-byte head, a
-   text in many chunks), so a receiver does not size an input buffer by `<NAME>_MAX_BYTES`; the transport bounds the
-   input, and the decode reads within the buffer it is given. Storage is bounded by the type alone: nothing a decode
-   holds grows with a variant.
+   double for a value a half holds), so a receiver does not size an input buffer by `<NAME>_MAX_BYTES`; the
+   transport bounds the input, and the decode reads within the buffer it is given. Storage is bounded by the type
+   alone: nothing a decode holds grows with a variant.
 4. **A size past what the build counts is refused.** `C` is computed in 64 bits; a type whose largest encoding is
    past `2^64 - 1` bytes has no encode bound, and is refused with the code of section 6, where the codec now
    saturates to `u64::MAX`. The schema unit's `DATA_MAX_LEN` and `C`, whose refusal is a `generate/unsupported-feature`
@@ -498,8 +520,8 @@ message types of the TTCN-3 corpus get their codec documents.**
    of its union document's unit, a list the backend's list of section 7.1 (`BoundedList<T, N>` on Rust,
    `OwnedList<T, N>` on C++, the language's list elsewhere, the fixed layout on C11), an optional the backend's
    optional. The codec declares no record or union type of its own; it brings the units into scope as step 3a does
-   for a record. A top-level scalar, text or byte string entry keeps the form it has today on each backend (Rust's
-   view of section 3.4 aside).
+   for a record. A top-level scalar, text or byte string entry keeps the form it has today on each backend, Rust's
+   a view over the input (ADR 0049).
 4. **During the landing a backend refuses by name** (`generate/unsupported-feature`) what its printer does not lower
    yet, naming the entry and the constructor, through `cbor_codec::refusal`, whose answer the conformance schedule
    reads, so a fixture runs exactly where it generates. `cbor_codec::lowers_record_list` becomes the per-backend
@@ -522,7 +544,7 @@ message types of the TTCN-3 corpus get their codec documents.**
   `generate/unsupported-feature` for a record of a CBOR list whose field is not an unsigned integer, `bool`, text or
   byte string (`record_list_unlowered`), and C11's for a text with no bound (`cbor_codec::refusal`), which section
   1.3 refuses at parse on every backend.
-- A decode's refusal is a run-time error of the runtime (section 3.2), not a diagnostic.
+- A decode's refusal is a run-time error of the runtime (section 3.3), not a diagnostic.
 
 ### 7. Wire surfaces (SCE_WIRE_CONTRACTS.md)
 
@@ -562,17 +584,18 @@ No status flips.
      both. A decode of it refuses what 3a's refuses (a count past the bound or below the lower count, a field absent,
      a key twice) and steps over the keys 3a steps over.
    - The codec's own map: definite length, ascending integer keys, shortest heads, as today.
-   Hence a value's bytes are equal. The decode's widening is section 3.1's (indefinite lengths, a float wider than
-   its shortest), and its renaming section 3.2's (a key twice, an item of the wrong type).
+   Hence a value's bytes are equal. The decode's one widening is the signed enum's negative number above, and its
+   renaming section 3.3's (a key twice, an item of the wrong type). An indefinite length is refused as before
+   (section 3.1).
 3. **The test.** The landing's first step (step 0) captures the bytes each backend writes today, before anything
    moves: a byte case for every committed CBOR document (`envelope`, `codec_cbor_map`, the text event of
    `broadcast_log_text`, `codec_cbor_open_enum`, and the four codecs of `sce-build/tests/fixtures/cbor_codec/`), at a
    smallest and a largest value and every optional both ways, written into the corpus. Every later step regenerates
    the backends and holds them to those cases unchanged, beside the Mesh golden envelope (`forge_cbor_codec`,
-   `CborCodecTest`). A case of a negative `Status` moves from the encode's refusals to its byte cases, and the
-   indefinite-length map from the decode's refusals to its variant cases, each in the step that changes it, with the
-   reason in its note. A characterization test written before the change, and kept, is what turns "the same bytes"
-   from an argument into a check.
+   `CborCodecTest`). A case of a negative `Status` moves from the encode's refusals to its byte cases in the step that
+   changes it, with the reason in its note; `codec_cbor_map`'s reject of an indefinite-length map stays as it is. A
+   characterization test written before the change, and kept, is what turns "the same bytes" from an argument into a
+   check.
 4. **What changes outside the bytes.** The generated `<NAME>_MAX_BYTES` of a codec with a narrow integer or an enum
    entry shrinks to its exact size (section 4.2); a broadcast log's slot over such a codec shrinks with it. The
    committed documents are rewritten by `sce-codegen bound-spelling` (each `sce:max-size` into its type), which changes
@@ -603,8 +626,10 @@ No status flips.
    - it writes the deterministic form whatever its library does by default: libcbor writes an integer at the width
      the item was built with and a map's pairs in the order they were added, so the binding builds each integer and
      length at its narrowest width and adds a map's pairs in the order of their encoded keys;
-   - its decode is libcbor's, a full decoder, so it is variation-tolerant as SCE's is (section 3.1), and the
-     refusals of section 3.2 are the binding's to apply to the item it decoded;
+   - its decode is libcbor's, a full decoder, which reads indefinite lengths too, so the binding applies the profile
+     of section 3.1 and refuses an indefinite-length item, as SCE does, from what libcbor's item says of its length;
+     within the profile it is variation-tolerant as SCE's is (section 3.2), and the refusals of section 3.3 are the
+     binding's to apply to the item it decoded;
    - its mapping is structural: a record to a TTCN-3 record by field name, a union to a TTCN-3 union by alternative
      name, a list to a `record of`, an absent field to `omit`; and because the tree is TP section 12.5's (section
      2.4), the value it decodes is logged by the logger plugin with no second mapping. The TTCN-3 export refuses a
@@ -633,25 +658,26 @@ Each test fails when the rule it pins is removed; the landing checks each once a
      exactly `C` bytes; every vector of section 2.8. A composed value is written in a case as section 2.4's tree in
      JSON, its leaves as TP section 12.5 spells them.
    - A new kind of case, `variants`: an encoding the encode never writes, the value it decodes to, and the
-     deterministic bytes that value re-encodes to: a longer head (`18 01` for 1), a double that is a single, keys in
-     reverse order, an indefinite array (`9f 01 02 ff`), an indefinite map, an indefinite union map
-     (`bf 64 63 61 73 68 a0 ff`), a text in chunks (`7f 61 61 61 62 ff` for "ab"), and an undeclared key whose value
-     is indefinite. `codec_cbor_map`'s reject "an indefinite-length map" moves here.
-   - Its `rejects`, one per row of section 3.2 at the top and at depth 2: each new kind and each renamed one; a chunk
-     of another major type (`7f 41 61 ff`), a chunk that splits a code point, `null` in a record's field, `null` under
+     deterministic bytes that value re-encodes to: a longer head (`18 01` for 1), a longer length head on a text and
+     on an array, a double that is a single, a double that is a half, keys in reverse order at the top and in a nested
+     record, and an undeclared key whose value is a nested map.
+   - Its `rejects`, one per row of section 3.3 at the top and at depth 2: each new kind and each renamed one; an
+     indefinite array (`9f 01 02 ff`), an indefinite union map (`bf 64 63 61 73 68 a0 ff`), a text in chunks
+     (`7f 61 61 61 62 ff`) and an undeclared key whose value is indefinite, each `cbor-malformed` (the profile);
+     `null` in a record's field, `null` under
      an optional field's key, a bignum where a `uint64` stands (`c2 41 01`), a union map of no and of two entries, an
      unknown variant, a fifth element of `list<uint8>[4]` (refused before it is decoded), an empty list of lower count
      1, -129 for an `int8` (`38 80`), a double that is no single for a `float32`. `codec_cbor_map`'s "key 7 is given
      twice" becomes `cbor-duplicate-key` and "a text string where the urgent entry expects a truth value"
-     `cbor-wrong-type`.
+     `cbor-wrong-type`. Its reject "an indefinite-length map" stays as it is.
    - The step-0 cases of section 8.3, unchanged through every step.
    Run on the seven backends by each backend's conformance harness, as `codec_cbor_map` is: Rust, C++, Go, Kotlin,
    Python, C11 and Swift.
 2. **Each runtime's CBOR module**: signed integers and floats at every head and precision boundary (23/24, 255/256,
-   65535/65536, 2^32 - 1/2^32; a value that is a half, a single, a double only; a NaN); indefinite arrays, maps and
-   strings, nested and empty; the skip over an indefinite value; each refusal kind (`cbor_runtime_test` on Rust,
-   C++ and C11, and its twin on Go, Kotlin, Python and Swift). The existing tests that refuse an indefinite length
-   change to accept it.
+   65535/65536, 2^32 - 1/2^32; a value that is a half, a single, a double only; a NaN); an indefinite text and byte
+   string refused beside the array and map the existing tests already refuse, and the skip refusing an indefinite
+   value; each refusal kind (`cbor_runtime_test` on Rust, C++ and C11, and its twin on Go, Kotlin, Python and Swift).
+   The existing tests that refuse an indefinite length stay as they are.
 3. **`sce-build`**:
    - the reader: every constructor read on a CBOR entry; `sce:max-size` read as the bracket with its
      `bound-attribute-superseded` record, and `bound-spelling`'s rewrite of a CBOR codec generating the same bytes;
@@ -671,12 +697,21 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    9.2 without `NO_CODEC_FORM`.
 5. **Mutation casefiles** under `sce-build/tests/mutations`: a union's one-entry check, its unknown-variant check, the
    duplicate-key mark, a nested record's key order, the omitted absent field (written as `null` instead), the
-   `null` element, the lower count of a nested list, the running length of a chunked text against its bound, the
+   `null` element, the lower count of a nested list, the refusal of an indefinite length inside a nested value, the
    union row of `C`.
 
 ## Landing order
 
-Each step leaves every lane green and moves no byte the step-0 cases pin.
+Each step leaves every lane green and moves no byte the step-0 cases pin. Two items outside this record land first,
+each a commit of its own:
+
+- **Every runtime's decode names its refusal.** A Kotlin, Python or C++ decode stops answering `null`, `None` or
+  `std::nullopt` for a refusal and returns a typed one, as Rust, Go, Swift and C11 do, for every codec. It lands
+  before step 4, so each backend step brings its kinds of section 3.3 into a typed refusal, and the corpus holds all
+  seven backends to each name from the first backend step on.
+- **The amendment of ADR 0092 section 5.3** (section 2.5): a signed union is the one-entry map of section 2.1, and
+  its row of `C` this record's. It lands before ADR 0092's step 7, which then writes that shape; it is independent
+  of this record's steps.
 
 0. **Pin.** The byte cases of section 8.3, captured from today's encoders on every backend, added to the corpus. No
    code changes.
@@ -690,22 +725,24 @@ Each step leaves every lane green and moves no byte the step-0 cases pin.
 2. **The plan.** `CborPlan`'s tree, `C` of section 4.1, `codec_totality` over the shape, `<NAME>_MAX_BYTES` from `C`.
    Each printer reads the new plan for the shapes it lowers today, so the regeneration changes only the
    `<NAME>_MAX_BYTES` constants of section 8.4. Tests: the plan goldens, the size and totality tests.
-3. **The runtimes**, each with its tests of "Conformance" item 2: signed integers, floats, indefinite lengths, the
-   four new kinds and the two renamed refusals, on Rust, C++, Go, Kotlin, Python, C11 and Swift; Rust's view of
-   section 3.4 with its migration note. The corpus's renamed rejects and the indefinite-length variant move here.
-4. **The backends, one at a time**, each printing the whole shape from the plan and flipping its arm of
-   `cbor_codec::refusal`, each held to the composed corpus as it lands: 4a Rust, the reference (with
-   `codec_cbor_composed` and its cases); 4b C++; 4c Go; 4d Kotlin; 4e Python; 4f C11; 4g Swift, whose
-   `swift_codec::cbor_unlowered` empties. ADR 0081 section 4's order, with Swift last as its section 2 leaves it. A
-   backend's step regenerates the committed trees that hold a codec it now lowers differently (none of the committed
-   documents' bytes move). The last step removes `lowers_record_list` and the refusal's composition arms.
+3. **The runtimes**, each with its tests of "Conformance" item 2: signed integers, floats, an indefinite text and
+   byte string refused, the four new kinds and the two renamed refusals, on Rust, C++, Go, Kotlin, Python, C11 and
+   Swift. The corpus's renamed rejects move here.
+4. **The backends, one at a time**, after the typed decode refusal above has landed on every runtime, each printing
+   the whole shape from the plan and flipping its arm of `cbor_codec::refusal`, each held to the composed corpus as
+   it lands: 4a Rust, the reference (with `codec_cbor_composed` and its cases); 4b C++; 4c Go; 4d Kotlin; 4e Python;
+   4f C11; 4g Swift, whose `swift_codec::cbor_unlowered` empties. ADR 0081 section 4's order, with Swift last as its
+   section 2 leaves it. A backend's step regenerates the committed trees that hold a codec it now lowers differently
+   (none of the committed documents' bytes move). The last step removes `lowers_record_list` and the refusal's
+   composition arms.
 5. **The corpus**, completed: every case of "Conformance" item 1 on all seven backends, the mutation casefiles.
 6. **The lane's fixtures.** The two codec documents, their round trips on every backend, the coverage test without
    `NO_CODEC_FORM`.
 7. **The documents.** SCE_FORGE.md section 4.6.1 rewritten to this record (the table, the list of records as a case
    of the rule, the wire and decode rules, the generation of each backend); docs/SCE_ACCEPTED_SUBSET.md's appendix
    row; the catalog of SCE_ERROR_CONTRACT.md; docs/SCE_TTCN3_LANE.md sections 12.1, 12.4 and the table of 12.2;
-   docs/SCE_CODEC_CONSUMER_MIGRATION.md (Rust's view, the renamed refusals, the new kinds a consumer's match meets).
+   docs/SCE_CODEC_CONSUMER_MIGRATION.md (the renamed refusals, the new kinds a consumer's match meets, the narrower
+   `<NAME>_MAX_BYTES`).
    Each earlier step states in place what it lands, in the paragraph of SCE_FORGE.md it changes; this step closes the
    section.
 
@@ -717,11 +754,11 @@ Each step leaves every lane green and moves no byte the step-0 cases pin.
 - One form per type for a codec, and its tree is the log's. A value moves from a wire to a log to a trace with no
   mapping but the leaves'.
 - Two CBOR encodings of a typed value stay in SCE, the codec's and the signature's, differing in an absent field
-  (omitted, or `null` under its key) and, once ADR 0092's step 7 lands as written, in a union. Each is stated with its
-  reason, and "Open questions" 1 asks about the second.
-- A decode reads what any conforming encoder writes, so a peer whose library writes indefinite lengths or wide heads
-  interoperates; the cost is a reader on every runtime that walks indefinite items, and a Rust view type for a text
-  in chunks.
+  alone (omitted, or `null` under its key), each for its reason; a union is one shape in both, once ADR 0092 section
+  5.3 is amended.
+- A decode reads every definite-length encoding a conforming encoder writes, so a peer whose library writes wide heads,
+  wide floats or keys in another order interoperates. A peer that writes indefinite lengths does not: the profile is
+  stated, and a Rust codec stays a view over its wire bytes (ADR 0049).
 - Two refusals are renamed and four kinds are added: a consumer that matched `CborMalformed` for a key twice or a
   wrong type changes its match (ADR 0078's note).
 - `<NAME>_MAX_BYTES` becomes exact, and smaller for narrow integer and enum entries.
@@ -733,7 +770,8 @@ Each step leaves every lane green and moves no byte the step-0 cases pin.
 - **Keep `EntryType` and add constructors one at a time** (signed integers, then lists of scalars, then records),
   as step 3a added one. Each addition is a rule an author learns, and the two message types of the corpus need four
   of them at once; the grammar every other position reads already holds them all.
-- **A union beside its tag, as the JSON wire and the signed form write it** (ADR 0092 sections 2 and 5.3). It
+- **A union beside its tag, as the JSON wire writes it and the signed form did before its amendment** (ADR 0092
+  sections 2 and 5.3). It
   reserves the tag's key in every case's record and makes the union's map the only map whose members are of two
   kinds; its tree is not TP section 12.5's, so the binding would need a second mapping to the log, and TTCN-3's union
   value and X.697's `CHOICE` are named around. The JSON wire's reason for it (a model's constrained decoding) does not
@@ -745,26 +783,17 @@ Each step leaves every lane green and moves no byte the step-0 cases pin.
   map already spell absence by omission. The signed form keeps `null` for a reason a wire does not have (its keys a
   function of the revision).
 - **A decode that refuses every encoding but the deterministic one.** It refuses values, not errors: an encoder that
-  writes `18 01` for 1 or an indefinite array has written a valid item, and a full decoder reads it (RFC 8949 section
-  4.1). Determinism matters for bytes a signature covers, which SCE never takes from the wire.
-- **Accept every variant except an indefinite length**, as the tree does today. It keeps the Rust view a slice, but
-  draws the line at a serialization variant, not at validity, which is the line the owner's decision draws; a
-  chunked text costs Rust one view type and no copy.
+  writes `18 01` for 1 or a double for 1.5 has written a valid item in the profile, and a variation-tolerant decoder
+  reads it (RFC 8949 section 4.1). Determinism matters for bytes a signature covers, which SCE never takes from the
+  wire.
+- **Accept indefinite lengths too**, the first statement of the owner's decision ("any well-formed encoding"). A
+  text or byte string written in chunks stands in several runs of the input, so a Rust codec's top-level text could
+  no longer be a slice of its wire bytes: ADR 0049 would give way to a view of runs, and every consumer that reads a
+  string as one slice (the Mesh router reads the envelope's `data` so) would copy or change. RFC 8949 section 5 lets
+  a protocol state its profile, every value has a definite-length encoding, and a codec's message is written whole,
+  so the profile refuses no value a sender cannot write another way. Rejected on review, 2026-11-14.
 - **A CDDL document per codec as the source of truth.** CDDL describes items and cannot state the deterministic
   encoding, a bound's limit name or an exact length's place; the codec document already states every fact and the
   CDDL of section 2.6 follows from it. Emitting CDDL from a codec document is a printer this record does not need.
 - **Give the content-line codec the same type.** RFC 5545 has no image of most constructors (section 1.4): every one
   of them would be refused at the codec, which is the refusal by shape ADR 0086 removed from the language.
-
-## Open questions
-
-1. **The signed form of a union.** ADR 0092 section 5.3 gives a signed union the tag's number under the tag's key,
-   beside the case's fields; its step 7 has not landed, so no signed bytes depend on it. Signing a union in this
-   record's form (one entry keyed by the variant's name) would make the codec and the signature differ only in an
-   absent field. Recommended: amend ADR 0092 section 5.3 before its step 7 lands, so the trust layer's encoder and
-   the codec share the union's writer and its row of `C`.
-2. **Typed decode refusals on Kotlin, Python and C++.** The codec convention of those three answers absence for
-   every refusal of every codec, positional included (SCE_FORGE.md section 4.6.1), so the refusal kinds of section 3.2
-   are named on Rust, Go, Swift and C11 only, and the corpus holds the other three to refusing. Giving them the kind
-   changes every generated codec's decode on three backends, a consumer change of its own (ADR 0078). Recommended: a
-   record of its own, over every codec, not this one.
