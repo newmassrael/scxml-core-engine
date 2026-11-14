@@ -7302,10 +7302,10 @@ fn parse_codec_tlv_chain_from_node(
 ///     contract for presence).
 ///   - `sce:length-from="<sibling_field_id>"` bounds the embedded
 ///     codec's decode-time cursor scope to the named earlier integer
-///     field's value (typical: a VLE total-length prefix). Encode
-///     side trusts the author to keep `self.<sibling> ==
-///     emitted_inner.len()` (mirrors `LengthRef`'s author-trust
-///     contract). First reachable consumer is zenoh-pico
+///     field's value (typical: a VLE total-length prefix). The sibling
+///     is a derived element (docs/adr/0058 §1): the encode writes the
+///     length of the embedded codec's frame, as it writes a
+///     `LengthRef` field's length. First reachable consumer is zenoh-pico
 ///     `_z_decl_ext_keyexpr_encode` whose outer envelope's VLE
 ///     `total_length` prefix scopes the inner wireexpr-shaped body.
 ///

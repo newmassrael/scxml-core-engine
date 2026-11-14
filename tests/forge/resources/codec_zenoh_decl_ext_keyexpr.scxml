@@ -58,10 +58,10 @@
 
        (1) `<sce:embed sce:length-from="total_length">` bounds the
            inner codec's decode-time cursor scope to `total_length`
-           bytes. Encode side trusts the author to keep `self.
-           total_length` consistent with `inner.encode().len()` —
-           same author-trust contract as `LengthRef`'s sibling
-           length field. v1 grammar: length sibling MUST be declared
+           bytes. The encoder derives `total_length` as the length
+           of the frame `inner` encodes to (docs/adr/0058 §1), as it
+           derives a `LengthRef` field's sibling length, and a value
+           presents `inner` alone. v1 grammar: length sibling MUST be declared
            earlier in the same codec and MUST be integer-typed
            (`validate_codec_embed_length_from`).
 

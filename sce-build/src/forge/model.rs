@@ -2886,12 +2886,12 @@ pub struct CodecField {
     /// field bounds the embedded codec's decode-time cursor scope to
     /// the named sibling field's decoded value (a prior-position
     /// integer field — typically a VLE total-length prefix). The
-    /// embedded codec consumes exactly that many bytes via an
-    /// inner-cursor sub-window; encode side trusts the author to set
-    /// the length sibling consistently with the embedded codec's
-    /// emitted byte count (mirrors the `LengthRef` author-trust
-    /// contract — round-trip correctness is the author's
-    /// responsibility, not codec-derived).
+    /// embedded codec is read from exactly that many bytes via an
+    /// inner-cursor sub-window. The sibling is a derived element
+    /// (docs/adr/0058 §1, `codec_roles::Derivation::EncodedLengthOf`):
+    /// the encode computes it as the length of the body's frame, and a
+    /// value states it only where a gate leaves the body out, as with a
+    /// `LengthRef` field's length.
     ///
     /// First reachable consumer: zenoh-pico
     /// `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where the

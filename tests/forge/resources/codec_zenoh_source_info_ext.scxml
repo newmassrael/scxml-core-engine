@@ -32,10 +32,10 @@
      `<sce:requires-parent-flags>` (Case A — body codec is self-
      contained, no parent flag dependency).
 
-     Author trust contract: caller sets `self.ext_size` consistently
-     with `self.info.encode().len()` (mirrors LengthRef sibling-length
-     contract). Encoder does NOT re-derive ext_size from inner body
-     size — round-trip correctness is the author's responsibility.
+     `ext_size` is derived (docs/adr/0058 §1): the encoder writes the
+     length of the frame `info` encodes to, as it writes a length-ref
+     field's length, and never takes it from the value; a value
+     presents `info` alone.
 
      Wire round-trip oracle:
        zid=[0xAB], eid=42, sn=7:

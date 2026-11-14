@@ -707,10 +707,13 @@
        `<sce:embed>`. Bounds the embedded codec's decode-time cursor
        scope to the named earlier integer field's value. Mirrors
        zenoh-pico declarations.c:206 `_z_slice_as_zbuf` inner-cursor
-       pattern. Author-trust on encode (sibling's wire value must
-       match the embedded codec's emitted byte count). Validator
+       pattern. The sibling is derived on encode (docs/adr/0058 §1):
+       the encoder writes the length of the embedded codec's frame and
+       never takes it from the value, as it computes a `length-ref`
+       field's length; a value states it only where a present-if gate
+       leaves the embed out. Validator
        (`validate_codec_embed_length_from`) rejects forward / unknown
-       / non-integer references. -->
+       / non-integer / gated references. -->
   <xs:attribute name="length-from" type="xs:string"/>
 
   <!-- RFC §synth-5-B B2 repeat primitive: <sce:repeat>-internal attributes
@@ -1738,9 +1741,11 @@
          - `sce:length-from="<sibling_field_id>"` bounds the embedded
            codec's decode-time cursor scope to the named earlier
            integer field's value (typical: a VLE total-length prefix).
-           Encode side trusts the author to keep `self.<sibling> ==
-           emitted_inner.len()` (mirrors the LengthRef author-trust
-           contract). First reachable consumer: zenoh-pico
+           The sibling is a derived element (docs/adr/0058 §1): the
+           encoder writes the length of the embedded codec's frame, as
+           it writes a `length-ref` field's length, and a value states
+           it only where the embed's own present-if gate leaves the
+           embed out. First reachable consumer: zenoh-pico
            `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where
            the outer envelope's VLE total_length prefix scopes the
            inner wireexpr-shaped body.
@@ -1748,6 +1753,7 @@
        Diagnostics (folded into validation/invalid-attribute):
          - sce:length-from references later/unknown sibling
          - sce:length-from references non-integer sibling
+         - sce:length-from references a sibling gated by sce:present-if
          - sce:present-if cross-field validation reuses the existing
            present-if predicate validators
        ═══════════════════════════════════════════════════════════════ -->
@@ -1766,8 +1772,8 @@
       <xs:attribute ref="sce:present-if"/>
       <!-- RFC §synth-5-B — optional `sce:length-from="<id>"` bounds
            the embedded codec's decode-time cursor scope to the named
-           sibling integer field's value. Author-trust on encode
-           (sibling value must match emitted byte count). -->
+           sibling integer field's value. The sibling is derived on
+           encode from the embedded codec's frame (docs/adr/0058 §1). -->
       <xs:attribute ref="sce:length-from"/>
     </xs:complexType>
   </xs:element>

@@ -987,6 +987,27 @@ is ignored by the decode, and counts in the frame's size. The parser refuses as
 - Length value is interpreted as **byte count**
 - `sce:max-size` is the most bytes the field holds
 
+`sce:length-from` example, on an embedded codec (`<sce:embed>`):
+```xml
+<sce:field id="ext_size" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+<sce:embed id="ts" type="codec_zenoh_timestamp" sce:byte="1" sce:length-from="ext_size"/>
+<!-- ts is read from as many bytes as ext_size says, and need not take all of them -->
+```
+
+`sce:length-from` names an integer field declared before the embed that every frame carries: one gated by
+`sce:present-if` is refused (`validation/attribute-rule-violated`), since an absent length bounds nothing.
+
+**What the encode derives** (docs/adr/0058 §1). The field a `length-ref` names (`sce:length-field`), the count
+of a `<sce:repeat count=>`, and the field an embed is bounded by (`sce:length-from`), which is the length of
+the embedded codec's frame, are derived: the encode computes each from what it measures and does not take it
+from the value, as the encoding rules of ASN.1 compute a length. A value presents none of them. Where all that
+a number measures is gated and a gate leaves it out, the wire still carries the number and a decode reads it,
+so the value states it there: the number is the side of the gate's group where the content is not
+(docs/adr/0065 §6 R4b), or, where no group holds it, an optional value the encode refuses beside content that
+says another (`InconsistentSource`). The Rust and C++ encodes are printed from the encode plan and derive
+every such number (docs/adr/0081 §3). The Go, Kotlin, Python, C11 and Swift encodes write the field as the
+value holds it until each prints the plan, so a value given to them holds the number its content says.
+
 **A declared bound is part of the field's type** (docs/adr/0077). A field's lengths are the declared
 `sce:max-size` intersected with what its length field can say after its `sce:length-arith`; a
 `<sce:repeat>`'s counts are its `max-count` intersected with what its count field can say. Every
