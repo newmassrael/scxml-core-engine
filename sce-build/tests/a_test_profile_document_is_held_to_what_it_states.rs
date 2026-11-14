@@ -1114,6 +1114,21 @@ fn the_accepted_test_components_hold_every_rule() {
         .unwrap_or_else(|e| panic!("the test-component example: {e:?}"));
 }
 
+/// docs/SCE_TEST_PROFILE.md §4.6 P6, §12.3: a test component's `<send>` sends
+/// its template's value whole, which the template's unit builds, so it gives
+/// its record every field and no backend that sends a composed value refuses
+/// it for one its params leave out. `job_tester` sends `JobReport`, whose
+/// record `job_status` holds the list `codes` in its first revision.
+#[test]
+fn a_templated_send_gives_its_record_every_field() {
+    use sce_build::forge::event_schema_check::{composed_uses_unlowered, ComposedLowering};
+    let model = statechart("job_tester.scxml").unwrap_or_else(|e| panic!("parses: {e:?}"));
+    let lowered = sce_build::test_component::snapshot::lower(&model, Language::Rust)
+        .unwrap_or_else(|e| panic!("lowers for rust: {e:?}"));
+    composed_uses_unlowered(&lowered, ComposedLowering::of(Language::Rust))
+        .unwrap_or_else(|e| panic!("a templated send refused for a field: {e:?}"));
+}
+
 /// docs/SCE_TEST_PROFILE.md §11.5: the message a receive branch takes is an
 /// event of its template's record, read through the record the component
 /// imports, whatever alias each gives it; the branch's `_event.data` is that
