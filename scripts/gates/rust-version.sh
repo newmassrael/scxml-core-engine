@@ -40,6 +40,11 @@
 # which a build machine has before this gate is placed there; the registry's
 # self-test holds those tables to the declarations below. The gate installs
 # none of them (`sce_gate_require_rust` in lib.sh says why).
+#
+# Each build runs that toolchain's own cargo and rustc, first on PATH, and no
+# rustup proxy: rust-toolchain.toml, which pins the release every other build
+# of the tree runs on, is read only by a proxy, so it never stands in for the
+# release a package declares.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

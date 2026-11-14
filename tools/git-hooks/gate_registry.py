@@ -3521,7 +3521,8 @@ def registry_source() -> list[str]:
 # by `needed_by` are installed. No gate installs one there (the header of
 # `scripts/lib/rust_toolchains.sh` says why). That makes the tables a claim
 # with three halves, and each can go stale without a gate turning red: the
-# release and the nightly are pinned in `scripts/lib/rust_toolchains.sh`, the
+# release is pinned in `rust-toolchain.toml` and the nightly in
+# `scripts/lib/rust_toolchains.sh`, the
 # release each package builds with is its manifest's `rust-version`, and the
 # units that need a table are the ones whose gates ask for it. A table a unit
 # needs and does not name is a unit placed on a machine without its compiler,
@@ -3529,6 +3530,10 @@ def registry_source() -> list[str]:
 # off every machine that lacks it, for nothing.
 RUST_TOOLCHAIN_INSTALL = "scripts/install_rust.sh"
 RUST_TOOLCHAIN_PINS = "scripts/lib/rust_toolchains.sh"
+# The release is pinned once, in the file rustup reads for every cargo run in
+# the checkout; `scripts/lib/rust_toolchains.sh` and the release table both
+# read it from there, so the gates and the rest of the tree run one release.
+RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
 # What a rustup command that adds a toolchain or a part of one looks like. No
 # gate body and not the runner runs one; the gate library alone does, for a
@@ -3627,6 +3632,28 @@ def msrv_release(version: str):
     return None
 
 
+def rust_toolchain_file(repo_root: Path) -> dict:
+    """`channel`, `components` and `targets` of rust-toolchain.toml.
+
+    Read by its lines, each value on one line, as the shell readers read it
+    (`scripts/lib/rust_toolchains.sh`, `.github/actions/install-rust`), and for
+    the reason `bx_tool_tables` gives for not parsing TOML. A key written any
+    other way is absent here, which the checks that use it report.
+    """
+    path = repo_root / RUST_TOOLCHAIN_FILE
+    if not path.is_file():
+        return {}
+    found: dict = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        scalar = re.fullmatch(r'channel = "([^"]+)"', line)
+        if scalar:
+            found["channel"] = scalar.group(1)
+        listed = re.fullmatch(r'(components|targets) = \[(.*)\]', line)
+        if listed:
+            found[listed.group(1)] = re.findall(r'"([^"]+)"', listed.group(2))
+    return found
+
+
 def rust_toolchain_failures(repo_root: Path) -> list[str]:
     """What is wrong with the Rust toolchains bx.toml declares, as sentences."""
     failures: list[str] = []
@@ -3638,12 +3665,27 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
 
     pin_text = (repo_root / RUST_TOOLCHAIN_PINS).read_text(encoding="utf-8")
     pins: dict[str, str] = {}
-    for var in ("SCE_RUST_RELEASE", "SCE_RUST_NIGHTLY"):
-        pin = re.search(rf'^{var}="([^"]+)"$', pin_text, re.M)
-        if pin:
-            pins[var] = pin.group(1)
-        else:
-            failures.append(f"{RUST_TOOLCHAIN_PINS} has no {var}=\"...\" line")
+    nightly_pin = re.search(r'^SCE_RUST_NIGHTLY="([^"]+)"$', pin_text, re.M)
+    if nightly_pin:
+        pins["SCE_RUST_NIGHTLY"] = nightly_pin.group(1)
+    else:
+        failures.append(f"{RUST_TOOLCHAIN_PINS} has no SCE_RUST_NIGHTLY=\"...\" line")
+
+    pinned = rust_toolchain_file(repo_root)
+    channel = pinned.get("channel")
+    if channel is None or not RUST_RELEASE.match(channel):
+        failures.append(
+            f"{RUST_TOOLCHAIN_FILE} pins {channel!r} on a `channel = \"...\"` line, "
+            f"not a release such as 1.91.0: a channel that moves is a build no "
+            f"one can repeat")
+    else:
+        pins["SCE_RUST_RELEASE"] = channel
+    if re.search(r'^SCE_RUST_RELEASE="[0-9]', pin_text, re.M) \
+            or RUST_TOOLCHAIN_FILE not in pin_text:
+        failures.append(
+            f"{RUST_TOOLCHAIN_PINS} does not read SCE_RUST_RELEASE from "
+            f"{RUST_TOOLCHAIN_FILE}: a release written there too is a second pin, "
+            f"and the gates would run one release while the tree builds with another")
 
     install_head = (f"RUSTUP_HOME={{scratch}}/rh CARGO_HOME={{scratch}}/ch "
                     f"bash {RUST_TOOLCHAIN_INSTALL} {{version}} {{prefix}}")
@@ -3687,9 +3729,22 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
 
     release = table_of("SCE_RUST_RELEASE")
     nightly = table_of("SCE_RUST_NIGHTLY")
-    if release and tables[release].get("version_file") != RUST_TOOLCHAIN_PINS:
+    if release and tables[release].get("version_file") != RUST_TOOLCHAIN_FILE:
         failures.append(f"[platform.linux.tools.{release}] does not read the release "
-                        f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")
+                        f"from {RUST_TOOLCHAIN_FILE}, the one line that pins it")
+    if release:
+        # What a checkout's rustup installs with the release, a build
+        # machine's release has as well, or a gate passes on one and cannot
+        # run on the other.
+        install = tables[release].get("install", "")
+        on_line = {"components": set(re.findall(r"(?:^|\s)-c\s+(\S+)", install)),
+                   "targets": set(re.findall(r"(?:^|\s)-t\s+(\S+)", install))}
+        for key, flag in (("components", "-c"), ("targets", "-t")):
+            for item in sorted(set(pinned.get(key) or []) - on_line[key]):
+                failures.append(
+                    f"{RUST_TOOLCHAIN_FILE} lists {key[:-1]} {item!r} and the install "
+                    f"line of [platform.linux.tools.{release}] has no `{flag} {item}`, "
+                    f"so a build machine's release lacks what every other checkout's has")
     if nightly and tables[nightly].get("version_file") != RUST_TOOLCHAIN_PINS:
         failures.append(f"[platform.linux.tools.{nightly}] does not read the nightly "
                         f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")

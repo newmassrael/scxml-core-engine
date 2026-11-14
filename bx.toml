@@ -211,16 +211,20 @@ prefix_file = "bin/mnemosyne-cli"
 # `needed_by` names.
 #
 # THE RELEASE every gate unit runs on. The plan writes it into each unit (`bash scripts/gate --rust
-# <release> <gate>`) from `SCE_RUST_RELEASE` in scripts/lib/rust_toolchains.sh, which is where it is
-# moved. `needed_by` is that command, so every unit of the push's set asks for it and nothing else
-# does. Its components: clippy and rustfmt for the lint and format gates, llvm-tools for the size
-# reader and disassembler of `nostd-mcu` where binutils for ARM is absent. Its targets are every one a
-# gate builds for: thumbv7em-none-eabihf and thumbv6m-none-eabi (`nostd-mcu` and the codec frame
-# probe it runs), wasm32-unknown-unknown (`wasm32-scenarios`, and the visualizer's wasm-pack build) and
-# wasm32-unknown-emscripten (the ECMAScript frontend of both emscripten trees).
+# <release> <gate>`) from `SCE_RUST_RELEASE` in scripts/lib/rust_toolchains.sh, which reads it from
+# `channel` in rust-toolchain.toml, as this table does: that file is where it is moved, and the one
+# rustup reads for every other cargo run in the checkout, so a gate unit runs the release the rest of
+# the tree builds with. `needed_by` is that command, so every unit of the push's set asks for it and
+# nothing else does. Every component and target rust-toolchain.toml lists is on this install line
+# too, which the registry's self-test holds. Its components: clippy and rustfmt for the lint and
+# format gates, llvm-tools for the size reader and disassembler of `nostd-mcu` where binutils for ARM
+# is absent. Its targets are every one a gate builds for: thumbv7em-none-eabihf and
+# thumbv6m-none-eabi (`nostd-mcu` and the codec frame probe it runs), wasm32-unknown-unknown
+# (`wasm32-scenarios`, and the visualizer's wasm-pack build) and wasm32-unknown-emscripten (the
+# ECMAScript frontend of both emscripten trees).
 [platform.linux.tools.rust]
-version_file = "scripts/lib/rust_toolchains.sh"
-version_pattern = '^SCE_RUST_RELEASE="([0-9.]+)"'
+version_file = "rust-toolchain.toml"
+version_pattern = '^channel = "([0-9.]+)"'
 path = "~/.local/rust/{version}/bin/cargo"
 check = "cargo {version}"
 prefix_link = "~/.local/rust/{version}"

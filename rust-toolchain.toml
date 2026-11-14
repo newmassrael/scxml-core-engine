@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Rust release every build of this repository runs on, and the one line
+# that pins it. rustup reads this file for every cargo run anywhere under the
+# checkout, and installs the release with what is listed below on first use.
+# `[platform.linux.tools.rust]` of bx.toml reads `channel` from here, and so
+# does scripts/lib/rust_toolchains.sh (`SCE_RUST_RELEASE`), so every gate unit
+# on a build machine runs the same release.
+#
+# A release, never `stable`: on 2026-11-14 main turned red with no commit when
+# the hosted runners' `stable` moved to 1.100 and its clippy found
+# `needless_range_loop` in code 1.99 had passed. Moving the release is this one
+# edit, made on purpose; the build machines need the new release
+# (`bx-provision <alias> --apply`) before a gate unit can be placed on them.
+#
+# Not the floor. `rust-version` in the manifests is the oldest Rust each
+# package builds with, and the `rust-version` gate builds each with exactly
+# that release from its own directory (~/.local/rust/<release>), whose cargo is
+# no rustup proxy and so never reads this file.
+#
+# Every component and target listed here is on the install line of
+# `[platform.linux.tools.rust]` as well, so a build machine's release carries
+# what any other checkout's does; the registry's self-test holds the two lists
+# together. Kept to what a build of the workspace asks for without being told:
+# clippy and rustfmt for the lint and format gates, thumbv7em-none-eabihf for
+# the no_std runtime, wasm32-unknown-unknown for the wasm32 scenarios.
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["thumbv7em-none-eabihf", "wasm32-unknown-unknown"]

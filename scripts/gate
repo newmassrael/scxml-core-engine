@@ -152,8 +152,9 @@ fi
 
 # ── The Rust release the gates run on ──────────────────────────────
 #
-# PINNED AND DECLARED, NEVER SYNCED. The release is `SCE_RUST_RELEASE` in
-# `scripts/lib/rust_toolchains.sh`, and bx.toml declares it to bx
+# PINNED AND DECLARED, NEVER SYNCED. The release is `channel` in
+# `rust-toolchain.toml`, which `SCE_RUST_RELEASE` in
+# `scripts/lib/rust_toolchains.sh` reads, and bx.toml declares it to bx
 # (`[platform.linux.tools.rust]` reads it from that line): provision installs
 # it once per build machine at ~/.local/rust/<release>, bx checks it there, and
 # a unit (`--rust <release>`) is placed only on a machine that has it. This
@@ -182,7 +183,7 @@ fi
 # shellcheck source=lib/rust_toolchains.sh
 source "$REPO_ROOT/scripts/lib/rust_toolchains.sh"
 if [[ ! "$SCE_RUST_RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    printf 'gate: SCE_RUST_RELEASE in scripts/lib/rust_toolchains.sh is %q, not a release such as 1.91.0\n' \
+    printf 'gate: rust-toolchain.toml pins %q (SCE_RUST_RELEASE), not a release on a `channel = "1.91.0"` line\n' \
         "$SCE_RUST_RELEASE" >&2
     exit 2
 fi

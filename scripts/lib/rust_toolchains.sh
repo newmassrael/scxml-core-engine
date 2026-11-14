@@ -23,16 +23,20 @@
 # there installs what is missing that way (`sce_gate_require_rust` in
 # scripts/gates/lib.sh); a developer's machine is told the command.
 #
-# Sourced; sets the two pins and defines functions only.
+# Sourced; sets the two pins (the release read from rust-toolchain.toml, the
+# nightly written here) and defines functions only.
 
 # The release every gate unit runs on: the plan writes it into each unit
 # (`scripts/gate --rust <release>`), so it is part of the key bx keeps a unit's
-# pass under, and `[platform.linux.tools.rust]` in bx.toml reads it from this
-# line. Moving it is this one edit; the build machines then need the new
-# release (`bx-provision <alias> --apply`) before a unit can be placed. The
-# hosted lanes run `dtolnay/rust-toolchain@stable`, which moves on its own, so
-# a lint a newer stable adds can turn a lane red before it reaches this pin.
-SCE_RUST_RELEASE="1.99.1"
+# pass under. It is pinned in one place, `channel` of rust-toolchain.toml at
+# the root, which rustup reads for every other cargo run in the checkout and
+# `[platform.linux.tools.rust]` in bx.toml reads as well; this line only reads
+# it, so the gates cannot run another release than the rest of the tree.
+# Moving it is that one edit; the build machines then need the new release
+# (`bx-provision <alias> --apply`) before a unit can be placed. Empty when the
+# file pins no release (x.y.z), which `scripts/gate` refuses by name.
+SCE_RUST_RELEASE="$(sed -nE 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' \
+    "$(dirname "${BASH_SOURCE[0]}")/../../rust-toolchain.toml")"
 
 # The nightly, pinned by date, for what only a nightly does: the queue runtime
 # under Miri and ThreadSanitizer (`forge-rust`, and the mutation casefiles that
