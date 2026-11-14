@@ -22,7 +22,7 @@ public enum {{ struct_name }} {
 {% if consts_prelude %}
 {{ consts_prelude }}
 {% endif %}
-{# SCE_FORGE.md §3.4.1, docs/adr/0098: a failure is thrown where it happens, typed, so a
+{# SCE_FORGE.md §3.4.1, docs/adr/0099: a failure is thrown where it happens, typed, so a
    caller's `try` passes it on as Rust's `?` does and no value stands in for it. #}
     public static func {{ primary_symbol }}({{ params_str }}){% if may_fail %} throws(AlgorithmError){% endif %}{% if has_return %} -> {{ return_type }}{% endif %} {
 {{ body }}

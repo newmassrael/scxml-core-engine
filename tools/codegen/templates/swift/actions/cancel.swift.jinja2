@@ -14,7 +14,7 @@
                     let cancelSendID = {{ action.native_sendid }}
                     _ = engine.cancelEvent(sendID: cancelSendID)
 {% if action.native_sendid_fails %}
-{# docs/adr/0098: the id that failed is thrown before anything is cancelled. #}
+{# docs/adr/0099: the id that failed is thrown before anything is cancelled. #}
                 } catch {
 {% if 'error.execution' in model.events %}
                     engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))

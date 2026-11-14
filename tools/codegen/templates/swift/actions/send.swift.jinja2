@@ -225,7 +225,7 @@
                     var sendEventName = ""
                     if sendArgError.isEmpty {
 {% if action.native_event_fails %}
-{# docs/adr/0098: a failure is thrown, and the name it would have computed stays unwritten. #}
+{# docs/adr/0099: a failure is thrown, and the name it would have computed stays unwritten. #}
                         do {
                             sendEventName = {{ event_value }}
                         } catch {
@@ -392,7 +392,7 @@
 {% endif %}
 {% elif param.native_value %}
 {# The value is the `WireValue` the pair's JSON is written from. A checked operation that
-   overflows throws its failure and answers nothing (docs/adr/0098): the evaluation that
+   overflows throws its failure and answers nothing (docs/adr/0099): the evaluation that
    failed, reported, and the pair left out (§scxml-5.7.1) while the message still goes. #}
                     do {
                         let sceValue: WireValue = {{ param.native_value }}
