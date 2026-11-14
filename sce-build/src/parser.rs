@@ -9242,11 +9242,15 @@ mod tests {
         (Some(row as u32), Some(col as u32))
     }
 
-    /// The `reached-from` sites of `refusal`, as (file name, row, column,
-    /// actual), in the order the refusal carries them.
+    /// One `reached-from` site as a test compares it: the file name, row,
+    /// column and actual of the reference.
+    type RouteStep = (String, Option<u32>, Option<u32>, Option<String>);
+
+    /// The `reached-from` sites of `refusal`, in the order the refusal
+    /// carries them.
     fn route_of(
         refusal: &crate::forge::error::Located<crate::forge::error::ForgeError>,
-    ) -> Vec<(String, Option<u32>, Option<u32>, Option<String>)> {
+    ) -> Vec<RouteStep> {
         use crate::forge::error::RelatedRole;
         refusal
             .related()
