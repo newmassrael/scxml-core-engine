@@ -2010,5 +2010,13 @@ name = "a_trace_is_checked_against_its_suite"
 path = "tests/a_trace_is_checked_against_its_suite.rs"
 required-features = ["cli"]
 
+# A child an `<invoke src>` names that is refused refuses its parent, in its own
+# words (SCE_ERROR_CONTRACT.md §2.4). It runs `sce-codegen`, so it carries the
+# `cli` gate.
+[[test]]
+name = "a_child_that_is_refused_refuses_its_parent"
+path = "tests/a_child_that_is_refused_refuses_its_parent.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

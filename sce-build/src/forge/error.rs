@@ -154,10 +154,12 @@ pub enum RelatedRole {
     /// does not — the field a flags carrier has to be declared before.
     MustFollow,
     /// A site in another document that names the record's document — an
-    /// `<sce:import>`, or an entry of a hybrid `<invoke>`'s
-    /// `sce:candidates` — through which a run that generates a document
-    /// together with what it imports (`generate --with-imports`) reached it.
-    /// One entry per step, the document named on the command line first.
+    /// `<sce:import>`, the `src` of an `<invoke>`, or an entry of a hybrid
+    /// `<invoke>`'s `sce:candidates` — through which a run that generates a
+    /// document together with what it imports (`generate --with-imports`)
+    /// reached it, or through which the parse of a statechart read the child
+    /// it starts ([`Located::reached_through`]). One entry per step, the
+    /// document named on the command line first.
     ReachedFrom,
     /// The element the record's site names — a transition's target state —
     /// when the relation between the two is what is refused: a state some
@@ -223,6 +225,33 @@ impl<E> Located<E> {
     /// Record another place the rejection involves.
     pub fn related_to(mut self, site: RelatedSite) -> Self {
         self.context_mut().related.push(site);
+        self
+    }
+
+    /// Record a site in another document that names the document this
+    /// rejection is in — the `<invoke src>` of the statechart whose parse read
+    /// the child the rejection was raised in — as a `reached-from` site
+    /// (SCE_ERROR_CONTRACT §2.4). `actual` is the token at `location` the
+    /// reference is, as the document spells it, when one row holds it.
+    ///
+    /// A refusal leaves the document it was raised in before it leaves the
+    /// one that names that document, so the steps of a route are recorded
+    /// innermost first; the route reads outermost first, so each step goes
+    /// ahead of every `reached-from` site already recorded.
+    pub fn reached_through(mut self, location: SourceLocation, actual: Option<String>) -> Self {
+        let related = &mut self.context_mut().related;
+        let first_step = related
+            .iter()
+            .position(|site| site.role == RelatedRole::ReachedFrom)
+            .unwrap_or(related.len());
+        related.insert(
+            first_step,
+            RelatedSite {
+                role: RelatedRole::ReachedFrom,
+                location,
+                actual,
+            },
+        );
         self
     }
 
