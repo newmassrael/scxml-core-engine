@@ -67,3 +67,6 @@ sce-rust-scenarios = { path = "../scenarios" }
 # OUT_DIR (see build.rs); no generated code is committed for this crate.
 [build-dependencies]
 sce-build = { path = "../../../sce-build" }
+
+[lints]
+workspace = true
