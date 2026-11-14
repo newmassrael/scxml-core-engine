@@ -621,10 +621,15 @@ fn first_unlowered_composed_use(
             // `<raise>` does, which carries no data, and no lowering writes a
             // value it lacks. A list a later revision adds (`sce:since`) reads
             // empty when it is not sent (section 10.2), so it may be left out.
+            // A test component's `<send>` carries no data in its params: its
+            // message is its template's value, which the template's own unit
+            // builds whole (docs/SCE_TEST_PROFILE.md §4.6 P6, §12.3), so it
+            // gives every field.
             if sent.is_none() {
                 if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
                     let gives = |field: &str| {
-                        a.params.iter().any(|p| p.name == field)
+                        a.test_message.is_some()
+                            || a.params.iter().any(|p| p.name == field)
                             || a.namelist.split_whitespace().any(|n| n == field)
                     };
                     let lacking = schema
