@@ -17,7 +17,7 @@ final class OptionalAlgorithmTests: XCTestCase {
     }
 
     // A day that may be absent is absent only where the record is built with none:
-    // no value stands for a field nobody wrote (docs/adr/0098, section 4).
+    // no value stands for a field nobody wrote (docs/adr/0099, section 4).
     func testARecordBuiltWithNoDayHasNoDay() {
         XCTAssertNil(goal(1, nil).day)
         XCTAssertEqual(goal(1, nil).id, 1)

@@ -6,7 +6,7 @@ import Testing
 @testable import SceForgeRuntime
 
 // Each failure the contract names is thrown by its contract name and answers no value,
-// and every value that fits comes back unchanged (docs/adr/0098). The cases are those of
+// and every value that fits comes back unchanged (docs/adr/0099). The cases are those of
 // backends/go/forge-runtime/algorithm/algorithm_test.go.
 
 /// What `body` completed with: its value, or the failure it threw.
@@ -141,7 +141,7 @@ private func aStringIsHeldToItsBytes(c: BoundCase) {
 }
 
 /// A sum type with no value to start at: the element type the old checked read could
-/// not answer for (docs/adr/0098, section 5).
+/// not answer for (docs/adr/0099, section 5).
 private enum Shape: Equatable {
     case point
     case circle(radius: UInt32)

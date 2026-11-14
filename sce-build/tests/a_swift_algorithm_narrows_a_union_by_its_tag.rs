@@ -115,7 +115,7 @@ func dot() -> UnionShapeMinimal {
 "#;
 
 /// The part of the forge runtime a unit or an algorithm may name: the failure a
-/// may-fail algorithm throws (docs/adr/0098). A stand-in module is enough to
+/// may-fail algorithm throws (docs/adr/0099). A stand-in module is enough to
 /// type-check the units against; the runtime's own tests hold the real one.
 const RUNTIME_STAND_IN: &str = "public enum AlgorithmError: Error {\n    case overflow\n}\n";
 

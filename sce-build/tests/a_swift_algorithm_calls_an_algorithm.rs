@@ -53,7 +53,7 @@ fn a_callee_is_a_member_of_the_enum_its_own_unit_declares() {
 fn a_callee_that_may_fail_has_its_failure_passed_on() {
     let code = swift_of("stdlib/time/add_months.scxml").expect("a may-fail call is written");
     // The callee throws; its failure is the caller's under the callee's own name by
-    // `try` alone, and no value stands in for it (docs/adr/0098).
+    // `try` alone, and no value stands in for it (docs/adr/0099).
     assert!(
         code.contains("(try DaysInMonth.daysInMonth(year, month))"),
         "{code}"

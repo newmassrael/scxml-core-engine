@@ -17,7 +17,7 @@
 //   written as it is; every operation that can is a `Checked` helper
 //   (`SceForgeRuntime`), which throws its `AlgorithmError` and answers nothing, as
 //   Rust's `?` does: a failure is not a value, and no value of any type stands in
-//   for it (docs/adr/0098). A throwing call is written `(try …)` where it stands
+//   for it (docs/adr/0099). A throwing call is written `(try …)` where it stands
 //   ([`throwing`]), and a short-circuit whose right operand throws is the
 //   runtime's own (`Checked.and`, `Checked.or`, `Checked.coalesce`), not the
 //   standard library's `rethrows` operator.
@@ -74,7 +74,7 @@ pub(crate) fn nameable_type(ty: InferredType) -> Option<String> {
 }
 
 /// `call`, a call that can throw, marked where it stands: the one spelling of a
-/// throwing call in Swift (docs/adr/0098, section 3.2). The parentheses let it
+/// throwing call in Swift (docs/adr/0099, section 3.2). The parentheses let it
 /// stand as any operand, Swift refusing a bare `try` to the right of a binary
 /// operator, and the mark is on the call itself, so a closure that holds one
 /// throws by its own body and an expression that holds none has no `try` over
@@ -477,7 +477,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         }
         // SCE_FORGE.md §3.4.1: an index read through `Checked.at`, which throws an
         // out-of-range failure rather than trap, and answers nothing in its place, so
-        // an element of any type is read alike (docs/adr/0098, section 5).
+        // an element of any type is read alike (docs/adr/0099, section 5).
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
@@ -779,7 +779,7 @@ mod tests {
 
     /// An integer operation of a body that receives failures is a `Checked` helper
     /// that throws its failure instead of trapping, at the width of the operation,
-    /// marked `try` where it stands (docs/adr/0098).
+    /// marked `try` where it stands (docs/adr/0099).
     #[test]
     fn a_checked_operation_throws_its_failure_where_it_stands() {
         let mut ctx = TypeCtx::new();

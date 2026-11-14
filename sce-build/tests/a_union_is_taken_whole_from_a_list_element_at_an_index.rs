@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! A union variable takes a list's element at an index whole on every lane
-//! (docs/adr/0098, section 5.3; docs/adr/0092, section 6.1 item 5), held to
+//! (docs/adr/0099, section 5.3; docs/adr/0092, section 6.1 item 5), held to
 //! the `shapes.picked` transition of
 //! `sce-build/tests/fixtures/static_datamodel/static_union.scxml`:
 //!
@@ -10,7 +10,7 @@
 //!   §3.4.1), which fails `out-of-range` for an index outside the list and
 //!   answers no union in its place: a thrown failure (Rust, Swift, Kotlin,
 //!   Python) or a recorded one beside the language's own default of the type
-//!   (C++, Go, C11; docs/adr/0098, section 2.2).
+//!   (C++, Go, C11; docs/adr/0099, section 2.2).
 //! * The copy is written only after the read completed, and a failed read
 //!   raises `error.execution` and ends the block (§scxml-4.9).
 //! * A union that may be absent takes the same element as its present value.
@@ -148,7 +148,7 @@ fn cpp_writes_the_element_only_when_no_failure_was_recorded() {
 
 /// Pinned by `CTarget::record_at` and `CTarget::receiving_write_of`: the local
 /// names the variable's type, the language's own `{0}` stands beside a failed
-/// read and is never written (docs/adr/0098, section 2.2).
+/// read and is never written (docs/adr/0099, section 2.2).
 #[test]
 fn c11_writes_the_element_only_when_no_failure_was_recorded() {
     let code = machine(Language::C11);

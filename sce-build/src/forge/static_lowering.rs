@@ -1930,7 +1930,7 @@ pub trait StaticTarget {
     /// The element of the composed list `list` at `index` as the value a copy of
     /// it reads ([`crate::forge::composed_lowering::copier`]), by the checked
     /// read that fails for an index outside the list (SCE_FORGE.md §3.4.1): a
-    /// whole union taken from a list's element (docs/adr/0098, section 5.3). The
+    /// whole union taken from a list's element (docs/adr/0099, section 5.3). The
     /// element itself, [`Self::record_at`], where the target reads one whole by
     /// value; a target that reads an element that owns its parts by reference
     /// (Rust) spells its own. `None` for a target that reads no element whole.
@@ -4564,7 +4564,7 @@ impl StaticTarget for RustTarget {
             format!("sce_forge_runtime::algorithm::at(&{list}, {index})?")
         })
     }
-    // An element of a list of composed values (a union, docs/adr/0098, section
+    // An element of a list of composed values (a union, docs/adr/0099, section
     // 5.3) owns its parts, so it is read by reference through the runtime's
     // checked read and the copy clones it out of the list.
     fn element_at(&self, list: &str, index: &str) -> Option<crate::forge::composed_lowering::Held> {
@@ -17324,7 +17324,7 @@ pub fn lower_c11(
 /// Swift: a variable is a stored property of the machine's policy class, set by
 /// the machine's own statements.
 ///
-/// The failure of a checked operation is no value (docs/adr/0098): a helper of
+/// The failure of a checked operation is no value (docs/adr/0099): a helper of
 /// `Checked` throws it, as Rust's `?` returns it, so nothing after it is evaluated
 /// and the write that would have taken the value is never reached. The statement
 /// is a closure called where it stands that catches the failure and answers
@@ -17600,7 +17600,7 @@ impl StaticTarget for SwiftTarget {
     }
     // The element is read by the runtime's checked read, which throws an index outside
     // the list as the failure the statement ends at and answers no record in its place
-    // (docs/adr/0098): a list of records is an `Array` of the machine's own struct, so
+    // (docs/adr/0099): a list of records is an `Array` of the machine's own struct, so
     // the element is the record whole, and a copy of it as a struct is
     // ([`Self::record_copy`]).
     fn record_at(&self, list: &str, index: &str) -> Option<String> {
@@ -17650,7 +17650,7 @@ impl StaticTarget for SwiftTarget {
     // enum (which cross as the variant of the same declared name), records of those and
     // lists of them, handed in or taken back, is called with. An algorithm that may
     // fail is called with `try` and the adapter throws what it throws, typed, which
-    // the call of the adapter passes on as any throwing call (docs/adr/0098). A value
+    // the call of the adapter passes on as any throwing call (docs/adr/0099). A value
     // that may be absent returns `None`, which refuses the call by name until it is
     // spelled.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
@@ -18092,7 +18092,7 @@ impl StaticTarget for SwiftTarget {
             }
         };
         // No field holds a value before it is written: the record is built whole by
-        // its initializer of every field (docs/adr/0098, section 4).
+        // its initializer of every field (docs/adr/0099, section 4).
         let fields: String = schema
             .fields
             .iter()
@@ -18465,7 +18465,7 @@ impl StaticTarget for SwiftTarget {
         );
         if value_can_fail {
             // The append is in the `do` after the value, so a value that throws
-            // appends nothing (docs/adr/0098).
+            // appends nothing (docs/adr/0099).
             format!(
                 "{{ () -> Bool in {room}; do {{ {appended} }} catch {{ {} }}; return false }}()",
                 Self::then(&[failed, "return true"]),
@@ -18504,7 +18504,7 @@ impl StaticTarget for SwiftTarget {
             filters::escape_swift(message.to_string())
         )
     }
-    // The runtime's checked helpers throw a failure and answer nothing (docs/adr/0098),
+    // The runtime's checked helpers throw a failure and answer nothing (docs/adr/0099),
     // so the statement stops where its value failed and writes nothing. The expression
     // is a closure called where it stands that catches the failure and answers whether
     // there was one, so the dispatcher can end its block as it does for any error.
@@ -19617,7 +19617,7 @@ fn lower_action(
             // ... and a union variable takes a union a place holds whole, or
             // `null` where it may be absent (docs/adr/0092, section 6.1 item 5).
             // A copy of a list's element at an index fails for an index outside
-            // the list, and then writes nothing and ends its block (docs/adr/0098,
+            // the list, and then writes nothing and ends its block (docs/adr/0099,
             // section 5.3; §scxml-4.9).
             if let Some(copy) = whole_union_copy(action, ctx, renames, rewrites)? {
                 rewrites.note(&action.expr, action.spellings.get("expr"), &copy.value);
@@ -20957,7 +20957,7 @@ struct UnionCopy {
     /// The copy, an expression of the variable's own type.
     value: String,
     /// The variable's type, where the copy reads a list's element at an index,
-    /// which fails for an index outside the list (docs/adr/0098, section 5.3):
+    /// which fails for an index outside the list (docs/adr/0099, section 5.3):
     /// the value is held in a local of that type while it is computed, and
     /// written only if it did not fail. `None` for a copy that cannot fail.
     held_while_read: Option<String>,
@@ -21043,7 +21043,7 @@ fn whole_union_copy(
     let within =
         |place: &crate::forge::value_path::Place| composed::within_of(&place.scope, &names.records);
     let to_within = within(&to).map_err(refused)?;
-    // docs/adr/0098, section 5.3: an element at an index is read by the target's
+    // docs/adr/0099, section 5.3: an element at an index is read by the target's
     // checked read, which fails for an index outside the list (SCE_FORGE.md
     // §3.4.1, `out-of-range`); the copy is held in a value of the variable's type
     // while it is computed, and written only if the read completed.
