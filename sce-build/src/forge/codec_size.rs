@@ -23,7 +23,9 @@
 //!   (docs/adr/0095 §2), and a trailing payload after the padding a
 //!   `sce:dma-burst-align` codec zero-fills up to the payload's own offset;
 //! - the streaming path writes each field in declaration order: a fixed field
-//!   at the bytes its width rounds up to, a VLE integer at its cap, a payload at
+//!   at the bytes its width rounds up to, a VLE integer at the cap of the
+//!   minimal encoding the encoder writes (a decode reads longer ones, which
+//!   no slot holds: a slot holds what this encoder wrote), a payload at
 //!   its `sce:max-size`, a list at its count times the body, an embedded body or
 //!   the body of the arm a variant holds at that codec's own bound;
 //! - a CBOR map and a content-line component are bounded by the arithmetic

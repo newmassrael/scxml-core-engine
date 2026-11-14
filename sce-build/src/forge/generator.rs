@@ -13545,10 +13545,12 @@ fn render_codec(
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
                     obj.insert("vle_width_bits".into(), (*width_bits).into());
-                    // Canonical Zenoh ZInt caps a W-bit VLE at
-                    // ceil((W-1)/7) bytes — the final byte carries a full
-                    // 8 data bits (no continuation flag), so a u64 never
-                    // spills into a 10th byte (RFC §synth-5-B App. B).
+                    // The minimal ZInt an encode writes for a W-bit value
+                    // is at most ceil((W-1)/7) bytes — the final byte
+                    // carries a full 8 data bits (no continuation flag),
+                    // so a u64 never spills into a 10th byte (RFC
+                    // §synth-5-B App. B). An encode bound: a decode reads
+                    // up to 9 bytes at every width.
                     obj.insert("vle_max_bytes".into(), vle_cap_bytes(*width_bits).into());
                     obj.insert("bit_size_kind".into(), "vle".into());
                     obj.insert(
@@ -23492,7 +23494,8 @@ fn dotted_length_resolve(carrier_id: &str, flag_name: &str, fields: &[CodecField
 }
 
 /// RFC §synth-5-B item B2 present-if + Vle bit-size: streaming base-128 read
-/// (1..=ceil(width_bits/7) bytes). Non-gated form delegates to the
+/// of one ZInt (1..=9 bytes at every width, the value then held to
+/// `width_bits` by the runtime reader). Non-gated form delegates to the
 /// existing `vle_decode_stmt` helper (same shape used by the
 /// has_vle_fields template branch). Gated form wraps the same loop
 /// inside an `if predicate { ... } else { None }` block, binding

@@ -948,6 +948,16 @@ Byte-level encode/decode. Bit position, size, endianness.
 |-------|---------|-------------------|
 | `tail` | Remaining bytes from `sce:byte` to end of frame | `sce:max-size` (the most bytes the field holds) |
 | `length-ref` | Size determined by another field's value | `sce:length-field="<field-id>"`, `sce:max-size` (the most bytes the field holds) |
+| `vle` | The canonical Zenoh ZInt (`uint16`, `uint32`, `uint64`), matching `zenoh` / `zenoh-pico` | none |
+
+A `vle` field is a ZInt64 on the wire whatever its type, and its type bounds the value, not the encoding
+(SCE Protocol-Synthesis RFC Appendix B). A decode reads one ZInt as upstream Zenoh reads every one: up to eight
+bytes of seven data bits and a continuation flag, then, if the chain reaches it, a ninth of eight data bits, so 1
+to 9 bytes at every width. It then refuses a value past the type (`VleWidthOverflow`, `codec/vle-width-overflow`):
+a `uint16` field reads `81 80 80 00` (the value 1 in four bytes) as 1 and refuses `80 80 04` (65536), and never
+refuses a value for the length of its encoding. An encode writes the minimal encoding, at most 3 bytes for a
+`uint16`, 5 for a `uint32` and 9 for a `uint64`; that bounds what an encode writes and sizes its buffer, not what a
+decode reads.
 
 A `tail` or `length-ref` field without `sce:max-size`, and a `<sce:repeat>` without `max-count`, are refused as
 `validation/missing-attribute` (docs/adr/0077 §5): the bound is the codec's to state.

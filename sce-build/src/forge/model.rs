@@ -2529,6 +2529,13 @@ impl BitSize {
 /// [`CodecModel::max_frame_bytes`] (worst-case encode-buffer sizing)
 /// and the generator's VLE encode/`vle_max_bytes` emission, so worst-
 /// case sizing and the emitted continuation-loop bound never diverge.
+///
+/// An encode bound only: it is the longest *minimal* encoding of a W-bit
+/// value, which is what every encode writes. The wire of every width is a
+/// ZInt64, and a decode reads every encoding of a value its type holds, the
+/// padded ones included, up to nine bytes at every width; no decode-side
+/// figure (what a peer may send, what a read may consume) is derived from
+/// this one.
 pub(crate) fn vle_cap_bytes(width_bits: u32) -> u32 {
     (width_bits - 1).div_ceil(7)
 }
