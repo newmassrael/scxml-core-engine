@@ -1,0 +1,1 @@
+{"inputs":[{"at":"1000","port":"sut","type":"order_placed","value":{"customer":{"full_name":"Ada Lovelace","vip":true},"lines":[{"color":"green","quantity":"3","sku":"A-1"},{"color":"red","quantity":"2","sku":"A-1"}],"order_id":"31","payment":{"card":{"amount":"1500","last4":"4242"}},"priority":"2"}}],"schema":"sce-test-trace.v1","suite":"orders_suite","test_case":"orders_case"}

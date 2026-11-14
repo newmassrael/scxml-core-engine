@@ -40,6 +40,37 @@ const BOUNDARY: Replayed = Replayed {
                never_ends error\nsends_to_a_removed_ptc error\n",
 };
 
+/// docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of `every_matcher`
+/// accepts, at 1 ms; the helper is told and passes, and the tester settles for
+/// the duration its start gives and passes at 501 ms.
+const JOB: Replayed = Replayed {
+    suite: "job_suite",
+    runner: env!("CARGO_BIN_EXE_job_suite_runner"),
+    world: "job-timeout,job-retry",
+    verdicts: "completes_in_time pass\n",
+};
+
+/// docs/SCE_TEST_PROFILE.md §9.5: an order of two lines, a customer and a card,
+/// which `order_placed_match` accepts over its union, its list of records and
+/// its template references, at 1 ms.
+const ORDERS: Replayed = Replayed {
+    suite: "orders_suite",
+    runner: env!("CARGO_BIN_EXE_orders_suite_runner"),
+    world: "",
+    verdicts: "orders_case pass\n",
+};
+
+/// docs/SCE_TEST_PROFILE.md §4.5 (P5), §4.7 (P7): an order at 100 ms, which the
+/// atomic state's own targetless branch takes before its ancestor's, and one at
+/// 500 ms, which the ancestor's internal branch takes, restarting the running
+/// timer; the inner timer then runs out twice and the tester passes at 1250 ms.
+const NESTED: Replayed = Replayed {
+    suite: "nested_suite",
+    runner: env!("CARGO_BIN_EXE_nested_suite_runner"),
+    world: "",
+    verdicts: "nested_case pass\n",
+};
+
 /// The directory of the runs of `suite`: its `traces/` and `expected_logs/`.
 fn runs_dir(suite: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -144,4 +175,19 @@ fn replays(replayed: &Replayed) {
 #[test]
 fn the_boundary_suite_replays_to_its_expected_logs() {
     replays(&BOUNDARY);
+}
+
+#[test]
+fn the_job_suite_replays_to_its_expected_logs() {
+    replays(&JOB);
+}
+
+#[test]
+fn the_orders_suite_replays_to_its_expected_logs() {
+    replays(&ORDERS);
+}
+
+#[test]
+fn the_nested_suite_replays_to_its_expected_logs() {
+    replays(&NESTED);
 }

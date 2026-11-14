@@ -201,17 +201,34 @@ struct CorpusRuns {
     cases: &'static [&'static str],
 }
 
-const CORPUS_RUNS: &[CorpusRuns] = &[CorpusRuns {
-    suite: "boundary_suite",
-    document: "tests/fixtures/test_profile/boundary/boundary_suite.scxml",
-    cases: &[
-        "exchanges_signed_numbers",
-        "answers_another_job",
-        "sets_no_verdict",
-        "never_ends",
-        "sends_to_a_removed_ptc",
-    ],
-}];
+const CORPUS_RUNS: &[CorpusRuns] = &[
+    CorpusRuns {
+        suite: "boundary_suite",
+        document: "tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+        cases: &[
+            "exchanges_signed_numbers",
+            "answers_another_job",
+            "sets_no_verdict",
+            "never_ends",
+            "sends_to_a_removed_ptc",
+        ],
+    },
+    CorpusRuns {
+        suite: "job_suite",
+        document: "tests/fixtures/test_profile/job_suite.scxml",
+        cases: &["completes_in_time"],
+    },
+    CorpusRuns {
+        suite: "orders_suite",
+        document: "tests/fixtures/ttcn3_export/orders_suite.scxml",
+        cases: &["orders_case"],
+    },
+    CorpusRuns {
+        suite: "nested_suite",
+        document: "tests/fixtures/ttcn3_export/nested_suite.scxml",
+        cases: &["nested_case"],
+    },
+];
 
 /// docs/SCE_TTCN3_LANE.md §10.4, §12: every committed trace of each other
 /// suite of the corpus fits its suite: exit 0, and nothing written to either

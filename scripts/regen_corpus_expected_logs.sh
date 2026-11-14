@@ -38,6 +38,9 @@ PROFILE="sce-build/tests/fixtures/test_profile"
 SUITES=(
     "runtime_suite_runner|$PROFILE/runtime|ptcs,removal,guard"
     "boundary_suite_runner|$PROFILE/runs/boundary_suite|"
+    "job_suite_runner|$PROFILE/runs/job_suite|job-timeout,job-retry"
+    "orders_suite_runner|$PROFILE/runs/orders_suite|"
+    "nested_suite_runner|$PROFILE/runs/nested_suite|"
 )
 
 cargo build -q -p sce-rust-tests --bins

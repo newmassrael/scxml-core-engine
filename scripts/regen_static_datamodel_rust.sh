@@ -195,6 +195,15 @@ BOUNDARY+=(signed_tester no_verdict_setter stalled_listener request_listener ptc
 BOUNDARY+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
 BOUNDARY+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
 BOUNDARY+=(sends_to_a_removed_ptc boundary_suite)
+# The corpus's suites that the TTCN-3 export is held to, made runnable (docs/SCE_TTCN3_LANE.md
+# §12.4): job_suite, whose records and templates TEST_PROFILE generates above, with the job's
+# completion of the kind examples its port sends; and orders_suite and nested_suite, whose
+# records, union and templates TEST_PROFILE_IMPORTS generates above.
+JOB_SUITE=(job_tester helper tester_and_helper completes_in_time job_suite)
+JOB_COMPLETED="sce-build/kind-examples/event-schema.scxml"
+TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
+TTCN3_EXPORT=(orders_tester orders_configuration orders_case orders_suite)
+TTCN3_EXPORT+=(nested_tester nested_configuration nested_case nested_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -235,6 +244,13 @@ done
 for document in "${BOUNDARY[@]}"; do
     "$CODEGEN" generate "$BOUNDARY_DIR/$document.scxml" -l rust -o "$TMP/"
 done
+for document in "${JOB_SUITE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l rust -o "$TMP/"
+done
+"$CODEGEN" generate "$JOB_COMPLETED" -l rust -o "$TMP/"
+for document in "${TTCN3_EXPORT[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$document.scxml" -l rust -o "$TMP/"
+done
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -258,4 +274,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} ${TRACE_FORMS[*]} ${BOUNDARY[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} ${TRACE_FORMS[*]} ${BOUNDARY[*]} ${JOB_SUITE[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union, $JOB_COMPLETED, and ${TTCN3_EXPORT[*]} from $TTCN3_EXPORT_DIR"

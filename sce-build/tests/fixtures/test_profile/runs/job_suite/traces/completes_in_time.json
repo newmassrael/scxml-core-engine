@@ -1,0 +1,1 @@
+{"inputs":[{"at":"1000","port":"sut","type":"job_status","value":{"codes":["3","9","4"],"count":"1","elapsed_ms":"120","tag":"2"}}],"schema":"sce-test-trace.v1","suite":"job_suite","test_case":"completes_in_time"}

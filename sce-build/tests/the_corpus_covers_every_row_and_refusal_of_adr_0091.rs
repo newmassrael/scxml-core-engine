@@ -15,7 +15,6 @@
 
 mod common;
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use common::lane_corpus::{read, sce_build, test_cases, CORPUS};
@@ -60,6 +59,17 @@ const fn run(suite: &'static str, case: &'static str) -> Run {
 
 const RUNTIME: &str = "runtime_suite";
 const BOUNDARY: &str = "boundary_suite";
+const JOB: &str = "job_suite";
+const ORDERS: &str = "orders_suite";
+const NESTED: &str = "nested_suite";
+
+/// job_suite's one test case, which every matcher of `every_matcher` runs in.
+const COMPLETES: Run = run(JOB, "completes_in_time");
+/// orders_suite's one test case, whose order holds a union, a list of records,
+/// a record within the record and an enum.
+const ORDERED: Run = run(ORDERS, "orders_case");
+/// nested_suite's one test case, whose component nests its states.
+const NESTS: Run = run(NESTED, "nested_case");
 
 /// The rows of ADR 0091 §2 and the runs of each aspect.
 const ROWS: &[Row] = &[
@@ -72,31 +82,31 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "an enumerated type",
-                runs: &[],
+                runs: &[ORDERED],
             },
             Aspect {
                 what: "a union",
-                runs: &[],
+                runs: &[ORDERED],
             },
             Aspect {
                 what: "an optional field",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "a text",
-                runs: &[],
+                runs: &[ORDERED],
             },
             Aspect {
                 what: "a byte string",
-                runs: &[],
+                runs: &[ORDERED],
             },
             Aspect {
                 what: "a list",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "a record within a record",
-                runs: &[],
+                runs: &[ORDERED],
             },
             Aspect {
                 what: "a signed integer",
@@ -121,31 +131,35 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "`*`",
-                runs: &[],
+                runs: &[COMPLETES],
             },
             Aspect {
                 what: "a range",
-                runs: &[],
+                runs: &[
+                    COMPLETES,
+                    ORDERED,
+                    run(BOUNDARY, "exchanges_signed_numbers"),
+                ],
             },
             Aspect {
                 what: "a length restriction",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "`omit`",
-                runs: &[],
+                runs: &[COMPLETES],
             },
             Aspect {
                 what: "`ifpresent`",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "a value list",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "a complement",
-                runs: &[],
+                runs: &[COMPLETES],
             },
             Aspect {
                 what: "a parameterised template",
@@ -153,11 +167,11 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "a template reference",
-                runs: &[],
+                runs: &[COMPLETES, ORDERED],
             },
             Aspect {
                 what: "union matching",
-                runs: &[],
+                runs: &[ORDERED],
             },
         ],
     },
@@ -273,11 +287,11 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "a restart",
-                runs: &[],
+                runs: &[NESTS],
             },
             Aspect {
                 what: "a duration given at the start",
-                runs: &[],
+                runs: &[COMPLETES, NESTS],
             },
         ],
     },
@@ -285,7 +299,7 @@ const ROWS: &[Row] = &[
         concept: "`altstep` and `activate`",
         aspects: &[Aspect {
             what: "a branch of an ancestor state",
-            runs: &[],
+            runs: &[NESTS],
         }],
     },
     Row {
@@ -336,30 +350,6 @@ const ERRORS: &[Aspect] = &[
         what: "a dynamic error",
         runs: &[run(BOUNDARY, "sends_to_a_removed_ptc")],
     },
-];
-
-/// The aspects no run of the corpus shows yet, `<row>: <aspect>` each: the
-/// suites that run them are made runnable after this table (§12.4).
-const NOT_YET_RUN: &[&str] = &[
-    "Type definitions: an enumerated type",
-    "Type definitions: a union",
-    "Type definitions: an optional field",
-    "Type definitions: a text",
-    "Type definitions: a byte string",
-    "Type definitions: a list",
-    "Type definitions: a record within a record",
-    "Template: `*`",
-    "Template: a range",
-    "Template: a length restriction",
-    "Template: `omit`",
-    "Template: `ifpresent`",
-    "Template: a value list",
-    "Template: a complement",
-    "Template: a template reference",
-    "Template: union matching",
-    "`timer`: a restart",
-    "`timer`: a duration given at the start",
-    "`altstep` and `activate`: a branch of an ancestor state",
 ];
 
 /// The refusals of ADR 0091 §3 and how each is covered.
@@ -549,16 +539,15 @@ fn the_table_holds_every_row_of_the_adr() {
     assert_eq!(ours, adr_rows(&adr()));
 }
 
-/// Each aspect of a row is shown by runs of the corpus, each a test case of a
-/// suite of the corpus with its trace and its expected log, but the aspects
-/// NOT_YET_RUN names, which no run shows.
+/// Each aspect of a row, and each way to `error`, is shown by at least one run
+/// of the corpus, each a test case of a suite of the corpus with its trace and
+/// its expected log.
 #[test]
 fn every_row_is_run_by_the_corpus() {
     let mut wrong = Vec::new();
-    let mut unrun = BTreeSet::new();
     for (aspect, runs) in aspects() {
         if runs.is_empty() {
-            unrun.insert(aspect.clone());
+            wrong.push(format!("{aspect}: no run of the corpus shows it"));
         }
         for run in runs {
             if let Some(why) = not_a_run(run) {
@@ -566,15 +555,7 @@ fn every_row_is_run_by_the_corpus() {
             }
         }
     }
-    let named: BTreeSet<String> = NOT_YET_RUN
-        .iter()
-        .map(|aspect| aspect.to_string())
-        .collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
-    assert_eq!(
-        unrun, named,
-        "the aspects no run shows are the ones NOT_YET_RUN names"
-    );
 }
 
 /// Each refusal of ADR 0091 §3 has its cover: the refusal's bullet starts with

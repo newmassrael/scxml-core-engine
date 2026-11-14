@@ -3,8 +3,10 @@
 - Status: design of ADR 0091 order of work step 5, written 2026-11-10. Of what SCE gives the lane, the canonical log
   the lane compares is in place (order of work step 6, TP §12.5): all seven native runtimes write it, and each is held
   to one expected log. The trace surface and native trace replay (S1) are in place on all seven backends (§10.4,
-  §10.5). Of the corpus (S2), every test case of `runtime_suite` has a trace and an expected log (§12.1); the rest
-  of §12.4 is not built yet. The lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`,
+  §10.5). Of the corpus (S2), every test case of `runtime_suite` has a trace and an expected log; `boundary_suite`,
+  `job_suite`, `orders_suite` and `nested_suite` have their traces and run on the Rust runner, their expected logs
+  still to be written and reviewed; every mapped record a codec format holds has its codec document; and a test
+  holds the corpus to every row and refusal of ADR 0091 (§12.1, §13.1). The lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`,
   which exists and is private for now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The
   SCE-side slices S1 and S2 come first, then the downstream slices D1 to D5 (§13).
 - Downstream design: `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, cited as **DD §x**. It
@@ -485,10 +487,25 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
 
 - **`runtime_suite`** (`sce-build/tests/fixtures/test_profile/runtime/`) runs end to end on all seven backends: four
   test cases, an MTC alone and with PTCs, each verdict the profile has, and a guard that ends in `error`.
-- **`job_suite`, `ping_suite`, `orders_suite` and `nested_suite`** (`sce-build/tests/fixtures/test_profile/`, its
-  `assembly/`, and `sce-build/tests/fixtures/ttcn3_export/`) are exported and validated, and their documents are
-  generated, but no suite of them runs end to end.
-- **Every test case of `runtime_suite` has a trace and an expected log, and no other suite has either.** The
+- **`job_suite`, `orders_suite` and `nested_suite`** (`sce-build/tests/fixtures/test_profile/` and
+  `sce-build/tests/fixtures/ttcn3_export/`) are exported and validated, and run end to end on the Rust runner, each
+  from one trace under `sce-build/tests/fixtures/test_profile/runs/<suite>/traces/`:
+  - `completes_in_time` (world `job-timeout,job-retry`): a `job_status` at 1 ms that every matcher of
+    `every_matcher` accepts (a value list holding a range, `ifpresent` on an absent text, a list of three codes
+    matched as `3`, `?` and a complement, `*`, `omit` and a template reference); the tester tells the helper over
+    the connected port, the helper passes, and the tester settles for the 500 ms its start gives and passes at
+    501 ms.
+  - `orders_case`: an `order_placed` at 1 ms of two lines, a VIP customer, a priority and a card, which
+    `order_placed_match` accepts over its list of records, its template references, its record within the record
+    and its union; the tester passes at 1 ms.
+  - `nested_case`: an `order_placed` at 100 ms, which the atomic state's targetless branch takes before its
+    ancestor's, and one at 500 ms, taken in `deep` by the ancestor `outer`'s internal branch, which exits `deep` and
+    `second` and enters `first`, restarting the running timer `tick`; `tick` then runs out at 750 ms and at
+    1250 ms, and the tester passes at 1250 ms.
+
+  Their runners are `job_suite_runner`, `orders_suite_runner` and `nested_suite_runner`, held as `boundary_suite`'s
+  is. `ping_suite` (`assembly/`) is exported and validated and runs nowhere; the corpus does not need it.
+- **Every test case of `runtime_suite` has a trace and an expected log.** The
   traces are `sce-build/tests/fixtures/test_profile/runtime/traces/<test case>.json`, written by hand, each the
   inputs the tests' system adapter gives that test case (§10.2):
   - `answers_the_job`: the reply of code 0 to job 7 on `sut` at 500 (an instant in microseconds, as a trace's `at`
@@ -645,7 +662,8 @@ in the component that invokes it, which is accepted on its own.
   (§12.1), on the Rust runner, with its expected logs to be written by the Rust runner and reviewed; the other six
   backends' replay of it remains;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
-  their rows run as well as export;
+  their rows run as well as export: done on the Rust runner (§12.1), with the same two remainders as
+  `boundary_suite`; they run in the lane only once their mapped records have a codec (above);
 - a fixture that raises `test-profile/script-engine`, or a recorded reason why no profile document can reach that
   refusal once `datamodel` is held to `sce-static`: done, the reason is recorded in §12.3.
 
@@ -682,15 +700,19 @@ listed in DD §13.2.
   traces they are written for are replayed through S1. The codec documents depend on neither, and can land first.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
 - In place: the traces and the expected logs of every test case of `runtime_suite`, and on each backend the first
-  test above over them (§12.1); the codec documents (§12.1); and the second test,
+  test above over them (§12.1); the traces of `boundary_suite`, `job_suite`, `orders_suite` and `nested_suite`
+  (§12.1), each replayed by the Rust runner of its suite and held to its expected log; the codec documents (§12.1);
+  and the second test,
   `sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs`. It reads the rows of ADR 0091 §2 from
   the ADR's table and the refusals of §3 from its bullets, so a row or a refusal the ADR gains is uncovered until
   the test names its cover. Each row is held by its aspects (a union, `omit`, a restart, ...), each aspect by the
   runs that show it, a run being a test case of a suite of the corpus with its trace and its expected log, and the
   `error` of P13 by the guard, a test case that can never end and a dynamic error. Each refusal is held by its
-  refused fixtures, each one the parser's tests hold to its diagnostic, or by the reason §12.3 records. An aspect no
-  run shows yet is named in the test's `NOT_YET_RUN`, which holds exactly those, so the list only shrinks as the
-  suites below become runnable.
+  refused fixtures, each one the parser's tests hold to its diagnostic, or by the reason §12.3 records. Every aspect
+  has a run.
+- Not in place: the expected logs of the four suites above, which `scripts/regen_corpus_expected_logs.sh` writes
+  from the Rust runner and a review of each against TP §12.5 commits; and the replay of those four suites on the
+  six backends but Rust.
 
 ### 13.2 In the downstream
 
