@@ -99,6 +99,13 @@ class UndeclaredEnumValue(CodecError):
     :class:`InvalidUtf8` convention there)."""
 
 
+# The bytes of a ZInt that carry a continuation flag: a chain of this many
+# flagged bytes ends with a ninth that holds a full 8 data bits, so no ZInt is
+# longer than nine bytes, whatever the width of the field that reads it (the
+# protocol-synthesis RFC, Appendix B).
+_ZINT_FLAGGED_BYTES = 8
+
+
 class SceCursor:
     """Read-only cursor over a borrowed input ``bytes`` / ``memoryview``.
 
@@ -144,47 +151,58 @@ class SceCursor:
         """Return to a position :meth:`mark` answered."""
         self._pos = mark
 
-    def _read_vle_inner(self, max_bits: int) -> int:
-        """Read a base-128 variable-length encoded unsigned value of up
-        to ``max_bits`` payload width. LSB-first byte order; leading
-        bytes use bit 7 as the continuation flag, while the final byte
-        (at shift ``7 * (VLE_LEN - 1)``) carries a full 8 data bits with
-        no flag. Canonical Zenoh ZInt (RFC §5.B Appendix B):
-        ceil((W-1)/7) bytes max, so a u64 caps at 9 bytes, not 10.
+    def _read_zint(self) -> int:
+        """Read one ZInt, the canonical Zenoh variable-length integer
+        (the protocol-synthesis RFC, Appendix B), as zenoh and zenoh-pico
+        read every one of them: an unsigned 64-bit value, LSB-first, in at
+        most nine bytes.
+        Each of the first eight carries 7 data bits in its low 7 and a
+        continuation flag in bit 7; a ninth carries a full 8 data bits and
+        has no flag, so bit 63 rides in its high bit and no chain is
+        longer. Raises :class:`NeedMoreBytes` when the buffer ends inside
+        the chain.
         """
-        vle_len = (max_bits - 1 + 6) // 7
-        final_shift = 7 * (vle_len - 1)
         value = 0
-        shift = 0
-        for _ in range(vle_len):
+        for group in range(_ZINT_FLAGGED_BYTES):
             if self.remaining() < 1:
                 raise NeedMoreBytes()
             b = self._buf[self._pos]
             self._pos += 1
-            if shift == final_shift:
-                # Final byte: 8 data bits, continuation bit reused as
-                # data. For a sub-octet tail (u16 / u32) refuse overflow.
-                allowed = max_bits - shift
-                if allowed < 8 and b > (1 << allowed) - 1:
-                    raise VleWidthOverflow()
-                value |= b << shift
-                return value
-            value |= (b & 0x7F) << shift
+            value |= (b & 0x7F) << (7 * group)
             if (b & 0x80) == 0:
                 return value
-            shift += 7
-        raise VleWidthOverflow()
+        if self.remaining() < 1:
+            raise NeedMoreBytes()
+        last = self._buf[self._pos]
+        self._pos += 1
+        return value | (last << (7 * _ZINT_FLAGGED_BYTES))
+
+    def _read_vle_inner(self, max_bits: int) -> int:
+        """Read a ``vle_u<N>`` field of ``max_bits`` width: one ZInt
+        (:meth:`_read_zint`), whatever the width, and then the value held
+        to the width. The wire of every width is the same ZInt64, and the
+        type bounds the value and not the encoding: a narrow field accepts
+        every encoding of a value it holds, the padded ones included, as
+        upstream Zenoh does, and refuses a value past ``2**max_bits - 1``
+        with :class:`VleWidthOverflow`, never a longer encoding.
+        """
+        value = self._read_zint()
+        if value >> max_bits != 0:
+            raise VleWidthOverflow()
+        return value
 
     def read_vle_u16(self) -> int:
-        """Read a vle_u16 field (1-3 wire bytes)."""
+        """Read a vle_u16 field: a ZInt of 1-9 wire bytes whose value is at
+        most 0xFFFF."""
         return self._read_vle_inner(16)
 
     def read_vle_u32(self) -> int:
-        """Read a vle_u32 field (1-5 wire bytes)."""
+        """Read a vle_u32 field: a ZInt of 1-9 wire bytes whose value is at
+        most 0xFFFFFFFF."""
         return self._read_vle_inner(32)
 
     def read_vle_u64(self) -> int:
-        """Read a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt."""
+        """Read a vle_u64 field: a ZInt of 1-9 wire bytes."""
         return self._read_vle_inner(64)
 
 

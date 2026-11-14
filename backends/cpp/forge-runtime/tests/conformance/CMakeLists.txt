@@ -339,6 +339,16 @@ target_include_directories(span_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(span_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME span_runtime COMMAND span_runtime_test)
 
+# The cursor's VLE readers on their own (sce/forge/codec.h, RFC Appendix B), at
+# C++17 and under the same blanket -Werror: the wire is a ZInt64 at every width
+# and the type bounds the value. What a generated codec does with them is judged
+# by the harness above (codec_vle_zint_u16, _u32 and _u64).
+add_executable(vle_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/vle_runtime_test.cpp")
+set_target_properties(vle_runtime_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(vle_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(vle_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME vle_runtime COMMAND vle_runtime_test)
+
 # The runtime's bounded list on its own (sce/forge/bounded.h, docs/adr/0077
 # section 3, docs/adr/0081 step 4), at C++17 and under the same blanket -Werror:
 # what converts to what is asserted at compile time, what `make` admits and what
