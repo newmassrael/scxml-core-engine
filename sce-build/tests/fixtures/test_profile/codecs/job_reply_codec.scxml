@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/SCE_TTCN3_LANE.md §12, SCE_FORGE.md §4.6.1: the codec of the record
+  job_reply (runtime/job_reply.scxml) on a mapped port of the corpus, one CBOR
+  map: the job it answers under key 0 and its code under key 1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="job_reply_codec" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="job" sce:type="uint32" sce:key="0" sce:direction="out"/>
+    <data id="code" sce:type="uint32" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>

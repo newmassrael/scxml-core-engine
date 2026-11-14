@@ -32,6 +32,7 @@ pub mod executable;
 pub mod gate_selectors;
 pub mod hostile_document;
 pub mod integration_channels;
+pub mod lane_corpus;
 pub mod ledger;
 pub mod name_oracle;
 pub mod native_oracle;
