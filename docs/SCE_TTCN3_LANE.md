@@ -613,7 +613,15 @@ listed in DD §13.2.
   traces they are written for are replayed through S1. The codec documents depend on neither, and can land first.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
 - In place: the traces and the expected logs of every test case of `runtime_suite`, and on each backend the first
-  test above over them (§12.1).
+  test above over them (§12.1); the codec documents (§12.1); and the second test,
+  `sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs`. It reads the rows of ADR 0091 §2 from
+  the ADR's table and the refusals of §3 from its bullets, so a row or a refusal the ADR gains is uncovered until
+  the test names its cover. Each row is held by its aspects (a union, `omit`, a restart, ...), each aspect by the
+  runs that show it, a run being a test case of a suite of the corpus with its trace and its expected log, and the
+  `error` of P13 by the guard, a test case that can never end and a dynamic error. Each refusal is held by its
+  refused fixtures, each one the parser's tests hold to its diagnostic, or by the reason §12.3 records. An aspect no
+  run shows yet is named in the test's `NOT_YET_RUN`, which holds exactly those, so the list only shrinks as the
+  suites below become runnable.
 
 ### 13.2 In the downstream
 
