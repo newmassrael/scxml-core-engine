@@ -251,10 +251,11 @@ fn dispatched_in_xml(path: &Path) -> BTreeSet<ElementId> {
 }
 
 /// Whether the document at `path` says its flag input `input`, read out of the XML
-/// (docs/adr/0065 §6 R4a, R4b): the fields it presents gated on the input alone,
-/// one or a group of them, and nothing else names it; or no field is gated on it
-/// and it is handed on once, to an import held by one embed that is always there,
-/// which says it.
+/// (docs/adr/0065 §6 R4a, R4b, R4d): the fields it presents gated on the input
+/// alone, one or a group of them, and nothing else names it; or no field is gated
+/// on it and it is handed on once, to an import held by one embed that is always
+/// there, which says it; or it is handed to every arm of one variant, which each
+/// says the input it is handed.
 fn says_input_in_xml(path: &Path, input: &str) -> bool {
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
@@ -290,22 +291,72 @@ fn says_input_in_xml(path: &Path, input: &str) -> bool {
         // One field says it, or the group of the fields it decides does
         // (docs/adr/0065 §6 R4b).
         (n, [], false) if n >= 1 => true,
-        (0, [(import, bound)], false) => {
-            let Some(alias) = import.attribute("as") else {
-                return false;
-            };
-            let holders: Vec<roxmltree::Node> = doc
-                .descendants()
-                .filter(|n| n.is_element() && n.attribute("type") == Some(alias))
-                .collect();
-            matches!(holders.as_slice(), [embed] if is_sce(embed, "embed")
-                && embed.attribute((SCE_NS, "present-if")).is_none())
-                && import.attribute("src").is_some_and(|src| {
-                    says_input_in_xml(&path.parent().expect("a directory").join(src), bound)
-                })
+        (0, [(import, bound)], false) if held_by_one_embed_always_there(&doc, import) => {
+            import.attribute("src").is_some_and(|src| {
+                says_input_in_xml(&path.parent().expect("a directory").join(src), bound)
+            })
         }
+        (0, handed, false) if !handed.is_empty() => said_by_every_arm(&doc, path, handed),
         _ => false,
     }
+}
+
+/// Whether the codec `import` names is held by one embed, with no gate.
+fn held_by_one_embed_always_there(doc: &roxmltree::Document, import: &roxmltree::Node) -> bool {
+    let Some(alias) = import.attribute("as") else {
+        return false;
+    };
+    let holders: Vec<roxmltree::Node> = doc
+        .descendants()
+        .filter(|n| n.is_element() && n.attribute("type") == Some(alias))
+        .collect();
+    matches!(holders.as_slice(), [embed] if is_sce(embed, "embed")
+        && embed.attribute((SCE_NS, "present-if")).is_none())
+}
+
+/// docs/adr/0065 §6 R4d: an input the codec hands to every arm of one variant,
+/// the default among them, says the input when each arm's codec says the input it
+/// is handed, since a value holds one arm. The arms may name the input otherwise;
+/// two binds of the input on one arm's import are not this rule, and an import
+/// held anywhere but the variant's arms is not either.
+fn said_by_every_arm(
+    doc: &roxmltree::Document,
+    path: &Path,
+    handed: &[(roxmltree::Node, &str)],
+) -> bool {
+    let dir = path.parent().expect("a directory");
+    let mut arms_codecs: Vec<(&str, &str, &str)> = Vec::new();
+    for (import, bound) in handed {
+        let (Some(alias), Some(src)) = (import.attribute("as"), import.attribute("src")) else {
+            return false;
+        };
+        if arms_codecs.iter().any(|(seen, _, _)| *seen == alias) {
+            return false;
+        }
+        arms_codecs.push((alias, *bound, src));
+    }
+    doc.descendants()
+        .filter(|n| is_sce(n, "variant"))
+        .any(|variant| {
+            let arms: Vec<roxmltree::Node> = variant
+                .children()
+                .filter(|n| is_sce(n, "arm") || is_sce(n, "default"))
+                .collect();
+            let every_arm_says = !arms.is_empty()
+                && arms.iter().all(|arm| {
+                    arm.attribute("type").is_some_and(|ty| {
+                        arms_codecs.iter().any(|(alias, bound, src)| {
+                            *alias == ty && says_input_in_xml(&dir.join(src), bound)
+                        })
+                    })
+                });
+            let held_only_by_its_arms = arms_codecs.iter().all(|(alias, _, _)| {
+                doc.descendants()
+                    .filter(|n| n.is_element() && n.attribute("type") == Some(*alias))
+                    .all(|n| n.parent() == Some(variant))
+            });
+            every_arm_says && held_only_by_its_arms
+        })
 }
 
 /// The carrier flags bound to an input that a body or an arm says, read out of the
