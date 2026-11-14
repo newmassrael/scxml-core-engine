@@ -14,10 +14,16 @@
 # ${SCE_FUZZ_HOME:-~/.cache/sce-fuzz}/<target>, so a later run continues from it; an input that made a
 # target panic is left in the crate's fuzz/artifacts/<target>/ and the script exits 1.
 #
-# Needs a nightly toolchain and `cargo install cargo-fuzz --locked`.
+# Needs `cargo install cargo-fuzz --locked`, and runs it on the nightly
+# scripts/lib/rust_toolchains.sh pins (`SCE_RUST_NIGHTLY`), which rustup installs
+# on first use: cargo-fuzz builds with `-Zsanitizer`, which only a nightly takes,
+# and a bare `+nightly` is whichever nightly rustup last fetched, so a finding
+# could not be built again on the compiler that made it.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../lib/rust_toolchains.sh
+source "$root/scripts/lib/rust_toolchains.sh"
 crate="$root/backends/rust/assurance"
 home="${SCE_FUZZ_HOME:-$HOME/.cache/sce-fuzz}"
 seconds=60
@@ -59,7 +65,7 @@ for name in "${targets[@]}"; do
     mkdir -p "$corpus"
     cp -n "$seeds/$name"/* "$corpus"/
     echo "== $name: ${seconds}s from $(find "$corpus" -type f | wc -l) inputs"
-    if ! (cd "$crate" && cargo +nightly fuzz run "$file" "$corpus" -- \
+    if ! (cd "$crate" && cargo +"$SCE_RUST_NIGHTLY" fuzz run "$file" "$corpus" -- \
         -max_total_time="$seconds" -rss_limit_mb=4096 -print_final_stats=1); then
         echo "run.sh: $name found an input that makes it fail; see $crate/fuzz/artifacts/$file/" >&2
         status=1
