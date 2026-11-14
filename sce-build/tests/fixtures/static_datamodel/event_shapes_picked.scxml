@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Shapes and the index of the one to pick (docs/adr/0098, section 5.3): a list
+  Shapes and the index of the one to pick (docs/adr/0099, section 5.3): a list
   of up to three shapes, which may be empty, and an index that may fall outside
   it. `static_union.scxml` takes the shape at the index whole into a union
   variable.
