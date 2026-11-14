@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ebedc4a8df9c203d48faa182aa817e4a2c8742ba3aab608142a81b588bd4f50d
+// source-hash: 7cb5c601bc5bd6648425cb4d614d7be9f82d1e41816b0f69f2fcd5bc5c43d40b
 // SCE-MAP: event_schema_task.scxml:9 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +28,7 @@ public enum EventSchemaTask {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:event_schema_task:1\",\"x-sce-source-hash\":\"ebedc4a8df9c203d48faa182aa817e4a2c8742ba3aab608142a81b588bd4f50d\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"phase\":{\"enum\":[\"todo\",\"in_review\",\"shipped\"]}},\"required\":[\"taskId\",\"phase\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:event_schema_task:1\",\"x-sce-source-hash\":\"7cb5c601bc5bd6648425cb4d614d7be9f82d1e41816b0f69f2fcd5bc5c43d40b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"phase\":{\"enum\":[\"todo\",\"in_review\",\"shipped\"]}},\"required\":[\"taskId\",\"phase\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
