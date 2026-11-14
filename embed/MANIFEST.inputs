@@ -10,7 +10,7 @@
 75343d94d9f432eae354ee0f5c3c7040c4a3ef4e backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 9520922a0f12e3b2819d9f69e7b4f020fb004856 backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
 90117b1cc0a93df84cd4d969aea2b7bfbbbc4fd9 backends/cpp/forge-runtime/include/sce/forge/cbor.h
-62cf5541b8ca32bacd320eee9f4717de6100ba0a backends/cpp/forge-runtime/include/sce/forge/codec.h
+f7b959819ea0fb64764cb903ce812809fbb54b16 backends/cpp/forge-runtime/include/sce/forge/codec.h
 ba4bd7c85cac0858297cfb0509c70068e8fae75b backends/cpp/forge-runtime/include/sce/forge/content_line.h
 4ec772dec5636a271e2bd98786fb672dce714123 backends/cpp/forge-runtime/include/sce/forge/filter.h
 e4c2a5b0612b72e59d9f168cb7d309d91a1d9ac9 backends/cpp/forge-runtime/include/sce/forge/interpolation.h
