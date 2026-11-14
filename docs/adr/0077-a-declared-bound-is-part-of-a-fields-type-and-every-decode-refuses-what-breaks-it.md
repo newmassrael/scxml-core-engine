@@ -595,6 +595,41 @@ stack.
   or into a view, whose lists are spans of the frame, and encode from a source over what the caller already holds
   (`{Codec}Parts`, or its own `{Codec}Source`, docs/adr/0058) rather than from a value built to be encoded.
 
+*Amendment of 2026-11-15: an origin profile holds each field in a container that builds itself from the origin, so
+the profile chooses share or copy tag by tag.* A profile answers `HoldsBytes<Tag>` and `HoldsStr<Tag>` field by field,
+as this section decided, but the origin projection (`--owned-origin`) built every container through one generic
+method of `OriginStorage`, `bytes_from<Tag>` and `str_from<Tag>`. That body had to build
+`<Self as HoldsBytes<Tag>>::Bytes` for every `Tag` knowing only `Self: HoldsBytes<Tag>`, and stable Rust gives it no
+way to tell a sharing container
+from a copying one there (no specialization, no `'static` on the container for `Any`, no `SceByteBuf` bound to copy
+through). An origin profile could therefore hold every byte field in one container: a consumer whose receive profile
+shares a frame-sized payload paid that container's size for a 255-byte schema beside it on every message it
+forwarded, where a copy of the schema would have cost nothing.
+
+- **What a container is decides share or copy.** A container builds itself from a slice and the origin the slice was
+  decoded from: `FromOrigin<O>` for bytes and `FromOriginStr<O>` for text
+  (`backends/rust/forge-runtime/src/storage.rs`).
+  A sharing container refers back to the origin; a copying one copies, and says so in one line with
+  `copy_from_origin` or `copy_str_from_origin`. `OriginStorage` keeps only `type Origin`.
+- **The profile chooses the container per tag.** What the projection asks for the field `Tag` is `OriginBytes<Tag>` or
+  `OriginStr<Tag>`, shaped as `StoresBytes<'f, Tag>` is for a copying read, and answered by a blanket impl for every
+  profile whose container for `Tag` builds itself from the profile's origin. One profile then shares a payload and
+  copies a short field beside it, by answering the two tags with two containers.
+- **The generated bound is one trait per codec.** `{Codec}Origin` asks for `{Codec}Storage`, `OriginStorage`, the
+  codec's `OriginBytes<Tag>` and `OriginStr<Tag>`, and each embedded, repeated or dispatched codec's `{Inner}Origin`,
+  as `{Codec}From<'f>` bundles its children, a child under a build feature through a trait of its own. It is declared
+  with the projection, so a tree generated without the option is unchanged. The call site is
+  `<S as OriginBytes<Tag>>::bytes_from(origin, v)`, the tag the trait's argument and no turbofish.
+- **Still no copying default.** No impl gives every `SceByteBuf` a `FromOrigin`: a sharing container is one too, and
+  a profile that forgot to choose would copy without a word, which is the failure `OriginStorage` was written to
+  rule out. A field whose container has no constructor from the profile's origin is a compile error at the
+  projection that reaches it (`an_origin_profile_whose_container_has_no_constructor_from_its_origin_does_not_compile`
+  in `sce-build/tests/forge_conformance.rs`); a profile that shares one field and copies another is run beside the
+  one that shares every field (`an_origin_profile_shares_the_frame_it_was_decoded_from`). A container of the runtime
+  gets a constructor from a profile's origin only where the origin type is the consumer's own, by the orphan rule.
+- **No compatibility layer.** `OriginStorage` had two implementers, a test profile of this tree and one consumer's
+  receive profile; both move to the containers in the landing (`docs/SCE_CODEC_CONSUMER_MIGRATION.md`).
+
 ## Alternatives
 
 - **The view decode does not check, and the owned projection does.** This is the reading the consumer offered as the
