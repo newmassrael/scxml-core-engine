@@ -404,23 +404,32 @@ impl<S: CodecOriginLeafStorage> CodecOriginLeafOwned<S> {
     }
 }
 
+/// What the origin projection of `CodecOriginLeaf` asks of a storage profile
+/// beside CodecOriginLeafStorage: that it is an origin profile, and
+/// that each byte string and text of `CodecOriginLeaf` and of the codecs it
+/// holds is built from the origin by the container the profile holds it in.
+#[allow(dead_code)]
+pub trait CodecOriginLeafOrigin: CodecOriginLeafStorage + ::sce_forge_runtime::codec::OriginStorage + ::sce_forge_runtime::codec::OriginBytes<CodecOriginLeafDataField> {}
+
+impl<S: CodecOriginLeafStorage + ::sce_forge_runtime::codec::OriginStorage + ::sce_forge_runtime::codec::OriginBytes<CodecOriginLeafDataField>> CodecOriginLeafOrigin for S {}
+
 #[allow(dead_code)]
 impl<'a, D> CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginLeafLentStorage {
     /// Project this borrowed view into an owned [`CodecOriginLeafOwned`]
-    /// whose byte and text containers are made by the profile's
-    /// `OriginStorage` from each slice AND `origin`, the buffer the
-    /// view was decoded from. A profile that shares that buffer builds
-    /// containers that refer back to it instead of copying out of it; what the
+    /// whose byte and text containers are each built from the slice AND
+    /// `origin`, the buffer the view was decoded from, by the
+    /// container the profile holds that field in. A container that shares
+    /// that buffer refers back to it instead of copying out of it; what the
     /// origin is, and what to do with a slice that does not come from it, is
-    /// the profile's to say.
+    /// the profile's to say, field by field.
     ///
     /// `try_into_owned_in` stays the copying projection. Every codec this one
     /// embeds, repeats or dispatches to must have been generated with
     /// `--owned-origin` as well.
-    pub fn try_into_owned_in_origin<S: CodecOriginLeafStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginLeafOwned<S>, CodecError> {
+    pub fn try_into_owned_in_origin<S: CodecOriginLeafOrigin>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginLeafOwned<S>, CodecError> {
         Ok(CodecOriginLeafOwned {
             len: self.len,
-            data: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginStorage>::bytes_from::<CodecOriginLeafDataField>(origin, self.data.into_inner()))?,
+            data: ::sce_forge_runtime::codec::Bounded::from_built(<S as ::sce_forge_runtime::codec::OriginBytes<CodecOriginLeafDataField>>::bytes_from(origin, self.data.into_inner()))?,
         })
     }
 }
