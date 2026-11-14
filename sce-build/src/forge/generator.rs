@@ -18852,14 +18852,16 @@ fn embed_streaming_decode_stmt(
     }
 }
 
-/// RFC §synth-5-B embed primitive — pre-rendered streaming encode block for one
-/// embed field. Calls the embedded codec's encode() with optional
-/// parent-flag threading and splices the returned bytes into the
-/// parent's `r` buffer. The gated shape (present-if) wraps the
-/// splice in a per-language presence test; the bounded shape
-/// (length-from) requires no extra encode-side codegen — author keeps
-/// `self.<sibling>` consistent with the embedded codec's emitted byte
-/// count (LengthRef author-trust contract).
+/// The template's encode of one embedded body, on the backends whose encode is
+/// not yet printed from the plan (Go, Kotlin, Python, C11; docs/adr/0081 §6):
+/// the body's own encode, handed the parent's sink and the flags its import
+/// binds, inside a test that the value holds it where a gate decides it.
+///
+/// It writes the body alone. The field a bounded body (`sce:length-from`) is
+/// read from the length of is a derived element (docs/adr/0058 §1), the length
+/// of the body's frame, and on these backends it is written as the value holds
+/// it, as every length and count is, until the backend prints the plan
+/// (docs/adr/0081 §3), which derives it as the Rust and C++ printers do.
 fn embed_streaming_encode_block(
     field: &CodecField,
     body_type: &str,
@@ -18894,17 +18896,7 @@ fn embed_streaming_encode_block(
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
         Language::Swift => no_swift_emitter("embed_streaming_encode_block"),
-        Language::Rust => {
-            if !has_present_if {
-                format!("        self.{id}.encode(w{thread_arg})?;")
-            } else {
-                format!(
-                    "        if let Some(_v) = &self.{id} {{\n            \
-                     _v.encode(w{thread_arg})?;\n        \
-                 }}"
-                )
-            }
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             // Embed encode threads the parent sink through the nested
