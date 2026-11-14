@@ -12,7 +12,8 @@
   so that a section has one text.
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`,
   answers 1, 3, 8 and 12, §6 (C1 to C3) and §7. The ADR was amended on 2026-11-10 with the repository split and the
-  licensing record of §3.
+  licensing record of §3. ADR 0102 (2026-11-14) decides each message type's codec binding, the wire bytes of the trace
+  and the recorder, which §1, §2.1, §3, §12.4 and §14 follow.
 - Semantics: `docs/SCE_TEST_PROFILE.md`, cited as **TP §x**: the scheduler (TP §3), the export (TP §9), what the
   lane requires of the tool (TP §10) and the native runtime (TP §12).
 - Sources, pinned by ADR 0091 answer 2: ETSI ES 201 873-1 V4.17.1 (**-1 §x**) and -4 V4.6.1 (**-4 §x**); -5 V4.9.1,
@@ -40,7 +41,30 @@ The comparison means something only under three conditions:
   (DD §9.2).
 - **The two runs take the same schedule**: the rounds of TP §3.2, carried in Titan by its Main Controller (DD §9.2).
 - **The TTCN-3 side's codecs and logger are not SCE's**: the codec bindings (DD §8.4) and the logger plugin
-  (DD §9.3.3) run on libraries that neither SCE nor Titan wrote, in a repository that holds no SCE code (§2).
+  (DD §9.3.3) run on libraries that neither SCE nor Titan wrote, or on implementations written in the downstream from
+  the specifications alone, without reading SCE's codec sources, in a repository that holds no SCE code (§2); and a
+  message type a suite binds to a consumer's module is encoded by that module (ADR 0102 §1.2).
+
+The third condition is met in three ways, and they are not equally independent of SCE:
+
+- **A library written by others from the format's specification.** The CBOR binding runs on libcbor, written from RFC
+  8949 by authors who share nothing with SCE. It reads the format apart from SCE's generator and apart from SCE's own
+  statement of the format (`SCE_FORGE.md` §4.6), so it also checks that statement against a reading SCE did not make.
+- **A binding written in the downstream from the specifications, clean-room.** The content-line binding is written
+  from RFC 5545 §3.1 and `SCE_FORGE.md` §4.6.4, and the positional one will be written from `SCE_FORGE.md` §4.6 once
+  ADR 0100 lands, each without reading SCE's codec sources. Such a binding reads the format apart from the generator,
+  so a defect of SCE's generator is not on both sides of the wire: this is ADR 0091 C2's first kind of independence,
+  an independent encoding engine. It is weaker than a library's: it shares `SCE_FORGE.md` with the generator, so an
+  error of that page is made on both sides alike, where the comparison cannot see it. The content-line binding is
+  written from the RFC first and from the page where the page narrows the RFC (its bounds, its refusals, its one
+  folding), so a place where the page departs from the RFC is one its author meets and records; it is still not a
+  second party's reading of the RFC.
+- **A consumer's module.** A type bound to a consumer's TTCN-3 module (ADR 0102 §1.2), written from the protocol's
+  own requirements by an author apart from both SCE and the implementations under test, is C2's second kind, an
+  independent protocol reading, and the strongest of the three.
+
+Agreement of the two runs is evidence that both codecs are right only to the extent that their failures are
+independent (ADR 0091 C2), and the lane reports it as no more than that.
 
 ## 2. Repository boundary
 
@@ -50,7 +74,10 @@ Everything that touches Titan lives in a separate downstream repository, `sce-tt
 
 - the adapter interface shaped after TRI and TCI (C++17, DD §7);
 - the reference adapters: the trace player and recorder, and the logical clock (DD §8);
-- the codec bindings, over libcbor (MIT) and libical (MPL-2.0) (DD §8.4);
+- the reference codec bindings (DD §8.4): CBOR over libcbor (MIT); content-line, written in the downstream from RFC
+  5545 §3.1 and `SCE_FORGE.md` §4.6.4; positional, written the same way from `SCE_FORGE.md` §4.6 once ADR 0100 lands
+  (ADR 0102 §1.2). A consumer's binding of a message type is not the downstream's: it is the consumer's module, in the
+  consumer's repository under the consumer's licence;
 - the Titan binding: test ports, the `enc_`/`dec_` external functions and the logger plugin (DD §9.3);
 - the pinned Titan build and the Main Controller patches, which go upstream under the ECA (DD §9.1, §9.2, §9.4);
 - the lane runner, which applies C3 (DD §11).
@@ -121,14 +148,18 @@ This is the record ADR 0091 answer 1 carries, amended 2026-11-10. Each statement
   is made under the project's licence, EPL-2.0, by a contributor who has signed the Eclipse Contributor Agreement. The
   patches are EPL-2.0 from their first line, in a repository under EPL-2.0, so they need no relicensing on the way
   upstream. The signer is the patches' author.
-- **The codec libraries keep their own licences.** libcbor is MIT. libical is offered under MPL-2.0 or LGPL-2.1, and
-  the downstream takes MPL-2.0. Both are linked into the downstream's executable test suite with EPL-2.0 code. MIT is
-  permissive, and MPL-2.0 is a file-level copyleft that stays on libical's own files. The downstream pins each library
-  by version and by the SHA-256 of its source archive, and carries each licence text with the pin.
+- **The codec library keeps its own licence.** libcbor is MIT, and is linked into the downstream's executable test
+  suite with EPL-2.0 code; MIT is permissive. The downstream pins it by version and by the SHA-256 of its source
+  archive, and carries its licence text with the pin. The content-line and positional bindings are the downstream's
+  own EPL-2.0 code and link no codec library.
+- **A consumer's binding is the consumer's.** A consumer module (ADR 0102 §1.2) is the consumer's code, in its own
+  repository under its own licence. It is compiled with the downstream's Titan build into the consumer's executable
+  test suite, and the consumer answers for that combination as for any code it links with EPL-2.0 code. Neither SCE
+  nor the downstream holds a copy of it.
 - **No legal review was made.** None is needed for the combination question, which no longer exists. The statements
   above are standard facts of the licences named, each with its basis. A consumer that distributes a binary built
-  from the downstream takes on EPL-2.0's obligations for it, and those of MIT and MPL-2.0 for the libraries, as for
-  any EPL-2.0 program.
+  from the downstream takes on EPL-2.0's obligations for it, and those of MIT for libcbor, as for any EPL-2.0
+  program.
 
 `LICENSE-THIRD-PARTY.md` records, in its section "The TTCN-3 conformance lane", that the lane is a separate
 repository, that nothing of it is vendored into SCE, and that SCE's CI runs it as a tool.
@@ -217,9 +248,9 @@ same number.
 
 ## 8. The reference adapter set (`reference/`)
 
-The trace player and recorder, the logical clock, the canonical values in JCS, and the codec bindings over libcbor and
-libical. This section lives in `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, under the same
-number.
+The trace player and recorder, the logical clock, the canonical values in JCS, and the reference codec bindings: CBOR
+over libcbor, and content-line and positional written in the downstream from the specifications (§1). This section
+lives in `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, under the same number.
 
 ## 9. The Titan side (`titan/`)
 
@@ -510,7 +541,16 @@ Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnos
 ### 12.4 What the corpus must gain (slice S2)
 
 - a trace for every test case of every runnable suite, and the expected log of each trace;
-- a codec document for every message type a mapped port carries, in CBOR or content-line;
+- every message type a system port of a runnable suite carries is a codec message type (ADR 0102 §1.1), CBOR or
+  content-line, and positional once ADR 0100 and ADR 0102's step 8 land, so that every message crossing the system
+  interface passes through a codec on both sides. An event schema on a system port stays legal in the profile, its
+  encoding left to the test system, but the reference set has no codec for it, so no runnable suite of the corpus
+  carries one;
+- for each codec kind, traces whose inputs are given as `octets` (ADR 0102 §2.1), a frame the codec refuses among
+  them, whose test case both sides end with `error` at the frame's instant (ADR 0102 §2.3); and a trace that gives a
+  codec type's input as a `value`, which both sides encode and decode;
+- the record each runner writes of each trace (ADR 0102 §3), held on every backend to one expected record, which
+  holds the seven generated codecs of each kind to one encoding of every send;
 - runnable suites that cover the "missing" column of §12.2, including the two `error` cases;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
   their rows run as well as export;
@@ -568,15 +608,32 @@ replayed through S1. Step 6 stays the step that holds the law over the whole cor
 
 ## 14. What this design leaves open
 
-- **The names of -5 and -6.** DD §7.2 is checked against the two texts in slice D1 (DD §13.2).
-- **SCE's own codecs in the lane.** In the lane the native side holds values and uses no codec (TP §12.2), so only the
-  TTCN-3 side encodes. Comparing SCE's generated codecs with the reference bindings, byte for byte on the same values,
-  would be a check of its own. D3's tests decode SCE's bytes for a few shapes. A check over the corpus is not part of
-  this design.
-- **Positional binary codecs.** They have no reference binding (DD §8.4).
+- **The names of -5 and -6.** DD §7.2 is checked against the two texts in slice D1 (DD §13.2), and with it the name
+  of the log record `message-detected`'s TCI event and the shape of TRI's message operations, on which ADR 0102 §2
+  rests.
 - **A second TTCN-3 tool.** Running the suite on a second tool, by a binding of the same interface, remains the
   stronger form of C1 (answer 1). It is not planned.
 
-Closed since the design was written: **where the canonical value form is owned.** TP §12.5 owns it, with the log's
-schema, and §10.3 refers to it for the trace's values. The form there writes a byte string in upper-case hex. This
-design's earlier statement of the form, which wrote it in lower-case, is withdrawn.
+Closed since the design was written:
+
+- **Where the canonical value form is owned.** TP §12.5 owns it, with the log's schema, and §10.3 refers to it for the
+  trace's values. The form there writes a byte string in upper-case hex. This design's earlier statement of the form,
+  which wrote it in lower-case, is withdrawn.
+- **SCE's own codecs in the lane.** This design first let the native side hold values and use no codec (TP §12.2), so
+  that only the TTCN-3 side encoded. ADR 0102 §2 closes it: a message of a codec type crosses the system adapter as
+  octets on both sides, as TRI places it. A trace input gives the wire bytes (`octets`) or a value; the native run
+  decodes with SCE's codec generated from the document and the TTCN-3 run with its binding, and both log the decoded
+  value at the input's instant (`message-detected`), which C3 compares. Both runs encode every send; where both
+  encoders write one canonical encoding, the encode check compares their bytes, a check of the codecs the lane runs
+  beside C3 and reports apart from it (ADR 0102 §2.5). A codec failure on either side is `error` (P13).
+- **Positional binary codecs.** A suite binds a positional message type to a consumer's TTCN-3 module, which encodes
+  it with Titan's RAW engine and external functions of its own (ADR 0102 §1.2, §1.3); the reference positional
+  binding is written in the downstream from `SCE_FORGE.md` §4.6 once ADR 0100 lands, and positional codecs become
+  message types at ADR 0102's step 8.
+- **The content-line binding's library.** ADR 0091 answer 1 pinned libical. libical 4.0.7 does not write SCE's
+  content-line format: it strips trailing whitespace from a value, writes a backslash of an `X-` property's value
+  twice, and writes RFC 6868's caret escapes in parameter values, which codec-format 2 does not read, and it refused
+  39 of the 52 encode cases of SCE's oracle. The downstream replaced it with a binding written from RFC 5545 §3.1 and
+  `SCE_FORGE.md` §4.6.4 alone, which passes the oracle whole at `SCE_PIN` `eaec7ae62e` (98 of 98 decode cases, 52 of
+  52 encode cases, 77 of 77 rejects). §1, §2.1 and §3 were rewritten for it; §1 states what the change does to the
+  binding's independence.

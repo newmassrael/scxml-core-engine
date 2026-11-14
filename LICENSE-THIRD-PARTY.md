@@ -194,8 +194,9 @@ declares `EPL-2.0 OR GPL-3.0-or-later`. SCE takes EPL-2.0. An upgrade past
 The conformance lane of the test profile (ADR 0091 C1 and C3) runs SCE's TTCN-3 export on Eclipse Titan. Everything
 that touches Titan lives in a separate repository, `sce-ttcn3-titan` (https://github.com/newmassrael/sce-ttcn3-titan,
 created 2026-11-10, private for now), under **EPL-2.0**: the adapter interface, the
-reference adapters, the codec bindings over libcbor (MIT) and libical (MPL-2.0), the Titan binding, the pinned Titan
-build with its patches, and the lane runner. Nothing of it is vendored into SCE, and no SCE file is relicensed. It
+reference adapters, the codec bindings (CBOR over libcbor, MIT; content-line and positional written in that
+repository), the Titan binding, the pinned Titan build with its patches, and the lane runner. Nothing of it is
+vendored into SCE, and no SCE file is relicensed. It
 uses SCE only as a tool, through SCE's programs and published wire surfaces, and SCE's CI runs it as an external
 tool fetched at a pinned revision. Neither the engine, nor the generator, nor generated code depends on it. The
 licensing record, each statement with its basis, is in `docs/SCE_TTCN3_LANE.md` §3 and ADR 0091 answer 1.
