@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec kind — single VLE u16 field (Zenoh ZInt).
+     The wire is a ZInt64 at every width and the type bounds the value: a
+     decode reads 1..=9 bytes and refuses a value past 0xFFFF, never a longer
+     encoding of a value the field holds; an encode writes the minimal one,
+     1..=3 bytes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" name="vle_zint_u16">
+  <datamodel>
+    <data id="value" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>

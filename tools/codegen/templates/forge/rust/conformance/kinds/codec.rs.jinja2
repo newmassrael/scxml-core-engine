@@ -63,7 +63,13 @@
             .iter()
             .map(|v| v.as_u64().expect("byte must be u64") as u8)
             .collect();
+        {# A case marked `decode_only` is a wire a peer may send that is not the
+           one this encode writes (a VLE padded past its minimal encoding): its
+           bytes decode to the value and are read whole, and the encode, which
+           writes the minimal form, is not held to them. #}
+        let decode_only = case["decode_only"].as_bool().unwrap_or(false);
 
+        if !decode_only {
         let encoded = {{ f.name | to_pascal_case }} {
 {% for field in f.fields %}
 {% if field.bounded and field.optional %}
@@ -110,11 +116,19 @@
             encoded, expected_bytes,
             "{{ f.name }} case {i} encode"
         );
+        }
 
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&expected_bytes);
 {% if f.fields %}
         let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} decode must succeed");
+        if decode_only {
+            assert_eq!(
+                cursor.remaining(),
+                0,
+                "{{ f.name }} case {i}: a decode-only frame is read whole"
+            );
+        }
 {% for field in f.fields %}
 {% if field.bounded and field.optional %}
         {# A field held within its bound compares with the slice or text it

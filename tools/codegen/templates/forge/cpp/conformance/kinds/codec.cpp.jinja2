@@ -51,6 +51,11 @@
         for (const auto &b : case_entry["encoded"]) {
             expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
+        {# A case marked `decode_only` is a wire a peer may send that is not the
+           one this encode writes (a VLE padded past its minimal encoding): its
+           bytes decode to the value and are read whole, and the encode is not
+           held to them. #}
+        const bool decode_only = case_entry.value("decode_only", false);
 
         {# A codec, printed from its plan (docs/adr/0081 step 4), is made by its
            constructor, its elements in declaration order; a field the encode
@@ -94,15 +99,19 @@
         };
         {# A value is handed its entries within their bounds, so its encode
            refuses nothing of them. #}
-        auto encoded = _codec_val.encode_to_vec();
-        CHECK(encoded == expected_bytes,
-              "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
-              i, encoded.size(), expected_bytes.size());
+        if (!decode_only) {
+            auto encoded = _codec_val.encode_to_vec();
+            CHECK(encoded == expected_bytes,
+                  "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
+                  i, encoded.size(), expected_bytes.size());
+        }
 
         ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
         auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor);
         CHECK(round_tripped.has_value(),
               "{{ f.name }} case %d decode returned nullopt", i);
+        CHECK(!decode_only || cursor.remaining() == 0,
+              "{{ f.name }} case %d: a decode-only frame is read whole", i);
         if (round_tripped.has_value()) {
 {# Each element is read through its accessor. #}
 {% set acc = "()" %}
@@ -222,6 +231,12 @@
 {% elif r.cursor_records_nothing %}
         CHECK(!reject_cursor.last_refusal().has_value(),
               "{{ f.name }} reject {{ loop.index0 }} is a frame short of bytes, not a refusal for a reason: {{ r.why }}");
+{% endif %}
+{% if r.cursor_flag %}
+        {# A reason the cursor keeps in a flag of its own (a VLE's value past
+           its width, `last_vle_overflow()`). #}
+        CHECK(reject_cursor.{{ r.cursor_flag }},
+              "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}");
 {% endif %}
     }
 {% endfor %}

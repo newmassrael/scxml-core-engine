@@ -60,6 +60,10 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
         size_t expected_len;
         uint8_t expected_bytes[256];
+        {# A wire a peer may send that is not the one this encode writes (a VLE
+           padded past its minimal encoding): its bytes decode to the value and
+           are read whole, and the encode is not held to them. #}
+        bool decode_only;
     } {{ f.name }}_case_t;
     static const {{ f.name }}_case_t cases[] = {
 {% for c in f.cases %}
@@ -89,6 +93,7 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
             .expected_len = {{ c.encoded | length }},
             .expected_bytes = { {% if c.encoded %}{% for b in c.encoded %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}0{% endif %} },
+            .decode_only = {{ "true" if (c.decode_only is defined and c.decode_only) else "false" }},
         },
 {% endfor %}
     };
@@ -134,15 +139,17 @@ static void test_{{ f.name }}(void) {
          * struct's `_reserved` placeholder for the same C11 constraint. */
         uint8_t encoded_buf[{{ max_macro }} > 0u ? {{ max_macro }} : 1u];
         size_t encoded_len = 0;
-        sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
-        if (_enc_st != SCE_FORGE_CODEC_OK ||
-            encoded_len != cases[i].expected_len ||
-            memcmp(encoded_buf, cases[i].expected_bytes, cases[i].expected_len) != 0) {
-            fprintf(stderr,
-                "FAIL: {{ f.name }} case %zu encode: len actual=%zu expected=%zu\n",
-                i, encoded_len, cases[i].expected_len);
-            ++g_failures;
-            continue;
+        if (!cases[i].decode_only) {
+            sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
+            if (_enc_st != SCE_FORGE_CODEC_OK ||
+                encoded_len != cases[i].expected_len ||
+                memcmp(encoded_buf, cases[i].expected_bytes, cases[i].expected_len) != 0) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu encode: len actual=%zu expected=%zu\n",
+                    i, encoded_len, cases[i].expected_len);
+                ++g_failures;
+                continue;
+            }
         }
         static {{ f.name }}_t round_tripped;
         sce_forge_cursor_t cursor = sce_forge_cursor_init(cases[i].expected_bytes, cases[i].expected_len);
@@ -150,6 +157,12 @@ static void test_{{ f.name }}(void) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned non-ok\n", i);
             ++g_failures;
             continue;
+        }
+        if (cases[i].decode_only && sce_forge_cursor_remaining(&cursor) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: a decode-only frame is read whole, %zu byte(s) left\n",
+                i, sce_forge_cursor_remaining(&cursor));
+            ++g_failures;
         }
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}

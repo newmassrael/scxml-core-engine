@@ -160,9 +160,10 @@ type codecSpec struct {
 // unsigned integers, which unmarshals cleanly into `[]int` and is
 // converted to `[]byte` at use site inside the codec fragment.
 //
-// `Text` and `DecodeOnly` are a content-line codec's (SCE_FORGE.md §4.6.4): the
-// component as a reader checks it, and an input the codec reads and does not
-// write. No other kind's case states either.
+// `Text` is a content-line codec's (SCE_FORGE.md §4.6.4): the component as a
+// reader checks it. `DecodeOnly` marks an input the codec reads and does not
+// write: a content-line component, or a positional frame that is not the one
+// the encode writes (a VLE padded past its minimal encoding).
 type codecCase struct {
 	Decoded    json.RawMessage `json:"decoded"`
 	Encoded    []int           `json:"encoded"`

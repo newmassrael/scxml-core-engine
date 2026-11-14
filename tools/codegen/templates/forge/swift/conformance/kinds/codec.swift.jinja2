@@ -34,9 +34,18 @@
 {% endfor %}
         )
 
-        var sink = BytesSink()
-        try value.encode(into: &sink)
-        #expect(sink.bytes == expectedBytes, "{{ f.name }} case \(index) encode")
+        {# A case marked `decode_only` is a wire a peer may send that is not the one this encode
+           writes (a VLE padded past its minimal encoding): its bytes decode to the value and are read
+           whole, and the encode is not held to them. #}
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+        if !decodeOnly {
+            var sink = BytesSink()
+            try value.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "{{ f.name }} case \(index) encode")
+        }
 
         var cursor = SceCursor(expectedBytes)
         let roundTripped = try {{ f.name | to_pascal_case }}.decode(&cursor)

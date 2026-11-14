@@ -3634,6 +3634,11 @@ fn fold_reject_vectors(
                 serde_json::Value::Bool(true),
             );
         }
+        // A reason the cursor keeps in a flag of its own beside its record (a
+        // VLE's value past its width, C++ and Kotlin) is asserted there.
+        if let Some(flag) = failure.cursor_flag(language) {
+            out.insert("cursor_flag".into(), serde_json::Value::from(flag));
+        }
         folded.push(serde_json::Value::Object(out));
     }
 

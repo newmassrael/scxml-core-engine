@@ -41,29 +41,40 @@
             val expectedBytes = caseEl.jsonObject["encoded"]!!.jsonArray
                 .map { it.jsonPrimitive.int.toByte() }
                 .toByteArray()
+            {# A case marked `decode_only` is a wire a peer may send that is
+               not the one this encode writes (a VLE padded past its minimal
+               encoding): its bytes decode to the value and are read whole,
+               and the encode is not held to them. #}
+            val decodeOnly = caseEl.jsonObject["decode_only"]?.jsonPrimitive?.boolean ?: false
 
-            val valueObj = {{ f.name | to_pascal_case }}(
+            if (!decodeOnly) {
+                val valueObj = {{ f.name | to_pascal_case }}(
 {% for field in f.fields %}
-                {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
+                    {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
-            )
+                )
 {% if f.cbor or f.encode_refuses_bound %}
-            {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a
-               bounded field (docs/adr/0077 §3), refuses a value past its
-               declared bound with `null`; every case is in bounds. #}
-            val encoded = valueObj.encodeToByteArray()
-                ?: error("{{ f.name }} case $i encode refused")
+                {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a
+                   bounded field (docs/adr/0077 §3), refuses a value past its
+                   declared bound with `null`; every case is in bounds. #}
+                val encoded = valueObj.encodeToByteArray()
+                    ?: error("{{ f.name }} case $i encode refused")
 {% else %}
-            val encoded = valueObj.encodeToByteArray()
+                val encoded = valueObj.encodeToByteArray()
 {% endif %}
-            assertTrue(
-                encoded.contentEquals(expectedBytes),
-                "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",
-            )
+                assertTrue(
+                    encoded.contentEquals(expectedBytes),
+                    "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",
+                )
+            }
 
             val cursor = com.sce.forge.runtime.SceCursor(expectedBytes)
             val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
                 ?: error("{{ f.name }} case $i decode returned null")
+            assertTrue(
+                !decodeOnly || cursor.remaining() == 0,
+                "{{ f.name }} case $i: a decode-only frame is read whole",
+            )
 {% for field in f.fields %}
 {% if field.type == "bytes" %}
             assertTrue(
@@ -106,6 +117,14 @@
             assertTrue(
                 rejectCursor.lastRefusal == null,
                 "{{ f.name }} reject {{ loop.index0 }} is a frame short of bytes, not a refusal for a reason: {{ r.why }}",
+            )
+{% endif %}
+{% if r.cursor_flag %}
+            {# A reason the cursor keeps in a flag of its own (a VLE's value
+               past its width, `lastVleOverflow`). #}
+            assertTrue(
+                rejectCursor.{{ r.cursor_flag }},
+                "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
             )
 {% endif %}
         }

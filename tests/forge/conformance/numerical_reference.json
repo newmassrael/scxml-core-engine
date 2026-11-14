@@ -43055,6 +43055,72 @@
         {"source": {"items": [{"seq": 1}, {"seq": 2}]}, "encoded": [0, 1, 0, 2], "note": "a list read to the end, at its bound"}
       ]
     },
+    "codec_vle_zint_u16": {
+      "fixture": "CodecVleZintU16",
+      "signature": "one VLE u16 field: the wire is a ZInt64 (canonical Zenoh ZInt, 1..=9 bytes) and the type bounds the value to 0xFFFF; an encode writes the minimal ZInt (1..=3 bytes), a decode reads every encoding of a value the type holds",
+      "cases": [
+        {"decoded": {"value": 0}, "encoded": [0], "note": "zero: one byte"},
+        {"decoded": {"value": 127}, "encoded": [127], "note": "the largest value of one byte"},
+        {"decoded": {"value": 128}, "encoded": [128, 1], "note": "the smallest value of two bytes"},
+        {"decoded": {"value": 16383}, "encoded": [255, 127], "note": "0x3FFF, the largest value of two bytes"},
+        {"decoded": {"value": 16384}, "encoded": [128, 128, 1], "note": "0x4000, the smallest value of three bytes"},
+        {"decoded": {"value": 65535}, "encoded": [255, 255, 3], "note": "0xFFFF, the largest value: three bytes"},
+        {"decoded": {"value": 1}, "encoded": [129, 128, 128, 0], "decode_only": true, "note": "1 in four bytes: zenoh reads it as 1, and so does a u16 field"},
+        {"decoded": {"value": 1}, "encoded": [129, 128, 128, 128, 128, 128, 128, 128, 0], "decode_only": true, "note": "1 padded to nine bytes, the longest ZInt"},
+        {"decoded": {"value": 16383}, "encoded": [255, 255, 128, 0], "decode_only": true, "note": "0x3FFF padded to four bytes"},
+        {"decoded": {"value": 16384}, "encoded": [128, 128, 129, 128, 0], "decode_only": true, "note": "0x4000 padded to five bytes"},
+        {"decoded": {"value": 65535}, "encoded": [255, 255, 131, 128, 128, 128, 128, 128, 0], "decode_only": true, "note": "0xFFFF padded to nine bytes"}
+      ],
+      "rejects": [
+        {
+          "why": "65536 in three bytes, the first value past a u16: the value is refused, not the length",
+          "encoded": [128, 128, 4],
+          "error": "vle-width-overflow"
+        },
+        {
+          "why": "2^63 in nine bytes: the high bit of the ninth byte is data, not a flag asking for a tenth",
+          "encoded": [128, 128, 128, 128, 128, 128, 128, 128, 128],
+          "error": "vle-width-overflow"
+        },
+        {
+          "why": "eight flagged bytes and no ninth: the frame ends inside the ZInt",
+          "encoded": [129, 128, 128, 128, 128, 128, 128, 128],
+          "error": "need-more-bytes"
+        }
+      ]
+    },
+    "codec_vle_zint_u32": {
+      "fixture": "CodecVleZintU32",
+      "signature": "one VLE u32 field: the wire is a ZInt64 (canonical Zenoh ZInt, 1..=9 bytes) and the type bounds the value to 0xFFFFFFFF; an encode writes the minimal ZInt (1..=5 bytes), a decode reads every encoding of a value the type holds",
+      "cases": [
+        {"decoded": {"value": 0}, "encoded": [0], "note": "zero: one byte"},
+        {"decoded": {"value": 128}, "encoded": [128, 1], "note": "the smallest value of two bytes"},
+        {"decoded": {"value": 2097152}, "encoded": [128, 128, 128, 1], "note": "2^21, the smallest value of four bytes"},
+        {"decoded": {"value": 268435455}, "encoded": [255, 255, 255, 127], "note": "2^28 - 1, the largest value of four bytes"},
+        {"decoded": {"value": 268435456}, "encoded": [128, 128, 128, 128, 1], "note": "2^28, the smallest value of five bytes"},
+        {"decoded": {"value": 4294967295}, "encoded": [255, 255, 255, 255, 15], "note": "0xFFFFFFFF, the largest value: five bytes"},
+        {"decoded": {"value": 1}, "encoded": [129, 128, 128, 128, 128, 128, 128, 128, 0], "decode_only": true, "note": "1 padded to nine bytes, the longest ZInt: read as 1, as zenoh reads it"},
+        {"decoded": {"value": 128}, "encoded": [128, 129, 0], "decode_only": true, "note": "128 padded to three bytes"},
+        {"decoded": {"value": 4294967295}, "encoded": [255, 255, 255, 255, 143, 128, 128, 128, 0], "decode_only": true, "note": "0xFFFFFFFF padded to nine bytes"}
+      ],
+      "rejects": [
+        {
+          "why": "2^32 in five bytes, the first value past a u32: the value is refused, not the length",
+          "encoded": [128, 128, 128, 128, 16],
+          "error": "vle-width-overflow"
+        },
+        {
+          "why": "the largest u64 in nine bytes, past a u32",
+          "encoded": [255, 255, 255, 255, 255, 255, 255, 255, 255],
+          "error": "vle-width-overflow"
+        },
+        {
+          "why": "four flagged bytes and no fifth: the frame ends inside the ZInt",
+          "encoded": [255, 255, 255, 255, 143],
+          "error": "need-more-bytes"
+        }
+      ]
+    },
     "codec_vle_zint_u64": {
       "fixture": "CodecVleZintU64",
       "signature": "base-128 LSB-first VLE (canonical Zenoh ZInt); bit 7 = continuation except the final byte carries 8 data bits — u64 caps at 9 bytes",
@@ -43195,6 +43261,15 @@
             255
           ],
           "note": "u64::MAX \u2192 9 bytes (canonical Zenoh ZInt cap; 10 bytes would desync zenoh/zenoh-pico)"
+        },
+        {"decoded": {"value": 1}, "encoded": [129, 128, 128, 128, 128, 128, 128, 128, 0], "decode_only": true, "note": "1 padded to nine bytes, the longest ZInt: read as 1, as zenoh reads it"},
+        {"decoded": {"value": 127}, "encoded": [255, 0], "decode_only": true, "note": "127 padded to two bytes"}
+      ],
+      "rejects": [
+        {
+          "why": "eight flagged bytes and no ninth: the frame ends inside the ZInt",
+          "encoded": [255, 255, 255, 255, 255, 255, 255, 255],
+          "error": "need-more-bytes"
         }
       ],
       "sources": [
