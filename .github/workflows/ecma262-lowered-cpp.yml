@@ -56,6 +56,8 @@ on:
       - 'cmake/SCECodegenPlan.cmake'
       - 'scripts/gates/ecma262-lowered-cpp.sh'
       - '.github/workflows/ecma262-lowered-cpp.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -135,9 +137,7 @@ jobs:
         echo "::add-matcher::.github/problem-matchers/cmake.json"
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

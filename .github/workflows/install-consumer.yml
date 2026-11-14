@@ -38,6 +38,8 @@ on:
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/install-consumer.sh'
       - '.github/workflows/install-consumer.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -52,6 +54,8 @@ on:
       - 'scripts/gates/lib.sh'
       - 'scripts/gates/install-consumer.sh'
       - '.github/workflows/install-consumer.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 # The run in flight is kept and one waiting run holds the newest commit, as on
@@ -96,9 +100,7 @@ jobs:
             clang-format-19
 
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+        uses: ./.github/actions/install-rust
 
       - name: Cache Cargo
         uses: actions/cache@v5

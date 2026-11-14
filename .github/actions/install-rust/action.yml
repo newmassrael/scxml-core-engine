@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The one way a lane installs Rust: the release rust-toolchain.toml pins, with
+# the components and targets it lists, made the job's default toolchain so that
+# a build outside the checkout gets it too. Every lane names this action and
+# none names a channel (`stable` moved to 1.100 on 2026-11-09 and turned main
+# red with no commit); `every-lane-installs-the-pinned-rust` in
+# tools/git-hooks/gate_registry.py refuses a lane that installs Rust another
+# way. Moving the release is the one edit in rust-toolchain.toml, and every
+# lane that installs Rust lists that file and this one in its `paths:`.
+#
+# The file is read by its lines, each value on one line, as
+# scripts/lib/rust_toolchains.sh reads it. The install itself is upstream's
+# action, which also bootstraps rustup in a container image that has none.
+name: Install the pinned Rust release
+description: Installs the Rust release rust-toolchain.toml pins, with the components and targets it lists, as the job's default toolchain.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the release rust-toolchain.toml pins
+      id: pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="$GITHUB_WORKSPACE/rust-toolchain.toml"
+        channel="$(sed -nE 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$file")"
+        if [[ -z "$channel" ]]; then
+          echo "::error file=rust-toolchain.toml::no release (x.y.z) on a 'channel = \"...\"' line"
+          exit 1
+        fi
+        listed() { sed -nE "s/^$1 = \[(.*)\]\$/\1/p" "$file" | tr -d '" '; }
+        {
+          echo "channel=$channel"
+          echo "components=$(listed components)"
+          echo "targets=$(listed targets)"
+        } >> "$GITHUB_OUTPUT"
+        echo "Rust $channel, components [$(listed components)], targets [$(listed targets)]"
+
+    - name: Install the pinned Rust release
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.pin.outputs.channel }}
+        components: ${{ steps.pin.outputs.components }}
+        targets: ${{ steps.pin.outputs.targets }}

@@ -15,6 +15,8 @@ on:
       - 'tools/targets/**'
       - 'tools/authoring/**'
       - '.github/workflows/targets.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       - 'scripts/gates/targets.sh'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
@@ -27,6 +29,8 @@ on:
       - 'tools/targets/**'
       - 'tools/authoring/**'
       - '.github/workflows/targets.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       - 'scripts/gates/targets.sh'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
@@ -52,9 +56,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxml2-dev pkg-config g++
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+      - uses: ./.github/actions/install-rust
       - name: Cache Cargo
         uses: actions/cache@v5
         with:

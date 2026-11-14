@@ -205,8 +205,9 @@ prefix_file = "bin/mnemosyne-cli"
 #
 # Anywhere else the same install line puts a toolchain at the same place:
 # `scripts/install_rust.sh --declared <toolchain>` reads it from the table below and runs it. The
-# hosted lanes keep their own `dtolnay/rust-toolchain@stable`; a gate there installs a missing
-# toolchain this way (`sce_gate_require_rust` in scripts/gates/lib.sh). The registry's self-test holds
+# hosted lanes install the release rust-toolchain.toml pins through `.github/actions/install-rust`; a
+# gate there installs any other toolchain it needs this way (`sce_gate_require_rust` in
+# scripts/gates/lib.sh). The registry's self-test holds
 # these tables to the pins, to the `rust-version` of every workspace package, and to the units their
 # `needed_by` names.
 #

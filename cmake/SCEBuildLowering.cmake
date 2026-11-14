@@ -13,7 +13,7 @@
 # C++ target is eight places to drift — the same shape as the ~100
 # hand-spelled profile paths that module's header records. Cargo is
 # present wherever a C++ target is built (every such workflow runs
-# `dtolnay/rust-toolchain@stable` before CMake), so building here costs
+# `.github/actions/install-rust` before CMake), so building here costs
 # one place instead of eight.
 #
 # ── Why a staticlib ───────────────────────────────────────────────────

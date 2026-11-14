@@ -28,6 +28,8 @@ on:
       - 'rustfmt.toml'
       - '.rustfmt.toml'
       - '.github/workflows/fmt-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -37,6 +39,8 @@ on:
       - 'rustfmt.toml'
       - '.rustfmt.toml'
       - '.github/workflows/fmt-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -53,10 +57,9 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins, which lists rustfmt.
     - name: Install Rust Toolchain (with rustfmt)
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
+      uses: ./.github/actions/install-rust
 
     - name: cargo fmt --all -- --check
       run: cargo fmt --all -- --check

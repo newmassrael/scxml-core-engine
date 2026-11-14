@@ -85,6 +85,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
@@ -228,6 +230,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust-workspace-tests.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
@@ -450,13 +454,12 @@ jobs:
       # authoring-core.yml and targets.yml install it too.
       run: python3 -m pip install lupa
 
+    # The release rust-toolchain.toml pins. `clippy-driver` lints a generated
+    # file alone (toolchain::HARNESS_TOOLS); the profile is minimal and
+    # installs no component that file does not list
+    # (`every_rustup_component_tool_is_installed_by_the_requiring_lane`).
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        # `clippy-driver` lints a generated file alone (toolchain::HARNESS_TOOLS);
-        # the action's profile is minimal and installs no component unnamed.
-        components: clippy
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

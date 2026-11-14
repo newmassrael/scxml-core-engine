@@ -85,10 +85,11 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config libxml2-dev clang-format-19 clang-19
 
+    # The release rust-toolchain.toml pins, which lists rustfmt: the
+    # generator's Rust output is formatted with it, so what reproduces
+    # moves only when that file does.
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

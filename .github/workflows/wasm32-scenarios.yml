@@ -35,6 +35,8 @@ on:
       - 'Cargo.lock'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -47,6 +49,8 @@ on:
       - 'Cargo.lock'
       - 'scripts/gates/wasm32-scenarios.sh'
       - '.github/workflows/wasm32-scenarios.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -63,12 +67,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins, which lists the wasm32 target
+    # and clippy.
     - name: Install Rust Toolchain (with the wasm32 standard library)
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        targets: wasm32-unknown-unknown
-        components: clippy
+      uses: ./.github/actions/install-rust
 
     - name: Setup Node
       uses: actions/setup-node@v5

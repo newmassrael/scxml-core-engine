@@ -77,6 +77,8 @@ on:
       - 'Cargo.toml'
       - '.cargo/config.toml'
       - '.github/workflows/sce-rust-runtime-no-std.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -125,6 +127,8 @@ on:
       - 'Cargo.toml'
       - '.cargo/config.toml'
       - '.github/workflows/sce-rust-runtime-no-std.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -141,12 +145,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins, which lists the MCU target and
+    # clippy.
     - name: Install Rust Toolchain with MCU target
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        targets: thumbv7em-none-eabihf
-        components: clippy
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

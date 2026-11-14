@@ -98,6 +98,8 @@ on:
       - 'scripts/gates/lib.sh'
       - 'bx.toml'
       - '.github/workflows/swift-backend.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -124,9 +126,7 @@ jobs:
         submodules: recursive
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo (codegen)
       uses: actions/cache@v5

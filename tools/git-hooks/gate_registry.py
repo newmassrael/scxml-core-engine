@@ -3632,6 +3632,70 @@ def msrv_release(version: str):
     return None
 
 
+# ── The Rust a lane installs ──────────────────────────────────────
+#
+# Every CI lane installs the release `rust-toolchain.toml` pins, through the
+# one action that reads it, and a script that needs a nightly names the dated
+# one `scripts/lib/rust_toolchains.sh` pins. A channel that moves (`stable`,
+# `beta`, a bare `nightly`) is whatever that channel is on the day a run
+# starts: on 2026-11-14 main turned red with no commit when the runners'
+# `stable` moved to 1.100 and its clippy found what 1.99 had passed. The
+# sweep reads every tracked workflow, action and shell script with its
+# whole-line comments removed.
+RUST_INSTALL_ACTION = ".github/actions/install-rust/action.yml"
+# The upstream action the one above delegates the install to; no lane names it.
+RUST_INSTALL_UPSTREAM = "dtolnay/rust-toolchain"
+MOVING_RUST_CHANNEL = re.compile(
+    r"(?<![\w.+-])\+(?:stable|beta|nightly)(?![\w.-])"
+    r"|\btoolchain:\s*['\"]?(?:stable|beta|nightly)['\"]?\s*$"
+    r"|\brustup\s+(?:default|toolchain\s+install|install|update|run|override\s+set)\s+"
+    r"(?:stable|beta|nightly)(?![\w.-])"
+    r"|\bRUSTUP_TOOLCHAIN=['\"]?(?:stable|beta|nightly)(?![\w.-])")
+
+
+def moving_rust_failures(repo_root: Path) -> list[str]:
+    """Where a lane or a script installs or names a Rust that moves."""
+    failures: list[str] = []
+    action = repo_root / RUST_INSTALL_ACTION
+    if not action.is_file() or RUST_TOOLCHAIN_FILE not in action.read_text(encoding="utf-8"):
+        failures.append(f"{RUST_INSTALL_ACTION} does not install what "
+                        f"{RUST_TOOLCHAIN_FILE} pins, and every lane installs Rust "
+                        f"through it")
+    swept = 0
+    lanes = 0
+    for rel in tracked_paths(repo_root, ".github", "*.sh", "scripts"):
+        path = repo_root / rel
+        if Path(rel).suffix not in (".yml", ".yaml", ".sh", ""):
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        swept += 1
+        for number, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if RUST_INSTALL_UPSTREAM in line and rel != RUST_INSTALL_ACTION:
+                failures.append(
+                    f"{rel}:{number} installs Rust with {RUST_INSTALL_UPSTREAM} "
+                    f"itself: a lane installs it through ./{Path(RUST_INSTALL_ACTION).parent}, "
+                    f"which takes the release from {RUST_TOOLCHAIN_FILE}")
+            if MOVING_RUST_CHANNEL.search(line):
+                failures.append(
+                    f"{rel}:{number} names a Rust channel that moves "
+                    f"({line.strip()[:80]!r}): the release is pinned in "
+                    f"{RUST_TOOLCHAIN_FILE} and the nightly by its date in "
+                    f"{RUST_TOOLCHAIN_PINS}")
+            if f"uses: ./{Path(RUST_INSTALL_ACTION).parent}" in line:
+                lanes += 1
+    # Lower bounds, so a sweep that stopped reading cannot pass by reading nothing.
+    if swept < 20 or lanes < 20:
+        failures.append(
+            f"the sweep read {swept} file(s) and found {lanes} lane step(s) that "
+            f"install the pinned Rust; a broken enumeration passes by reading nothing")
+    return failures
+
+
 def rust_toolchain_file(repo_root: Path) -> dict:
     """`channel`, `components` and `targets` of rust-toolchain.toml.
 
@@ -5316,6 +5380,12 @@ def self_test(repo_root: Path) -> int:
     # declares" above).
     cases += 1
     failures.extend(f"rust-toolchains: {f}" for f in rust_toolchain_failures(repo_root))
+
+    # every-lane-installs-the-pinned-rust. No lane or script installs or
+    # names a Rust channel that moves (see "The Rust a lane installs" above).
+    cases += 1
+    failures.extend(f"every-lane-installs-the-pinned-rust: {f}"
+                    for f in moving_rust_failures(repo_root))
 
     if failures:
         for f in failures:

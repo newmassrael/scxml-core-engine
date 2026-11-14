@@ -34,6 +34,8 @@ on:
     paths:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
@@ -48,6 +50,8 @@ on:
     paths:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
       - 'sce-specs/**'
@@ -97,9 +101,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxml2-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+      - uses: ./.github/actions/install-rust
       - name: Cache Cargo
         uses: actions/cache@v5
         with:

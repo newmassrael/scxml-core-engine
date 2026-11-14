@@ -4,6 +4,9 @@
 # The Rust release every build of this repository runs on, and the one line
 # that pins it. rustup reads this file for every cargo run anywhere under the
 # checkout, and installs the release with what is listed below on first use.
+# Every CI lane installs it through .github/actions/install-rust, which reads
+# this file and names no channel of its own, and lists this file in its
+# `paths:`, so a move starts every lane that builds Rust.
 # `[platform.linux.tools.rust]` of bx.toml reads `channel` from here, and so
 # does scripts/lib/rust_toolchains.sh (`SCE_RUST_RELEASE`), so every gate unit
 # on a build machine runs the same release.
@@ -25,6 +28,9 @@
 # together. Kept to what a build of the workspace asks for without being told:
 # clippy and rustfmt for the lint and format gates, thumbv7em-none-eabihf for
 # the no_std runtime, wasm32-unknown-unknown for the wasm32 scenarios.
+#
+# Each value stays on one line: the shell readers above take it with sed, and
+# the registry without a TOML parser (a build machine runs Python 3.10).
 [toolchain]
 channel = "1.100.0"
 profile = "minimal"

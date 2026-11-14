@@ -7,13 +7,14 @@
 # cargo clippy over the workspace (mirror of clippy-check.yml).
 #
 # clippy-check.yml delegates here rather than restating the command, so
-# the lint set has one spelling for both callers. It runs on
-# dtolnay/rust-toolchain@stable, and the lint set is version-sensitive: a
-# stale local `stable` (behind the CI runner's fresh stable) passes
-# locally and only breaks CI on a newly-stabilised lint — exactly the
-# unnecessary_sort_by / collapsible_match drift that motivated this gate.
-# Toolchain parity is enforced by the runner before any gate starts, so
-# this sees the same lints CI will.
+# the lint set has one spelling for both callers. The lint set is
+# version-sensitive: a stale local `stable` passed locally and broke CI on
+# a newly-stabilised lint (the unnecessary_sort_by / collapsible_match
+# drift that motivated this gate), and on 2026-11-14 the runners' `stable`
+# moved to 1.100 and turned main red with no commit. So every caller runs
+# the one release rust-toolchain.toml pins: CI through
+# .github/actions/install-rust, a gate unit through the runner, which puts
+# that release first on PATH before any gate starts.
 #
 # `--features cli` is part of the target selection, not a flavour of it.
 # `--all-targets` asks for every target the feature set ALLOWS, and cargo

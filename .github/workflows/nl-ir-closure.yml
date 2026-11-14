@@ -63,9 +63,7 @@ jobs:
       uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

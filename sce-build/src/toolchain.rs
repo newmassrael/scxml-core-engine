@@ -132,10 +132,11 @@ pub enum ToolSource {
     /// `gcc-arm-none-eabi` provides `arm-none-eabi-gcc`.
     AptPackage(&'static str),
     /// Installed by the lane's Rust toolchain step as a rustup component
-    /// (the `components:` of `dtolnay/rust-toolchain`). Carries the
-    /// component name: `clippy` provides `clippy-driver`. The step's
-    /// default profile is minimal, so a component it does not name is
-    /// absent however common it is on a workstation.
+    /// (the `components` of `rust-toolchain.toml`, which
+    /// `.github/actions/install-rust` installs). Carries the component
+    /// name: `clippy` provides `clippy-driver`. The profile is minimal, so
+    /// a component that file does not list is absent however common it is
+    /// on a workstation.
     RustupComponent(&'static str),
 }
 

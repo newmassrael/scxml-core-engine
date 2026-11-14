@@ -281,9 +281,7 @@ jobs:
         fi
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     # Before anything is installed or built: which casefiles does this change
     # reach, and do any of them select through ctest? A push that reaches none
@@ -600,9 +598,7 @@ jobs:
         submodules: recursive
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     # Only what this casefile actually needs. A cargo round wants no CMake,
     # and the runner column travelled here from the selection so a cargo

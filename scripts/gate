@@ -173,7 +173,9 @@ fi
 #   a run by hand, or in a hosted lane       the pinned release where it is
 #       installed (`scripts/install_rust.sh --declared <release>` puts it there),
 #       else the cargo on PATH, said by its version. A hosted lane's is its own
-#       setup (`dtolnay/rust-toolchain@stable`), which this runner leaves alone.
+#       setup (`.github/actions/install-rust`, the same release, pinned in
+#       rust-toolchain.toml), which this runner leaves alone; anywhere in the
+#       checkout rustup's proxy runs that release too.
 #
 # The release's `bin/` goes first on PATH, so cargo, rustc, clippy and rustfmt
 # are its own and no rustup proxy is asked which toolchain is meant. The other

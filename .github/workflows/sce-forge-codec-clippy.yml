@@ -34,6 +34,8 @@ on:
       - 'scripts/check_clippy_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-clippy.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -49,6 +51,8 @@ on:
       - 'scripts/check_clippy_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-clippy.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -65,11 +69,9 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins, which lists clippy.
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        components: clippy
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

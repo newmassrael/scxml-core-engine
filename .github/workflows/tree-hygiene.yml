@@ -113,9 +113,7 @@ jobs:
         sudo apt-get install -y pkg-config libxml2-dev clang-format-19
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache Cargo
       uses: actions/cache@v5

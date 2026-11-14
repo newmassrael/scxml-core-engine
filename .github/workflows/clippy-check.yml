@@ -30,6 +30,8 @@ on:
       - '.clippy.toml'
       - 'scripts/gates/rust-version.sh'
       - '.github/workflows/clippy-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -40,6 +42,8 @@ on:
       - '.clippy.toml'
       - 'scripts/gates/rust-version.sh'
       - '.github/workflows/clippy-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -56,10 +60,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins, which lists clippy: the lint
+    # set moves with the release, so it moves only when that file does.
     - name: Install Rust Toolchain (with clippy)
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
+      uses: ./.github/actions/install-rust
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
@@ -82,8 +86,11 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v6
 
+    # The release rust-toolchain.toml pins runs `cargo metadata`; each
+    # package is built by the toolchain it declares, which the gate installs
+    # and puts first on PATH, out of reach of that file.
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2

@@ -942,23 +942,34 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
     );
 }
 
-/// Every rustup-component tool must be a component the requiring lane's
-/// Rust toolchain step installs. That step's profile is minimal, so a
-/// component it does not name is not there.
+/// Every rustup-component tool must be a component of the Rust the
+/// requiring lane installs. The lane installs it through
+/// `.github/actions/install-rust`, which installs the release
+/// `rust-toolchain.toml` pins with the minimal profile and the components
+/// that file lists, so a component the file does not list is not there.
 #[test]
 fn every_rustup_component_tool_is_installed_by_the_requiring_lane() {
     use sce_build::toolchain::{ToolSource, HARNESS_TOOLS};
     let workflow = read(".github/workflows/rust-workspace-tests.yml");
     assert!(
-        workflow.contains("dtolnay/rust-toolchain"),
+        workflow.contains("uses: ./.github/actions/install-rust"),
         "the requiring lane no longer installs Rust through \
-         dtolnay/rust-toolchain, so its components are declared somewhere \
-         this check does not read and it needs re-aiming",
+         .github/actions/install-rust, so its components are declared \
+         somewhere this check does not read and it needs re-aiming",
     );
-    let components: Vec<&str> = workflow
+    let action = read(".github/actions/install-rust/action.yml");
+    assert!(
+        action.contains("rust-toolchain.toml") && action.contains("components:"),
+        "the install action no longer installs the components \
+         rust-toolchain.toml lists, so that file is not what decides the \
+         lane's components and this check needs re-aiming",
+    );
+    let pinned = read("rust-toolchain.toml");
+    let components: Vec<&str> = pinned
         .lines()
-        .filter_map(|l| l.trim().strip_prefix("components:"))
-        .flat_map(|list| list.split(|c: char| c == ',' || c.is_whitespace()))
+        .filter_map(|l| l.trim().strip_prefix("components = [")?.strip_suffix(']'))
+        .flat_map(|list| list.split(','))
+        .map(|c| c.trim().trim_matches('"'))
         .filter(|c| !c.is_empty())
         .collect();
 
@@ -980,8 +991,9 @@ fn every_rustup_component_tool_is_installed_by_the_requiring_lane() {
     );
     assert!(
         missing.is_empty(),
-        "the lane sets SCE_REQUIRE_TOOLS but its Rust toolchain step does not \
-         install what the harness asks for ({} tool(s)):\n  {}\ncomponents: {components:?}",
+        "the lane sets SCE_REQUIRE_TOOLS but rust-toolchain.toml, whose \
+         components its Rust step installs, does not list what the harness \
+         asks for ({} tool(s)):\n  {}\ncomponents: {components:?}",
         missing.len(),
         missing.join("\n  "),
     );

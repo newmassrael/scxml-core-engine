@@ -23,11 +23,15 @@ on:
     paths:
       - 'backends/rust/runtime/**'
       - '.github/workflows/doc-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'backends/rust/runtime/**'
       - '.github/workflows/doc-check.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
   workflow_dispatch:
 
 concurrency:
@@ -48,7 +52,7 @@ jobs:
       uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
+      uses: ./.github/actions/install-rust
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
