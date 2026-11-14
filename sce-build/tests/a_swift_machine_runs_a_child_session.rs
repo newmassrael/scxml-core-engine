@@ -258,7 +258,7 @@ fn a_value_that_cannot_be_computed_is_left_out_and_reported() {
         "static_invoke_string_sm.swift",
     );
     // The value is thrown where it fails, and the `catch` reports it with nothing
-    // handed on (docs/adr/0098).
+    // handed on (docs/adr/0099).
     holds_each(&code, &["} catch {", "could not be read"]);
     assert!(!code.contains("sceFailure"), "{code}");
 }

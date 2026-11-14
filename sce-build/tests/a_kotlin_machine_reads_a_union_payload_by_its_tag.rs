@@ -210,7 +210,7 @@ fn indexed_reader() -> String {
 
 /// Pinned by the Kotlin checked index read: a Kotlin machine reads an element at
 /// an index through the runtime's checked read, which fails the statement for an
-/// index outside the list and answers no value in its place (docs/adr/0098), so
+/// index outside the list and answers no value in its place (docs/adr/0099), so
 /// it reads the tag of an element of a list of unions.
 #[test]
 fn an_index_read_of_a_list_of_unions_is_read_on_kotlin() {

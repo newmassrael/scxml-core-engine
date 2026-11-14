@@ -5,7 +5,7 @@
 // written for Swift: the function `throws(AlgorithmError)`, every integer operation
 // is a checked helper that throws its failure where it happens, marked `try` where it
 // stands, and a `<sce:require>` that does not hold throws the precondition. A failure
-// is not a value (docs/adr/0098): nothing is recorded, and nothing after it runs.
+// is not a value (docs/adr/0099): nothing is recorded, and nothing after it runs.
 
 use std::path::{Path, PathBuf};
 

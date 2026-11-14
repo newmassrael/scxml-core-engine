@@ -18,7 +18,7 @@
 #   an element read past the list that answers the last element instead of failing;
 #   a short-circuit `and` that evaluates its right operand where its left already decides.
 #
-# Since docs/adr/0098 a failure is thrown and ends the expression, so the runtime no
+# Since docs/adr/0099 a failure is thrown and ends the expression, so the runtime no
 # longer records one or keeps the first of two: the language does. The last two cases
 # take away the decisions that remain the runtime's: that an index outside the list has
 # no element, and that a right operand that can fail is evaluated only where the left

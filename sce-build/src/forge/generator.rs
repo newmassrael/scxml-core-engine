@@ -8434,7 +8434,7 @@ pub(crate) fn swift_payload_pair(f: &EntryField) -> String {
 /// ([`build_swift_event_payload`]).
 struct SwiftPayloadParts {
     /// The payload struct's members, one line each, none with a value before it is
-    /// written (docs/adr/0098, section 4).
+    /// written (docs/adr/0099, section 4).
     field_lines: String,
     /// The inject seam's parameters, `<id>: <type>` each.
     params: Vec<String>,
@@ -8484,7 +8484,7 @@ fn swift_entry_payload(
         };
         field_lines.push_str(&format!("    var {}: {ty}\n", f.id));
         // Each field into a local of its own, and the payload built whole from
-        // them once every one is read (docs/adr/0098, section 4).
+        // them once every one is read (docs/adr/0099, section 4).
         // Each local names its field's type: a reader generic over the width the
         // schema declares takes it from the binding, since the initializer that
         // names the field reads the local only afterwards.
@@ -8585,7 +8585,7 @@ fn swift_composed_payload(
     // holds, into a local of its own, so no one statement is a nest of every reader
     // the type checker would have to solve together; the payload is built whole by
     // the initializer of every member once all are read, no member holding a value
-    // nobody wrote (docs/adr/0098, section 4).
+    // nobody wrote (docs/adr/0099, section 4).
     // Each reader is a closure whose signature names the type it returns, so
     // the local takes its type from the reader.
     let locals: String = readers
@@ -8721,7 +8721,7 @@ pub fn build_swift_event_payload(
         ));
         // The policy's view of a payload is set by every delivery before anything
         // reads it, and is absent until then, never a payload nobody sent
-        // (docs/adr/0098, section 4): an implicitly unwrapped optional, which a read
+        // (docs/adr/0099, section 4): an implicitly unwrapped optional, which a read
         // of a member, made only where the tag names this event, needs no unwrapping
         // of.
         policy_fields.push_str(&format!("    var {field}: {struct_name}!\n"));
@@ -44238,7 +44238,7 @@ impl ReturnChannel<'_> {
 
     /// Whether failures are recorded and read back after each statement,
     /// rather than leaving the expression that failed: the state-passing
-    /// backends of docs/adr/0098, section 2. Swift throws (`try`), as Rust's `?`
+    /// backends of docs/adr/0099, section 2. Swift throws (`try`), as Rust's `?`
     /// returns, so no statement of its body runs after a failure.
     fn records_failures(&self) -> bool {
         use crate::generator::Language;
@@ -44312,7 +44312,7 @@ impl ReturnChannel<'_> {
                 ty = self.value_type,
                 check = self.check(&format!("{pad}    ")),
             ),
-            // A Swift value that fails throws where it fails (docs/adr/0098), so it
+            // A Swift value that fails throws where it fails (docs/adr/0099), so it
             // is returned as it is computed.
             Language::Python | Language::Kotlin | Language::Go | Language::Swift => {
                 format!("{pad}return {value}\n")

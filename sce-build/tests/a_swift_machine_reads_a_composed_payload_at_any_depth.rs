@@ -291,7 +291,7 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
              sceValue.unsigned() }) }) })(fields.field(\"spare\"))\n",
             "            let sceField5 = try ({ (sceValue: PayloadValue) throws -> String in try \
              sceValue.text(bound: 4) })(fields.field(\"note\"))\n",
-            // Built whole once every field is read (docs/adr/0098, section 4).
+            // Built whole once every field is read (docs/adr/0099, section 4).
             "            let payload = BatchReaderBatchSentPayload(items: sceField0, grid: \
              sceField1, levels: sceField2, maybe: sceField3, spare: sceField4, note: sceField5, \
              late: sceField6)\n",
@@ -348,7 +348,7 @@ fn the_inject_seam_checks_what_it_is_handed_and_writes_it_as_its_json() {
 /// `sce-build/src/forge/static_lowering.rs`), `SwiftTarget::foreach_loop`, and
 /// the checked read of an element (`sce-build/src/forge/expr/swift.rs`): an
 /// element of any type is read by the one checked read, which throws an index
-/// outside the list and answers no value in its place (docs/adr/0098).
+/// outside the list and answers no value in its place (docs/adr/0099).
 #[test]
 fn the_reads_lower_at_any_depth() {
     let code = reader_machine();

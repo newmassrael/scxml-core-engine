@@ -10,7 +10,7 @@ import XCTest
 // and the constants a host names the event by.
 final class EventSchemaUnitTests: XCTestCase {
     func testAPayloadHoldsTheFieldsItIsBuiltWith() {
-        // No field holds a value nobody wrote (docs/adr/0098, section 4).
+        // No field holds a value nobody wrote (docs/adr/0099, section 4).
         let framed = SchemaFramedPayload(sensor: 3, frame: [1, 2])
         XCTAssertEqual(framed.sensor, 3)
         XCTAssertEqual(framed.frame, [1, 2])

@@ -6,7 +6,7 @@
 //! `sce-build/tests/fixtures/static_datamodel/static_union.scxml`:
 //!
 //! * The payload struct holds the union as the machine's own enum, in a list and
-//!   optionally. No member holds a value nobody wrote (docs/adr/0098, section 4),
+//!   optionally. No member holds a value nobody wrote (docs/adr/0099, section 4),
 //!   so the payload is built whole by the initializer of every member and the
 //!   policy's view of it holds nothing until a delivery sets it.
 //! * Each read is spelled by the cases the tests leave: the tag by its property,
@@ -15,7 +15,7 @@
 //! * The machine's saved form writes a union as its tag beside its case.
 //! * An index read of a list of unions is read as on every lane: the runtime's
 //!   checked read throws an index outside the list and answers no union in its
-//!   place (docs/adr/0098, section 5).
+//!   place (docs/adr/0099, section 5).
 //!
 //! What the generated machine does at run time is held by the scenario
 //! `static_union.json`, replayed over the committed machine by
@@ -179,7 +179,7 @@ fn compile_indexed(language: Language) -> Result<String, String> {
 /// (`sce-build/src/forge/expr/swift.rs`): an element at an index is read by the
 /// runtime's `Checked.at`, which throws an index outside the list and answers no
 /// value in its place, so a list of unions is read as a list of numbers is
-/// (docs/adr/0098, section 5), on Swift as on Rust.
+/// (docs/adr/0099, section 5), on Swift as on Rust.
 #[test]
 fn an_index_read_of_a_list_of_unions_is_read_on_swift_as_on_rust() {
     let code =

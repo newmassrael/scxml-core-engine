@@ -8,7 +8,7 @@ import XCTest
 // A record whose field is a value of an enum, and the algorithms that take and give
 // one (`scripts/regen_static_datamodel_swift.sh`): the field and the parameter are the
 // unit the enum document is written as (`EnumItemStatus`), and a record is built whole,
-// its status the one it is given (docs/adr/0098: no case stands for a value nobody
+// its status the one it is given (docs/adr/0099: no case stands for a value nobody
 // wrote).
 final class EnumFieldTests: XCTestCase {
     private func item(_ id: UInt32, _ status: EnumItemStatus) -> SchemaItemPayload {

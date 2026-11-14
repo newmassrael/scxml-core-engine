@@ -92,7 +92,7 @@ pub enum ExprTarget {
     C,
     /// Swift. Every integer type is the language's own fixed-width one, a checked
     /// operation is `(try Checked.<op>(…))` of the forge runtime, which throws its
-    /// failure (docs/adr/0098), and a string is compared over its UTF-8 bytes
+    /// failure (docs/adr/0099), and a string is compared over its UTF-8 bytes
     /// (`expr/swift.rs`).
     Swift,
     /// ECMAScript, spelled for the Interpreter's script engine: the lowering
@@ -5830,7 +5830,7 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
 /// [`place_path`] writes it. `None` for a text that does not parse, reads
 /// something after the element (`xs[i].kind`), or indexes no place. What an
 /// `<assign>` that takes an element whole reads the element by
-/// (docs/adr/0098, section 5.3).
+/// (docs/adr/0099, section 5.3).
 pub(crate) fn written_element(text: &str) -> Option<(String, String)> {
     let text = text.trim();
     let ast = parse_to_ast(text).ok()?;
@@ -11174,7 +11174,7 @@ pub(crate) fn pass_failure_on(
             format!("scealgorithm.Take[{value}](&sceFailure)({call})")
         }
         // The callee throws its failure, which is the caller's by `try` alone: no
-        // value of any type stands where it failed (docs/adr/0098), so a call that
+        // value of any type stands where it failed (docs/adr/0099), so a call that
         // answers a record, a list, an enum or a union is spelled as one that
         // answers a number.
         ExprTarget::Swift => swift::throwing(call),

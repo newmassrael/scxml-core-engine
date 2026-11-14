@@ -13,7 +13,7 @@
 //!   of one module never share a top-level name.
 //! * `event_shapes_minimal.scxml`, whose fields hold the union alone, in a list
 //!   and optionally, generates a payload struct that names the enum at each
-//!   depth. No field holds a value nobody wrote (docs/adr/0098, section 4), so
+//!   depth. No field holds a value nobody wrote (docs/adr/0099, section 4), so
 //!   the payload is built whole by its initializer of every field.
 //! * The units, with the enum and the records they name, type-check together
 //!   under `swiftc` with a file that builds every case, reads one through its
@@ -172,7 +172,7 @@ func sent() -> EventShapesMinimalPayload {
 "#;
 
 /// The part of the forge runtime a unit may name: the failure a may-fail
-/// algorithm throws (docs/adr/0098). A stand-in module is enough to type-check
+/// algorithm throws (docs/adr/0099). A stand-in module is enough to type-check
 /// the units against; the runtime's own tests hold the real one.
 const RUNTIME_STAND_IN: &str = "public enum AlgorithmError: Error {\n    case overflow\n}\n";
 

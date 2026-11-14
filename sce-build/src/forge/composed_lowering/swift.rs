@@ -508,7 +508,7 @@ impl ComposedSpelling for SwiftComposed<'_> {
     // A struct of the schema's fields in the schema's order, each named as the
     // schema names it, which is how a read names it, and built whole by the
     // initializer of every field, which a host calls with the labels in that
-    // order: no member holds a value nobody wrote (docs/adr/0098, section 4), so a
+    // order: no member holds a value nobody wrote (docs/adr/0099, section 4), so a
     // record that holds a union is built as any other. A Swift struct has no
     // constructor that could refuse a value, so the raise seam that takes one
     // holds it to every bound its type declares before it sends it
@@ -717,7 +717,7 @@ impl ComposedSpelling for SwiftComposed<'_> {
         }
     }
     // The count held first, a list short of it thrown as a precondition failure
-    // the `<send>` catches for a param that can fail (docs/adr/0098), then the
+    // the `<send>` catches for a param that can fail (docs/adr/0099), then the
     // list written.
     fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
         Some(crate::forge::expr::swift::throwing(&format!(
@@ -1134,7 +1134,7 @@ mod tests {
     /// The Swift row of section 7.1: no type carries a bound, a value that may
     /// be absent is `T?` over its type, a record is the machine's struct, at
     /// any depth; a record is built whole by its initializer, no member holding
-    /// a value nobody wrote (docs/adr/0098, section 4), and no check is declared
+    /// a value nobody wrote (docs/adr/0099, section 4), and no check is declared
     /// beside it, since a Swift struct has no constructor that could refuse a
     /// value.
     #[test]

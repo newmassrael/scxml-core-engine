@@ -47,7 +47,7 @@ final class CallAlgorithmTests: XCTestCase {
         value: Int64 = 0
     ) -> LwwCellPayload {
         // Built whole, every field written: a unit has no value nobody wrote
-        // (docs/adr/0098, section 4). A cell of a plain value has no formula.
+        // (docs/adr/0099, section 4). A cell of a plain value has no formula.
         LwwCellPayload(
             row: row, col: col, value: value, wallTime: wall, counter: counter, nodeId: node,
             op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0)

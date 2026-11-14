@@ -80,7 +80,7 @@ fn a_value_is_named_and_converted_by_what_the_document_declares() {
 fn a_field_of_an_enum_is_the_unit_of_the_enum_and_starts_at_no_case() {
     let code = swift_of("sce-build/tests/fixtures/static_datamodel/schema_item.scxml")
         .expect("a schema whose field is an enum is written");
-    // No case stands for a value nobody wrote (docs/adr/0098, section 4): the field
+    // No case stands for a value nobody wrote (docs/adr/0099, section 4): the field
     // is written by the initializer, as every field is.
     assert!(
         code.contains("public var status: EnumItemStatus\n"),

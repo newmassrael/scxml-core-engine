@@ -3,7 +3,7 @@
 
 // The integer arithmetic contract's runtime half: see SCE_FORGE.md §3.4.1.
 //
-// A failure is not a value (docs/adr/0098): an operation the contract says has no
+// A failure is not a value (docs/adr/0099): an operation the contract says has no
 // result throws its `AlgorithmError` and answers nothing, so nothing after it in the
 // expression is evaluated and no value of any type stands in for it. An algorithm
 // that declares `<sce:return may-fail="true">` is `throws(AlgorithmError)`, and the
@@ -168,7 +168,7 @@ public enum Checked {
 
     /// The element of `xs` at `i`, or an out-of-range failure when `i` is below 0 or
     /// not below the length: never a trap, and no value of `T` in its place, so an
-    /// element of any type is read alike (a union's included, docs/adr/0098).
+    /// element of any type is read alike (a union's included, docs/adr/0099).
     public static func at<T, I: BinaryInteger>(_ xs: [T], _ i: I) throws(AlgorithmError) -> T {
         guard let index = Int(exactly: i), index >= 0, index < xs.count else {
             throw .outOfRange
