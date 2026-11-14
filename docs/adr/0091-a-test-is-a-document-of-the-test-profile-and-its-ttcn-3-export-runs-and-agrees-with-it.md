@@ -51,6 +51,10 @@
   licence question is answered by that split (answer 1), §7 says which repository ships what, and step 5 is split
   into slices. The repository is created, https://github.com/newmassrael/sce-ttcn3-titan (private for now), and
   its `docs/DESIGN.md` holds the downstream half of the design.
+  Amended 2026-11-14 by ADR 0102. The reference content-line binding no longer runs on libical: libical 4.0.7 strips
+  a value's trailing white space, doubles the backslashes of an X- value and writes RFC 6868 carets, so it refused
+  valid inputs of SCE's oracle. The downstream binding is written from RFC 5545 §3.1 and `SCE_FORGE.md` §4.6.4 alone,
+  without reading SCE's codec sources. Where answer 1 and §7 below name libical, ADR 0102 §1 governs.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer

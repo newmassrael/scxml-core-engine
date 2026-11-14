@@ -42,7 +42,7 @@
   - ADR 0081 (a codec's encode is planned once, and each backend prints the plan);
   - ADR 0095 (a fixed field is bits of the whole bytes it spans), which says where a field's bits lie;
   - ADR 0097 (generated code is a build output): `--walk` is an input of a generation action, as `--views` is;
-  - ADR 0098 (a failure is not a value), of which §4 is the codec case;
+  - ADR 0099 (a failure is not a value), of which §4 is the codec case;
   - ADR 0100 (positional codec extensions: identity dispatch, refusal, fixed fields, empty chains, lookahead repeat),
     the related grammar ADR, whose forms enter the walk by the rules of §3.
 
@@ -277,7 +277,7 @@ layout's static spans, so an analyzer can draw the fields the frame lacks.
 ### 4. A refused decode yields no value
 
 No decode returns, raises with, or exposes a partly decoded value of the codec's type. A record half filled would say
-of its unread elements whatever they held before, and its type would claim a frame that was never read; ADR 0098
+of its unread elements whatever they held before, and its type would claim a frame that was never read; ADR 0099
 states the rule for every type, and this is its codec case. The walk is how a refused frame is seen: everything the
 decode read is in its events, with its position, up to the refusal. `decode_into` keeps its signature; after a refusal
 its destination holds no value of the frame and is storage the caller may reuse, not read, which SCE_FORGE.md §4.6
@@ -474,7 +474,7 @@ read is the one its heap-free spelling should meet. Swift comes last because no 
   value of that build grows by a record per element, every decode pays for it, and a refused frame is seen only as
   the partly filled value §4 refuses.
 - **A partial value on refusal.** A record whose unread elements hold whatever was there before is a value its type
-  does not describe (§4, ADR 0098).
+  does not describe (§4, ADR 0099).
 - **Byte spans only.** Fields share bytes; an analyzer would draw a header's flags and its id as one item.
 - **Bits numbered from the least significant end.** It matches ADR 0095's counting within a word and makes a
   little-endian word contiguous instead of a big-endian one. The frame's order on a serial wire, protocol diagrams and
