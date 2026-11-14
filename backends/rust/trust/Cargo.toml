@@ -61,3 +61,6 @@ ciborium = "0.2"
 # What says, apart from the encoder, whether a half precision float holds a number exactly: the
 # oracle of the shortest float.
 half = "2"
+
+[lints]
+workspace = true

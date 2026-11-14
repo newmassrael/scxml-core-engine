@@ -82,3 +82,6 @@ tokio-rustls = { version = "0.26", optional = true, default-features = false }
 [dev-dependencies]
 # A certificate made at test time, which the `wss://` test's server presents and its client trusts.
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
+
+[lints]
+workspace = true

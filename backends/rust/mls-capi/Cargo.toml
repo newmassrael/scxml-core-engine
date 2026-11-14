@@ -27,3 +27,9 @@ sce-rust-trust = { path = "../trust" }
 
 [dev-dependencies]
 serde_json = "1"
+
+# The workspace lints deny warnings and nothing else, so the C ABI's `unsafe`
+# code needs no exception: `#![deny(unsafe_op_in_unsafe_fn)]` in src/lib.rs is
+# this crate's own, stricter rule.
+[lints]
+workspace = true

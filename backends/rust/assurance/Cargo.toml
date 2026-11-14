@@ -25,3 +25,6 @@ sce-rust-relay = { path = "../relay" }
 sce-rust-mls = { path = "../mls" }
 sce-mls-capi = { path = "../mls-capi" }
 sce-rust-mesh = { path = "../mesh" }
+
+[lints]
+workspace = true
