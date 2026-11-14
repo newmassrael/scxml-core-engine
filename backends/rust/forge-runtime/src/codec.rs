@@ -396,6 +396,12 @@ pub const fn widen_usize(n: usize) -> u64 {
     n as u64
 }
 
+/// The bytes of a ZInt that carry a continuation flag: a chain of this many
+/// flagged bytes ends with a ninth that holds a full 8 data bits, so no ZInt
+/// is longer than nine bytes, whatever the width of the field that reads it
+/// (Appendix B of the protocol-synthesis RFC).
+const ZINT_FLAGGED_BYTES: u32 = 8;
+
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_slice` to bounds-check + read fixed-offset bytes positionally,
 /// then `advance` after the construction succeeds.
@@ -440,62 +446,57 @@ impl<'a> SceCursor<'a> {
         }
     }
 
-    /// Read a base-128 variable-length encoded unsigned value of up to
-    /// `max_bits` payload width. The leading bytes carry 7 data bits in
-    /// their low 7 with bit 7 as the continuation flag (1 = more bytes
-    /// follow); the final byte (at shift `7 * (VLE_LEN - 1)`) carries a
-    /// full 8 data bits with no continuation flag. LSB-first byte order.
-    /// This is the canonical Zenoh ZInt wire format (RFC §synth-5-B
-    /// Appendix B): a W-bit value occupies at most `ceil((W-1)/7)` bytes,
-    /// so a u64 caps at 9 bytes — bit 63 rides in the 9th byte's high
-    /// bit rather than spilling into a 10th byte, matching `zenoh` /
-    /// `zenoh-pico`.
-    ///
-    /// Returns `VleWidthOverflow` when the final byte of a sub-octet
-    /// width (the u16 / u32 tail) carries more bits than `max_bits`
-    /// allows (the wire is corrupt or a too-narrow `vle_u<N>` was used).
-    fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        let vle_len = (max_bits - 1).div_ceil(7);
-        let final_shift = 7 * (vle_len - 1);
+    /// Read one ZInt, the canonical Zenoh variable-length integer, as
+    /// `zenoh` and `zenoh-pico` read every one of them: an unsigned 64-bit
+    /// value, LSB-first, in at most nine bytes. Each of the first eight
+    /// carries 7 data bits in its low 7 and a continuation flag in bit 7
+    /// (1 = another byte follows); a ninth carries a full 8 data bits and
+    /// has no flag, so bit 63 rides in its high bit and no chain is longer.
+    /// A chain the buffer ends inside is `NeedMoreBytes`.
+    fn read_zint(&mut self) -> Result<u64, CodecError> {
         let mut value: u64 = 0;
-        let mut shift: u32 = 0;
-        for _ in 0..vle_len {
+        for group in 0..ZINT_FLAGGED_BYTES {
             let b = self.peek_slice(1)?[0];
             self.advance(1)?;
-            if shift == final_shift {
-                // Final byte: 8 data bits, the continuation bit reused as
-                // data. For a width narrower than the byte (u16 / u32
-                // tail) refuse a value that would overflow the remaining
-                // bits.
-                let allowed = max_bits - shift;
-                if allowed < 8 && (b as u64) > (1u64 << allowed) - 1 {
-                    return Err(CodecError::VleWidthOverflow);
-                }
-                value |= (b as u64) << shift;
-                return Ok(value);
-            }
-            value |= ((b & 0x7F) as u64) << shift;
+            value |= u64::from(b & 0x7F) << (7 * group);
             if (b & 0x80) == 0 {
                 return Ok(value);
             }
-            shift += 7;
         }
-        // The loop's final iteration always satisfies `shift ==
-        // final_shift` and returns; defensive unreachable for the type.
-        Err(CodecError::VleWidthOverflow)
+        let last = self.peek_slice(1)?[0];
+        self.advance(1)?;
+        Ok(value | (u64::from(last) << (7 * ZINT_FLAGGED_BYTES)))
     }
 
-    /// Read a `vle_u16` field (1-3 wire bytes).
+    /// Read a `vle_u<N>` field of `max_bits` width: one ZInt
+    /// ([`Self::read_zint`], RFC §synth-5-B Appendix B), whatever the width,
+    /// and then the value held to the width. The wire of every width is the
+    /// same ZInt64, and the type bounds the value and not the encoding: a
+    /// narrow field accepts every encoding of a value it holds, the padded
+    /// ones included, as upstream Zenoh does, and refuses a value past
+    /// `2^max_bits - 1` with `VleWidthOverflow` (the wire is corrupt or a
+    /// too-narrow `vle_u<N>` was used), never a longer encoding.
+    fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
+        let value = self.read_zint()?;
+        if max_bits < u64::BITS && value >> max_bits != 0 {
+            return Err(CodecError::VleWidthOverflow);
+        }
+        Ok(value)
+    }
+
+    /// Read a `vle_u16` field: a ZInt of 1-9 wire bytes whose value is at
+    /// most `u16::MAX`.
     pub fn read_vle_u16(&mut self) -> Result<u16, CodecError> {
         self.read_vle_inner(16).map(|v| v as u16)
     }
 
-    /// Read a `vle_u32` field (1-5 wire bytes).
+    /// Read a `vle_u32` field: a ZInt of 1-9 wire bytes whose value is at
+    /// most `u32::MAX`.
     pub fn read_vle_u32(&mut self) -> Result<u32, CodecError> {
         self.read_vle_inner(32).map(|v| v as u32)
     }
 
-    /// Read a `vle_u64` field (1-9 wire bytes). Canonical Zenoh ZInt.
+    /// Read a `vle_u64` field: a ZInt of 1-9 wire bytes.
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
         self.read_vle_inner(64)
     }
@@ -909,6 +910,10 @@ impl SceSink for CountSink {
 /// data bits per byte, and at most `ceil((max_bits - 1) / 7)` bytes, the last of
 /// them carrying a full eight. No loop: the highest set bit says how many
 /// groups of seven the value has.
+///
+/// The length of the minimal encoding an encode writes, and so an encode
+/// bound only: a decode reads a ZInt of up to nine bytes at every width
+/// ([`SceCursor::read_vle_u16`]), so this is no bound on what a peer sends.
 ///
 /// Always inlined: with a width the caller states as a constant the cap is a
 /// constant too, and a field that is a single byte (the common case) is a
@@ -1332,30 +1337,113 @@ mod tests {
     }
 
     #[test]
-    fn vle_u64_max_is_ten_bytes() {
-        // u64::MAX = 0xFFFF_FFFF_FFFF_FFFF
-        // VLE: 9 bytes of 0xFF (each carrying 7 bits + cont) + 1 byte 0x01
+    fn vle_u64_max_is_nine_bytes() {
+        // u64::MAX: eight flagged bytes of seven ones, then a ninth of eight,
+        // whose high bit is data and not a flag: the byte after it is not
+        // read.
         let buf = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.read_vle_u64(), Ok(u64::MAX));
+        assert_eq!(c.remaining(), 1);
     }
 
     #[test]
     fn vle_u16_overflow_on_third_byte_with_high_payload() {
-        // Third byte's payload can carry at most 2 bits (16 - 14).
-        // Payload 0x04 = 0b100 exceeds → overflow.
+        // 0x3FFF | 0x04 << 14 = 0x13FFF, past u16::MAX.
         let buf = [0xFF, 0xFF, 0x04];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.read_vle_u16(), Err(CodecError::VleWidthOverflow));
     }
 
     #[test]
-    fn vle_u16_overflow_on_continuation_past_max_bytes() {
-        // Three bytes all with continuation set → 4th byte would be needed
-        // → exceeds u16 (3 bytes max).
+    fn vle_u16_overflow_on_a_value_past_its_width() {
+        // A fourth byte is read as the ZInt goes on: 0x3FFFFF, past u16::MAX.
         let buf = [0xFF, 0xFF, 0xFF, 0x01];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.read_vle_u16(), Err(CodecError::VleWidthOverflow));
+    }
+
+    // ── The wire is a ZInt64 at every width; the type bounds the value ──
+
+    #[test]
+    fn a_narrow_vle_reads_a_padded_encoding_of_a_value_it_holds() {
+        // 1 in four bytes: upstream Zenoh reads it, and so does a u16 field.
+        let mut c = SceCursor::new(&[0x81, 0x80, 0x80, 0x00]);
+        assert_eq!(c.read_vle_u16(), Ok(1));
+        assert_eq!(c.remaining(), 0);
+        // 1 in nine bytes, the longest a ZInt is, for each width.
+        let nine = [0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00];
+        assert_eq!(SceCursor::new(&nine).read_vle_u16(), Ok(1));
+        assert_eq!(SceCursor::new(&nine).read_vle_u32(), Ok(1));
+        assert_eq!(SceCursor::new(&nine).read_vle_u64(), Ok(1));
+    }
+
+    #[test]
+    fn a_u16_vle_reads_each_encoding_of_its_boundary_values_alike() {
+        let cases: [(&[u8], u16); 6] = [
+            (&[0xFF, 0x7F], 0x3FFF),
+            (&[0xFF, 0xFF, 0x80, 0x00], 0x3FFF),
+            (&[0x80, 0x80, 0x01], 0x4000),
+            (&[0x80, 0x80, 0x81, 0x80, 0x00], 0x4000),
+            (&[0xFF, 0xFF, 0x03], 0xFFFF),
+            (
+                &[0xFF, 0xFF, 0x83, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00],
+                0xFFFF,
+            ),
+        ];
+        for (wire, value) in cases {
+            let mut c = SceCursor::new(wire);
+            assert_eq!(c.read_vle_u16(), Ok(value), "{wire:02x?}");
+            assert_eq!(c.remaining(), 0, "{wire:02x?} left bytes unread");
+        }
+    }
+
+    #[test]
+    fn a_narrow_vle_refuses_the_first_value_past_its_width() {
+        // 65536 = 2^16, three bytes.
+        assert_eq!(
+            SceCursor::new(&[0x80, 0x80, 0x04]).read_vle_u16(),
+            Err(CodecError::VleWidthOverflow)
+        );
+        // 2^32, five bytes.
+        assert_eq!(
+            SceCursor::new(&[0x80, 0x80, 0x80, 0x80, 0x10]).read_vle_u32(),
+            Err(CodecError::VleWidthOverflow)
+        );
+        // u32::MAX is held, in five bytes and padded to nine.
+        assert_eq!(
+            SceCursor::new(&[0xFF, 0xFF, 0xFF, 0xFF, 0x0F]).read_vle_u32(),
+            Ok(u32::MAX)
+        );
+        assert_eq!(
+            SceCursor::new(&[0xFF, 0xFF, 0xFF, 0xFF, 0x8F, 0x80, 0x80, 0x80, 0x00]).read_vle_u32(),
+            Ok(u32::MAX)
+        );
+        // A ninth byte with its high bit set is data at every width: past
+        // u32::MAX here, and not a flag that asks for a tenth byte.
+        let high = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80];
+        assert_eq!(
+            SceCursor::new(&high).read_vle_u32(),
+            Err(CodecError::VleWidthOverflow)
+        );
+        assert_eq!(SceCursor::new(&high).read_vle_u64(), Ok(1 << 63));
+    }
+
+    #[test]
+    fn a_vle_the_buffer_ends_inside_needs_more_bytes_at_every_width() {
+        let short = [0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80];
+        assert_eq!(
+            SceCursor::new(&short).read_vle_u16(),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(
+            SceCursor::new(&short).read_vle_u32(),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(
+            SceCursor::new(&short).read_vle_u64(),
+            Err(CodecError::NeedMoreBytes)
+        );
     }
 
     #[test]

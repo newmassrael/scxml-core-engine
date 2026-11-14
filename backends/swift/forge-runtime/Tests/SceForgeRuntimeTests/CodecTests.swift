@@ -210,8 +210,49 @@ import Testing
     try roundTrip([UInt64(0), 127, 128, 1 << 35, 1 << 56, 1 << 63, .max])
 }
 
+@Test func aNarrowTypeReadsEveryEncodingOfAValueItHolds() throws {
+    // The wire is a ZInt64 at every width and the type bounds the value: a padded encoding of a
+    // value the type holds is read, as upstream Zenoh reads it.
+    let cases: [([UInt8], UInt16)] = [
+        ([0x81, 0x80, 0x80, 0x00], 1),
+        ([0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00], 1),
+        ([0xFF, 0x7F], 0x3FFF),
+        ([0xFF, 0xFF, 0x80, 0x00], 0x3FFF),
+        ([0x80, 0x80, 0x01], 0x4000),
+        ([0x80, 0x80, 0x81, 0x80, 0x00], 0x4000),
+        ([0xFF, 0xFF, 0x03], 0xFFFF),
+        ([0xFF, 0xFF, 0x83, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00], 0xFFFF),
+    ]
+    for (wire, value) in cases {
+        var cursor = SceCursor(wire)
+        #expect(try cursor.readVle(UInt16.self) == value, "\(wire)")
+        #expect(cursor.remaining == 0, "\(wire) is read whole")
+    }
+    var padded32 = SceCursor([0xFF, 0xFF, 0xFF, 0xFF, 0x8F, 0x80, 0x80, 0x80, 0x00])
+    #expect(try padded32.readVle(UInt32.self) == .max)
+    var padded64 = SceCursor([0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00])
+    #expect(try padded64.readVle(UInt64.self) == 1)
+}
+
+@Test func aValuePastItsTypeIsRefusedAndANinthByteIsData() throws {
+    var past16 = SceCursor([0x80, 0x80, 0x04])
+    #expect(throws: CodecError.vleWidthOverflow) { try past16.readVle(UInt16.self) }
+    var past32 = SceCursor([0x80, 0x80, 0x80, 0x80, 0x10])
+    #expect(throws: CodecError.vleWidthOverflow) { try past32.readVle(UInt32.self) }
+    // A ninth byte with its high bit set is data and asks for no tenth: 2^63.
+    let high: [UInt8] = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]
+    var high32 = SceCursor(high)
+    #expect(throws: CodecError.vleWidthOverflow) { try high32.readVle(UInt32.self) }
+    var high64 = SceCursor(high + [0x01])
+    #expect(try high64.readVle(UInt64.self) == 1 << 63)
+    #expect(high64.remaining == 1, "the read stops after the ninth byte")
+    var short = SceCursor([0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80])
+    #expect(throws: CodecError.needMoreBytes) { try short.readVle(UInt16.self) }
+    #expect(short.remaining == 8, "a refused read has consumed nothing")
+}
+
 @Test func aChainWiderThanItsTypeIsRefusedAndOneCutShortNeedsMoreBytes() throws {
-    // The last byte of a 16-bit value holds 2 bits: 4 is one too many.
+    // 0x3FFF | 4 << 14 is past a 16-bit value.
     var wide = SceCursor([0xFF, 0xFF, 0x04])
     #expect(throws: CodecError.vleWidthOverflow) { try wide.readVle(UInt16.self) }
     #expect(wide.remaining == 3, "a refused read has consumed nothing")

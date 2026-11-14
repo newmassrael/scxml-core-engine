@@ -220,48 +220,66 @@ static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
     return true;
 }
 
-/* Read a base-128 variable-length encoded unsigned value of up to
- * `max_bits` payload width into *out. The leading bytes carry 7 data
- * bits in their low 7 with bit 7 as the continuation flag; the final
- * byte (at shift 7*(VLE_LEN-1)) carries a full 8 data bits with no
- * continuation flag. LSB-first byte order. Canonical Zenoh ZInt wire
- * format (RFC §synth-5-B Appendix B): ceil((W-1)/7) bytes max, so a
- * u64 caps at 9 bytes, not 10.
- *
- * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
- * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the final byte
- * of a sub-octet tail (u16 / u32) overflows max_bits. */
-static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(sce_forge_cursor_t *c, uint32_t max_bits,
-                                                                       uint64_t *out) {
-    uint32_t vle_len = (max_bits - 1u + 6u) / 7u;
-    uint32_t final_shift = 7u * (vle_len - 1u);
-    uint64_t value = 0;
-    uint32_t shift = 0;
-    for (uint32_t i = 0; i < vle_len; ++i) {
+/* The bytes of a ZInt that carry a continuation flag: a chain of this
+ * many flagged bytes ends with a ninth that holds a full 8 data bits,
+ * so no ZInt is longer than nine bytes, whatever the width of the field
+ * that reads it (Appendix B of the protocol-synthesis RFC). */
+#define SCE_FORGE_ZINT_FLAGGED_BYTES 8u
+
+/* Read one ZInt, the canonical Zenoh variable-length integer, into *out
+ * as `zenoh` and `zenoh-pico` read every one of them: an unsigned 64-bit
+ * value, LSB-first, in at most nine bytes. Each of the first eight
+ * carries 7 data bits in its low 7 and a continuation flag in bit 7; a
+ * ninth carries a full 8 data bits and has no flag, so bit 63 rides in
+ * its high bit and no chain is longer. Returns
+ * SCE_FORGE_CODEC_NEED_MORE_BYTES when the buffer ends inside the chain. */
+static inline sce_forge_codec_status_t sce_forge_cursor_read_zint(sce_forge_cursor_t *c, uint64_t *out) {
+    uint64_t value = 0u;
+    for (uint32_t group = 0u; group < SCE_FORGE_ZINT_FLAGGED_BYTES; ++group) {
         const uint8_t *p = sce_forge_cursor_peek(c, 1);
         if (p == NULL) {
             return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         }
         (void)sce_forge_cursor_advance(c, 1);
-        if (shift == final_shift) {
-            /* Final byte: 8 data bits, continuation bit reused as data.
-             * For a sub-octet tail (u16 / u32) refuse overflow. */
-            uint32_t allowed = max_bits - shift;
-            if (allowed < 8u && (uint64_t)(*p) > (((uint64_t)1 << allowed) - 1u)) {
-                return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
-            }
-            value |= (uint64_t)(*p) << shift;
-            *out = value;
-            return SCE_FORGE_CODEC_OK;
-        }
-        value |= (uint64_t)(*p & 0x7Fu) << shift;
+        value |= (uint64_t)(*p & 0x7Fu) << (7u * group);
         if ((*p & 0x80u) == 0u) {
             *out = value;
             return SCE_FORGE_CODEC_OK;
         }
-        shift += 7u;
     }
-    return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+    const uint8_t *last = sce_forge_cursor_peek(c, 1);
+    if (last == NULL) {
+        return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    (void)sce_forge_cursor_advance(c, 1);
+    *out = value | ((uint64_t)(*last) << (7u * SCE_FORGE_ZINT_FLAGGED_BYTES));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Read a `vle_u<N>` field of `max_bits` width into *out: one ZInt
+ * (sce_forge_cursor_read_zint, RFC §synth-5-B Appendix B), whatever the
+ * width, and then the value held to the width. The wire of every width
+ * is the same ZInt64, and the type bounds the value and not the
+ * encoding: a narrow field accepts every encoding of a value it holds,
+ * the padded ones included, as upstream Zenoh does, and refuses a value
+ * past 2^max_bits - 1 with SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW, never a
+ * longer encoding.
+ *
+ * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW for a value past the
+ * width. */
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(sce_forge_cursor_t *c, uint32_t max_bits,
+                                                                       uint64_t *out) {
+    uint64_t value = 0u;
+    sce_forge_codec_status_t st = sce_forge_cursor_read_zint(c, &value);
+    if (st != SCE_FORGE_CODEC_OK) {
+        return st;
+    }
+    if (max_bits < 64u && (value >> max_bits) != 0u) {
+        return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+    }
+    *out = value;
+    return SCE_FORGE_CODEC_OK;
 }
 
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u16(sce_forge_cursor_t *c, uint16_t *out) {

@@ -88,6 +88,12 @@ sealed class CodecError {
     object TooManyElements : CodecError()
 }
 
+/// The bytes of a ZInt that carry a continuation flag: a chain of this many
+/// flagged bytes ends with a ninth that holds a full 8 data bits, so no ZInt
+/// is longer than nine bytes, whatever the width of the field that reads it
+/// (Appendix B of the protocol-synthesis RFC).
+private const val ZINT_FLAGGED_BYTES = 8
+
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
 /// `peekSlice` to bounds-check + read fixed-offset bytes positionally,
 /// then `advance` after the construction succeeds.
@@ -124,53 +130,55 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
         return buf[pos++].toInt() and 0xFF
     }
 
-    /// Read a base-128 variable-length encoded unsigned value of up to
-    /// `maxBits` payload width. LSB-first byte order; leading bytes use
-    /// bit 7 as the continuation flag, while the final byte (at shift
-    /// `7 * (VLE_LEN - 1)`) carries a full 8 data bits with no flag.
-    /// Canonical Zenoh ZInt wire format (RFC §synth-5-B Appendix B):
-    /// ceil((W-1)/7) bytes max, so a u64 caps at 9 bytes, not 10.
+    /// Read a `vle_u<N>` field: one ZInt, the canonical Zenoh
+    /// variable-length integer (RFC §synth-5-B Appendix B), read as
+    /// `zenoh` and `zenoh-pico` read every one of them, an unsigned 64-bit
+    /// value of 1-9 wire bytes LSB-first, and then the value held to the
+    /// field's width. The wire of every width is the same ZInt64 and the
+    /// type bounds the value, not the encoding: a narrow field accepts every
+    /// encoding of a value it holds, the padded ones included, and refuses a
+    /// value past its width, never a longer encoding.
     ///
-    /// Returns the decoded value as `Long` (Kotlin lacks unsigned long
-    /// in the common API surface — caller casts to ULong as needed).
     /// On `null` return, [lastVleOverflow] distinguishes truncation
     /// (false) from width overflow (true).
     fun readVleU16(): UShort? = readVleInner(16)?.toUShort()
     fun readVleU32(): UInt? = readVleInner(32)?.toUInt()
-    fun readVleU64(): ULong? = readVleInner(64)?.toULong()
+    fun readVleU64(): ULong? = readVleInner(64)
 
     var lastVleOverflow: Boolean = false
         private set
 
-    private fun readVleInner(maxBits: Int): Long? {
-        lastVleOverflow = false
-        val vleLen = (maxBits - 1 + 6) / 7
-        val finalShift = 7 * (vleLen - 1)
-        var value: Long = 0
-        var shift = 0
-        for (i in 0 until vleLen) {
+    /// One ZInt: each of the first eight bytes carries 7 data bits in its
+    /// low 7 and a continuation flag in bit 7; a ninth carries a full 8 data
+    /// bits and has no flag, so bit 63 rides in its high bit and no chain is
+    /// longer. `null` when the buffer ends inside the chain.
+    private fun readZint(): ULong? {
+        var value: ULong = 0uL
+        for (group in 0 until ZINT_FLAGGED_BYTES) {
             if (remaining() < 1) return null
             val b = buf[pos].toInt() and 0xFF
             pos += 1
-            if (shift == finalShift) {
-                // Final byte: 8 data bits, continuation bit reused as
-                // data. For a sub-octet tail (u16 / u32) refuse overflow.
-                val allowed = maxBits - shift
-                if (allowed < 8 && b.toLong() > (1L shl allowed) - 1L) {
-                    lastVleOverflow = true
-                    return null
-                }
-                value = value or (b.toLong() shl shift)
-                return value
-            }
-            value = value or ((b and 0x7F).toLong() shl shift)
+            value = value or ((b and 0x7F).toULong() shl (7 * group))
             if ((b and 0x80) == 0) {
                 return value
             }
-            shift += 7
         }
-        lastVleOverflow = true
-        return null
+        if (remaining() < 1) return null
+        val last = buf[pos].toInt() and 0xFF
+        pos += 1
+        return value or (last.toULong() shl (7 * ZINT_FLAGGED_BYTES))
+    }
+
+    /// One ZInt whatever the width, then the value held to `maxBits`: past
+    /// `2^maxBits - 1` it is refused and [lastVleOverflow] is set.
+    private fun readVleInner(maxBits: Int): ULong? {
+        lastVleOverflow = false
+        val value = readZint() ?: return null
+        if (maxBits < 64 && (value shr maxBits) != 0uL) {
+            lastVleOverflow = true
+            return null
+        }
+        return value
     }
 
     /// Record that a decode refused its frame for a reason other than running

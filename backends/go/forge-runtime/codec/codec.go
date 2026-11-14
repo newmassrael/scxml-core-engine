@@ -133,55 +133,73 @@ func (c *SceCursor) Advance(n int) error {
 	return nil
 }
 
-// readVLEInner reads a base-128 variable-length encoded unsigned value
-// of up to maxBits payload width. LSB-first byte order; leading bytes
-// use bit 7 as the continuation flag, while the final byte (at shift
-// 7*(VLE_LEN-1)) carries a full 8 data bits with no flag. Canonical
-// Zenoh ZInt (RFC §synth-5-B Appendix B): ceil((W-1)/7) bytes max, so a
-// u64 caps at 9 bytes, not 10.
-func (c *SceCursor) readVLEInner(maxBits uint32) (uint64, error) {
-	vleLen := (maxBits - 1 + 6) / 7
-	finalShift := 7 * (vleLen - 1)
+// zintFlaggedBytes is the bytes of a ZInt that carry a continuation flag:
+// a chain of this many flagged bytes ends with a ninth that holds a full 8
+// data bits, so no ZInt is longer than nine bytes, whatever the width of
+// the field that reads it (Appendix B of the protocol-synthesis RFC).
+const zintFlaggedBytes = 8
+
+// readZInt reads one ZInt, the canonical Zenoh variable-length integer, as
+// zenoh and zenoh-pico read every one of them: an unsigned 64-bit value,
+// LSB-first, in at most nine bytes. Each of the first eight carries 7 data
+// bits in its low 7 and a continuation flag in bit 7; a ninth carries a
+// full 8 data bits and has no flag, so bit 63 rides in its high bit and no
+// chain is longer. A chain the buffer ends inside is ErrNeedMoreBytes.
+func (c *SceCursor) readZInt() (uint64, error) {
 	var value uint64
-	var shift uint32
-	for i := uint32(0); i < vleLen; i++ {
+	for group := 0; group < zintFlaggedBytes; group++ {
 		if c.Remaining() < 1 {
 			return 0, ErrNeedMoreBytes
 		}
 		b := c.buf[c.pos]
 		c.pos++
-		if shift == finalShift {
-			// Final byte: 8 data bits, continuation bit reused as data.
-			// For a sub-octet tail (u16 / u32) refuse overflow.
-			allowed := maxBits - shift
-			if allowed < 8 && uint64(b) > (uint64(1)<<allowed)-1 {
-				return 0, ErrVLEWidthOverflow
-			}
-			value |= uint64(b) << shift
-			return value, nil
-		}
-		value |= uint64(b&0x7F) << shift
+		value |= uint64(b&0x7F) << (7 * group)
 		if (b & 0x80) == 0 {
 			return value, nil
 		}
-		shift += 7
 	}
-	return 0, ErrVLEWidthOverflow
+	if c.Remaining() < 1 {
+		return 0, ErrNeedMoreBytes
+	}
+	last := c.buf[c.pos]
+	c.pos++
+	return value | uint64(last)<<(7*zintFlaggedBytes), nil
 }
 
-// ReadVLEU16 reads a vle_u16 field (1-3 wire bytes).
+// readVLEInner reads a vle_u<N> field of maxBits width: one ZInt
+// (readZInt, RFC §synth-5-B Appendix B), whatever the width, and then the
+// value held to the width.
+// The wire of every width is the same ZInt64, and the type bounds the
+// value and not the encoding: a narrow field accepts every encoding of a
+// value it holds, the padded ones included, as upstream Zenoh does, and
+// refuses a value past 2^maxBits - 1 with ErrVLEWidthOverflow, never a
+// longer encoding.
+func (c *SceCursor) readVLEInner(maxBits uint32) (uint64, error) {
+	value, err := c.readZInt()
+	if err != nil {
+		return 0, err
+	}
+	if maxBits < 64 && value>>maxBits != 0 {
+		return 0, ErrVLEWidthOverflow
+	}
+	return value, nil
+}
+
+// ReadVLEU16 reads a vle_u16 field: a ZInt of 1-9 wire bytes whose value
+// is at most math.MaxUint16.
 func (c *SceCursor) ReadVLEU16() (uint16, error) {
 	v, err := c.readVLEInner(16)
 	return uint16(v), err
 }
 
-// ReadVLEU32 reads a vle_u32 field (1-5 wire bytes).
+// ReadVLEU32 reads a vle_u32 field: a ZInt of 1-9 wire bytes whose value
+// is at most math.MaxUint32.
 func (c *SceCursor) ReadVLEU32() (uint32, error) {
 	v, err := c.readVLEInner(32)
 	return uint32(v), err
 }
 
-// ReadVLEU64 reads a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt.
+// ReadVLEU64 reads a vle_u64 field: a ZInt of 1-9 wire bytes.
 func (c *SceCursor) ReadVLEU64() (uint64, error) {
 	return c.readVLEInner(64)
 }

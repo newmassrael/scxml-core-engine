@@ -1684,3 +1684,23 @@ among them.
   over; a flat text that lacked a number its kind reads, which the resolver refused, is now refused by the lift as
   `missing`, with its pointer.
 
+## A narrow VLE reads a ZInt64 and bounds its value (RFC Appendix B)
+
+Landing: the commit that adds this section.
+
+- A `sce:bit-size="vle"` field of type `uint16` or `uint32` is a ZInt64 on the wire, as in `zenoh` and
+  `zenoh-pico`: the type bounds the value, not the encoding. Every runtime's reader (`read_vle_u16`,
+  `read_vle_u32`, `readVle`, `ReadVLEU16`, `sce_forge_cursor_read_vle_u16` and their siblings) reads one ZInt of 1
+  to 9 bytes at every width and then refuses a value past the width with the width-overflow error it refused with
+  before.
+- A decode now accepts a padded encoding of a value its type holds: `81 80 80 00` reads as 1 in a `uint16` field,
+  where it was refused for its fourth byte. A frame that was refused for the length of a narrow VLE alone now
+  decodes, and its cursor moves past the whole ZInt. A value past the width (`80 80 04`, 65536, in a `uint16`) is
+  refused as before, and a chain the buffer ends inside still needs more bytes.
+- An encode is unchanged: it writes the minimal encoding, at most 3 bytes for a `uint16`, 5 for a `uint32` and 9 for
+  a `uint64`, so `MAX_ENCODED_BYTES` and every encode buffer keep their size. A receive buffer sized from
+  `MAX_ENCODED_BYTES` holds every frame this encoder writes, and a peer that pads a narrow VLE can send a frame up to
+  6 bytes longer per `uint16` field and 4 per `uint32`; size a receive buffer from your transport's frame size.
+- The Swift `appendVle` over an 8-bit type writes a value of 128 or more as a two-byte ZInt; no codec field has that
+  type, and a 16-, 32- or 64-bit value is written as before.
+

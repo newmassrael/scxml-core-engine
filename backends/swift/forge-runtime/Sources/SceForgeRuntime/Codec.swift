@@ -139,45 +139,47 @@ public struct SceCursor: Sendable {
         return text
     }
 
-    /// A variable-length unsigned integer of type `T` at the cursor, which moves past it: base-128,
-    /// least significant group first, the high bit of every byte but the last saying that another
-    /// follows. The last byte a `T` can need carries a full 8 data bits and no flag, so a 64-bit
-    /// value takes at most 9 bytes and not 10 (the canonical Zenoh ZInt; RFC §synth-5-B Appendix B).
-    /// A chain that names a value wider than `T` answers `vleWidthOverflow`, one that ends before it
-    /// is complete `needMoreBytes`.
+    /// A variable-length unsigned integer of type `T` at the cursor, which moves past it: one ZInt,
+    /// the canonical Zenoh variable-length integer (RFC §synth-5-B Appendix B), read as `zenoh` and
+    /// `zenoh-pico` read every one of them, whatever `T` is. Base-128, least significant group first:
+    /// each of the first eight bytes carries 7 data bits and a flag that another follows, and a ninth
+    /// carries a full 8 data bits and no flag, so no chain is longer than 9 bytes. The wire of every
+    /// width is the same ZInt64 and `T` bounds the value, not the encoding: every encoding of a value
+    /// `T` holds is read, the padded ones included, and a value past `T.max` answers
+    /// `vleWidthOverflow`, never a longer encoding. A chain that ends before it is complete answers
+    /// `needMoreBytes`. Either refusal leaves the cursor where it was.
     public mutating func readVle<T: FixedWidthInteger & UnsignedInteger>(
         _ type: T.Type
     ) throws(CodecError) -> T {
-        let maxBits = T.bitWidth
-        let length = (maxBits - 1 + 6) / 7
-        let finalShift = 7 * (length - 1)
         var value: UInt64 = 0
-        var shift = 0
         var index = 0
-        while index < length {
+        while true {
             guard position + index < buffer.count else {
                 throw .needMoreBytes
             }
             let byte = UInt64(buffer[position + index])
+            if index == SceCursor.zintFlaggedBytes {
+                value |= byte << UInt64(7 * index)
+                index += 1
+                break
+            }
+            value |= (byte & 0x7F) << UInt64(7 * index)
             index += 1
-            if shift == finalShift {
-                let allowed = maxBits - shift
-                if allowed < 8 && byte > (UInt64(1) << UInt64(allowed)) - 1 {
-                    throw .vleWidthOverflow
-                }
-                value |= byte << UInt64(shift)
-                position += index
-                return T(truncatingIfNeeded: value)
-            }
-            value |= (byte & 0x7F) << UInt64(shift)
             if byte & 0x80 == 0 {
-                position += index
-                return T(truncatingIfNeeded: value)
+                break
             }
-            shift += 7
         }
-        throw .vleWidthOverflow
+        guard T.bitWidth >= 64 || value >> UInt64(T.bitWidth) == 0 else {
+            throw .vleWidthOverflow
+        }
+        position += index
+        return T(truncatingIfNeeded: value)
     }
+
+    /// The bytes of a ZInt that carry a continuation flag: a chain of this many flagged bytes ends
+    /// with a ninth that holds a full 8 data bits, so no ZInt is longer than nine bytes, whatever
+    /// the width of the field that reads it.
+    static let zintFlaggedBytes = 8
 
     /// The integer of type `T` that starts `offset` bytes after the cursor, read without moving it.
     /// A signed type is the two's-complement reading of the same bytes.
@@ -253,13 +255,16 @@ public func appendInteger<T: FixedWidthInteger>(
 }
 
 /// Appends `value` to `buffer` as a variable-length unsigned integer: the counterpart of
-/// `SceCursor.readVle`. Every byte but the last carries 7 data bits and a flag that another follows,
-/// and the last byte a `T` can need carries a full 8 data bits, so the value of a `T` takes the
-/// fewest bytes that hold it and a 64-bit one never more than 9 (the canonical Zenoh ZInt).
+/// `SceCursor.readVle`, the ZInt of the value's minimal encoding. Every byte but the last carries 7
+/// data bits and a flag that another follows, and a ninth carries a full 8 data bits, so the value
+/// of a `T` takes the fewest bytes that hold it and a 64-bit one never more than 9 (the canonical
+/// Zenoh ZInt). The bytes depend on the value alone and not on `T`: no 16- or 32-bit value
+/// reaches the ninth byte, so those are the bytes every other backend writes for them, and a value
+/// of 128 or more of an 8-bit `T` takes two bytes, as a ZInt does.
 public func appendVle<T: FixedWidthInteger & UnsignedInteger>(
     _ value: T, to buffer: inout [UInt8]
 ) {
-    let continuationMax = (T.bitWidth - 1 + 6) / 7 - 1
+    let continuationMax = SceCursor.zintFlaggedBytes
     var rest = UInt64(truncatingIfNeeded: value)
     var written = 0
     while rest >= 0x80 && written < continuationMax {
