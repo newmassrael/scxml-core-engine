@@ -6,3 +6,9 @@ commit = "281b3ee107c85567aabea7e601215e5dce295164"
 base = "eaec7ae62ebe9722f2e4fb9841c26efd67b1a4d8"
 machine = "mf977c53d872e"
 at = 1794672127
+
+[return]
+reason = "conflict"
+detail = "docs/SCE_TTCN3_LANE.md"
+report = "m6a944ec3ba29:0000000204-c9c2ce7b5e1d/attempt-1.log"
+at = 1794677206
