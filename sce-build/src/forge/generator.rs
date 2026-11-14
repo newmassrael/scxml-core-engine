@@ -341,6 +341,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_max_bytes: Option<u64>,
 
+    /// For codec imports: the largest frame of the imported codec a decode
+    /// accepts, counted as [`Self::codec_max_bytes`] is but with each VLE at
+    /// the nine bytes of its longest ZInt
+    /// ([`crate::forge::model::FrameBound::Received`]): a peer may pad a
+    /// VLE past the minimal encoding the encode writes. Read where a received
+    /// frame is held before it is decoded (a link's receive pool). `None`
+    /// exactly where `codec_max_bytes` is.
+    #[serde(skip)]
+    pub codec_max_received_bytes: Option<u64>,
+
     /// For codec imports: the imported codec's FIRST `<sce:flags>`-
     /// bearing field at `byte_offset = 0` — captured as `(field_id,
     /// flag_layout)`. Used by the RFC §synth-5-B peek-byte
@@ -1498,6 +1508,7 @@ fn resolve_single_import(
         member_method_sigs: Vec::new(),
         go_init_expr,
         codec_max_bytes: None,
+        codec_max_received_bytes: None,
         codec_first_flags: None,
         codec_fields: Vec::new(),
         codec_variant: None,
@@ -48180,6 +48191,7 @@ mod tests {
             member_method_sigs: Vec::new(),
             go_init_expr: String::new(),
             codec_max_bytes: None,
+            codec_max_received_bytes: None,
             codec_first_flags: None,
             codec_fields: Vec::new(),
             codec_variant: None,
@@ -49107,6 +49119,7 @@ mod tests {
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_max_received_bytes: None,
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
                 codec_variant: None,
@@ -49177,6 +49190,7 @@ mod tests {
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_max_received_bytes: None,
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
                 codec_variant: None,

@@ -2535,9 +2535,42 @@ impl BitSize {
 /// ZInt64, and a decode reads every encoding of a value its type holds, the
 /// padded ones included, up to nine bytes at every width; no decode-side
 /// figure (what a peer may send, what a read may consume) is derived from
-/// this one.
+/// this one: that is [`ZINT_MAX_BYTES`] ([`FrameBound::Received`]).
 pub(crate) fn vle_cap_bytes(width_bits: u32) -> u32 {
     (width_bits - 1).div_ceil(7)
+}
+
+/// The most bytes one ZInt takes on the wire, at every width: eight bytes of
+/// seven data bits and a continuation flag, then one of eight data bits. A
+/// decode reads a VLE field of any width as one ZInt and bounds its value, so
+/// a peer may pad a narrow field's value to this many bytes and the decode
+/// accepts it.
+pub(crate) const ZINT_MAX_BYTES: u32 = 9;
+
+/// Which side of the wire a codec's largest frame is counted for. The two
+/// differ in one place, a VLE field: an encode writes the minimal ZInt of its
+/// value ([`vle_cap_bytes`] at most), and a decode accepts any encoding of a
+/// value the field holds, so a frame a peer sends and the decode accepts can
+/// be longer than any frame the encode writes ([`ZINT_MAX_BYTES`] per VLE).
+/// Every other field is bounded alike on both sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameBound {
+    /// The largest frame an encode writes: what sizes an encode buffer, a
+    /// transmit slot, a broadcast-log entry.
+    Written,
+    /// The largest frame a decode accepts: what sizes a buffer a received
+    /// frame is held in before it is decoded.
+    Received,
+}
+
+impl FrameBound {
+    /// The most bytes a VLE field of `width_bits` takes on this side.
+    pub fn vle_bytes(self, width_bits: u32) -> u32 {
+        match self {
+            FrameBound::Written => vle_cap_bytes(width_bits),
+            FrameBound::Received => ZINT_MAX_BYTES,
+        }
+    }
 }
 
 /// Whether `bytes`, a codec's largest frame ([`CodecModel::max_frame_bytes`]),
@@ -4142,11 +4175,19 @@ impl CodecModel {
     /// passes `u32`. [`frame_bytes_fit_every_target`] says whether the figure is
     /// one a generated constant can state.
     pub fn max_frame_bytes(&self) -> u64 {
+        self.max_frame_bytes_as(FrameBound::Written)
+    }
+
+    /// [`Self::max_frame_bytes`] counted for `bound`: for
+    /// [`FrameBound::Received`] each VLE counts [`ZINT_MAX_BYTES`], the
+    /// longest encoding of its value a decode accepts, where the encode
+    /// writes at most [`vle_cap_bytes`].
+    pub fn max_frame_bytes_as(&self, bound: FrameBound) -> u64 {
         self.fields
             .iter()
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
-                BitSize::Vle { width_bits } => u64::from(vle_cap_bytes(*width_bits)),
+                BitSize::Vle { width_bits } => u64::from(bound.vle_bytes(*width_bits)),
                 BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => 0,
                 // A byte string held by no number of bytes has no largest frame.
                 BitSize::Tail | BitSize::LengthRef => {
@@ -4167,8 +4208,19 @@ impl CodecModel {
     ///
     /// The one formula for the figure: the generator reads it with the imports
     /// it was handed and the import enrichment with the documents it reads.
-    pub fn frame_bytes_with(&self, mut body_bytes: impl FnMut(&str) -> Option<u64>) -> u64 {
-        let own = self.max_frame_bytes();
+    pub fn frame_bytes_with(&self, body_bytes: impl FnMut(&str) -> Option<u64>) -> u64 {
+        self.frame_bytes_with_as(FrameBound::Written, body_bytes)
+    }
+
+    /// [`Self::frame_bytes_with`] counted for `bound`
+    /// ([`Self::max_frame_bytes_as`]); `body_bytes` answers a held codec's
+    /// largest frame counted for the same bound.
+    pub fn frame_bytes_with_as(
+        &self,
+        bound: FrameBound,
+        mut body_bytes: impl FnMut(&str) -> Option<u64>,
+    ) -> u64 {
+        let own = self.max_frame_bytes_as(bound);
         if let Some(v) = &self.variant {
             let widest = v
                 .arms

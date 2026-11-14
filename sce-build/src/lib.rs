@@ -6592,23 +6592,30 @@ use forge::codegen_matrix::language_wire_name;
 /// cycle leaf — same shape as the pre-fix behaviour for that one
 /// frame, while every non-cyclic frame gets the correct recursive
 /// sum.
+///
+/// `bound` says which side the frame is counted for
+/// ([`forge::model::FrameBound`]): the encode buffer is sized from the
+/// frame an encode writes, a receive slot from the frame a decode accepts,
+/// which is longer by every VLE a peer pads past its minimal encoding.
 fn compute_codec_recursive_max_bytes(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
+    bound: forge::model::FrameBound,
 ) -> u64 {
-    // The generator's formula (`CodecModel::frame_bytes_with`), each body
+    // The generator's formula (`CodecModel::frame_bytes_with_as`), each body
     // resolved by reading its document and recursing. An import that cannot be
     // read, is another kind or closes a cycle counts for nothing, as the
     // generator's pass counts an import it holds no figure for.
-    cm.frame_bytes_with(|alias| {
+    cm.frame_bytes_with_as(bound, |alias| {
         with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
             Some(compute_codec_recursive_max_bytes(
                 inner.model,
                 inner.imports,
                 inner.base_dir,
                 inner.visited,
+                bound,
             ))
         })
     })
@@ -7295,6 +7302,20 @@ fn validate_and_enrich_imports(
                     &parsed.imports,
                     &inner_base,
                     &mut visited,
+                    forge::model::FrameBound::Written,
+                ));
+                // The same frame as a decode accepts it, which a receive
+                // slot holds: each VLE at the nine bytes of its longest
+                // ZInt. A fresh walk, so the cycle guard starts as the
+                // written walk's did.
+                let mut received_visited: HashSet<PathBuf> = HashSet::new();
+                received_visited.insert(source.path.clone());
+                ctx.codec_max_received_bytes = Some(compute_codec_recursive_max_bytes(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut received_visited,
+                    forge::model::FrameBound::Received,
                 ));
                 // Borrowed zero-copy codec round: capture whether the
                 // imported codec's generated Rust struct carries a `<'a>`
@@ -7862,20 +7883,25 @@ fn validate_link_pool_framer_resolution(
     // framer alias is not a cross-file codec import (or enrichment
     // gave up on it) — the cross-validator has nothing to compare
     // against and falls back to silent-skip.
-    let framer_max_bytes = match import_ctx
-        .iter()
-        .find(|c| c.alias == link.framer)
-        .and_then(|c| c.codec_max_bytes)
-    {
-        Some(n) => n,
-        None => return Ok(()),
+    let Some(framer) = import_ctx.iter().find(|c| c.alias == link.framer) else {
+        return Ok(());
     };
 
     // Compare each declared pool side independently. Both can be
     // present, only one, or neither (the `None` arms are normal — a
     // link without zero-copy pools is a valid v1 shape, the framer-
-    // only path).
-    for (side, pool_ref) in [("rx", &link.rx_pool), ("tx", &link.tx_pool)] {
+    // only path). A transmit slot holds the frame the encode writes; a
+    // receive slot holds the frame a peer sends, which the decode accepts
+    // with each VLE padded to its longest ZInt, so it is held to that
+    // larger frame.
+    for (side, pool_ref, framer_bytes) in [
+        ("rx", &link.rx_pool, framer.codec_max_received_bytes),
+        ("tx", &link.tx_pool, framer.codec_max_bytes),
+    ] {
+        // Enrichment sets both figures of a codec import or neither.
+        let Some(framer_max_bytes) = framer_bytes else {
+            continue;
+        };
         let pool_alias = match pool_ref.as_deref() {
             Some(s) => s,
             None => continue,
@@ -8030,8 +8056,9 @@ fn validate_link_pool_refs(
 ///
 /// Why the pass exists separately from
 /// [`validate_link_pool_framer_resolution`]: that pass *consumes* the
-/// resolved framer to compare the codec's worst-case encoded size
-/// against the bound pool's slot, and its framer arm returns `Ok(())`
+/// resolved framer to compare the codec's worst-case frame (written for a
+/// tx pool, received for an rx pool) against the bound pool's slot, and
+/// its framer arm returns `Ok(())`
 /// on a miss. The tolerance is right for a partial topology and wrong
 /// for a typo, and the two are indistinguishable from inside a pass
 /// handed one document. This entry point is handed the whole build, so
@@ -17040,6 +17067,89 @@ int main(void) { (void)0; return 0; }
             },
             other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
         }
+    }
+
+    /// The link fixture of [`write_link_pool_fixture_files`] with a framer
+    /// of one `uint16` VLE: its encode writes at most 3 bytes, and a decode
+    /// accepts the value padded to the 9 bytes of the longest ZInt, so a
+    /// peer's frame the decode accepts is 9 bytes long.
+    fn write_vle_framer_link_fixture_files(
+        dir: &std::path::Path,
+        rx_slot_size: u32,
+        tx_slot_size: u32,
+    ) -> (std::path::PathBuf, &'static str) {
+        let written = write_link_pool_fixture_files(dir, 8, rx_slot_size, tx_slot_size);
+        let codec_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="scout_frame_codec">
+  <datamodel>
+    <sce:field id="id" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>"##;
+        std::fs::write(dir.join("scout_frame_codec.scxml"), codec_scxml).unwrap();
+        written
+    }
+
+    type LinkCompile =
+        Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>>;
+
+    fn compile_link_fixture(
+        dir: &std::path::Path,
+        link_path: &std::path::Path,
+        link_label: &str,
+    ) -> LinkCompile {
+        let content = std::fs::read_to_string(link_path).unwrap();
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: link_label,
+        };
+        compile_forge_with_imports(
+            &content,
+            label,
+            generator::Language::Rust,
+            dir,
+            &ForgeCompileOptions::default(),
+        )
+    }
+
+    #[test]
+    fn an_rx_pool_holds_the_frame_a_decode_accepts_and_a_tx_pool_the_frame_an_encode_writes() {
+        use crate::forge::error::{ForgeError, ValidationError};
+        use tempfile::TempDir;
+
+        // An rx slot of 8 holds every frame the encode writes (3 bytes) and
+        // not the 9 a peer may pad the VLE to: refused on the rx side, with
+        // the received figure.
+        let tmp = TempDir::new().expect("tempdir");
+        let (link_path, link_label) = write_vle_framer_link_fixture_files(tmp.path(), 8, 8);
+        let err = match compile_link_fixture(tmp.path(), &link_path, link_label) {
+            Ok(_) => panic!("an rx slot shorter than a padded VLE frame must be refused"),
+            Err(e) => e,
+        };
+        match &err.error {
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                    pool_side,
+                    pool_slot_size,
+                    framer_max_bytes,
+                    ..
+                } => {
+                    assert_eq!(*pool_side, "rx");
+                    assert_eq!(*pool_slot_size, 8);
+                    assert_eq!(*framer_max_bytes, 9);
+                }
+                other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+            },
+            other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+        }
+
+        // An rx slot of 16 holds the padded frame, and a tx slot of 8 the
+        // 3 bytes the encode writes: the link is accepted.
+        let tmp = TempDir::new().expect("tempdir");
+        let (link_path, link_label) = write_vle_framer_link_fixture_files(tmp.path(), 16, 8);
+        compile_link_fixture(tmp.path(), &link_path, link_label)
+            .expect("an rx slot of the received frame and a tx slot of the written one pass");
     }
 
     /// Smoke check that the prereq runtime header

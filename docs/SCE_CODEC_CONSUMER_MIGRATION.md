@@ -1703,4 +1703,12 @@ Landing: the commit that adds this section.
   6 bytes longer per `uint16` field and 4 per `uint32`; size a receive buffer from your transport's frame size.
 - The Swift `appendVle` over an 8-bit type writes a value of 128 or more as a two-byte ZInt; no codec field has that
   type, and a 16-, 32- or 64-bit value is written as before.
+- A link's `<sce:rx-pool>` slot is held to the largest frame a decode accepts, each VLE of the framer counted at 9
+  bytes, and its `<sce:tx-pool>` slot to the largest frame the encode writes, as before.
+  `link/pool-slot-smaller-than-framer-max` now refuses an rx slot that held only the encoded frame of a framer with a
+  `uint16` or `uint32` VLE (6 and 4 bytes more each; a `uint64` VLE counts 9 on both sides); raise its
+  `<sce:slot-size>` to the figure the message names. The message says "worst-case frame size" where it said "worst-case encoded
+  size"; its code and id are unchanged. `ImportContext::codec_max_received_bytes` holds the received figure beside
+  `codec_max_bytes`, and `CodecModel::max_frame_bytes_as` and `frame_bytes_with_as` count either side
+  (`FrameBound::Written`, `FrameBound::Received`).
 

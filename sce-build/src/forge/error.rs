@@ -2505,7 +2505,7 @@ pub enum ValidationError {
     /// [`ImportContext`]: crate::forge::generator::ImportContext
     /// [`compile_forge_with_imports`]: crate::compile_forge_with_imports
     #[error(
-        "link '{link_name}': {pool_side}-pool '{pool_alias}' slot-size {pool_slot_size} bytes is smaller than framer '{framer_alias}' worst-case encoded size {framer_max_bytes} bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body"
+        "link '{link_name}': {pool_side}-pool '{pool_alias}' slot-size {pool_slot_size} bytes is smaller than framer '{framer_alias}' worst-case frame size {framer_max_bytes} bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body"
     )]
     LinkPoolSlotSmallerThanFramerMax {
         /// Link document name (root `name=` attribute).
@@ -2520,10 +2520,12 @@ pub enum ValidationError {
         /// Imported codec's alias / document name (matches the
         /// `<sce:framer ref>` value).
         framer_alias: String,
-        /// Recursive worst-case encoded byte count of the resolved
-        /// codec (matches `ImportContext::codec_max_bytes`, which
-        /// already folds variant arm bodies / repeat / TLV chain
-        /// per RFC §synth-5-B).
+        /// Recursive worst-case frame of the resolved codec on the pool's
+        /// side, which already folds variant arm bodies / repeat / TLV
+        /// chain per RFC §synth-5-B: for a tx pool the frame the encode
+        /// writes (`ImportContext::codec_max_bytes`), for an rx pool the
+        /// frame a decode accepts, each VLE at its longest ZInt
+        /// (`ImportContext::codec_max_received_bytes`).
         framer_max_bytes: u64,
     },
 
