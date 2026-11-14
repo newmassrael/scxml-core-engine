@@ -3688,9 +3688,22 @@ def msrv_release(version: str):
 # `stable` moved to 1.100 and its clippy found what 1.99 had passed. The
 # sweep reads every tracked workflow, action and shell script with its
 # whole-line comments removed.
+#
+# Two things around the install move too unless they are held. The upstream
+# action is code that runs between the pin and the compiler, so the one
+# action that names it names a commit, not a branch or a tag. And a cache of
+# a Rust `target/` or of cargo's registry built by one release is restored
+# into a run of the next: its key, and every restore-key prefix, carry the
+# hash of `rust-toolchain.toml`, so a move starts each cache afresh instead
+# of dragging the old release's artefacts along for good.
 RUST_INSTALL_ACTION = ".github/actions/install-rust/action.yml"
 # The upstream action the one above delegates the install to; no lane names it.
 RUST_INSTALL_UPSTREAM = "dtolnay/rust-toolchain"
+UPSTREAM_REF = re.compile(r"\buses:\s*" + re.escape(RUST_INSTALL_UPSTREAM) + r"@(\S+)")
+FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
+TOOLCHAIN_CACHE_KEY = "hashFiles('rust-toolchain.toml')"
+CACHE_STEP = re.compile(
+    r"^\s*(?:-\s+)?uses:\s*(actions/cache(?:/restore|/save)?|Swatinem/rust-cache)@")
 MOVING_RUST_CHANNEL = re.compile(
     r"(?<![\w.+-])\+(?:stable|beta|nightly)(?![\w.-])"
     r"|\btoolchain:\s*['\"]?(?:stable|beta|nightly)['\"]?\s*$"
@@ -3709,6 +3722,7 @@ def moving_rust_failures(repo_root: Path) -> list[str]:
                         f"through it")
     swept = 0
     lanes = 0
+    upstream_pins = 0
     for rel in tracked_paths(repo_root, ".github", "*.sh", "scripts"):
         path = repo_root / rel
         if Path(rel).suffix not in (".yml", ".yaml", ".sh", ""):
@@ -3726,6 +3740,15 @@ def moving_rust_failures(repo_root: Path) -> list[str]:
                     f"{rel}:{number} installs Rust with {RUST_INSTALL_UPSTREAM} "
                     f"itself: a lane installs it through ./{Path(RUST_INSTALL_ACTION).parent}, "
                     f"which takes the release from {RUST_TOOLCHAIN_FILE}")
+            elif RUST_INSTALL_UPSTREAM in line:
+                upstream_pins += 1
+                ref = UPSTREAM_REF.search(line)
+                if not ref or not FULL_COMMIT.fullmatch(ref.group(1)):
+                    failures.append(
+                        f"{rel}:{number} names {RUST_INSTALL_UPSTREAM} at "
+                        f"{ref.group(1) if ref else line.strip()[:60]!r}, not a full "
+                        f"commit: a branch or a tag moves, and the action runs "
+                        f"between {RUST_TOOLCHAIN_FILE} and the compiler")
             if MOVING_RUST_CHANNEL.search(line):
                 failures.append(
                     f"{rel}:{number} names a Rust channel that moves "
@@ -3739,6 +3762,105 @@ def moving_rust_failures(repo_root: Path) -> list[str]:
         failures.append(
             f"the sweep read {swept} file(s) and found {lanes} lane step(s) that "
             f"install the pinned Rust; a broken enumeration passes by reading nothing")
+    if upstream_pins == 0:
+        failures.append(
+            f"{RUST_INSTALL_ACTION} names {RUST_INSTALL_UPSTREAM} nowhere, so the "
+            f"check that it is pinned to a commit reads nothing and needs re-aiming")
+    failures.extend(rust_cache_failures(repo_root))
+    return failures
+
+
+def workflow_steps(lines: list[str], uses: "re.Pattern[str]"):
+    """Each step of a workflow or action whose `uses:` line matches `uses`.
+
+    Yields the 1-based number of the `uses:` line, the action it names and
+    the step's lines: from the line that opens the step (`- `) to the next
+    line at that indent or less.
+    """
+    for i, line in enumerate(lines):
+        match = uses.match(line)
+        if not match:
+            continue
+        start = i
+        while start > 0 and not re.match(r"^\s*-\s", lines[start]):
+            start -= 1
+        indent = len(lines[start]) - len(lines[start].lstrip())
+        end = start + 1
+        while end < len(lines):
+            nxt = lines[end]
+            if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+                break
+            end += 1
+        yield i + 1, match.group(1), lines[start:end]
+
+
+def step_values(step: list[str], key: str) -> list[str]:
+    """The values of `key:` in a step: its inline value, or each line of the
+    block scalar under it (`path: |`, `restore-keys: |`)."""
+    for j, line in enumerate(step):
+        match = re.match(r"^(\s*)" + re.escape(key) + r":\s*(.*)$", line)
+        if not match:
+            continue
+        inline = match.group(2).strip()
+        if inline and inline not in ("|", "|-", ">", ">-"):
+            return [inline]
+        indent = len(match.group(1))
+        values: list[str] = []
+        for nxt in step[j + 1:]:
+            if not nxt.strip():
+                continue
+            if len(nxt) - len(nxt.lstrip()) <= indent:
+                break
+            values.append(nxt.strip())
+        return values
+    return []
+
+
+def rust_cache_failures(repo_root: Path) -> list[str]:
+    """A cache of Rust build state whose key does not move with the release.
+
+    A Rust cache is a `Swatinem/rust-cache` step, or an `actions/cache` step
+    whose `path` holds a `target` directory or cargo's registry or git
+    checkouts. Its `key`, and each of its `restore-keys`, must carry
+    `hashFiles('rust-toolchain.toml')`: a restore-key prefix without it hands
+    a miss the previous release's `target/`, which cargo rebuilds beside and
+    the next save keeps.
+    """
+    failures: list[str] = []
+    found = 0
+    for rel in tracked_paths(repo_root, ".github"):
+        if Path(rel).suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            lines = (repo_root / rel).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for number, action, step in workflow_steps(lines, CACHE_STEP):
+            paths = step_values(step, "path")
+            rust = action == "Swatinem/rust-cache" or any(
+                p == "target" or p.endswith("/target")
+                or ".cargo/registry" in p or ".cargo/git" in p
+                for p in paths)
+            if not rust:
+                continue
+            found += 1
+            keys = step_values(step, "key")
+            if not keys:
+                failures.append(
+                    f"{rel}:{number} caches Rust build state with no `key` that "
+                    f"carries {TOOLCHAIN_CACHE_KEY}, so a release move restores the "
+                    f"old release's artefacts")
+            for key in keys + step_values(step, "restore-keys"):
+                if TOOLCHAIN_CACHE_KEY not in key:
+                    failures.append(
+                        f"{rel}:{number} caches Rust build state under {key!r}, "
+                        f"which lacks {TOOLCHAIN_CACHE_KEY}: a release move would "
+                        f"restore the old release's artefacts into the new one's run")
+    # A lower bound, so a step parse that stopped finding caches cannot pass.
+    if found < 30:
+        failures.append(
+            f"found {found} Rust cache step(s) in .github; a broken step parse "
+            f"passes by finding none")
     return failures
 
 

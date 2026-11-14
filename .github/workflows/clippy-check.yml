@@ -67,6 +67,8 @@ jobs:
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ hashFiles('rust-toolchain.toml') }}
 
     # Delegates to the gate runner rather than restating the command,
     # so the lint set has one spelling for both callers.
@@ -94,6 +96,8 @@ jobs:
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ hashFiles('rust-toolchain.toml') }}
 
     - name: Build each package with its declared rust-version
       run: scripts/gate rust-version

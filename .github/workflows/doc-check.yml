@@ -56,6 +56,8 @@ jobs:
 
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ hashFiles('rust-toolchain.toml') }}
 
     # Both profiles, delegated to the gate runner. The gate sets
     # `RUSTDOCFLAGS=-D warnings` per command; this workflow set it as a

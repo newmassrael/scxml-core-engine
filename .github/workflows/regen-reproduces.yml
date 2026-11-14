@@ -98,9 +98,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-regen-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-regen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-regen-
+          ${{ runner.os }}-cargo-regen-${{ hashFiles('rust-toolchain.toml') }}-
 
     # Delegates to the gate runner, which also builds the generator through
     # the `codegen-build` dependency the registry records.

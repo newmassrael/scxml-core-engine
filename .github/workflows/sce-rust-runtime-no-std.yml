@@ -157,9 +157,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('Cargo.lock', 'backends/rust/runtime/**/*.rs', 'backends/rust/runtime/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock', 'backends/rust/runtime/**/*.rs', 'backends/rust/runtime/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-no-std-
+          ${{ runner.os }}-cargo-no-std-${{ hashFiles('rust-toolchain.toml') }}-
 
     # Proves the no_std runtime variant has no path into `std::*` — any
     # accidental `use std::...` or `std::vec::Vec` reintroduction in the

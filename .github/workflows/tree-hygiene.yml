@@ -122,9 +122,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-tree-hygiene-
+          ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('rust-toolchain.toml') }}-
 
     # `gate_registry_contract` drives the *staged* citation stage as a
     # subprocess, and that stage refuses — exit 3, "the gate could not run,

@@ -84,9 +84,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-wasm32-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-wasm32-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-wasm32-
+          ${{ runner.os }}-cargo-wasm32-${{ hashFiles('rust-toolchain.toml') }}-
 
     # The version is read from the lock and not written here, so the tool follows
     # the library when `Cargo.lock` moves. The gate refuses a tool at any other

@@ -38,8 +38,11 @@ runs:
         } >> "$GITHUB_OUTPUT"
         echo "Rust $channel, components [$(listed components)], targets [$(listed targets)]"
 
+    # Pinned to a commit, not a branch or a tag, both of which move: the
+    # action is the one thing between the pin above and the installed
+    # compiler. 683b588c is the `v1` tag and `master` as of 2026-11-14.
     - name: Install the pinned Rust release
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
       with:
         toolchain: ${{ steps.pin.outputs.channel }}
         components: ${{ steps.pin.outputs.components }}

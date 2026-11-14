@@ -162,9 +162,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: gcc15-container-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+          key: gcc15-container-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
           restore-keys: |
-            gcc15-container-cargo-codegen-
+            gcc15-container-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
       # Guards, configure, generation, then every compile at both standards are
       # one gate, so the check has one spelling here and for a developer. The

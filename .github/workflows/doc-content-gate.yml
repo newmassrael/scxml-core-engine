@@ -102,10 +102,10 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-doc-content-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-doc-content-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-doc-content-
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-doc-content-${{ hashFiles('rust-toolchain.toml') }}-
+          ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-
 
     # Delegates to the gate runner rather than restating the command, so
     # the scope has one spelling for both callers.

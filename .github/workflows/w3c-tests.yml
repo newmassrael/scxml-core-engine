@@ -118,9 +118,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -389,9 +389,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -454,9 +454,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -558,9 +558,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -700,9 +700,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -804,9 +804,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -900,9 +900,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |
@@ -1038,9 +1038,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-codegen-
+          ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     - name: Build sce-codegen
       run: |

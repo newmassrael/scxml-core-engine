@@ -79,9 +79,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-example-codegen-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-example-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-example-codegen-
+          ${{ runner.os }}-cargo-example-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
     # The gate builds `target/debug/sce-codegen` through its registered
     # `codegen-build` dependency, runs codegen over every example SCXML,

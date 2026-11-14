@@ -72,9 +72,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-nl-ir-closure-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nl-ir-closure-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-nl-ir-closure-
+          ${{ runner.os }}-cargo-nl-ir-closure-${{ hashFiles('rust-toolchain.toml') }}-
 
     # Row G4 runs the cross-document requirement check rather than grepping
     # for it. Debug profile, resolved through the shared locator, which is

@@ -99,9 +99,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-drift-verify-
+          ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('rust-toolchain.toml') }}-
 
     # B9 integration suite — synthetic input/template fixtures cover the
     # verify subcommand's clean-pass / drifted-source / older-header-shape /

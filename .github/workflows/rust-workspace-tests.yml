@@ -467,9 +467,9 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-workspace-sources-v2-
+          ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('rust-toolchain.toml') }}-
 
     # The generator is built by the gate this lane delegates to
     # (`scripts/gates/workspace-tests.sh`), before the suite, and by the
