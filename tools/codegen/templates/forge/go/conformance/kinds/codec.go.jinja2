@@ -37,30 +37,36 @@
 			expectedBytes[j] = byte(b)
 		}
 
-		value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
+		{# A case marked `decode_only` is a wire a peer may send that is not the
+		   one this encode writes (a VLE padded past its minimal encoding): its
+		   bytes decode to the value and are read whole, and the encode is not
+		   held to them. #}
+		if !c.DecodeOnly {
+			value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
 {% for field in f.fields %}
-			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
+				{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
 {% endfor %}
-		}
+			}
 {% if f.cbor or f.encode_refuses_bound %}
-		{# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
-		   field (docs/adr/0077 §3), refuses a value past its declared bound
-		   with an error; every case is in bounds. #}
-		encoded, encodeErr := value.EncodeToBytes()
-		if encodeErr != nil {
-			t.Errorf("{{ f.name }} case %d encode refused: %v", i, encodeErr)
-			continue
-		}
+			{# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
+			   field (docs/adr/0077 §3), refuses a value past its declared bound
+			   with an error; every case is in bounds. #}
+			encoded, encodeErr := value.EncodeToBytes()
+			if encodeErr != nil {
+				t.Errorf("{{ f.name }} case %d encode refused: %v", i, encodeErr)
+				continue
+			}
 {% else %}
-		encoded := value.EncodeToBytes()
+			encoded := value.EncodeToBytes()
 {% endif %}
-		if len(encoded) != len(expectedBytes) {
-			t.Errorf("{{ f.name }} case %d encode: length actual=%d expected=%d", i, len(encoded), len(expectedBytes))
-		} else {
-			for j := range expectedBytes {
-				if encoded[j] != expectedBytes[j] {
-					t.Errorf("{{ f.name }} case %d encode byte %d: actual=%d expected=%d", i, j, encoded[j], expectedBytes[j])
-					break
+			if len(encoded) != len(expectedBytes) {
+				t.Errorf("{{ f.name }} case %d encode: length actual=%d expected=%d", i, len(encoded), len(expectedBytes))
+			} else {
+				for j := range expectedBytes {
+					if encoded[j] != expectedBytes[j] {
+						t.Errorf("{{ f.name }} case %d encode byte %d: actual=%d expected=%d", i, j, encoded[j], expectedBytes[j])
+						break
+					}
 				}
 			}
 		}
@@ -71,6 +77,9 @@
 		if err != nil {
 			t.Errorf("{{ f.name }} case %d decode returned error: %v", i, err)
 			continue
+		}
+		if c.DecodeOnly && cursor.Remaining() != 0 {
+			t.Errorf("{{ f.name }} case %d: a decode-only frame is read whole, %d byte(s) left", i, cursor.Remaining())
 		}
 {% else %}
 		// RFC §synth-5-B empty body — decode must succeed but there

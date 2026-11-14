@@ -20456,7 +20456,7 @@ fn tlv_chain_guard(
 ) -> String {
     use crate::forge::codec_failure::CodecFailure;
     // Both are positional failures, which every backend raises with a
-    // statement (`codec_failure::tests::only_a_positional_failure_has_a_raise_statement`).
+    // statement (`codec_failure::tests::only_a_failure_no_reader_raises_has_a_raise_statement`).
     let raise = |f: CodecFailure| {
         f.raise_stmt(lang)
             .expect("a positional codec failure has a raise statement on every backend")

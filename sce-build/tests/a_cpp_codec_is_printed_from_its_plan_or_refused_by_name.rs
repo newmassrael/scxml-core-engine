@@ -129,6 +129,8 @@ const PRINTED: &[&str] = &[
     "codec_variant_peek_basic",
     "codec_variant_session_close",
     "codec_variant_session_open",
+    "codec_vle_zint_u16",
+    "codec_vle_zint_u32",
     "codec_vle_zint_u64",
     "codec_zenoh_close",
     "codec_zenoh_decl_ext_keyexpr",

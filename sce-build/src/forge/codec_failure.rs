@@ -61,6 +61,12 @@ pub enum CodecFailure {
     /// list read to the end of the frame (docs/adr/0077 §2), or a chain's
     /// entry past its declared `max-depth`.
     TooManyElements,
+    /// A `sce:bit-size="vle"` field's ZInt holds a value past the field's
+    /// width (`codec/vle-width-overflow`). The wire of every width is a
+    /// ZInt64, so a longer encoding of a value the type holds is no such
+    /// failure: only the value is. Raised by the runtime's VLE reader, not by
+    /// a generated statement.
+    VleWidthOverflow,
     /// An `sce:encoding="cbor"` map is not one the codec reads
     /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
     /// or an entry of the wrong major type.
@@ -95,10 +101,11 @@ pub enum CodecFailure {
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 13] = [
+    pub const ALL: [CodecFailure; 14] = [
         CodecFailure::NeedMoreBytes,
         CodecFailure::LengthOutOfRange,
         CodecFailure::TooManyElements,
+        CodecFailure::VleWidthOverflow,
         CodecFailure::CborMalformed,
         CodecFailure::CborRequiredKeyMissing,
         CodecFailure::CborWrongLength,
@@ -118,6 +125,7 @@ impl CodecFailure {
             CodecFailure::NeedMoreBytes => "need-more-bytes",
             CodecFailure::LengthOutOfRange => "length-out-of-range",
             CodecFailure::TooManyElements => "too-many-elements",
+            CodecFailure::VleWidthOverflow => "vle-width-overflow",
             CodecFailure::CborMalformed => "cbor-malformed",
             CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
             CodecFailure::CborWrongLength => "cbor-wrong-length",
@@ -172,11 +180,19 @@ impl CodecFailure {
         )
     }
 
+    /// Whether a runtime reader raises this failure and no generated statement
+    /// does: a CBOR or content-line failure, which the readers and the codec
+    /// templates of those encodings return as a value (SCE_FORGE.md §4.6.1,
+    /// §4.6.4), and a VLE's value past its width, which the runtime's VLE
+    /// reader returns and the generated decode passes on.
+    pub fn is_raised_by_a_reader(self) -> bool {
+        self.is_cbor() || self.is_content_line() || self == CodecFailure::VleWidthOverflow
+    }
+
     /// The statement a generated positional decode uses to signal this
-    /// failure. `None` for a CBOR or content-line failure: the positional
-    /// codec's statements do not raise one — the runtime's readers and the
-    /// codec templates of those encodings return it as a value
-    /// (SCE_FORGE.md §4.6.1, §4.6.4).
+    /// failure. `None` for a failure a runtime reader raises
+    /// ([`Self::is_raised_by_a_reader`]): the positional codec's statements
+    /// do not raise one.
     pub fn raise_stmt(self, lang: Language) -> Option<&'static str> {
         match self {
             CodecFailure::NeedMoreBytes => Some(match lang {
@@ -214,7 +230,8 @@ impl CodecFailure {
                 Language::Python => "raise TooManyElements()",
                 Language::Swift => "throw CodecError.tooManyElements",
             }),
-            CodecFailure::CborMalformed
+            CodecFailure::VleWidthOverflow
+            | CodecFailure::CborMalformed
             | CodecFailure::CborRequiredKeyMissing
             | CodecFailure::CborWrongLength
             | CodecFailure::CborOutOfRange
@@ -304,6 +321,20 @@ impl CodecFailure {
         }
     }
 
+    /// The flag of the cursor that holds when a decode refused for this reason,
+    /// read as `<cursor>.<flag>`, on the backends whose decode returns one
+    /// sentinel for every failure and keeps this one's reason on the cursor
+    /// apart from its record of refusals: the VLE reader's overflow flag
+    /// (C++ `SceCursor::last_vle_overflow`, Kotlin `SceCursor.lastVleOverflow`).
+    /// `None` for any other failure or backend.
+    pub fn cursor_flag(self, lang: Language) -> Option<&'static str> {
+        match (lang, self) {
+            (Language::Cpp, CodecFailure::VleWidthOverflow) => Some("last_vle_overflow()"),
+            (Language::Kotlin, CodecFailure::VleWidthOverflow) => Some("lastVleOverflow"),
+            _ => None,
+        }
+    }
+
     /// Whether a refusal of this kind leaves the cursor's record empty on the
     /// backends that keep one: a frame short of bytes is the one a caller may
     /// resume by appending, so it must not read as a refusal for a reason.
@@ -332,6 +363,15 @@ impl CodecFailure {
             }
             (Language::Go, CodecFailure::LengthOutOfRange) => Some("codec.ErrLengthOutOfRange"),
             (Language::Go, CodecFailure::TooManyElements) => Some("codec.ErrTooManyElements"),
+            // A VLE's value past its width is the runtime reader's own error,
+            // which the generated decode returns as it is on the same three.
+            (Language::Rust, CodecFailure::VleWidthOverflow) => {
+                Some("CodecError::VleWidthOverflow")
+            }
+            (Language::C11, CodecFailure::VleWidthOverflow) => {
+                Some("SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW")
+            }
+            (Language::Go, CodecFailure::VleWidthOverflow) => Some("codec.ErrVLEWidthOverflow"),
             // The CBOR reader's refusals are named on Rust, Go and C11, whose
             // decodes return the runtime's typed error or status.
             (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),
@@ -444,17 +484,49 @@ mod tests {
         }
     }
 
-    /// A positional failure is raised by a generated statement on every
-    /// backend, and a CBOR or content-line one by none — the reader returns it.
+    /// A failure a generated statement raises has a raise statement on every
+    /// backend, and one a runtime reader raises (CBOR, content-line, a VLE's
+    /// value past its width) on none — the reader returns it.
     #[test]
-    fn only_a_positional_failure_has_a_raise_statement() {
+    fn only_a_failure_no_reader_raises_has_a_raise_statement() {
         for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Codec) {
             for f in CodecFailure::ALL {
                 assert_eq!(
                     f.raise_stmt(lang).is_some(),
-                    !f.is_cbor() && !f.is_content_line(),
+                    !f.is_raised_by_a_reader(),
                     "{lang:?} {f:?}"
                 );
+            }
+        }
+    }
+
+    /// A VLE's value past its width is named where the runtime's reader
+    /// returns a typed error (Rust, C11, Go), and read from the cursor's flag
+    /// where the decode answers one sentinel (C++, Kotlin): a reject vector of
+    /// it asserts the reason on five backends, not only that a decode refused.
+    #[test]
+    fn a_vle_past_its_width_is_observable_by_name_or_by_the_cursor_flag() {
+        let f = CodecFailure::VleWidthOverflow;
+        assert_eq!(CodecFailure::parse("vle-width-overflow"), Ok(f));
+        assert!(!f.is_cbor() && !f.is_content_line() && f.is_raised_by_a_reader());
+        for (lang, symbol) in [
+            (Language::Rust, "CodecError::VleWidthOverflow"),
+            (Language::C11, "SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW"),
+            (Language::Go, "codec.ErrVLEWidthOverflow"),
+        ] {
+            assert_eq!(f.observable_symbol(lang), Some(symbol), "{lang:?}");
+            assert_eq!(f.cursor_flag(lang), None, "{lang:?}");
+        }
+        assert_eq!(f.cursor_flag(Language::Cpp), Some("last_vle_overflow()"));
+        assert_eq!(f.cursor_flag(Language::Kotlin), Some("lastVleOverflow"));
+        for lang in [Language::Python, Language::Swift] {
+            assert_eq!(f.observable_symbol(lang), None, "{lang:?}");
+            assert_eq!(f.cursor_flag(lang), None, "{lang:?}");
+        }
+        // No other failure is read from a cursor flag.
+        for &lang in Language::ALL {
+            for other in CodecFailure::ALL.into_iter().filter(|o| *o != f) {
+                assert_eq!(other.cursor_flag(lang), None, "{lang:?} {other:?}");
             }
         }
     }
