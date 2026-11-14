@@ -332,8 +332,11 @@ fn rust_holds_the_slot_of_an_optional_variable_in_the_optional_type_itself() {
         !written.contains("Option<Option<"),
         "no second absence:\n{written}"
     );
+    // The child declares its optional variable from the value its parent
+    // handed it, and from its own initial value where the slot is absent
+    // (docs/adr/0098: the handed value is the top-level data's initial value).
     assert!(
-        written.contains("params.size.is_some()"),
+        written.contains("if handed.size.is_some() { handed.size } else"),
         "a slot that is absent is a value not handed:\n{written}"
     );
 }
