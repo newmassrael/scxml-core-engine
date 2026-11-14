@@ -59,6 +59,7 @@ const fn run(suite: &'static str, case: &'static str) -> Run {
 }
 
 const RUNTIME: &str = "runtime_suite";
+const BOUNDARY: &str = "boundary_suite";
 
 /// The rows of ADR 0091 §2 and the runs of each aspect.
 const ROWS: &[Row] = &[
@@ -99,11 +100,11 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "a signed integer",
-                runs: &[],
+                runs: &[run(BOUNDARY, "exchanges_signed_numbers")],
             },
             Aspect {
                 what: "a 64-bit integer",
-                runs: &[],
+                runs: &[run(BOUNDARY, "exchanges_signed_numbers")],
             },
         ],
     },
@@ -244,11 +245,11 @@ const ROWS: &[Row] = &[
             },
             Aspect {
                 what: "`fail`",
-                runs: &[],
+                runs: &[run(BOUNDARY, "answers_another_job")],
             },
             Aspect {
                 what: "`none`",
-                runs: &[],
+                runs: &[run(BOUNDARY, "sets_no_verdict")],
             },
         ],
     },
@@ -329,11 +330,11 @@ const ERRORS: &[Aspect] = &[
     },
     Aspect {
         what: "a test case that can never end",
-        runs: &[],
+        runs: &[run(BOUNDARY, "never_ends")],
     },
     Aspect {
         what: "a dynamic error",
-        runs: &[],
+        runs: &[run(BOUNDARY, "sends_to_a_removed_ptc")],
     },
 ];
 
@@ -347,8 +348,6 @@ const NOT_YET_RUN: &[&str] = &[
     "Type definitions: a byte string",
     "Type definitions: a list",
     "Type definitions: a record within a record",
-    "Type definitions: a signed integer",
-    "Type definitions: a 64-bit integer",
     "Template: `*`",
     "Template: a range",
     "Template: a length restriction",
@@ -358,13 +357,9 @@ const NOT_YET_RUN: &[&str] = &[
     "Template: a complement",
     "Template: a template reference",
     "Template: union matching",
-    "`setverdict`: `fail`",
-    "`setverdict`: `none`",
     "`timer`: a restart",
     "`timer`: a duration given at the start",
     "`altstep` and `activate`: a branch of an ancestor state",
-    "error: a test case that can never end",
-    "error: a dynamic error",
 ];
 
 /// The refusals of ADR 0091 §3 and how each is covered.

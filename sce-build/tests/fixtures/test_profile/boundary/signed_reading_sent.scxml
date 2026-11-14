@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: the specific reading the tester
+     sends: a negative value of each signed width, the int64 one past what a
+     32-bit integer holds, and a uint64 past what an int64 holds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="signed_reading_sent"
+       sce:type="record:SignedReading">
+  <sce:import kind="event-schema" src="signed_reading.scxml" as="SignedReading"/>
+  <sce:record-match>
+    <sce:specific field="delta" value="-7"/>
+    <sce:specific field="offset" value="-300"/>
+    <sce:specific field="level" value="-70000"/>
+    <sce:specific field="stamp" value="-5000000000"/>
+    <sce:specific field="total" value="10000000000000000000"/>
+  </sce:record-match>
+</scxml>

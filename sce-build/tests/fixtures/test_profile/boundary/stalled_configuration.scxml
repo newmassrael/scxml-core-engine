@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.6: the stalled listener as the MTC, its port
+     mapped to the port of the system under test. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="stalled_configuration">
+  <sce:import kind="test-component" src="stalled_listener.scxml" as="StalledListener"/>
+  <sce:import kind="test-port-type" src="../runtime/exchange_port.scxml" as="ExchangePort"/>
+  <sce:mtc type="StalledListener"/>
+  <sce:system-port id="sut" type="ExchangePort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

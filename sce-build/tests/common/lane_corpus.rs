@@ -38,6 +38,11 @@ pub const CORPUS: &[CorpusSuite] = &[
         world: &["ptcs", "removal", "guard"],
     },
     CorpusSuite {
+        document: "tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+        runs: "tests/fixtures/test_profile/runs/boundary_suite",
+        world: &[],
+    },
+    CorpusSuite {
         document: "tests/fixtures/test_profile/job_suite.scxml",
         runs: "tests/fixtures/test_profile/runs/job_suite",
         world: &["job-timeout", "job-retry"],
