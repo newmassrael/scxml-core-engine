@@ -95,6 +95,7 @@ const PRINTED: &[&str] = &[
     "codec_present_if_basic",
     "codec_present_if_checked",
     "codec_present_if_disjunction",
+    "codec_present_if_length_from",
     "codec_present_if_length_ref",
     "codec_present_if_negation",
     "codec_present_if_string",

@@ -572,7 +572,9 @@ pub fn unknown_tag(m: &CodecModel) -> Option<UnknownTag> {
 }
 
 /// The fields whose size the element `id` is derived from, when it is a
-/// length or a count.
+/// length, a count or an encoded length: the bytes or text a length measures,
+/// the lists a count counts, and the bodies an encoded length is the frame of
+/// (docs/adr/0058 §1).
 pub fn measured<'m>(m: &'m CodecModel, roles: &CodecRoles, id: &ElementId) -> Vec<&'m CodecField> {
     let Some(Role::Derived(by)) = roles.role_of(id) else {
         return Vec::new();
@@ -585,6 +587,7 @@ pub fn measured<'m>(m: &'m CodecModel, roles: &CodecRoles, id: &ElementId) -> Ve
                 .map(|c| c.field.as_str())
                 .collect::<Vec<_>>(),
             Derivation::CountOf { lists } => lists.iter().map(String::as_str).collect(),
+            Derivation::EncodedLengthOf { bodies } => bodies.iter().map(String::as_str).collect(),
             _ => Vec::new(),
         })
         .collect();
@@ -762,12 +765,13 @@ fn derived(
             .filter(|l| field_of(l).is_some() && !roles.counted_with_another(l))
             .map(|l| (l.clone(), gated(l)))
             .collect(),
-        // The length of a body that is not there is the wire's zero, so a
-        // gated body measures as one that is always there.
+        // A body a gate leaves out has no frame to measure, and the wire still
+        // carries the number, which the value states: an encoded length is a
+        // length of gated content as a length of bytes is (docs/adr/0058 §1).
         Derivation::EncodedLengthOf { bodies } => bodies
             .iter()
             .filter(|b| field_of(b).is_some())
-            .map(|b| (b.clone(), false))
+            .map(|b| (b.clone(), gated(b)))
             .collect(),
         Derivation::PresenceOf { gated: fields } => {
             // Fields one group holds are present together (docs/adr/0065 §6

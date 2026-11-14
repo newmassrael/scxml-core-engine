@@ -2657,6 +2657,22 @@ FIXTURES = {
         "a length stated where its gated content is absent is held with that content, on the "
         "side where it is not (R4b): arm 0 holds the payload, arm 1 the size.",
     ),
+    "codec_present_if_length_from": Fixture(
+        [
+            ({"flags": 0x00, "flags.has_ts": {"arm": 1, "ext_size": 0}},
+             "no body, a stated size of zero"),
+            ({"flags": 0x00, "flags.has_ts": {"arm": 1, "ext_size": 9}},
+             "no body: the size is what the value states"),
+            ({"flags": 0x01, "flags.has_ts": {"arm": 0, "ts": {"time": 42, "zid": [1, 2, 3, 4]}}},
+             "a body: has_ts and the size are derived from the body's frame of six bytes"),
+            ({"flags": 0xFF, "flags.has_ts": {"arm": 0, "ts": {"time": 0x4000, "zid": []}}},
+             "a body of a three-byte VLE time and no zid: the size counts the frame, and the "
+             "bits the value presents are kept"),
+        ],
+        "the encoded length of a body a gate decides is stated where the body is absent and "
+        "held with it, on the side where it is not (R4b), as a length of bytes is: arm 0 "
+        "holds the body, arm 1 the size.",
+    ),
     "codec_present_if_disjunction": Fixture(
         [
             ({"flags": 0x00, "flags.wants_a || flags.wants_b": None},

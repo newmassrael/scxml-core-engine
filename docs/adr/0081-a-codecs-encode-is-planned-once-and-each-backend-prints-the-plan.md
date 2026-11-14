@@ -823,6 +823,18 @@ old encode, the old encode and its templates are removed in the same landing.
    list's bound. Kotlin, Go, Python and C11 compile the codec as they compile every codec whose cases are `sources`
    alone, and Swift where its generator writes it; the codec joins the set the Rust, C++, Kotlin, Go, Python and
    C11 backends each compile (`entries_that_take_a_flag_compile_on_every_backend`).
+
+   *The encoded length of a gated body, 2026-11-14:* the plan read the encoded length of a body a gate decides
+   (`sce:length-from` on a gated `<sce:embed>`) as always there, zero where the body is absent, where ADR 0058 §1
+   has a length of gated content stated by the value while the content is absent and `binary_model.py` read it
+   so: a frame that carries a number beside an absent body would have been written back with zero. The measure is
+   now gated as the body is (`encode_plan`, `codec_totality::measured`), so the number is derived from the body's
+   frame where the body is there and stated where it is not, held on the side of the gate's group the body is not
+   on (docs/adr/0065 §6 R4b), as a length of bytes is; the Rust and C++ printers test the body's presence on the
+   source. No document used the shape, so the new resource `codec_present_if_length_from` is it, a timestamp gated
+   on a flag and read from as many bytes as a VLE size before it says. The catalog gains 4 sources and no refused
+   case: the encode is total. Kotlin, Go, Python and C11 compile the codec, and Swift where its generator writes
+   it; each writes the size as the value holds it, as it writes every length, until it prints the plan (§3).
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

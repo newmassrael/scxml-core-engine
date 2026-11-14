@@ -323,6 +323,89 @@ fn an_encoded_length_measures_the_body_and_widens_into_a_64_bit_field() {
     );
 }
 
+/// The field an embedded body is read from the length of (`sce:length-from`) is
+/// derived from the body's frame and is no element of the value, as the length
+/// of bytes is not (docs/adr/0058 §1): the value presents the body, and no
+/// printer reads the number off it.
+#[test]
+fn an_encoded_length_of_a_body_always_there_is_no_element_of_the_value() {
+    for (stem, length, body) in [
+        ("codec_zenoh_decl_ext_keyexpr", "total_length", "inner"),
+        ("codec_zenoh_source_info_ext", "ext_size", "info"),
+        ("codec_zenoh_timestamp_ext", "ext_size", "ts"),
+        ("codec_encoded_length_checked", "inner_size", "inner"),
+    ] {
+        with_plan(stem, |plan| {
+            let ids = element_ids(plan);
+            assert!(
+                !ids.iter().any(|id| id == length),
+                "{stem}: `{length}` is presented: {ids:?}"
+            );
+            assert!(
+                ids.iter().any(|id| id == body),
+                "{stem}: `{body}` is not presented: {ids:?}"
+            );
+            assert!(!plan.presents_alone(field(plan, length)));
+            assert!(plan.groups().is_empty(), "{stem}: no gate decides a field");
+        });
+        with_number(stem, field_element(length), |number| {
+            let [measure] = number.measures.as_slice() else {
+                panic!("{stem}: the length measures one body");
+            };
+            assert!(
+                matches!(measure.of, Measured::Encoded { body: held, .. } if held.id == body),
+                "{stem}: `{length}` is not the encoded length of `{body}`"
+            );
+            assert!(!measure.gated);
+            assert!(matches!(
+                number.into,
+                NumberInto::Field {
+                    absent: Absent::Never,
+                    ..
+                }
+            ));
+        });
+    }
+}
+
+/// The encoded length of a body a gate decides is derived from the body where
+/// it is there and stated by the value where it is not, as a length of gated
+/// bytes is (docs/adr/0058 §1): the number is held on the side of the gate the
+/// body is not on (docs/adr/0065 §6 R4b), and the value presents it nowhere
+/// else.
+#[test]
+fn an_encoded_length_of_a_gated_body_is_stated_on_the_side_without_the_body() {
+    let stem = "codec_present_if_length_from";
+    with_plan(stem, |plan| {
+        assert_eq!(element_ids(plan), ["flags"]);
+        let [group] = plan.groups() else {
+            panic!("the codec holds one group");
+        };
+        for id in ["ts", "ext_size"] {
+            assert!(group.contains(id), "the group does not hold `{id}`");
+        }
+    });
+    with_number(stem, field_element("ext_size"), |number| {
+        let [measure] = number.measures.as_slice() else {
+            panic!("the length measures one body");
+        };
+        assert!(matches!(
+            measure.of,
+            Measured::Encoded { body, .. } if body.id == "ts"
+        ));
+        assert!(measure.gated);
+        assert!(number.free());
+        assert!(matches!(
+            number.into,
+            NumberInto::Field {
+                narrow: Narrow::Widened,
+                absent: Absent::Group,
+                ..
+            }
+        ));
+    });
+}
+
 /// A flag bound to an input that some arms of the variant say is what the arm
 /// the value holds says, where it holds one of them (docs/adr/0065 §6 R4a), and
 /// the tag the arms are chosen by is the held arm's.

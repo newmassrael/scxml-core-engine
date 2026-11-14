@@ -483,8 +483,9 @@ pub enum Measured<'m> {
         list: &'m CodecField,
     },
     /// How many bytes the embedded body `body` encodes to, the codec imported
-    /// as `codec`. A body that is absent encodes to none, so the measure is
-    /// always there.
+    /// as `codec`. A body a gate leaves out has no frame to measure, so the
+    /// measure is there only where the body is, as a gated field's length is
+    /// (docs/adr/0058 §1).
     Encoded {
         /// The embedded body.
         body: &'m CodecField,
@@ -972,7 +973,7 @@ fn derivations<'m>(
                                             && i.codec_source_can_refuse
                                     }),
                                 },
-                                gated: false,
+                                gated: body.present_if.is_some(),
                                 at,
                             }
                         })

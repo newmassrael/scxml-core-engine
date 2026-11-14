@@ -5013,8 +5013,9 @@ impl<'a> Plan<'a> {
 
     /// How many bytes the embedded `body`, of the codec imported as `codec`,
     /// encodes to: the body written into a sink that counts, which is the length
-    /// the body's own encode gives it and cannot differ from it. The length of a
-    /// body that is not there is the wire's zero.
+    /// the body's own encode gives it and cannot differ from it. A body a gate
+    /// leaves out measures nothing, and the number is then what the value
+    /// states, as a gated field's length is (docs/adr/0058 §1).
     fn measure_encoded(
         &self,
         body: &CodecField,
@@ -5047,7 +5048,7 @@ impl<'a> Plan<'a> {
         });
         Measure {
             number: size,
-            present: None,
+            present: self.presence_test(body),
         }
     }
 

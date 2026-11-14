@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: the encoded length of an embedded body a gate decides
+  (docs/adr/0058 §1, docs/adr/0065 §6 R4b).
+
+  `ext_size` is how many bytes `ts` encodes to (`sce:length-from`), and `ts` is
+  on the wire only where `flags.has_ts` is set; `ext_size` always is. Where the
+  body is there, the encode derives the length from the body's frame, as it
+  derives the length of bytes from the bytes (`codec_present_if_length_ref`),
+  and never takes it from the value. Where the body is not, the wire still
+  carries a number and a decode reads it, so the value states it: the length is
+  held on the side of the gate where the body is not, as a stated length of
+  bytes is.
+
+  Wire shape: `flags` (8 bits), `ext_size` (VLE), then, where `has_ts` is set,
+  the body, read from as many bytes as `ext_size` says.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_length_from">
+  <sce:import src="codec_zenoh_timestamp.scxml" kind="codec" as="codec_zenoh_timestamp"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_ts" bit="0"/>
+    </sce:flags>
+    <sce:field id="ext_size" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:embed id="ts" type="codec_zenoh_timestamp" sce:byte="2"
+               sce:length-from="ext_size" sce:present-if="flags.has_ts"/>
+  </datamodel>
+</scxml>

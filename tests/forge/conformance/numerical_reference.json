@@ -44809,6 +44809,16 @@
         {"source": {"head": 1, "head.L": {"arm": 1, "note": 255}}, "encoded": [1, 255], "note": "the arm of note and W set: no list derives W, so the value's bit is kept"},
         {"source": {"head": 254, "head.L": {"arm": 0, "level": 2, "entries": {"start": {"wide": 0}, "entries": [{"header": 4, "wide": {"arm": 1, "short_value": 127}}]}}}, "encoded": [254, 2, 1, 4, 127], "note": "the bits beside W and L are kept"}
       ]
+    },
+    "codec_present_if_length_from": {
+      "fixture": "CodecPresentIfLengthFrom",
+      "description": "docs/adr/0081 §5: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the encoded length of a body a gate decides is stated where the body is absent and held with it, on the side where it is not (R4b), as a length of bytes is: arm 0 holds the body, arm 1 the size.",
+      "sources": [
+        {"source": {"flags": 0, "flags.has_ts": {"arm": 1, "ext_size": 0}}, "encoded": [0, 0], "note": "no body, a stated size of zero"},
+        {"source": {"flags": 0, "flags.has_ts": {"arm": 1, "ext_size": 9}}, "encoded": [0, 9], "note": "no body: the size is what the value states"},
+        {"source": {"flags": 1, "flags.has_ts": {"arm": 0, "ts": {"time": 42, "zid": [1, 2, 3, 4]}}}, "encoded": [1, 6, 42, 4, 1, 2, 3, 4], "note": "a body: has_ts and the size are derived from the body's frame of six bytes"},
+        {"source": {"flags": 255, "flags.has_ts": {"arm": 0, "ts": {"time": 16384, "zid": []}}}, "encoded": [255, 4, 128, 128, 1, 0], "note": "a body of a three-byte VLE time and no zid: the size counts the frame, and the bits the value presents are kept"}
+      ]
     }
   },
   "string_lookups": {

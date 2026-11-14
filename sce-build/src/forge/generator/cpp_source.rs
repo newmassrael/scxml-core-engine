@@ -4038,8 +4038,9 @@ pub(super) fn render(
     // How many bytes each body encodes to, counted by its encode over a sink
     // that keeps none. A body whose encode refuses nothing returns only the
     // count; one that can refuse passes its refusal on, as its write would.
-    // A body a gate leaves out encodes to nothing, so its count stays zero, and
-    // the length of an encoded body is always there.
+    // A body a gate leaves out is not counted and measures nothing: the number
+    // is then what the value states, as a gated field's length is
+    // (docs/adr/0058 §1).
     for (element_id, number) in encoded {
         if !matches!(element_id, ElementId::Field(_)) {
             unreachable!("{}", ENCODED_INTO_FIELD);
@@ -4079,8 +4080,10 @@ pub(super) fn render(
             });
             measured.push(MeasureText {
                 size: format!("_k_{name}.position()"),
-                present: None,
-                gated: false,
+                present: counted
+                    .optional
+                    .then(|| format!("{}.has_value()", counted.local())),
+                gated: measure.gated,
             });
         }
         if derive_number(plan, l, element_id, &number.into, &measured, &mut before).is_some() {
@@ -4838,7 +4841,8 @@ pub(super) fn render(
 }
 
 /// The content the number `id` the value states measures: the gated byte
-/// strings, texts and lists its derivation counts (`codec_totality::stated`).
+/// strings, texts, lists and bodies its derivation counts
+/// (`codec_totality::stated`).
 fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
     plan.derivations
         .iter()
@@ -4851,6 +4855,7 @@ fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
         .map(|measure| match &measure.of {
             Measured::Bytes { field, .. } => *field,
             Measured::Entries { list } => *list,
+            Measured::Encoded { body, .. } => *body,
             _ => unreachable!("a number the value states is a length or a count of gated content"),
         })
         .collect()

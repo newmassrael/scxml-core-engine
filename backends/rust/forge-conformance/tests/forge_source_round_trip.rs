@@ -896,6 +896,72 @@ mod groups {
     }
 }
 
+// The length an embedded body is read from (`sce:length-from`) is the length of
+// the body's frame, which the encode derives as it derives the length of bytes
+// (docs/adr/0058 §1): no value states it beside the body, and where a gate
+// leaves the body out the value states the number the wire carries.
+mod encoded_lengths {
+    use super::codecs::codec_present_if_length_from::{
+        CodecPresentIfLengthFrom, CodecPresentIfLengthFromFlagsHasTs as HasTs,
+        CodecPresentIfLengthFromParts, CodecPresentIfLengthFromWire,
+    };
+    use super::codecs::codec_zenoh_timestamp::CodecZenohTimestampParts;
+    use super::codecs::codec_zenoh_timestamp_ext::CodecZenohTimestampExt;
+    use sce_forge_runtime::codec::{SceCursor, VecSink};
+
+    // A builder keeps the number a decode read beside the body; its encode
+    // writes the length of the body's frame whatever the builder holds there.
+    #[test]
+    fn the_length_of_a_body_is_its_frames_whatever_the_value_holds() {
+        // Time 42 and a zid of four bytes: a body of six bytes.
+        let frame = [0x06u8, 0x2A, 0x04, 0x01, 0x02, 0x03, 0x04];
+        let mut value =
+            CodecZenohTimestampExt::decode(&mut SceCursor::new(&frame)).expect("a frame");
+        assert_eq!(value.ext_size, 6);
+        for held in [0u64, 5, 7, 0x7F] {
+            value.ext_size = held;
+            assert_eq!(value.encode_to_vec(), frame);
+        }
+    }
+
+    fn encode(value: &CodecPresentIfLengthFromParts<'_>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        CodecPresentIfLengthFromWire::encode_source(value, &mut VecSink::new(&mut bytes))
+            .expect("a body whose length a 64-bit field holds");
+        bytes
+    }
+
+    #[test]
+    fn the_length_of_a_gated_body_is_its_frames_and_the_values_where_it_is_absent() {
+        let ts = CodecZenohTimestampParts {
+            time: 42,
+            zid: (&[1u8, 2, 3, 4]).into(),
+        };
+        // The body is there: `has_ts` and the length are the body's.
+        let with = CodecPresentIfLengthFromParts {
+            flags: 0x00,
+            flags_has_ts: HasTs::HasTs { ts: &ts },
+        };
+        assert_eq!(encode(&with), [0x01, 0x06, 0x2A, 0x04, 1, 2, 3, 4]);
+        // The body is not: the length is the one the value states.
+        let without = CodecPresentIfLengthFromParts {
+            flags: 0x00,
+            flags_has_ts: HasTs::NotHasTs { ext_size: 9 },
+        };
+        assert_eq!(encode(&without), [0x00, 0x09]);
+        // A decoded frame is written back as it came, the number it carries
+        // beside an absent body included.
+        for frame in [
+            [0x01u8, 0x06, 0x2A, 0x04, 1, 2, 3, 4].as_slice(),
+            &[0x00, 0x09],
+        ] {
+            let decoded =
+                CodecPresentIfLengthFrom::decode(&mut SceCursor::new(frame)).expect("a frame");
+            assert_eq!(decoded.encode_to_vec(), frame);
+        }
+    }
+}
+
 mod unknown_tags {
     use super::codecs::codec_init_syn_envelope::CodecInitSynEnvelopeUnknownTag;
     use super::codecs::codec_origin_choice::CodecOriginChoiceUnknownTag;
