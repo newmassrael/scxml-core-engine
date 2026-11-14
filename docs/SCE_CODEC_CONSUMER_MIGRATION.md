@@ -1684,3 +1684,28 @@ among them.
   over; a flat text that lacked a number its kind reads, which the resolver refused, is now refused by the lift as
   `missing`, with its pointer.
 
+## An origin profile's container builds itself from the origin, field by field (ADR 0077 §7, amendment of 2026-11-15)
+
+Landing: the commit that adds this section. It touches only a consumer that implements `OriginStorage` and
+generates with `--owned-origin`; every codec generated with the option is regenerated, and nothing else changes.
+
+- `OriginStorage` keeps `type Origin` and loses `bytes_from` and `str_from`. Move each body to the container it
+  builds: `impl FromOrigin<MyOrigin> for MyBytes { fn from_origin(origin: &MyOrigin, view: &[u8]) -> Result<Self,
+  CodecError> { .. } }` for a byte container, `FromOriginStr<MyOrigin>` with `from_origin_str(origin, view: &str)`
+  for a text one. A body that matched on whether `view` lies inside the origin stays as it was, in the container
+  whose memory it shares.
+- A container that copies says so with the runtime's helper, `copy_from_origin(origin, view)` or
+  `copy_str_from_origin(origin, view)`. There is no impl for every `SceByteBuf`: a container with no `FromOrigin`
+  for the profile's origin is a compile error at the projection, which names it. To give a runtime container one
+  (`GrowBytes`, `GrowStr`) the origin type has to be the consumer's own, for the orphan rule; a profile whose
+  `Origin` is a foreign type (`Arc<Vec<u8>>`) wraps it in a struct of its own.
+- `{Codec}::try_into_owned_in_origin` asks `S: {Codec}Origin`, where it asked `S: {Codec}Storage + OriginStorage`.
+  The trait is generated beside the projection and names `OriginBytes<Tag>` or `OriginStr<Tag>` for each byte
+  string and text of the codec, and each held codec's `{Inner}Origin`. A site generic over the profile names that
+  trait. `OriginBytes` and `OriginStr` hold for every profile whose container for the tag has the constructor; a
+  profile does not implement them.
+- The profile may now hold each byte field in the container it chooses by tag. Where it answered
+  `impl<Tag> HoldsBytes<Tag> for MyProfile` with one container, it can name the tags instead, from a list in a
+  macro, so that a frame-sized payload is shared and a short field beside it is copied; a tag the list leaves out
+  is a compile error at the projection that reaches it.
+

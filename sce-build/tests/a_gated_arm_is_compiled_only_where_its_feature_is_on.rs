@@ -280,6 +280,78 @@ fn a_storage_trait_asks_for_a_gated_arm_where_the_arm_is_compiled() {
     );
 }
 
+/// The trait the origin projection names (`generate --owned-origin`) asks for a
+/// gated arm's as the storage trait does: through a trait of its own that asks
+/// for nothing in a build without the feature, since an attribute cannot go on
+/// a supertrait (docs/adr/0077 §7). An import every build uses is a plain
+/// supertrait, and the codec's own trait asks for an origin profile.
+#[test]
+fn an_origin_trait_asks_for_a_gated_arm_where_the_arm_is_compiled() {
+    let code = generate(
+        Language::Rust,
+        &ForgeCompileOptions {
+            owned_origin: true,
+            ..ForgeCompileOptions::default()
+        },
+    );
+    let lines: Vec<&str> = code.lines().collect();
+    for child in GATED {
+        let origin = format!("super::{}::{child}Origin", snake(child));
+        let at = lines
+            .iter()
+            .position(|l| {
+                l.starts_with("pub trait CodecZenohRequestGatedChild")
+                    && l.ends_with(&format!(": {origin} {{}}"))
+            })
+            .unwrap_or_else(|| panic!("no gated trait asks for {origin}"));
+        // The attribute, then the `dead_code` allowance, then the trait.
+        assert_eq!(
+            lines[at - 2].trim(),
+            CFG,
+            "{child}'s origin trait is not gated"
+        );
+        let helper = lines[at]
+            .trim_start_matches("pub trait ")
+            .split(':')
+            .next()
+            .expect("the trait has a name");
+        assert!(
+            helper.ends_with("Origin"),
+            "{helper} is not the origin helper"
+        );
+        let empty = format!("pub trait {helper} {{}}");
+        let off = lines
+            .iter()
+            .position(|l| *l == empty)
+            .unwrap_or_else(|| panic!("no empty trait `{empty}` for a build without it"));
+        assert_eq!(lines[off - 2].trim(), CFG_OFF, "`{empty}` is not gated off");
+    }
+    let whole = lines
+        .iter()
+        .find(|l| l.starts_with("pub trait CodecZenohRequestOrigin:"))
+        .expect("the codec has an origin trait");
+    assert!(
+        whole.starts_with(
+            "pub trait CodecZenohRequestOrigin: CodecZenohRequestStorage + ::sce_forge_runtime::codec::OriginStorage"
+        ),
+        "the origin trait does not ask for the storage trait and an origin profile:\n{whole}"
+    );
+    assert!(
+        whole.contains("super::codec_zenoh_query::CodecZenohQueryOrigin"),
+        "the arm every build compiles is not a plain supertrait:\n{whole}"
+    );
+    assert!(
+        !whole.contains("CodecZenohMsgPutOrigin"),
+        "a gated arm's trait is a plain supertrait:\n{whole}"
+    );
+    // Without the option the trait is not declared at all.
+    let plain = generate(Language::Rust, &ForgeCompileOptions::default());
+    assert!(
+        !plain.contains("CodecZenohRequestOrigin"),
+        "the origin trait leaked into the default output"
+    );
+}
+
 /// The module of the codec named `name`.
 fn snake(name: &str) -> String {
     let mut out = String::new();

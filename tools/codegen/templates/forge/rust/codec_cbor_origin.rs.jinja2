@@ -1,19 +1,22 @@
+{%- import '_macros/forge_rust_storage.jinja2' as storage %}
 // ── Owned projection with an origin (`--owned-origin`) ───────────────
 // The owned form above is made by `try_into_owned_in`, which copies each string
 // and each byte string out of the view. `try_into_owned_in_origin` makes the same
 // form from the view AND the origin the view was decoded from, through the
-// storage profile's `OriginStorage`, so a profile that can share that origin holds
-// each entry as a reference to it and copies nothing. It is the projection every
-// other generated owned form has under this option, and it is rendered after the
-// codec's source interface so that the output with the option off is a prefix of
-// the output with it on.
+// container the storage profile holds each entry in, so a profile whose container
+// can share that origin holds the entry as a reference to it and copies nothing.
+// It is the projection every other generated owned form has under this option,
+// and it is rendered after the codec's source interface so that the output with
+// the option off is a prefix of the output with it on.
+
+{{ storage.declare_origin(struct_name, storage_gated, storage_origin_bound) }}
 #[allow(dead_code)]
 impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
     /// The projection `try_into_owned_in` makes, with the profile's text and byte
     /// containers made from `{{ origin_param }}`, what the decoded bytes were taken
-    /// from. A profile that shares that buffer builds containers that refer back
-    /// to it instead of copying out of it; what the origin is, and what to do with
-    /// a slice that does not come from it, is the profile's to say.
+    /// from. A container that shares that buffer refers back to it instead of
+    /// copying out of it; what the origin is, and what to do with a slice that
+    /// does not come from it, is the profile's to say, field by field.
     ///
     /// Each string and byte string is held at its declared capacity, as in
     /// `try_into_owned_in`; every other entry is moved as that projection moves it.

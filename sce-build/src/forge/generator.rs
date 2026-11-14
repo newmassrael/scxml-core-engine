@@ -11050,8 +11050,9 @@ pub(crate) const ORIGIN_PARAM: &str = "origin";
 /// `origin` selects WHICH projection the expression is a piece of: `false`
 /// the copying `try_into_owned_in`, `true` the origin-aware
 /// `try_into_owned_in_origin` (`OWNED_IN_ORIGIN_FN`), whose byte and text
-/// containers come from the profile's `OriginStorage` constructors and whose
-/// nested bodies are projected the same way. The returned FIELD TYPE is the
+/// containers are built from the origin by the container the profile holds
+/// each field in (`OriginBytes<Tag>`, `OriginStr<Tag>`) and whose nested
+/// bodies are projected the same way. The returned FIELD TYPE is the
 /// same either way — the origin changes how a container is made, not what it
 /// is.
 /// The entry type of the owned form of the list `f` and the projection of one
@@ -11100,6 +11101,12 @@ pub(crate) fn rust_storage_tag(codec: &str, field: &str) -> String {
 /// a storage profile.
 pub(crate) fn rust_storage_trait(codec: &str) -> String {
     format!("{}Storage", filters::to_pascal_case(codec.to_string()))
+}
+
+/// The trait the origin projection of the codec `codec` names for what it asks
+/// of a storage profile (`--owned-origin`; [`insert_rust_storage`] says what).
+pub(crate) fn rust_origin_trait(codec: &str) -> String {
+    format!("{}Origin", filters::to_pascal_case(codec.to_string()))
 }
 
 /// One variable field as the storage macro takes it: its tag, which of the
@@ -11178,6 +11185,14 @@ fn rust_owned_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
 /// lists, since the lent form borrows every byte string and text from the frame
 /// (docs/adr/0077 §7): a byte string with no bound asks nothing of `D`, so the
 /// lent form at `Inline` holds a codec of one.
+///
+/// It also says what `{Codec}Origin` asks, the trait the origin projection
+/// names (`--owned-origin`, [`OWNED_IN_ORIGIN_FN`]) and which only that option
+/// declares: `{Codec}Storage`, an origin profile, a container built from the
+/// origin for each byte string and text (`OriginBytes`, `OriginStr`), and what
+/// each codec in `children` asks of the same projection. A profile chooses the
+/// container field by field, so the trait names every tag, and a tag the
+/// profile gave no such container is a compile error at the projection.
 pub(crate) fn insert_rust_storage(
     ctx: &mut serde_json::Map<String, serde_json::Value>,
     codec: &str,
@@ -11189,6 +11204,12 @@ pub(crate) fn insert_rust_storage(
     let mut bound = vec![derives.clone()];
     let mut lent_bound = vec![derives];
     let mut from_bound = vec![format!("{name}Storage")];
+    // The origin is named by `OriginStorage` itself, so a codec with no byte
+    // string or text of its own still has the origin's type to take.
+    let mut origin_bound = vec![
+        format!("{name}Storage"),
+        format!("{RUNTIME_CODEC}::OriginStorage"),
+    ];
     for f in &fields {
         let kind = f["kind"].as_str().unwrap_or_default();
         let tag = f["tag"].as_str().unwrap_or_default();
@@ -11197,6 +11218,7 @@ pub(crate) fn insert_rust_storage(
             lent_bound.push(format!("{RUNTIME_CODEC}::HoldsList<{tag}>"));
         } else {
             from_bound.push(format!("{RUNTIME_CODEC}::Stores{kind}<'f, {tag}>"));
+            origin_bound.push(format!("{RUNTIME_CODEC}::Origin{kind}<{tag}>"));
         }
     }
     let mut gated = Vec::new();
@@ -11204,22 +11226,26 @@ pub(crate) fn insert_rust_storage(
         let child_bound = format!("{child}Storage");
         let child_lent = format!("{child}LentStorage");
         let child_from = format!("{child}From<'f>");
+        let child_origin = format!("{child}Origin");
         match cfg {
             None => {
                 bound.push(child_bound);
                 lent_bound.push(child_lent);
                 from_bound.push(child_from);
+                origin_bound.push(child_origin);
             }
             Some(cfg) => {
                 let helper = format!("{name}GatedChild{i}");
                 bound.push(helper.clone());
                 lent_bound.push(format!("{helper}Lent"));
                 from_bound.push(format!("{helper}From<'f>"));
+                origin_bound.push(format!("{helper}Origin"));
                 gated.push(serde_json::json!({
                     "helper": helper,
                     "bound": child_bound,
                     "lent_bound": child_lent,
                     "from_bound": child_from,
+                    "origin_bound": child_origin,
                     "cfg": cfg,
                     "cfg_off": cfg
                         .strip_prefix("#[cfg(")
@@ -11235,6 +11261,10 @@ pub(crate) fn insert_rust_storage(
     ctx.insert("storage_bound".into(), bound.join(" + ").into());
     ctx.insert("storage_lent_bound".into(), lent_bound.join(" + ").into());
     ctx.insert("storage_from_bound".into(), from_bound.join(" + ").into());
+    ctx.insert(
+        "storage_origin_bound".into(),
+        origin_bound.join(" + ").into(),
+    );
 }
 
 /// How the decode of a stored codec names the codec it holds as `alias`, whose
@@ -11444,13 +11474,14 @@ fn rust_owned_field_keys(
                 let kind = if text { "Str" } else { "Bytes" };
                 let container =
                     format!("<{STORAGE_PARAM} as {RUNTIME_CODEC}::Holds{kind}<{tag}>>::{kind}");
-                // The origin form names the profile's `OriginStorage` and
-                // spells the tag as a turbofish: the constructor is generic
-                // over it, and nothing at the call site would otherwise infer
-                // it (the field's type is an associated type, which cannot be
-                // run backwards).
+                // The origin form names what the profile answers for the tag
+                // (`OriginBytes<Tag>`, `OriginStr<Tag>`): the container it
+                // holds the field in builds itself from the origin, so the tag
+                // is the trait's argument, and nothing at the call site would
+                // otherwise infer it (the field's type is an associated type,
+                // which cannot be run backwards).
                 let origin_path = format!(
-                    "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{tag}>",
+                    "<{STORAGE_PARAM} as {RUNTIME_CODEC}::Origin{kind}<{tag}>>::{}",
                     if text { "str_from" } else { "bytes_from" }
                 );
                 let bounds = rust_byte_bound_args(f, &m.fields);
@@ -14682,8 +14713,9 @@ fn render_codec(
                     rust_owned_field_keys(f, m, &roles, imports, &l, false, None)?;
                 obj.insert("rs_owned_type".into(), rs_owned_type.into());
                 obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
-                // The same field's projection through the profile's
-                // `OriginStorage`, rendered only into the opt-in
+                // The same field's projection through what the profile
+                // answers for its tag (`OriginBytes`, `OriginStr`), rendered
+                // only into the opt-in
                 // `try_into_owned_in_origin` block (`owned_origin`).
                 let (_, rs_into_owned_origin_expr) =
                     rust_owned_field_keys(f, m, &roles, imports, &l, true, None)?;
@@ -16356,19 +16388,20 @@ fn render_codec(
             .into(),
         );
         // The origin-aware projection (`try_into_owned_in_origin`), rendered
-        // only when the document asks for it. It takes a profile that is an
-        // `OriginStorage` and the origin its decoded bytes came from; a
+        // only when the document asks for it. It takes a profile that answers
+        // `{Codec}Origin` (`insert_rust_storage`: an `OriginStorage` that builds
+        // each byte string and text from the origin, here and in every codec
+        // this one holds) and the origin its decoded bytes came from; a
         // variant whose arms carry no profile parameter owns nothing an
         // origin could be shared with, so there it is the plain projection.
-        let origin_storage_path = format!("{RUNTIME_CODEC}::OriginStorage");
-        let origin_ref = format!("&<{STORAGE_PARAM} as {origin_storage_path}>::Origin");
+        let origin_ref = format!("&<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::Origin");
         ctx.insert("owned_origin".into(), owned_origin.into());
         ctx.insert("owned_in_origin_fn".into(), OWNED_IN_ORIGIN_FN.into());
         ctx.insert("origin_param".into(), ORIGIN_PARAM.into());
         ctx.insert("origin_ref_type".into(), origin_ref.into());
         ctx.insert(
             "origin_generics_impl".into(),
-            format!("<{STORAGE_PARAM}: {storage_trait} + {origin_storage_path}>").into(),
+            format!("<{STORAGE_PARAM}: {}>", rust_origin_trait(&m.name)).into(),
         );
         ctx.insert(
             "variant_into_owned_origin_call".into(),
