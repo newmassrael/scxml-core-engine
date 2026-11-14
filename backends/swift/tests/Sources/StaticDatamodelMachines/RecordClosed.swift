@@ -33,7 +33,7 @@ public enum RecordClosed {
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
 /// whole by its initialiser, every field written: no type has a value nobody wrote
-/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+/// (docs/adr/0099, section 4). A value, so a host that reads one holds a copy.
 public struct RecordClosedPayload: Equatable, Sendable {
     public var command: UInt64
     public var operations: UInt32
