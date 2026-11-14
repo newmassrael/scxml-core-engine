@@ -494,9 +494,10 @@ impl<B: crate::storage::HeldBytes, const MAX: usize, const MIN: usize> Bounded<B
     }
 
     /// The buffer a profile built for bytes inside the bounds, held once its
-    /// length is checked: an [`crate::storage::OriginStorage`] profile builds it
-    /// however it chooses, so its length is the profile's word, not the
-    /// type's. A buffer of another length is refused as a length out of range.
+    /// length is checked: the container an [`crate::storage::OriginStorage`]
+    /// profile holds the field in builds itself from the origin however it
+    /// chooses ([`crate::storage::FromOrigin`]), so its length is the
+    /// container's word, not the type's. A buffer of another length is refused as a length out of range.
     pub fn from_built(
         buf: Result<B, crate::codec::CodecError>,
     ) -> Result<Self, crate::codec::CodecError> {

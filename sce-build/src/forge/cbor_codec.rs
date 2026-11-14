@@ -17,8 +17,8 @@
 
 use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::generator::{
-    insert_rust_storage, rust_storage_field, rust_storage_tag, rust_storage_trait, ImportContext,
-    LangCtx, ORIGIN_PARAM, OWNED_IN_ORIGIN_FN,
+    insert_rust_storage, rust_origin_trait, rust_storage_field, rust_storage_tag,
+    rust_storage_trait, ImportContext, LangCtx, ORIGIN_PARAM, OWNED_IN_ORIGIN_FN,
 };
 use crate::forge::model::{CborEntry, CodecModel, Measured, SceType};
 use crate::forge::value_type::{
@@ -478,22 +478,24 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
 
 /// The expression that builds the present value of `e` for the Rust owned mirror
 /// from the view's field `field` and the origin parameter: a string or a byte
-/// string through the profile's `OriginStorage` (`str_from` or `bytes_from`, at the
-/// entry's capacity), an entry that may be absent built only when present, and any
-/// other entry moved as `try_into_owned_in` moves it. A fallible build is written
-/// with its `?`, so the expression is the field's value.
+/// string through what the profile answers for the entry's tag (`OriginStr` by
+/// `str_from` or `OriginBytes` by `bytes_from`, at the entry's capacity), an entry
+/// that may be absent built only when present, and any other entry moved as
+/// `try_into_owned_in` moves it. A fallible build is written with its `?`, so the
+/// expression is the field's value.
 fn rust_owned_origin_expr(m: &CodecModel, e: &CborEntry, field: &str) -> String {
-    let (constructor, held) = match e.leaf_type() {
-        Some(SceType::String) => ("str_from", "from_built_text"),
-        Some(SceType::Bytes) => ("bytes_from", "from_built"),
+    let (kind, constructor, held) = match e.leaf_type() {
+        Some(SceType::String) => ("Str", "str_from", "from_built_text"),
+        Some(SceType::Bytes) => ("Bytes", "bytes_from", "from_built"),
         _ => return field.to_string(),
     };
-    // The profile builds the container from the view's bytes, and the bounds
-    // check the length it built once (`Bounded::from_built`).
+    // The container the profile holds the entry in builds itself from the
+    // view's bytes and the origin, and the bounds check the length it built
+    // once (`Bounded::from_built`).
     let tag = rust_storage_tag(&m.name, &e.id);
     let build = |arg: &str| {
         format!(
-            "{RUST_RUNTIME_CODEC}::Bounded::{held}(<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::OriginStorage>::{constructor}::<{tag}>({ORIGIN_PARAM}, {arg}.into_inner()))",
+            "{RUST_RUNTIME_CODEC}::Bounded::{held}(<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::Origin{kind}<{tag}>>::{constructor}({ORIGIN_PARAM}, {arg}.into_inner()))",
         )
     };
     if e.is_required() {
@@ -1036,17 +1038,19 @@ pub fn render_rust_owned_origin(
     }
     let l = LangCtx::new(Language::Rust, imports);
     let mut ctx = rust_context(&l, m, imports)?;
-    let origin_storage = format!("{RUST_RUNTIME_CODEC}::OriginStorage");
-    let storage = rust_storage_trait(&m.name);
     ctx.insert("owned_in_origin_fn".into(), OWNED_IN_ORIGIN_FN.into());
     ctx.insert("origin_param".into(), ORIGIN_PARAM.into());
     ctx.insert(
         "origin_ref_type".into(),
-        format!("&<{RUST_STORAGE_PARAM} as {origin_storage}>::Origin").into(),
+        format!("&<{RUST_STORAGE_PARAM} as {RUST_RUNTIME_CODEC}::OriginStorage>::Origin").into(),
     );
+    // What the projection asks of the profile is the codec's `{Codec}Origin`,
+    // which the template declares beside it (`insert_rust_storage` says what it
+    // asks): every string and byte string built from the origin by the
+    // container the profile holds it in.
     ctx.insert(
         "origin_generics_impl".into(),
-        format!("<{RUST_STORAGE_PARAM}: {storage} + {origin_storage}>").into(),
+        format!("<{RUST_STORAGE_PARAM}: {}>", rust_origin_trait(&m.name)).into(),
     );
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {

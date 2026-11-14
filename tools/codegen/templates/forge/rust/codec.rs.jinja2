@@ -1009,6 +1009,8 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     }
 }
 {% if owned_origin %}
+
+{{ storage.declare_origin(struct_name, storage_gated, storage_origin_bound) -}}
 {% if has_variant and variant_owned_generics_args %}
 
 #[allow(dead_code)]
@@ -1034,12 +1036,12 @@ impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D
 #[allow(dead_code)]
 impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}LentStorage {
     /// Project this borrowed view into an owned [`{{ struct_name }}Owned`]
-    /// whose byte and text containers are made by the profile's
-    /// `OriginStorage` from each slice AND `{{ origin_param }}`, the buffer the
-    /// view was decoded from. A profile that shares that buffer builds
-    /// containers that refer back to it instead of copying out of it; what the
+    /// whose byte and text containers are each built from the slice AND
+    /// `{{ origin_param }}`, the buffer the view was decoded from, by the
+    /// container the profile holds that field in. A container that shares
+    /// that buffer refers back to it instead of copying out of it; what the
     /// origin is, and what to do with a slice that does not come from it, is
-    /// the profile's to say.
+    /// the profile's to say, field by field.
     ///
     /// `{{ owned_in_fn }}` stays the copying projection. Every codec this one
     /// embeds, repeats or dispatches to must have been generated with

@@ -125,3 +125,37 @@ pub trait {{ struct_name }}From<'f>: {{ from_bound }} {}
 
 impl<'f, S: {{ from_bound }}> {{ struct_name }}From<'f> for S {}
 {% endmacro %}
+{#- What the origin projection of a codec's owned form asks of a storage profile
+    (`--owned-origin`, docs/adr/0077 §7): what `{Codec}Storage` asks, an origin
+    profile, and for each byte string and text a container the profile builds
+    from the origin, here and in each codec it holds. The profile chooses the
+    container tag by tag, so a tag it gave none is a compile error at the
+    projection, never a silent copy. Declared only with the option, so the
+    default output is unchanged; a child under a build feature is reached
+    through a trait of its own, as in `declare`. #}
+{%- macro declare_origin(struct_name, gated, origin_bound) %}
+{% for child in gated %}
+{{ child.cfg }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}Origin: {{ child.origin_bound }} {}
+
+{{ child.cfg }}
+impl<S: {{ child.origin_bound }}> {{ child.helper }}Origin for S {}
+
+{{ child.cfg_off }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}Origin {}
+
+{{ child.cfg_off }}
+impl<S> {{ child.helper }}Origin for S {}
+
+{% endfor %}
+/// What the origin projection of `{{ struct_name }}` asks of a storage profile
+/// beside {{ struct_name }}Storage: that it is an origin profile, and
+/// that each byte string and text of `{{ struct_name }}` and of the codecs it
+/// holds is built from the origin by the container the profile holds it in.
+#[allow(dead_code)]
+pub trait {{ struct_name }}Origin: {{ origin_bound }} {}
+
+impl<S: {{ origin_bound }}> {{ struct_name }}Origin for S {}
+{% endmacro %}

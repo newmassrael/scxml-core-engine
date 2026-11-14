@@ -3217,10 +3217,13 @@ const ORIGIN_SET: &[&str] = &[
 /// last owned value is dropped. The control is the copying projection of the
 /// same profile, which must not.
 ///
-/// The profile here is a test's own; this crate ships none. It shares bytes
-/// (`Arc<Vec<u8>>` plus a range) and copies text, and for a slice that is not
-/// part of the origin it copies — a choice the trait leaves to the profile and
-/// this test makes explicit.
+/// The profiles here are a test's own; this crate ships none. `Sharing` holds
+/// every byte field in a container that shares the frame (`Arc<Vec<u8>>` plus
+/// a range) and copies text; that container, for a slice that is not part of
+/// the origin, copies — a choice the trait leaves to the container and this
+/// test makes explicit. `Mixed` is one profile that shares one byte field and
+/// copies the one beside it, because it holds the two in two containers
+/// (docs/adr/0077 §7, amendment of 2026-11-15).
 #[test]
 fn an_origin_profile_shares_the_frame_it_was_decoded_from() {
     const HARNESS: &str = r#"// Injected by an_origin_profile_shares_the_frame_*.
@@ -3228,11 +3231,29 @@ fn an_origin_profile_shares_the_frame_it_was_decoded_from() {
 mod tests {
     use crate::codec_origin_choice::{CodecOriginChoice, CodecOriginChoiceOwnedVariant};
     use crate::codec_origin_envelope::CodecOriginEnvelope;
-    use ::sce_forge_runtime::codec::{
-        subrange_of, CodecError, Copying, Fewest, GrowStr, HoldsBytes, HoldsList, HoldsStr,
-        OriginStorage, SceByteBuf, SceCursor, SceStr,
+    use crate::codec_origin_leaf::CodecOriginLeafDataField;
+    use crate::codec_zenoh_init_body::{
+        CodecZenohInitBody, CodecZenohInitBodyCookieField, CodecZenohInitBodyZidField,
     };
+    use ::sce_forge_runtime::codec::{
+        copy_from_origin, copy_str_from_origin, subrange_of, CodecError, Copying, Fewest,
+        FromOrigin, FromOriginStr, GrowBytes, GrowStr, HoldsBytes, HoldsList, HoldsStr,
+        OriginStorage, SceByteBuf, SceCursor,
+    };
+    use std::any::TypeId;
     use std::sync::Arc;
+
+    /// The buffer a value is decoded from. The type is this test's own, so a
+    /// container of the runtime's can be given a constructor from it here: the
+    /// orphan rule admits `impl FromOrigin<Frame> for GrowBytes` because
+    /// `Frame` is local.
+    struct Frame(Arc<Vec<u8>>);
+
+    impl Frame {
+        fn of(bytes: &[u8]) -> Self {
+            Self(Arc::new(bytes.to_vec()))
+        }
+    }
 
     /// Bytes that name the frame they live in, and where.
     #[derive(Debug, Clone)]
@@ -3258,7 +3279,31 @@ mod tests {
             Self { frame: Arc::new(vec![0; MIN]), range: 0..MIN }
         }
     }
+    // The container decides: a slice of the frame is held as a range of it.
+    impl FromOrigin<Frame> for Shared {
+        fn from_origin(origin: &Frame, view: &[u8]) -> Result<Self, CodecError> {
+            match subrange_of(&origin.0[..], view) {
+                Some(range) if !view.is_empty() => {
+                    Ok(Shared { frame: Arc::clone(&origin.0), range })
+                }
+                // Not part of the origin, or empty: this container copies.
+                _ => Shared::from_slice(view),
+            }
+        }
+    }
+    // The runtime's growable containers copy, and say so.
+    impl FromOrigin<Frame> for GrowBytes {
+        fn from_origin(origin: &Frame, view: &[u8]) -> Result<Self, CodecError> {
+            copy_from_origin(origin, view)
+        }
+    }
+    impl FromOriginStr<Frame> for GrowStr {
+        fn from_origin_str(origin: &Frame, view: &str) -> Result<Self, CodecError> {
+            copy_str_from_origin(origin, view)
+        }
+    }
 
+    /// Every byte field held in a `Shared`, every text copied.
     #[derive(Debug, Clone, PartialEq)]
     struct Sharing;
     impl<Tag> HoldsList<Tag> for Sharing {
@@ -3272,25 +3317,39 @@ mod tests {
     }
     impl Copying for Sharing {}
     impl OriginStorage for Sharing {
-        type Origin = Arc<Vec<u8>>;
-        fn bytes_from<Tag>(
-            origin: &Arc<Vec<u8>>,
-            view: &[u8],
-        ) -> Result<<Self as HoldsBytes<Tag>>::Bytes, CodecError> {
-            match subrange_of(&origin[..], view) {
-                Some(range) if !view.is_empty() => {
-                    Ok(Shared { frame: Arc::clone(origin), range })
+        type Origin = Frame;
+    }
+
+    /// One profile, two containers for bytes: the frame-sized fields shared,
+    /// a short id copied, as a host shares a payload and copies the metadata
+    /// beside it. Each byte field it answers for is named in the list below;
+    /// a field left out has no container at this profile, so a projection
+    /// that reaches it does not compile.
+    #[derive(Debug, Clone, PartialEq)]
+    struct Mixed;
+    impl<Tag> HoldsList<Tag> for Mixed {
+        type List<T> = Vec<T> where T: Default + core::fmt::Debug + Clone + PartialEq;
+    }
+    impl<Tag> HoldsStr<Tag> for Mixed {
+        type Str = GrowStr;
+    }
+    impl OriginStorage for Mixed {
+        type Origin = Frame;
+    }
+    macro_rules! mixed_holds {
+        ($($bytes:ty => $($tag:ty),+;)+) => {
+            $($(
+                impl HoldsBytes<$tag> for Mixed {
+                    type Bytes = $bytes;
                 }
-                // Not part of the origin, or empty: this profile copies.
-                _ => Shared::from_slice(view),
-            }
-        }
-        fn str_from<Tag>(
-            _origin: &Arc<Vec<u8>>,
-            view: &str,
-        ) -> Result<<Self as HoldsStr<Tag>>::Str, CodecError> {
-            <GrowStr as SceStr>::from_view(view)
-        }
+            )+)+
+        };
+    }
+    mixed_holds! {
+        // Frame-sized: a range of the frame, shared.
+        Shared => CodecOriginLeafDataField, CodecZenohInitBodyCookieField;
+        // At most 16 bytes: copied.
+        GrowBytes => CodecZenohInitBodyZidField;
     }
 
     // hdr (has_opt) | note_len | note | m | required | optional | items
@@ -3302,11 +3361,20 @@ mod tests {
         0x00, // items[1]: empty
     ];
 
+    // version | cbyte (zid of 3 bytes) | zid | sn_res | batch_size (LE)
+    // | cookie_len (VLE) | cookie, decoded with both flag inputs set.
+    const INIT_BODY: [u8; 13] = [
+        0x05, 0x21, // version, cbyte
+        0x01, 0x02, 0x03, // zid
+        0x33, 0xFE, 0xCA, // sn_res, batch_size
+        0x04, 0xBA, 0xBE, 0x11, 0x22, // cookie_len, cookie
+    ];
+
     #[test]
     fn decoded_bytes_are_the_frames_own_memory_at_every_depth() {
-        let frame = Arc::new(ENVELOPE.to_vec());
-        let base = frame.as_ptr();
-        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let frame = Frame::of(&ENVELOPE);
+        let base = frame.0.as_ptr();
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame.0)).expect("decode");
         let owned = view
             .try_into_owned_in_origin::<Sharing>(&frame)
             .expect("project");
@@ -3330,40 +3398,40 @@ mod tests {
 
         // required + optional + items[0] hold the frame; the frame itself is
         // the fourth owner. Dropping the value releases every one of them.
-        assert_eq!(Arc::strong_count(&frame), 4);
+        assert_eq!(Arc::strong_count(&frame.0), 4);
         drop(owned);
-        assert_eq!(Arc::strong_count(&frame), 1);
+        assert_eq!(Arc::strong_count(&frame.0), 1);
     }
 
     #[test]
     fn the_copying_projection_of_the_same_profile_shares_nothing() {
-        let frame = Arc::new(ENVELOPE.to_vec());
-        let base = frame.as_ptr();
-        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let frame = Frame::of(&ENVELOPE);
+        let base = frame.0.as_ptr();
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame.0)).expect("decode");
         let copied = view.try_into_owned_in::<Sharing>().expect("project");
         assert_eq!(copied.required.data.as_slice(), &[0xA1]);
         assert_ne!(copied.required.data.as_slice().as_ptr(), base.wrapping_add(6));
-        assert_eq!(Arc::strong_count(&frame), 1, "a copy does not hold the frame");
+        assert_eq!(Arc::strong_count(&frame.0), 1, "a copy does not hold the frame");
     }
 
     #[test]
     fn a_slice_that_is_not_from_the_origin_is_the_profiles_to_decide() {
-        let frame = Arc::new(ENVELOPE.to_vec());
-        let other = Arc::new(vec![0xEEu8; 4]);
-        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
-        // Decoded from `frame`, projected against `other`: this profile copies.
+        let frame = Frame::of(&ENVELOPE);
+        let other = Frame::of(&[0xEE; 4]);
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame.0)).expect("decode");
+        // Decoded from `frame`, projected against `other`: this container copies.
         let owned = view
             .try_into_owned_in_origin::<Sharing>(&other)
             .expect("project");
         assert_eq!(owned.required.data.as_slice(), &[0xA1]);
-        assert_eq!(Arc::strong_count(&other), 1);
-        assert_eq!(Arc::strong_count(&frame), 1);
+        assert_eq!(Arc::strong_count(&other.0), 1);
+        assert_eq!(Arc::strong_count(&frame.0), 1);
     }
 
     #[test]
     fn the_origin_projection_agrees_with_the_copying_one_on_every_value() {
-        let frame = Arc::new(ENVELOPE.to_vec());
-        let view = || CodecOriginEnvelope::decode(&mut SceCursor::new(&frame)).expect("decode");
+        let frame = Frame::of(&ENVELOPE);
+        let view = || CodecOriginEnvelope::decode(&mut SceCursor::new(&frame.0)).expect("decode");
         let shared = view().try_into_owned_in_origin::<Sharing>(&frame).unwrap();
         let copied = view().try_into_owned_in::<Sharing>().unwrap();
         assert_eq!(shared, copied, "sharing changes where bytes live, not what they are");
@@ -3380,28 +3448,84 @@ mod tests {
     #[test]
     fn a_variant_shares_through_the_arm_that_holds_bytes_and_moves_the_one_that_does_not() {
         // tag 1 -> leaf (len 2, [D1 D2]); tag 2 -> scalar (7); tag 9 -> default.
-        let leaf = Arc::new(vec![0x01u8, 0x02, 0xD1, 0xD2]);
-        let view = CodecOriginChoice::decode(&mut SceCursor::new(&leaf)).expect("decode leaf arm");
+        let leaf = Frame::of(&[0x01, 0x02, 0xD1, 0xD2]);
+        let view = CodecOriginChoice::decode(&mut SceCursor::new(&leaf.0)).expect("decode leaf arm");
         let owned = view.try_into_owned_in_origin::<Sharing>(&leaf).expect("project");
         match &owned.body {
             CodecOriginChoiceOwnedVariant::CodecOriginLeaf(b) => {
-                assert_eq!(b.data.as_slice().as_ptr(), leaf.as_ptr().wrapping_add(2));
+                assert_eq!(b.data.as_slice().as_ptr(), leaf.0.as_ptr().wrapping_add(2));
             }
             other => panic!("tag 1 must select the leaf arm, got {other:?}"),
         }
-        assert_eq!(Arc::strong_count(&leaf), 2);
+        assert_eq!(Arc::strong_count(&leaf.0), 2);
 
-        let scalar = Arc::new(vec![0x02u8, 0x07]);
-        let view = CodecOriginChoice::decode(&mut SceCursor::new(&scalar)).expect("decode scalar arm");
+        let scalar = Frame::of(&[0x02, 0x07]);
+        let view = CodecOriginChoice::decode(&mut SceCursor::new(&scalar.0)).expect("decode scalar arm");
         let owned = view.try_into_owned_in_origin::<Sharing>(&scalar).expect("project");
-        assert_eq!(Arc::strong_count(&scalar), 1, "a scalar arm holds nothing of the frame");
+        assert_eq!(Arc::strong_count(&scalar.0), 1, "a scalar arm holds nothing of the frame");
         drop(owned);
+    }
+
+    #[test]
+    fn one_profile_shares_one_byte_field_and_copies_the_one_beside_it() {
+        // Two containers, two types: the test cannot pass by one container
+        // doing both.
+        type Zid = <Mixed as HoldsBytes<CodecZenohInitBodyZidField>>::Bytes;
+        type Cookie = <Mixed as HoldsBytes<CodecZenohInitBodyCookieField>>::Bytes;
+        assert_eq!(TypeId::of::<Zid>(), TypeId::of::<GrowBytes>());
+        assert_eq!(TypeId::of::<Cookie>(), TypeId::of::<Shared>());
+
+        let frame = Frame::of(&INIT_BODY);
+        let base = frame.0.as_ptr();
+        let view = CodecZenohInitBody::decode(&mut SceCursor::new(&frame.0), 1, 1).expect("decode");
+        let owned = view.try_into_owned_in_origin::<Mixed>(&frame).expect("project");
+
+        // The cookie is the frame's memory at the offset it was read.
+        let cookie = owned.cookie.as_ref().expect("cookie present");
+        assert_eq!(cookie.as_slice(), &[0xBA, 0xBE, 0x11, 0x22]);
+        assert_eq!(
+            cookie.as_slice().as_ptr(),
+            base.wrapping_add(9),
+            "the cookie must be the frame's memory, not a copy"
+        );
+        // The id holds the same bytes in memory of its own.
+        assert_eq!(owned.zid.as_slice(), &[0x01, 0x02, 0x03]);
+        assert_eq!(
+            subrange_of(&frame.0[..], owned.zid.as_slice()),
+            None,
+            "the id must be a copy, not the frame's memory"
+        );
+        // The frame and the one field that shares it; dropping the value
+        // releases it.
+        assert_eq!(Arc::strong_count(&frame.0), 2);
+        drop(owned);
+        assert_eq!(Arc::strong_count(&frame.0), 1);
+    }
+
+    #[test]
+    fn the_fields_a_mixed_profile_shares_are_the_frames_own_memory_at_every_depth() {
+        let frame = Frame::of(&ENVELOPE);
+        let base = frame.0.as_ptr();
+        let view = CodecOriginEnvelope::decode(&mut SceCursor::new(&frame.0)).expect("decode");
+        let owned = view.try_into_owned_in_origin::<Mixed>(&frame).expect("project");
+        assert_eq!(owned.required.data.as_slice().as_ptr(), base.wrapping_add(6));
+        assert_eq!(
+            owned.optional.as_ref().expect("optional present").data.as_slice().as_ptr(),
+            base.wrapping_add(8)
+        );
+        assert_eq!(owned.items[0].data.as_slice().as_ptr(), base.wrapping_add(11));
+        assert_eq!(owned.note.as_str(), "hi");
+        assert_eq!(Arc::strong_count(&frame.0), 4);
     }
 }
 "#;
+    // The origin family, and a codec of two byte fields for `Mixed` to hold in
+    // two containers.
+    let mut set = ORIGIN_SET.to_vec();
+    set.push("codec_zenoh_init_body.scxml");
     let mut files = generate_files_for_codec_set_with(
         &resource_dir(),
-        ORIGIN_SET,
+        &set,
         sce_build::generator::Language::Rust,
         origin_options(),
     )
@@ -3409,6 +3533,60 @@ mod tests {
     files.push(("origin_sharing.rs".to_string(), HARNESS.to_string()));
     rustc_run_generated_set(files, "origin_sharing", "test", RustcProfile::Alloc)
         .expect("an origin profile must share the frame, and release it with the last owned value");
+}
+
+/// An origin profile that holds a byte field in a container with no
+/// constructor from its origin does not compile at the projection: there is no
+/// copying default to fall back on (docs/adr/0077 §7, amendment of 2026-11-15),
+/// so a choice the profile did not make is a compile error naming the missing
+/// `FromOrigin`, not a projection that copies without a word. The assertion
+/// checks the diagnostic and the trait, not merely that the build failed: a
+/// typo in the harness would fail it too.
+#[test]
+fn an_origin_profile_whose_container_has_no_constructor_from_its_origin_does_not_compile() {
+    const HARNESS: &str = r#"// Injected by an_origin_profile_whose_container_has_no_constructor_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_origin_leaf::CodecOriginLeaf;
+    use ::sce_forge_runtime::codec::{GrowBytes, HoldsBytes, OriginStorage, SceCursor};
+
+    /// This test's own origin, so that the impl missing below is one this
+    /// crate could have written.
+    struct Frame(Vec<u8>);
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Forgetful;
+    impl<Tag> HoldsBytes<Tag> for Forgetful {
+        type Bytes = GrowBytes;
+    }
+    impl OriginStorage for Forgetful {
+        type Origin = Frame;
+    }
+    // No `impl FromOrigin<Frame> for GrowBytes`: nothing says whether the
+    // field shares the frame or copies out of it.
+
+    #[test]
+    fn project() {
+        let frame = Frame(vec![0x01, 0xAA]);
+        let view = CodecOriginLeaf::decode(&mut SceCursor::new(&frame.0)).expect("decode");
+        let _ = view.try_into_owned_in_origin::<Forgetful>(&frame);
+    }
+}
+"#;
+    let mut files = generate_files_for_codec_set_with(
+        &resource_dir(),
+        &["codec_origin_leaf.scxml"],
+        sce_build::generator::Language::Rust,
+        origin_options(),
+    )
+    .expect("generate the origin leaf");
+    files.push(("origin_forgotten.rs".to_string(), HARNESS.to_string()));
+    let err = rustc_run_generated_set(files, "origin_forgotten", "test", RustcProfile::Alloc)
+        .expect_err("a container with no constructor from the origin must not compile");
+    assert!(
+        err.contains("E0277") && err.contains("FromOrigin<"),
+        "expected E0277 naming the missing `FromOrigin`, got:\n{err}"
+    );
 }
 
 /// The documents the chain-membership fixtures import, then the fixtures.

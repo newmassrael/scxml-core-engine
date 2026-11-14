@@ -308,8 +308,8 @@ impl<'f: 'a, 'a, D, Tag> StoresStr<'f, Tag> for Lent<'a, D> {
 /// message to share the frame — not copy out of it — has no place to say so.
 /// This trait is that place. The projection `{Codec}::try_into_owned_in_origin`
 /// (generated only on request, `--owned-origin`) hands the profile an
-/// [`Self::Origin`] and the slice, and the profile builds a container that
-/// refers back to the origin however it chooses.
+/// [`Self::Origin`] and the slice, and the container the profile holds the
+/// field in refers back to the origin however it chooses.
 ///
 /// What the origin IS belongs to the profile, not to this crate: this crate is
 /// `no_std`, takes no position on reference counting, and ships no profile that
@@ -318,40 +318,125 @@ impl<'f: 'a, 'a, D, Tag> StoresStr<'f, Tag> for Lent<'a, D> {
 /// origin to refer to, which is the point of it — and neither impl, nor the
 /// generated output of a document that does not ask, changes.
 ///
-/// There is no copying default for the two constructors. A default that
-/// copied would let a profile that forgot to override them build exactly what
-/// [`SceByteBuf::from_slice`] already builds, and report success: the sharing
-/// this trait exists for would silently not happen. A profile that wants to
-/// copy says so.
+/// The trait says only what the origin is. Whether a field shares it or copies
+/// out of it is decided by the container the profile holds that field in, tag
+/// by tag ([`HoldsBytes`], [`HoldsStr`]): the container builds itself from the
+/// origin ([`FromOrigin`], [`FromOriginStr`]), and [`OriginBytes`] and
+/// [`OriginStr`] are what the projection asks of the profile for each field
+/// (docs/adr/0077 §7). One profile may so share a frame-sized payload and copy
+/// a short piece of metadata beside it.
+///
+/// There is no copying default. A default that copied would let a profile
+/// that forgot to say how a container is built from its origin build exactly
+/// what [`SceByteBuf::from_slice`] already builds, and report success: the
+/// sharing this trait exists for would silently not happen. A field whose
+/// container has no constructor from the profile's origin is a compile error at
+/// the projection; a profile that wants to copy says so, with
+/// [`copy_from_origin`] or [`copy_str_from_origin`].
 pub trait OriginStorage {
     /// What the decoded bytes were taken from — a handle to a frame, an arena,
     /// a pool slot. Unsized so that a profile can take a slice or a trait
     /// object by reference as readily as a sized handle.
     type Origin: ?Sized;
+}
 
-    /// Build owned byte storage for `view`, which is part of `origin`.
-    ///
-    /// `view` is a slice of the buffer `origin` stands for when it was decoded
-    /// from it, but a borrowed view can be built by hand (a default field is
-    /// the empty slice; a test passes a literal). A profile decides what to do
-    /// with a slice that is not part of its origin — see [`subrange_of`], which
-    /// answers the question — and answers [`CodecError`] or copies; it must not
-    /// assume.
-    fn bytes_from<Tag>(
-        origin: &Self::Origin,
+/// A byte container built from a slice AND the origin `O` the slice was
+/// decoded from. The container decides: hold a reference to the origin, or
+/// copy the slice.
+///
+/// `view` is a slice of the buffer `origin` stands for when it was decoded
+/// from it, but a borrowed view can be built by hand (a default field is the
+/// empty slice; a test passes a literal). A container decides what to do with
+/// a slice that is not part of its origin — see [`subrange_of`], which answers
+/// the question — and answers [`CodecError`] or copies; it must not assume.
+///
+/// A container that copies is built by [`copy_from_origin`]. Nothing here
+/// implements this trait for every [`SceByteBuf`]: a sharing container is one
+/// too, and a profile that forgot to choose would copy without a word.
+pub trait FromOrigin<O: ?Sized>: Sized {
+    /// The container of `view`, which is part of `origin`.
+    fn from_origin(origin: &O, view: &[u8]) -> Result<Self, CodecError>;
+}
+
+/// A text container built from a text AND the origin `O` it was decoded from;
+/// the same contract as [`FromOrigin`]. `view` is valid UTF-8 by type.
+pub trait FromOriginStr<O: ?Sized>: Sized {
+    /// The container of `view`, which is part of `origin`.
+    fn from_origin_str(origin: &O, view: &str) -> Result<Self, CodecError>;
+}
+
+/// How an origin profile holds the `bytes` field `Tag`, as [`StoresBytes`] is
+/// for a copying read: through the container it holds the field in, built from
+/// the origin ([`FromOrigin`]). Every profile whose container for `Tag` has
+/// such a constructor answers it, and no other; a profile does not implement
+/// it by hand.
+pub trait OriginBytes<Tag>: OriginStorage + HoldsBytes<Tag> {
+    /// `view`, which is part of `origin`, as the field holds it.
+    fn bytes_from(origin: &Self::Origin, view: &[u8]) -> Result<Self::Bytes, CodecError>;
+}
+
+impl<Tag, S> OriginBytes<Tag> for S
+where
+    S: OriginStorage + HoldsBytes<Tag>,
+    <S as HoldsBytes<Tag>>::Bytes: FromOrigin<<S as OriginStorage>::Origin>,
+{
+    fn bytes_from(
+        origin: &<S as OriginStorage>::Origin,
         view: &[u8],
-    ) -> Result<<Self as HoldsBytes<Tag>>::Bytes, CodecError>
-    where
-        Self: HoldsBytes<Tag>;
+    ) -> Result<<S as HoldsBytes<Tag>>::Bytes, CodecError> {
+        <<S as HoldsBytes<Tag>>::Bytes as FromOrigin<<S as OriginStorage>::Origin>>::from_origin(
+            origin, view,
+        )
+    }
+}
 
-    /// Build owned text storage for `view`, which is part of `origin`; the
-    /// same contract as [`Self::bytes_from`]. `view` is valid UTF-8 by type.
-    fn str_from<Tag>(
-        origin: &Self::Origin,
+/// How an origin profile holds the `string` field `Tag`, as [`OriginBytes`] is
+/// for a `bytes` field ([`FromOriginStr`]).
+pub trait OriginStr<Tag>: OriginStorage + HoldsStr<Tag> {
+    /// `view`, which is part of `origin`, as the field holds it.
+    fn str_from(origin: &Self::Origin, view: &str) -> Result<Self::Str, CodecError>;
+}
+
+impl<Tag, S> OriginStr<Tag> for S
+where
+    S: OriginStorage + HoldsStr<Tag>,
+    <S as HoldsStr<Tag>>::Str: FromOriginStr<<S as OriginStorage>::Origin>,
+{
+    fn str_from(
+        origin: &<S as OriginStorage>::Origin,
         view: &str,
-    ) -> Result<<Self as HoldsStr<Tag>>::Str, CodecError>
-    where
-        Self: HoldsStr<Tag>;
+    ) -> Result<<S as HoldsStr<Tag>>::Str, CodecError> {
+        <<S as HoldsStr<Tag>>::Str as FromOriginStr<<S as OriginStorage>::Origin>>::from_origin_str(
+            origin, view,
+        )
+    }
+}
+
+/// [`FromOrigin::from_origin`] for a container that copies: `view` copied in,
+/// the origin not used. A profile whose origin type is its own writes the
+/// copying container's impl with it, which the orphan rule admits:
+///
+/// ```ignore
+/// impl FromOrigin<MyFrame> for GrowBytes {
+///     fn from_origin(origin: &MyFrame, view: &[u8]) -> Result<Self, CodecError> {
+///         copy_from_origin(origin, view)
+///     }
+/// }
+/// ```
+pub fn copy_from_origin<B: SceByteBuf, O: ?Sized>(
+    _origin: &O,
+    view: &[u8],
+) -> Result<B, CodecError> {
+    B::from_slice(view)
+}
+
+/// [`FromOriginStr::from_origin_str`] for a text container that copies, as
+/// [`copy_from_origin`] is for bytes.
+pub fn copy_str_from_origin<T: SceStr, O: ?Sized>(
+    _origin: &O,
+    view: &str,
+) -> Result<T, CodecError> {
+    T::from_view(view)
 }
 
 /// Where `sub` lies inside `base`, as a byte range of `base`; `None` when it
@@ -693,5 +778,107 @@ mod tests {
         // coincide with the start of its neighbour.
         static ELSEWHERE: [u8; 4] = [0; 4];
         assert_eq!(subrange_of(&frame, &ELSEWHERE[2..2]), None);
+    }
+
+    // An origin profile holds each field in the container it chose for the
+    // field's tag, and that container decides whether the field shares the
+    // origin or copies out of it: one profile shares one field and copies the
+    // one beside it.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn each_field_is_built_from_the_origin_by_the_container_its_profile_holds_it_in() {
+        use alloc::rc::Rc;
+
+        // The origin: a frame this test owns.
+        struct Frame(Rc<[u8]>);
+
+        // A range of the frame, shared.
+        #[derive(Debug, Clone, PartialEq)]
+        struct Window(Rc<[u8]>, core::ops::Range<usize>);
+        impl SceByteBuf for Window {
+            fn from_slice(b: &[u8]) -> Result<Self, CodecError> {
+                Ok(Window(Rc::from(b), 0..b.len()))
+            }
+            fn as_slice(&self) -> &[u8] {
+                &self.0[self.1.clone()]
+            }
+        }
+        impl crate::bounded::Fewest for Window {
+            fn fewest<const MIN: usize>() -> Self {
+                Window(Rc::from(alloc::vec![0u8; MIN]), 0..MIN)
+            }
+        }
+        impl FromOrigin<Frame> for Window {
+            fn from_origin(origin: &Frame, view: &[u8]) -> Result<Self, CodecError> {
+                match subrange_of(&origin.0, view) {
+                    Some(range) => Ok(Window(Rc::clone(&origin.0), range)),
+                    None => Window::from_slice(view),
+                }
+            }
+        }
+        // The growable containers copy, and say so.
+        impl FromOrigin<Frame> for GrowBytes {
+            fn from_origin(origin: &Frame, view: &[u8]) -> Result<Self, CodecError> {
+                copy_from_origin(origin, view)
+            }
+        }
+        impl FromOriginStr<Frame> for GrowStr {
+            fn from_origin_str(origin: &Frame, view: &str) -> Result<Self, CodecError> {
+                copy_str_from_origin(origin, view)
+            }
+        }
+
+        struct Payload;
+        struct Schema;
+        struct Note;
+        struct Mixed;
+        impl OriginStorage for Mixed {
+            type Origin = Frame;
+        }
+        impl HoldsBytes<Payload> for Mixed {
+            type Bytes = Window;
+        }
+        impl HoldsBytes<Schema> for Mixed {
+            type Bytes = GrowBytes;
+        }
+        impl HoldsStr<Note> for Mixed {
+            type Str = GrowStr;
+        }
+
+        let frame = Frame(Rc::from(&[1u8, 2, 3, 4, 5][..]));
+        let payload = <Mixed as OriginBytes<Payload>>::bytes_from(&frame, &frame.0[1..3]).unwrap();
+        assert_eq!(payload.as_slice(), &[2, 3]);
+        assert_eq!(
+            payload.as_slice().as_ptr(),
+            frame.0[1..].as_ptr(),
+            "the payload is the frame's memory"
+        );
+        let schema = <Mixed as OriginBytes<Schema>>::bytes_from(&frame, &frame.0[3..5]).unwrap();
+        assert_eq!(schema.as_slice(), &[4, 5]);
+        assert_eq!(
+            subrange_of(&frame.0, schema.as_slice()),
+            None,
+            "the schema is a copy"
+        );
+        let note = <Mixed as OriginStr<Note>>::str_from(&frame, "hi").unwrap();
+        assert_eq!(note.as_str(), "hi");
+        // The frame, and the one field that shares it.
+        assert_eq!(Rc::strong_count(&frame.0), 2);
+        drop(payload);
+        assert_eq!(Rc::strong_count(&frame.0), 1);
+    }
+
+    #[test]
+    fn a_copying_container_copies_whatever_the_origin() {
+        let origin = [9u8, 8, 7];
+        let bytes: InlineBytes<4> = copy_from_origin(&origin, &origin[..2]).unwrap();
+        assert_eq!(bytes.as_slice(), &[9, 8]);
+        assert_eq!(subrange_of(&origin, bytes.as_slice()), None);
+        let over: Result<InlineBytes<1>, _> = copy_from_origin(&origin, &origin[..2]);
+        assert_eq!(over.err(), Some(CodecError::CapacityExceeded));
+        let text: InlineStr<4> = copy_str_from_origin(&origin, "abc").unwrap();
+        assert_eq!(text.as_str(), "abc");
+        let over: Result<InlineStr<2>, _> = copy_str_from_origin(&origin, "abc");
+        assert_eq!(over.err(), Some(CodecError::CapacityExceeded));
     }
 }

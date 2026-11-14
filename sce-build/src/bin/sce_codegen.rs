@@ -2081,8 +2081,9 @@ struct GenerateArgs {
     /// Rust only: also generate the origin-aware owned projection of each
     /// codec, `try_into_owned_in_origin`. It takes a storage profile that
     /// implements `OriginStorage` and the origin its decoded bytes came from,
-    /// so a message decoded from a shared frame can share it instead of
-    /// copying out of it. Off by default, and when off the output is
+    /// and builds each byte or text field through the container the profile
+    /// holds it in, so a message decoded from a shared frame can share it
+    /// instead of copying out of it. Off by default, and when off the output is
     /// unchanged. Every codec an enabled codec embeds, repeats or dispatches
     /// to has to be generated with it on too; ignored for other languages.
     #[arg(long)]
