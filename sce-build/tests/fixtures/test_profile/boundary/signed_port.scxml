@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3: a port type that carries the signed
+     reading both ways. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="signed_port">
+  <sce:import kind="event-schema" src="signed_reading.scxml" as="SignedReading"/>
+  <sce:message type="SignedReading" direction="inout"/>
+</scxml>

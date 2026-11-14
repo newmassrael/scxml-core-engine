@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.9, §11.5: a parallel test component that
+     waits for any request on its port, which is connected to its MTC's. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="request_listener"
+       datamodel="sce-static" initial="listening">
+  <sce:import kind="test-port-type" src="../runtime/serving_port.scxml" as="ServingPort"/>
+  <sce:test-port id="peer" type="ServingPort"/>
+  <state id="listening">
+    <transition sce:receive="peer" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

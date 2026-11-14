@@ -35,7 +35,9 @@ fn nested_suite() -> PathBuf {
 }
 
 /// Every suite of the fixtures the export is held to
-/// (`a_test_suite_is_exported_to_ttcn3`), and the nested suite.
+/// (`a_test_suite_is_exported_to_ttcn3`), the nested suite, and the boundary
+/// suite of the lane's corpus (docs/SCE_TTCN3_LANE.md §12), which the lane
+/// exports as it exports every suite of the corpus.
 fn suites() -> Vec<PathBuf> {
     vec![
         job_suite(),
@@ -43,6 +45,7 @@ fn suites() -> Vec<PathBuf> {
         kind_example_suite(),
         manifest_dir().join("tests/fixtures/ttcn3_export/orders_suite.scxml"),
         nested_suite(),
+        manifest_dir().join("tests/fixtures/test_profile/boundary/boundary_suite.scxml"),
     ]
 }
 

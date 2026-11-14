@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  docs/SCE_TTCN3_LANE.md §12, SCE_FORGE.md §4.6.4: the codec of the record
+  signed_reading (boundary/signed_reading.scxml), which boundary_suite's mapped
+  port carries both ways. One content-line component, a property of each field:
+  a CBOR codec holds no signed integer (SCE_FORGE.md §4.6.1), and content-line
+  writes an integer of any width as its decimal digits.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="X-SIGNED-READING"
+       name="signed_reading_codec">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="delta" sce:type="int8" sce:property="DELTA"/>
+    <data id="offset" sce:type="int16" sce:property="OFFSET"/>
+    <data id="level" sce:type="int32" sce:property="LEVEL"/>
+    <data id="stamp" sce:type="int64" sce:property="STAMP"/>
+    <data id="total" sce:type="uint64" sce:property="TOTAL"/>
+  </datamodel>
+</scxml>

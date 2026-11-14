@@ -473,6 +473,28 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   (`ptcs,removal,guard`), and so does the runner run in the process on every backend but Rust; each backend's test
   holds every log written to its expected log byte for byte, and the set of logs written to the set of expected
   logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4).
+- **`boundary_suite`** (`sce-build/tests/fixtures/test_profile/boundary/`) runs what `runtime_suite` leaves out of
+  every run (§12.2), each test case in a world with no feature, its traces and expected logs under
+  `sce-build/tests/fixtures/test_profile/runs/boundary_suite/` (design choice: every suite but `runtime_suite`
+  keeps its runs under `runs/<suite>/`, since two suites may share a directory of documents and a runner reads a
+  directory of one suite's traces):
+  - `exchanges_signed_numbers`: the tester sends a `signed_reading` of a negative value of each signed width, an
+    int64 past 32 bits and a uint64 past what an int64 holds, and the trace answers at 250 with one the template's
+    negative ranges accept; it passes at 250. The record's codec is content-line, since CBOR holds no signed
+    integer.
+  - `answers_another_job`: `answers_the_job`'s configuration, answered at 500 for job 8 where 7 was asked; the
+    component sets `fail` at 500.
+  - `sets_no_verdict`: the MTC sets `none` and ends at 0; the test case's verdict is `none`.
+  - `never_ends`: the MTC waits for a reply on a mapped port and holds no timer, the suite gives no guard, and the
+    trace holds no input, so no branch fires and no instant is pending: `error` at 0 (P13).
+  - `sends_to_a_removed_ptc`: the MTC creates a PTC connected to it, leaves the invoking state at 1 ms, which
+    removes the PTC, and sends on the connected port: a dynamic error, `error` at 1000 (P6, P13).
+
+  The suite's Rust runner, `boundary_suite_runner`, replays the directory and each log is held to its expected log
+  (`backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs`); `sce-codegen check-trace` holds each
+  trace to fit the suite, and the validator holds its export (`a_ttcn3_export_is_validated_apart_from_the_exporter`).
+  The expected logs are written by the Rust runner, `scripts/regen_corpus_expected_logs.sh`, and reviewed before
+  they are committed. The other six backends do not replay this suite yet.
 - **Every message type a mapped port of the corpus carries has a codec document, but two that no format holds.**
   The documents are `sce-build/tests/fixtures/test_profile/codecs/<record>_codec.scxml` (design choice: one
   directory for the corpus, so a record that several suites carry has one codec, named by the record as the trace and
@@ -515,6 +537,11 @@ Also missing from every run:
 
 - a test case that can never end, which is `error` with no instant pending (P13);
 - a dynamic error, such as a send to a removed PTC's port (P6, P13).
+
+`boundary_suite` (§12.1) runs, from traces, signed and 64-bit integers in a message, the verdicts `fail` and `none`,
+and both `error` cases above, so they leave the "missing" column on the Rust runner; the table keeps them there
+until every backend replays that suite. Which run shows each aspect of each row is held by
+`sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs` (§13.1).
 
 ### 12.3 The refusals of ADR 0091 §3
 
@@ -574,7 +601,9 @@ in the component that invokes it, which is accepted on its own.
   place, §12.1);
 - a codec document for every message type a mapped port carries, in CBOR or content-line: done for every type a
   format holds (§12.1); `job_status` and `order_placed` wait on a CBOR form of the types they hold (§14);
-- runnable suites that cover the "missing" column of §12.2, including the two `error` cases;
+- runnable suites that cover the "missing" column of §12.2, including the two `error` cases: `boundary_suite`
+  (§12.1), on the Rust runner, with its expected logs to be written by the Rust runner and reviewed; the other six
+  backends' replay of it remains;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
   their rows run as well as export;
 - a fixture that raises `test-profile/script-engine`, or a recorded reason why no profile document can reach that
