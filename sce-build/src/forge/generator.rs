@@ -24118,29 +24118,18 @@ fn present_if_encode_vle(
             )
         }
         Language::Python => {
-            // Gated VLE encode on Python — the prior form delegated to
-            // `vle_encode_block` whose Python arm emits at 8-space
-            // indent (function-body level); when inserted inside an
-            // `if self.<id> is not None:` block (also at 8-space),
-            // the inner VLE loop ended up OUTSIDE the gate (Python
-            // is the only backend where indentation is structure —
-            // every other language's `vle_encode_block` wraps in
-            // `{ ... }` braces which are scope-bearing). The fix
-            // inlines the loop at 12-space indent so the gate
-            // genuinely scopes the encode. `width_bits` parameter
-            // unused here — Python's int has no width clamp; the
-            // VLE wire form self-terminates via the high-bit
-            // continuation marker so any `int` value encodes
-            // correctly without per-width truncation.
-            let _ = width_bits;
+            // Gated VLE encode on Python: the runtime's writer of the
+            // field's width, called inside the gate. Python is the one
+            // backend whose indentation is structure, so the call stands
+            // at the gate's body indent. The writer is the one ZInt
+            // encode every Python codec uses (eight continuation bytes,
+            // a ninth of eight data bits), so a gated VLE writes the same
+            // bytes as an ungated one; an inline loop here once wrote ten
+            // bytes for a u64 from 2^63, which every decoder refuses.
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     _vle = int(self.{py_id})\n            \
-                     while _vle >= 0x80:\n                \
-                         w.write_u8((_vle & 0x7F) | 0x80)\n                \
-                         _vle >>= 7\n            \
-                     w.write_u8(_vle)"
+                     w.write_vle_u{width_bits}(int(self.{py_id}))"
             )
         }
     }
