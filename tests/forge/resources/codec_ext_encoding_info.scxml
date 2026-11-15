@@ -26,8 +26,8 @@
         canonical case to schemas ≤ 127 bytes (single-byte VLE
         coincides with u8). Generalised VLE-length-ref is the same
         B5 surface called out in `codec_ext_attachment.scxml`.
-     3. `schema_size` is always present (trust contract: author keeps
-        it 0 when has_schema=false). Upstream zenoh omits the entire
+     3. `schema_size` is always present: derived from the schema where
+        there is one, else stated (docs/adr/0058 §1). Upstream zenoh omits the entire
         schema span — including its length — from the wire when
         has_schema is clear, so this fixture's wire format diverges
         by 1 byte from upstream when has_schema=false. Full upstream

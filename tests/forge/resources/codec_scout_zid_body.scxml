@@ -9,13 +9,13 @@
      `uint8_t zidlen = ((cbyte & 0xF0) >> 4) + (uint8_t)1;`).
 
      This fixture exercises (length arithmetic) in isolation.
-     Author writes `sce:length-arith="+1"` on the length-ref payload;
-     the codec helper computes `_n = (sibling_value).wrapping_add(1)`
-     for decode and (in C11 only) `_bi < (size_t)((int64_t)self->len + 1)`
-     for the encode-loop upper bound. The other 5 backends already
-     trust `payload.len()` as the encode source-of-truth, so encode is
-     fully arith-aware via the author trust contract:
-     `len_sibling = payload.len() - arith` (here: `payload.len() - 1`).
+     Author writes `sce:length-arith="+1"` on the length-ref payload.
+     The decode reads `zid_len_m1 + 1` bytes. The encode derives
+     `zid_len_m1` from the bytes it writes, `len(zid) - 1`, and never
+     takes it from the value (docs/adr/0058 §1): a value presents `zid`
+     alone. The type of `zid` holds at least one byte, as its length
+     is `zid_len_m1 + 1`, so the derived number is never negative
+     (docs/adr/0077 §3).
 
      The packed-into-4-bits aspect (zenoh's `cbyte` is a flags carrier
      where bits 4-7 hold zid_len_m1) is an orthogonal "length-field

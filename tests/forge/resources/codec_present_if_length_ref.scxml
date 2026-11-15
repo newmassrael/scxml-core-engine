@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: present-if + length-ref bytes (RFC §synth-5-B
      present-if-gating). uint8 carrier `flags` gates a `payload` payload whose
-     length is read from the sibling `payload_size` field. When
-     `has_payload` bit is clear, the author keeps `payload_size` at 0
-     (trust contract — same shape as variant tag/body). The non-gated
-     `payload_size` is always present so the wire layout stays
+     length is read from the sibling `payload_size` field. The encode
+     derives `has_payload`, and `payload_size` wherever there is a
+     payload (docs/adr/0058 §1); where there is none, the value states
+     `payload_size`. The non-gated `payload_size` is always present so the wire layout stays
      predictable regardless of presence.
 
      Note on naming: the C11 backend emits `<id>_len` as the size
