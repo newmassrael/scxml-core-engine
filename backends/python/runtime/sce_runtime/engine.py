@@ -3561,6 +3561,11 @@ class _MicrostepHost(Generic[S, E]):
         if engine._observer is not None:
             engine._observe("exit", state=self._policy.get_state_name(state))
 
+    def take_transition(self, transition: EnabledTransition[S]) -> None:
+        self._policy.take_transition(
+            transition.source, transition.transition_index, self._engine
+        )
+
     def execute_transition_content(self, transition: EnabledTransition[S]) -> None:
         self._policy.execute_transition_content(
             transition.source, transition.transition_index, self._engine

@@ -2907,6 +2907,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected abstract fun executeTransitionContent(source: S, transitionIndex: Int)
 
     /**
+     * Take the transition [transitionIndex] of [source], one the selection
+     * returned, before the microstep exits any state ([Microstep.takeTransitions]):
+     * a branch of a test component removes what it matched from the round's
+     * snapshot, writes its record in the test log, and holds a message its
+     * content reads in the payload member of its record's event
+     * (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3). The default takes
+     * nothing: a statechart's transition has nothing to take.
+     */
+    protected open fun takeTransition(source: S, transitionIndex: Int) {}
+
+    /**
      * §scxml-3.10.2: run a `<history>`'s default transition content.
      *
      * Run after the history's parent is entered (and after the parent's own
@@ -6488,6 +6499,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // configuration.delete(s) is the last step.
             onExit(state)
             this@StateMachineEngine.configuration.remove(state)
+        }
+
+        override fun takeTransition(transition: EnabledTransition<S, HistoryId>) {
+            this@StateMachineEngine.takeTransition(transition.source, transition.transitionIndex)
         }
 
         override fun executeTransitionContent(transition: EnabledTransition<S, HistoryId>) {

@@ -257,6 +257,14 @@ interface Run<S : Any, H : Any, E : Any> : Document<S, H> {
     fun firstEnabledTransition(state: S, event: E?): EnabledTransition<S, H>?
 
     /**
+     * Takes one selected transition before any state of the microstep exits:
+     * what a branch of a test component removes from the round's snapshot
+     * (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1). The default takes nothing: a
+     * statechart's transition has nothing to take.
+     */
+    fun takeTransition(transition: EnabledTransition<S, H>) {}
+
+    /**
      * Records this state's histories from the configuration as it stood before
      * the microstep's first exit, runs its onexit, cancels its invocations and
      * removes it from the configuration.
@@ -497,7 +505,8 @@ object Microstep {
     // ════════════════════════════════════════════════════════════════════════
 
     /**
-     * Appendix D's microstep: exit, run the transitions' content, enter.
+     * Appendix D's microstep: exit, run the transitions' content, enter; each
+     * transition taken before anything exits ([takeTransitions]).
      *
      * @return what was entered — the entry set, its states in entry order
      */
@@ -505,6 +514,7 @@ object Microstep {
         run: Run<S, H, E>,
         transitions: List<EnabledTransition<S, H>>,
     ): EntrySet<S, H> {
+        takeTransitions(run, transitions)
         // §scxml-D-microstepProcedure: every exit, then every transition's
         // content, then every entry — for the whole set at once, which is what
         // lets the regions of a <parallel> each take their own transition in
@@ -512,6 +522,18 @@ object Microstep {
         exitStates(run, transitions)
         executeTransitionContent(run, transitions)
         return enterStates(run, transitions.map { it.entryTransition() })
+    }
+
+    /**
+     * Takes each of the microstep's transitions, in the order they were
+     * selected, before the exit set is exited: a branch of a test component
+     * removes what it matched from the round's snapshot at P4 step 1, and its
+     * exits, content and entries are P4 step 2 (docs/SCE_TEST_PROFILE.md §4.4).
+     * Appendix D has no such step; a machine whose transitions take nothing
+     * answers each call with nothing.
+     */
+    fun <S : Any, H : Any, E : Any> takeTransitions(run: Run<S, H, E>, transitions: List<EnabledTransition<S, H>>) {
+        for (transition in transitions) run.takeTransition(transition)
     }
 
     /** Appendix D's exitStates. */

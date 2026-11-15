@@ -564,6 +564,22 @@ pub trait StatePolicy: Sized + 'static {
         engine: &mut Engine<Self>,
     ) -> Option<TransitionId>;
 
+    /// Whether a transition of the document takes something before the
+    /// microstep exits anything ([`take_transition`](StatePolicy::take_transition)):
+    /// a branch of a test component (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1).
+    /// The engine asks the policy only where this holds, so a statechart pays
+    /// nothing for the step.
+    const TAKES_TRANSITIONS: bool = false;
+
+    /// Take one selected transition before the microstep exits any state: a
+    /// branch of a test component removes what it matched from the round's
+    /// snapshot, writes its record in the test log, and holds a message it
+    /// took as the payload its content reads (docs/SCE_TEST_PROFILE.md §4.4,
+    /// P4 step 1, §12.3). Asked only where
+    /// [`TAKES_TRANSITIONS`](StatePolicy::TAKES_TRANSITIONS) holds; the
+    /// default takes nothing.
+    fn take_transition(&mut self, _transition: TransitionId, _engine: &mut Engine<Self>) {}
+
     /// Execute one transition's executable content (§scxml-3.13 — run between
     /// the microstep's exits and its entries).
     ///

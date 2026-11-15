@@ -271,6 +271,12 @@ public protocol Run: AnyObject, Document {
     /// transition whose guard holds. The only place a guard is evaluated.
     func firstEnabledTransition(_ state: State, event: Event) -> EnabledTransition<State>?
 
+    /// Takes one selected transition before any state of the microstep exits: what
+    /// a branch of a test component removes from the round's snapshot
+    /// (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1). The default takes nothing: a
+    /// statechart's transition has nothing to take.
+    func takeTransition(_ transition: EnabledTransition<State>)
+
     /// Records this state's histories from the configuration as it stood before
     /// the microstep's first exit, runs its onexit, cancels its invocations and
     /// removes it from the configuration.
@@ -286,6 +292,11 @@ public protocol Run: AnyObject, Document {
 
     /// Runs a `<history>`'s default transition content.
     func executeHistoryDefaultContent(_ history: HistoryID)
+}
+
+extension Run {
+    /// A statechart's transition takes nothing.
+    public func takeTransition(_ transition: EnabledTransition<State>) {}
 }
 
 // MARK: - Selection
@@ -503,17 +514,30 @@ public func computeStatesToExit<D: Document>(
 
 // MARK: - The microstep
 
-/// Appendix D's `microstep`: exit, run the transitions' content, enter.
+/// Appendix D's `microstep`: exit, run the transitions' content, enter; each
+/// transition taken before anything exits (`takeTransitions`).
 ///
 /// Returns what was entered: the entry set, `statesToEnter` in entry order.
 @discardableResult
 public func microstep<R: Run>(_ run: R, transitions: [EnabledTransition<R.State>]) -> EntrySet<R.State> {
+    takeTransitions(run, transitions: transitions)
     // §scxml-D-microstepProcedure: every exit, then every transition's content,
     // then every entry, for the whole set at once, which is what lets the regions
     // of a <parallel> each take their own transition in one step.
     exitStates(run, transitions: transitions)
     executeTransitionContent(run, transitions: transitions)
     return enterStates(run, transitions: transitions.map(\.entryTransition))
+}
+
+/// Takes each of the microstep's transitions, in the order they were selected,
+/// before the exit set is exited: a branch of a test component removes what it
+/// matched from the round's snapshot at P4 step 1, and its exits, content and
+/// entries are P4 step 2 (docs/SCE_TEST_PROFILE.md §4.4). Appendix D has no such
+/// step; a machine whose transitions take nothing answers each call with nothing.
+public func takeTransitions<R: Run>(_ run: R, transitions: [EnabledTransition<R.State>]) {
+    for transition in transitions {
+        run.takeTransition(transition)
+    }
 }
 
 /// Appendix D's `exitStates`.

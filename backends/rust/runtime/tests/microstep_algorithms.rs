@@ -670,6 +670,10 @@ struct Chart {
     /// What each history held when the microstep's first exit ran, by
     /// [`H`]; `None` until a state is exited.
     recorded_at_first_exit: Option<[Option<Vec<St>>; 2]>,
+    /// Each transition taken (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), with
+    /// how many lines the log held when it was: none, where it is taken before
+    /// anything exits.
+    taken: Vec<(String, usize)>,
 }
 
 impl Default for Chart {
@@ -681,6 +685,7 @@ impl Default for Chart {
             log: Vec::new(),
             exited_while_active: Vec::new(),
             recorded_at_first_exit: None,
+            taken: Vec::new(),
         }
     }
 }
@@ -742,6 +747,12 @@ impl Behaviour for Chart {
             .iter()
             .position(|t| id(t.source) == state && t.event.map(ev_id) == Some(event))
             .map(|position| TransitionId(position as u16))
+    }
+
+    fn take_transition(&mut self, transition: TransitionId) {
+        let (source, index) = label(transition);
+        self.taken
+            .push((format!("{source:?}#{index}"), self.log.len()));
     }
 
     fn exit_state(&mut self, state: StateId) {
@@ -1302,6 +1313,25 @@ fn a_microstep_exits_then_runs_content_in_selection_order_then_enters() {
     // it moves nothing.
     assert_eq!(entered.states, 2);
     assert_eq!(entered.current.map(st), Some(St::B2));
+}
+
+/// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): each selected transition is
+/// taken, in selection order, before the microstep exits any state, runs any
+/// content or enters any state: the log was empty at every take.
+#[test]
+fn every_transition_is_taken_before_anything_exits() {
+    let mut chart = Chart::at_initial_configuration();
+    let taken = select(&mut chart, Ev::K);
+    take(&mut chart, &taken);
+    assert_eq!(
+        chart.taken,
+        vec![
+            ("A1#3".to_string(), 0),
+            ("B1#2".to_string(), 0),
+            ("P#3".to_string(), 0),
+        ]
+    );
+    assert_eq!(chart.log.first().map(String::as_str), Some("exit B1"));
 }
 
 #[test]

@@ -2489,6 +2489,17 @@ pub trait StaticTarget {
     fn received_binding(&self) -> Option<&'static str> {
         None
     }
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statement that opens the content of
+    /// a receive branch whose content reads the message the statement taking
+    /// it ([`Self::take_branch`]) held in the payload channel of `event`, the
+    /// machine `machine`'s, binding it where the content reads `_event.data`
+    /// ([`Self::payload_accessor`]). The take runs before the microstep exits
+    /// anything and the content after, so what the take holds is read from the
+    /// channel. Empty, the default, for a target whose accessor reads the
+    /// channel's member itself.
+    fn taken_binding(&self, _machine: &str, _event: &str) -> String {
+        String::new()
+    }
     /// docs/SCE_TEST_PROFILE.md §11.5, §12.3: `statement`, a statement of a
     /// test component, as a call on the component's runtime context, `reason`
     /// the lowered `reason` of a `<sce:setverdict>` that writes one. A
@@ -5296,9 +5307,9 @@ impl StaticTarget for RustTarget {
         })
     }
     // A message a receive branch's content reads is copied, field by field,
-    // into `ev`, the binding the content reads `_event.data` through
-    // ([`Self::payload_accessor`]), built as the payload struct the machine's
-    // channel holds its record's event in: the schema unit's type and the
+    // into the payload struct the machine's channel holds its record's event
+    // in, and held in that channel, which the content binds as `ev`
+    // ([`Self::taken_binding`]): the schema unit's type and the
     // machine's are two declarations of one record. The two spell a number and
     // a `bool` alike. They do not spell a text, a byte string or an enum alike:
     // the machine holds a text in the runtime's `SceString` and a byte string
@@ -5358,8 +5369,9 @@ impl StaticTarget for RustTarget {
                     "let sce_message = {RUST_TEST_CONTEXT}.receive({});\n\
                      let {RUST_RECEIVED_VALUE} = sce_message.value_as::<{unit}::Value>().expect(\
                      \"a receive branch takes the message its guard matched\");\n\
-                     let ev = {};",
+                     self.pending_payload = {machine}Payload::{}({});",
                     rust_text(port),
+                    filters::to_event_variant(template.event.clone()),
                     self.record_value(
                         &crate::forge::generator::rust_payload_struct(machine, &template.event),
                         &members
@@ -5383,6 +5395,19 @@ impl StaticTarget for RustTarget {
     // The reference `take_branch` binds the message's value to.
     fn received_binding(&self) -> Option<&'static str> {
         Some(RUST_RECEIVED_VALUE)
+    }
+    // The content reads `_event.data` through `ev` ([`Self::payload_accessor`]),
+    // bound from the channel the take held the message in, owned as the
+    // binding of any delivery's payload is (`rust/process_transition.rs.jinja2`).
+    // The take ran in the same microstep, before the exits, so the channel
+    // holds the message.
+    fn taken_binding(&self, machine: &str, event: &str) -> String {
+        format!(
+            "let ev = match &self.pending_payload {{ {machine}Payload::{}(ev) => ev.clone(), _ => \
+             unreachable!(\"a receive branch holds the message it took before its content \
+             runs\") }};",
+            filters::to_event_variant(event.to_string())
+        )
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
     // signed 64-bit count: one past it has no value there. A `reason` is bound
@@ -19387,15 +19412,17 @@ fn expand_computed_type(send: &Action, if_ordinal: u32) -> Action {
 /// docs/SCE_TEST_PROFILE.md §12.3: `branch`, the branch `transition` is, as
 /// the target spells it — its match after the `cond` already lowered into
 /// [`crate::model::Transition::native_guard`], and the statement taking it
-/// ([`crate::model::Transition::native_prelude`]). `schema` is the schema of
+/// ([`crate::model::Transition::native_take`]), which the policy runs before
+/// the microstep exits any state (P4 step 1, §4.4). `schema` is the schema of
 /// the message a receive branch takes, when the component imports its record
 /// and each of its fields is one entry; a record that holds a composition has
 /// none, and is read by the walk of its type ([`received_composed`]).
 ///
 /// The statement of a receive branch whose content reads the message holds the
-/// message as that content's `_event.data`, so the content runs with no check
-/// of its own that the delivery carried one: the snapshot's event carries none
-/// and the branch's message is the payload.
+/// message in the payload channel of its record's event, which the content
+/// reads as its `_event.data` ([`crate::model::Transition::native_prelude`]),
+/// so the content runs with no check of its own that the delivery carried one:
+/// the snapshot's event carries none and the branch's message is the payload.
 fn lower_snapshot_branch(
     transition: &mut crate::model::Transition,
     branch: &SnapshotBranch,
@@ -19444,10 +19471,17 @@ fn lower_snapshot_branch(
     } else {
         None
     };
-    transition.native_prelude = target
+    transition.native_take = target
         .take_branch(rewrites.machine, branch, bound.as_ref())
         .ok_or_else(|| unspelled("taking a branch"))?;
     if bound.is_some() {
+        // The take held the message in the payload channel of its record's
+        // event before the exits; the content reads it from there, through the
+        // binding a target opens it with where it reads `_event.data` through
+        // one of its own.
+        if let Some(template) = branch.template() {
+            transition.native_prelude = target.taken_binding(rewrites.machine, &template.event);
+        }
         transition.content_reads_payload = false;
     }
     Ok(())

@@ -2762,6 +2762,14 @@ func (h engineHost[S, E]) ExitState(state S, configurationBeforeExit []S) {
 	h.engine.policy.ExecuteExitActions(state, h.engine, configurationBeforeExit)
 }
 
+// TakeTransition implements Run: the policy takes the transition where it is a
+// TransitionTaker, and a policy that is none takes nothing.
+func (h engineHost[S, E]) TakeTransition(transition EnabledTransition[S, HistoryID]) {
+	if taker, ok := any(h.engine.policy).(TransitionTaker[S, E]); ok {
+		taker.TakeTransition(transition.Source, transition.TransitionIndex, h.engine)
+	}
+}
+
 // ExecuteTransitionContent implements Run.
 func (h engineHost[S, E]) ExecuteTransitionContent(transition EnabledTransition[S, HistoryID]) {
 	h.engine.policy.ExecuteTransitionContent(transition.Source, transition.TransitionIndex, h.engine)

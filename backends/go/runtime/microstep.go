@@ -250,6 +250,12 @@ type Run[S comparable, H comparable, E any] interface {
 	// The only place a guard is evaluated.
 	FirstEnabledTransition(state S, event E) (EnabledTransition[S, H], bool)
 
+	// TakeTransition takes one selected transition before any state of the
+	// microstep exits: what a branch of a test component removes from the
+	// round's snapshot (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1). A machine
+	// whose transitions take nothing does nothing.
+	TakeTransition(transition EnabledTransition[S, H])
+
 	// ExitState records this state's histories from the configuration as it
 	// stood before the microstep's first exit, runs its onexit, cancels its
 	// invocations and removes it from the configuration.
@@ -512,13 +518,14 @@ func ComputeStatesToExit[S comparable, H comparable](
 // ════════════════════════════════════════════════════════════════════════
 
 // Microstep is Appendix D's microstep: exit, run the transitions' content,
-// enter.
+// enter; each transition taken before anything exits (TakeTransitions).
 //
 // Returns what was entered — the entry set, StatesToEnter in entry order.
 func Microstep[S comparable, H comparable, E any](run Run[S, H, E], transitions []EnabledTransition[S, H]) EntrySet[S, H] {
 	// §scxml-D-microstepProcedure: every exit, then every transition's content,
 	// then every entry — for the whole set at once, which is what lets the
 	// regions of a <parallel> each take their own transition in one step.
+	TakeTransitions(run, transitions)
 	ExitStates(run, transitions)
 	ExecuteTransitionContent(run, transitions)
 	entering := make([]EntryTransition[S, H], 0, len(transitions))
@@ -526,6 +533,18 @@ func Microstep[S comparable, H comparable, E any](run Run[S, H, E], transitions 
 		entering = append(entering, transition.EntryTransition())
 	}
 	return EnterStates(run, entering)
+}
+
+// TakeTransitions takes each of the microstep's transitions, in the order they
+// were selected, before the exit set is exited: a branch of a test component
+// removes what it matched from the round's snapshot at P4 step 1, and its
+// exits, content and entries are P4 step 2 (docs/SCE_TEST_PROFILE.md §4.4).
+// Appendix D has no such step; a machine whose transitions take nothing
+// answers each call with nothing.
+func TakeTransitions[S comparable, H comparable, E any](run Run[S, H, E], transitions []EnabledTransition[S, H]) {
+	for _, transition := range transitions {
+		run.TakeTransition(transition)
+	}
 }
 
 // ExitStates is Appendix D's exitStates.

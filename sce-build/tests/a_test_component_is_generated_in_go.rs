@@ -305,15 +305,19 @@ fn a_branch_with_a_cond_is_guarded_by_the_cond_and_then_its_match() {
     );
 }
 
-/// P4 step 1, §12.3: taking a branch runs, before its content, the statement
-/// that removes what it matched and tells the runtime it took a branch. A
-/// receive branch whose content reads the message holds it in the payload
-/// field of its record's event, which its content reads as `_event.data`, so
-/// its content needs no check of a delivery's payload. A branch whose document
-/// writes no content still has the statement as its content.
+/// P4 step 1, §4.4, §12.3: taking a branch is the policy's `TakeTransition`
+/// (the policy is a `sce.TransitionTaker`), which the microstep runs before it
+/// exits any state and never in the content: it removes what the branch
+/// matched, tells the runtime it took a branch, and holds a message the
+/// content reads in the payload field of its record's event, which the
+/// content, after the exits, reads as `_event.data` with no check of a
+/// delivery's payload. A branch whose document writes no content is taken all
+/// the same, and has no content to run.
 #[test]
-fn taking_a_branch_removes_what_it_matched_before_its_content() {
+fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     let asker = text("asker");
+    let take = at(&asker, "func (p *AskerPolicy) TakeTransition(");
+    let content_fn = at(&asker, "func (p *AskerPolicy) ExecuteTransitionContent(");
     let read = at(
         &asker,
         "{ sceValue, sceTaken := scetestprofile.ValueAs[sce_reply_ok.Value](p.sceTestContext.\
@@ -325,26 +329,28 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         "p.pendingJobReplyPayload = AskerJobReplyPayload{job: sceValue.Job, code: \
          sceValue.Code} }",
     );
+    let timeout = at(&asker, "p.sceTestContext.Timeout(\"reply\")");
     let content = at(&asker, "p.sceTestContext.StopTimer(\"reply\")");
-    assert!(read < bound && bound < content);
+    assert!(take < read && read < bound && bound < content_fn);
+    assert!(take < timeout && timeout < content_fn);
+    assert!(content_fn < content);
     assert!(
         !asker.contains("if p.pendingPayloadTag != AskerPayloadTagJobReply {"),
-        "the content reads the message the statement bound, not the snapshot's event"
+        "the content reads the message the take held, not the snapshot's event"
     );
-    let timeout = at(&asker, "p.sceTestContext.Timeout(\"reply\")");
     let failed = at(
         &asker,
         "p.sceTestContext.Setverdict(scetestprofile.VerdictFail, ",
     );
-    assert!(timeout < failed);
+    assert!(content_fn < failed);
 
     assert!(text("coordinator").contains("p.sceTestContext.DoneTaken(\"answerer\")"));
     // A receive any branch with no content still takes its message, and a
-    // timeout branch with none still takes its timer: each is a transition
-    // with content, which the microstep runs.
+    // timeout branch with none still takes its timer; neither has content
+    // for the microstep to run.
     let idler = text("idler");
     assert!(idler.contains("p.sceTestContext.Receive(\"peer\")"));
-    assert!(idler.contains("HasActions:      true,"), "{idler}");
+    assert!(idler.contains("HasActions:      false,"), "{idler}");
     assert!(text("ptc_keeper").contains("p.sceTestContext.Timeout(\"patience\")"));
 }
 

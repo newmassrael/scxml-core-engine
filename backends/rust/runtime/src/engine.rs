@@ -5436,6 +5436,15 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
             .with_policy(|policy, engine| policy.first_enabled_transition(state, event, engine))
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): only a policy whose document
+    // takes a transition is asked, so a statechart's microstep costs no call.
+    fn take_transition(&mut self, transition: TransitionId) {
+        if P::TAKES_TRANSITIONS {
+            self.engine
+                .with_policy(|policy, engine| policy.take_transition(transition, engine));
+        }
+    }
+
     fn exit_state(&mut self, state: StateId) {
         self.engine.execute_on_exit(P::state_of(state));
     }

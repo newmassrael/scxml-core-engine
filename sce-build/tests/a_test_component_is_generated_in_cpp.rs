@@ -194,12 +194,14 @@ fn a_branch_with_a_cond_is_guarded_by_the_cond_and_then_its_match() {
     );
 }
 
-/// P4 step 1, §12.3: taking a branch runs, before its content, the statement
-/// that removes what it matched and tells the runtime it took a branch. A
-/// receive branch whose content reads the message holds it as `_event.data`
-/// in the payload channel, so its content needs no check of its own.
+/// P4 step 1, §4.4, §12.3: taking a branch is the policy's `takeTransition`,
+/// which the engine runs before the microstep exits any state
+/// (`SCE::Core::HasTakeTransitionTrait`) and never in the content: it removes
+/// what the branch matched, tells the runtime it took a branch, and holds a
+/// message the content reads as `_event.data` in the payload channel, so the
+/// content, after the exits, needs no check of its own.
 #[test]
-fn taking_a_branch_removes_what_it_matched_before_its_content() {
+fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     // The transitions' bodies are in the body file; the header's payload lift
     // for an external event sets the same tag, so the order is read there.
     let asker = files("asker")
@@ -207,6 +209,8 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         .find(|(path, _)| path.ends_with(".inl"))
         .map(|(_, code)| code)
         .expect("asker has a body file");
+    let take = at(&asker, "void takeTransition(");
+    let content_fn = at(&asker, "void executeTransitionActions(");
     let receive = at(
         &asker,
         "const ::SCE::Test::Message sceMessage = this->testContext_->receive(\"sut\");",
@@ -217,18 +221,20 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         "const auto &sceValue = sceMessage.value.get<::SCE::Generated::ReplyOk::Value>();"
     ));
     let tagged = at(&asker, "pendingPayloadTag_ = AskerPayloadTag::JobReply;");
+    let timeout = at(&asker, "this->testContext_->timeout(\"reply\");");
     let content = at(&asker, "this->testContext_->stopTimer(\"reply\");");
-    assert!(receive < bound && bound < tagged && tagged < content);
+    assert!(take < receive && receive < bound && bound < tagged && tagged < content_fn);
+    assert!(take < timeout && timeout < content_fn);
+    assert!(content_fn < content);
     assert!(
         !asker.contains("pendingPayloadTag_ != AskerPayloadTag::Sce_test_snapshot"),
-        "the content reads the message the statement bound, not the snapshot's event"
+        "the content reads the message the take held, not the snapshot's event"
     );
-    let timeout = at(&asker, "this->testContext_->timeout(\"reply\");");
     let failed = at(
         &asker,
         "this->testContext_->setverdict(::SCE::Test::Verdict::Fail,",
     );
-    assert!(timeout < failed);
+    assert!(content_fn < failed);
 
     assert!(text("coordinator").contains("this->testContext_->doneTaken(\"answerer\");"));
     // A receive any branch with no content still takes its message.

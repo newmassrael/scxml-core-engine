@@ -696,6 +696,20 @@ SCE_SM_FN static void exit_interpreter({{ _t }}_t *sm) {
     sm->is_running = false;
 }
 
+{% if model.test_component %}
+/* docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): each of the microstep's
+   transitions, in the order they were selected, is taken before the exit set
+   is exited — a branch of a test component removes what it matched from the
+   round's snapshot at step 1, and its exits, content and entries are step 2.
+   Appendix D has no such step, and a statechart's microstep has none. */
+SCE_SM_FN static void take_transitions({{ _t }}_t *sm, const {{ _t }}_transition_info_t *transitions,
+                                       uint8_t count) {
+    for (uint8_t i = 0u; i < count; ++i) {
+        take_transition(sm, transitions[i].source, transitions[i].index);
+    }
+}
+
+{% endif %}
 /* §scxml-D-executeTransitionContent: in the order the transitions were
    selected, which is not their sources' document order once an ancestor's
    transition is reached from a later region. */
@@ -855,6 +869,9 @@ SCE_SM_FN static void microstep({{ _t }}_t *sm, const {{ _t }}_transition_info_t
         {{ _t }}_observe_transition(sm, transitions[i].source, (uint32_t)transitions[i].index);
     }
 #endif
+{% if model.test_component %}
+    take_transitions(sm, transitions, count);
+{% endif %}
     exit_states(sm, transitions, count);
     execute_transition_content(sm, transitions, count);
     {{ _t }}_entry_transition_t entering[{{ _u }}_MAX_SELECTED];

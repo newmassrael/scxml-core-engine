@@ -2401,6 +2401,14 @@ private final class EngineHost<Policy: StatePolicy>: Run {
         engine.policy.executeExitActions(state, engine: engine, configurationBeforeExit: configurationBeforeExit)
     }
 
+    func takeTransition(_ transition: EnabledTransition<State>) {
+        engine.policy.takeTransition(
+            source: transition.source,
+            transitionIndex: transition.transitionIndex,
+            engine: engine
+        )
+    }
+
     func executeTransitionContent(_ transition: EnabledTransition<State>) {
         engine.policy.executeTransitionContent(
             source: transition.source,

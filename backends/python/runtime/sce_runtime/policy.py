@@ -162,6 +162,17 @@ class StatePolicy(ABC, Generic[S, E]):
     def execute_exit_actions(self, state: S, engine: "Engine[S, E]") -> None:
         """W3C SCXML 3.9 — run onexit actions for `state`."""
 
+    def take_transition(
+        self, state: S, transition_index: int, engine: "Engine[S, E]"
+    ) -> None:
+        """docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3 — take `state`'s
+        transition `transition_index` before the microstep exits any state: a
+        branch of a test component removes what it matched from the round's
+        snapshot, writes its record in the test log, and holds a message its
+        content reads in the payload attribute of its record's event. The
+        default takes nothing: a statechart's transition has nothing to
+        take."""
+
     @abstractmethod
     def execute_transition_content(
         self, state: S, transition_index: int, engine: "Engine[S, E]"

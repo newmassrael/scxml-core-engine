@@ -359,14 +359,16 @@ module (ADR 0091 C2) as:
 
 ## 7. The change to §scxml-D
 
-The profile changes one step of `mainEventLoop` (§scxml-D) for a `test-component` and leaves the others as they are.
+The profile changes the steps of `mainEventLoop` (§scxml-D) this table names for a `test-component` and leaves the
+others as they are.
 
 | §scxml-D step | SCXML | Profile |
 |---|---|---|
 | taking an external event | dequeue the head of the one external queue | wait for the next round, take the snapshot (§3.2) |
 | selecting transitions for it | `selectTransitions(externalEvent)` | the same procedure and order, with a transition enabled when its branch matches the snapshot (§4.2, §4.3) |
 | an event that enables no transition | removed from the queue and discarded | nothing is removed; the snapshot is discarded and the component waits for the next round |
-| microstep, exit and entry order, executable content, eventless transitions, internal completion of the macrostep | §scxml-D | unchanged |
+| the start of the microstep | `exitStates` first | each selected branch is taken first, in selection order, before `exitStates` (P4 step 1, §4.4) |
+| exit and entry order, executable content, eventless transitions, internal completion of the macrostep | §scxml-D | unchanged |
 | starting invocations | at the end of the macrostep | unchanged (§4.9) |
 
 In an engine, what reaches the component from outside still enters through its one inbox (ADR 0084). At the
@@ -1924,16 +1926,17 @@ other type names no runtime. A `test-port-type` writes no file.
 
 ### 12.3 A component is an unchanged statechart machine
 
-The runtime reaches a component's machine only through doors the engine already has. The engine's macrostep, its
-exit and entry order, its eventless transitions and its executable content are used as they are, which is what §7
-requires.
+The runtime reaches a component's machine only through doors the engine already has, and one every engine's
+microstep gives every machine: the take of each selected transition before the exit set is exited, which a
+statechart answers with nothing. The engine's macrostep, its exit and entry order, its eventless transitions and its
+executable content are used as they are, which is what §7 requires.
 
 | Profile | Engine door |
 |---|---|
 | a round's snapshot (§3.2 step 3) | one external event of a reserved name, delivered to each waiting component. No document can write the name, because `test-profile/branch` refuses every `event` on a transition but `done.invoke.<id>`. |
 | a branch (P2) | a transition on that event whose guard is the branch's `cond` and its match: receive, the port's `SNAP-VALUE` is present and matches the template; receive any, it is present; timeout, the timer's `SNAP-STATUS` is `TIMEOUT`; done, the PTC is in the snapshot's `DONE`. |
 | the order of P3 | the engine's `selectTransitions` (§scxml-D), unchanged. When no branch matches, no transition is enabled and the engine discards the event: nothing is removed, as §7 requires. |
-| taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
+| taking a branch, P4 step 1 | one statement the generator writes as the policy's take of the transition, which the engine's microstep runs for each selected transition before it exits any state (Rust: `StatePolicy::take_transition`; C++: `takeTransition`, asked through `SCE::Core::HasTakeTransitionTrait`; Kotlin, Swift: `takeTransition`; Go: `TakeTransition` of a `sce.TransitionTaker`; Python: `take_transition`; C11: `take_transition`, which the machine's own microstep calls), so its record in the test log precedes every `<onexit>` of the exit set (P4 step 2). Appendix D has no such step, and a statechart's transitions take nothing. A receive branch removes the head of its port's queue and holds it in the payload member of its record's event (`Transition::payload_event`), which the branch's content reads as its `_event.data`. A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
 | a `<log>` (P8) | the same action of its block, which calls the runtime context instead of the engine's log, so the test log records it with `NOW` and the component |
 | a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin and Python: `HostSendRequest.value`, Go: `HostSendRequest.Value`, C11: `sce_host_send_request_t.value`, a view of the value's bytes beside the name of its C type, Swift: `HostSendRequest.value`, a `HostSendValue` that holds any value Swift compares and shares across threads). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |

@@ -242,6 +242,9 @@ class Chart:
         self.states.remove(state)
         self.log.append(f"exit {state.name}")
 
+    def take_transition(self, transition: EnabledTransition) -> None:
+        self.log.append(f"take {transition.source.name}#{transition.transition_index}")
+
     def execute_transition_content(self, transition: EnabledTransition) -> None:
         self.log.append(f"content {transition.source.name}#{transition.transition_index}")
 
@@ -533,7 +536,12 @@ def test_a_microstep_exits_then_runs_content_in_selection_order_then_enters():
     microstep(chart, select_transitions(chart, "K"))
     # §scxml-D-executeTransitionContent runs content in SELECTION order: `p`'s
     # K was reached last, from `c1`, though `p` comes first in document order.
+    # Each transition is taken in the same order before anything exits
+    # (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1).
     assert chart.log == [
+        "take A1#3",
+        "take B1#2",
+        "take P#3",
         "exit B1",
         "exit A1",
         "content A1#3",
@@ -560,6 +568,8 @@ def test_a_self_transition_leaves_and_reenters_its_state():
     assert sources(taken) == [(St.A1, 4), (St.B1, 3)]
     microstep(chart, taken)
     assert chart.log == [
+        "take A1#4",
+        "take B1#3",
         "exit B1",
         "exit A1",
         "content A1#4",
@@ -576,8 +586,10 @@ def test_a_history_default_content_runs_after_its_parent_is_entered():
     # ancestor of the default target `b2`, not entered by default, and the
     # history's default content runs once `r2` has been entered. Unlike the
     # Rust transcription, this one hands every transition's content to the
-    # machine, which runs nothing for a transition that has none.
+    # machine, which runs nothing for a transition that has none. It is taken
+    # before anything exits.
     assert chart.log == [
+        "take A1#0",
         "exit C1",
         "exit R3",
         "exit B1",

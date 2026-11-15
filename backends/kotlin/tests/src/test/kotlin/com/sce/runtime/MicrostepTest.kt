@@ -178,6 +178,10 @@ private class Chart(configuration: List<St> = emptyList()) : Run<St, Hist, Ev> {
         log.add("exit $state")
     }
 
+    override fun takeTransition(transition: EnabledTransition<St, Hist>) {
+        log.add("take ${transition.source}#${transition.transitionIndex}")
+    }
+
     override fun executeTransitionContent(transition: EnabledTransition<St, Hist>) {
         log.add("content ${transition.source}#${transition.transitionIndex}")
     }
@@ -496,8 +500,21 @@ class MicrostepTest {
         Microstep.microstep(chart, Microstep.selectTransitions(chart, Ev.K))
         // §scxml-D-executeTransitionContent runs content in SELECTION order: p's
         // K was reached last, from c1, though p comes first in document order.
+        // Each transition is taken in the same order before anything exits
+        // (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1).
         assertEquals(
-            listOf("exit B1", "exit A1", "content A1#3", "content B1#2", "content P#3", "enter A2", "enter B2"),
+            listOf(
+                "take A1#3",
+                "take B1#2",
+                "take P#3",
+                "exit B1",
+                "exit A1",
+                "content A1#3",
+                "content B1#2",
+                "content P#3",
+                "enter A2",
+                "enter B2",
+            ),
             chart.log,
         )
     }
@@ -520,7 +537,16 @@ class MicrostepTest {
         assertEquals(listOf(St.A1 to 4, St.B1 to 3), selected(taken))
         Microstep.microstep(chart, taken)
         assertEquals(
-            listOf("exit B1", "exit A1", "content A1#4", "content B1#3", "enter A1", "enter B2"),
+            listOf(
+                "take A1#4",
+                "take B1#3",
+                "exit B1",
+                "exit A1",
+                "content A1#4",
+                "content B1#3",
+                "enter A1",
+                "enter B2",
+            ),
             chart.log,
         )
     }
@@ -533,9 +559,11 @@ class MicrostepTest {
         // The domain is s, so all of p leaves and comes back; r2 is an ancestor
         // of the default target b2, not entered by default, and the history's
         // default content runs once r2 has been entered. The transition itself
-        // has no content, so the machine is not asked to run any.
+        // has no content, so the machine is not asked to run any; it is still
+        // taken.
         assertEquals(
             listOf(
+                "take A1#0",
                 "exit C1",
                 "exit R3",
                 "exit B1",

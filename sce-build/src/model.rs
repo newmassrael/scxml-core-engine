@@ -190,12 +190,24 @@ pub struct Transition {
     /// of the IR.
     #[serde(skip)]
     pub snapshot_branch: Option<crate::test_component::snapshot::SnapshotBranch>,
-    /// Codegen-internal: the statement taking a branch of a test component runs
-    /// before the branch's executable content (P4 step 1,
-    /// docs/SCE_TEST_PROFILE.md §12.3), in the rendering backend's own code,
-    /// written by `forge::static_lowering` from [`Self::snapshot_branch`] on the
-    /// cloned single-language model. Empty on every other transition. Outside
-    /// the AST contract, as [`Self::native_guard`] is.
+    /// Codegen-internal: the statement taking a branch of a test component,
+    /// which the policy's take of a transition runs before the microstep exits
+    /// any state (P4 step 1, docs/SCE_TEST_PROFILE.md §4.4, §12.3): it removes
+    /// what the branch matched from the round's snapshot, writes its record in
+    /// the test log, and holds a message the branch's content reads in the
+    /// payload channel. In the rendering backend's own code, written by
+    /// `forge::static_lowering` from [`Self::snapshot_branch`] on the cloned
+    /// single-language model. Empty on every other transition. Outside the AST
+    /// contract, as [`Self::native_guard`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_take: String,
+    /// Codegen-internal: the statement that opens the content of a branch of a
+    /// test component whose content reads the message [`Self::native_take`]
+    /// held, binding it where the content reads `_event.data`, for a backend
+    /// whose content reads it through a binding of its own
+    /// (`StaticTarget::taken_binding`). Empty on every other transition.
+    /// Outside the AST contract, as [`Self::native_guard`] is.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_prelude: String,

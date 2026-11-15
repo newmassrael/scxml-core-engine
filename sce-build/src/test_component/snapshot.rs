@@ -186,7 +186,6 @@ pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, Gener
 
     // P2, P3: each branch a transition on the snapshot event, in its place.
     let mut received: BTreeSet<String> = BTreeSet::new();
-    let mut branches = 0usize;
     for state in lowered.states.values_mut() {
         for transition in &mut state.transitions {
             let branch = match &transition.test_branch {
@@ -234,7 +233,6 @@ pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, Gener
             transition.needs_string_matching = false;
             transition.matches_any_event = false;
             transition.snapshot_branch = Some(branch);
-            branches += 1;
         }
     }
 
@@ -275,12 +273,9 @@ pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, Gener
     // keyed by.
     lowered.events.insert(SNAPSHOT_EVENT.to_string());
     lowered.events.extend(received);
-    // P4 step 1: every branch runs a statement before its content, so a
-    // machine with a branch has transition content even where the document
-    // wrote none.
-    if branches > 0 {
-        lowered.has_transition_actions = true;
-    }
+    // P4 step 1: the statement taking a branch is the policy's take, which
+    // runs before the microstep's exits and is no part of the branch's
+    // content, so the machine's transition content is what the document wrote.
     Ok(lowered)
 }
 
@@ -427,7 +422,9 @@ mod tests {
         assert_eq!(transitions[4].snapshot_branch, None);
         assert!(lowered.events.contains(SNAPSHOT_EVENT));
         assert!(lowered.events.contains("job.done"));
-        assert!(lowered.has_transition_actions);
+        // P4 step 1: taking a branch is no part of its content, so a component
+        // whose branches write none has no transition content.
+        assert!(!lowered.has_transition_actions);
     }
 
     /// §12.3: a send names its template's record's event and carries the

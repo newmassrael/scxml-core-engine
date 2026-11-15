@@ -455,18 +455,28 @@ fn a_branch_with_a_cond_is_guarded_by_the_cond_and_then_its_match() {
     );
 }
 
-/// P4 step 1, §12.3: taking a branch runs, before its content, the statement
-/// that removes what it matched and tells the runtime it took a branch, in the
-/// block of its content. A receive branch whose content reads the message
-/// removes it into a message of its own, takes it as its template's record by
-/// the record's name, and copies each field into the member of the payload
-/// channel its record's event is held in, which its content reads as
-/// `_event.data`, so its content needs no check of a delivery's payload. A
-/// removal the run refused ends the block. A branch whose document writes no
-/// content has the statement alone as its content.
+/// P4 step 1, §4.4, §12.3: taking a branch is the machine's `take_transition`,
+/// which its microstep runs for each selected transition before it exits any
+/// state (`take_transitions`), and never in the content: it removes what the
+/// branch matched and tells the runtime it took a branch. A receive branch
+/// whose content reads the message removes it into a message of its own, takes
+/// it as its template's record by the record's name, and copies each field
+/// into the member of the payload channel its record's event is held in, which
+/// the content, after the exits, reads as `_event.data` with no check of a
+/// delivery's payload. A removal the run refused ends the take. A branch whose
+/// document writes no content is taken all the same, and has no content.
 #[test]
-fn taking_a_branch_removes_what_it_matched_before_its_content() {
+fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     let asker = text("asker");
+    let take = at(&asker, "static void take_transition(");
+    let content_fn = at(&asker, "static void execute_transition_actions(");
+    let microstep = at(&asker, "static void microstep(");
+    let taken = at(&asker, "take_transitions(sm, transitions, count);");
+    let exited = at(&asker, "exit_states(sm, transitions, count);");
+    assert!(
+        microstep < taken && taken < exited,
+        "the microstep takes its transitions before it exits anything"
+    );
     let read = at(
         &asker,
         "sce_test_message_t sce_test_message_; if (!sce_test_context_receive(&sm->test_context, \
@@ -483,30 +493,31 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         " sm->pending_payload.as.job_reply.job = sce_test_received_->job; \
          sm->pending_payload.as.job_reply.code = sce_test_received_->code;",
     );
+    let timeout = at(
+        &asker,
+        "sce_test_context_timeout(&sm->test_context, \"reply\");",
+    );
     let content = at(
         &asker,
         "sce_test_context_stop_timer(&sm->test_context, \"reply\");",
     );
-    assert!(read < checked && checked < bound && bound < content);
+    assert!(take < read && read < checked && checked < bound && bound < content_fn);
+    assert!(take < timeout && timeout < content_fn);
+    assert!(content_fn < content);
     assert!(
         !asker.contains("ASKER_PAYLOAD_SCE_TEST_SNAPSHOT"),
-        "the content reads the message the statement bound, not the snapshot's event"
-    );
-    let timeout = at(
-        &asker,
-        "sce_test_context_timeout(&sm->test_context, \"reply\");",
+        "the content reads the message the take held, not the snapshot's event"
     );
     let failed = at(
         &asker,
         "sce_test_context_setverdict(&sm->test_context, SCE_TEST_VERDICT_FAIL, ",
     );
-    assert!(timeout < failed);
+    assert!(content_fn < failed);
 
     assert!(text("coordinator")
         .contains("sce_test_context_done_taken(&sm->test_context, \"answerer\");"));
     // A receive any branch with no content still takes its message, and a
-    // timeout branch with none still takes its timer: each is a transition
-    // with content, which the microstep runs.
+    // timeout branch with none still takes its timer.
     assert!(text("idler")
         .contains("if (!sce_test_context_receive(&sm->test_context, \"peer\", NULL)) { return; }"));
     assert!(

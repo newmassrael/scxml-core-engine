@@ -158,6 +158,14 @@ public protocol StatePolicy: AnyObject {
     /// their ancestors and keeps the ordered set.
     func firstEnabledTransition(_ state: State, event: Event, engine: Engine<Self>) -> EnabledTransition<State>?
 
+    /// Takes the transition `transitionIndex` of `source`, one `firstEnabledTransition`
+    /// reported, before the microstep exits any state: a branch of a test component
+    /// removes what it matched from the round's snapshot, writes its record in the
+    /// test log, and holds a message its content reads in the payload property of
+    /// its record's event (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3). The
+    /// default takes nothing.
+    func takeTransition(source: State, transitionIndex: Int, engine: Engine<Self>)
+
     /// Executes one transition's executable content (§scxml-3.13: run between the
     /// microstep's exits and its entries).
     ///
@@ -352,6 +360,8 @@ public protocol StatePolicy: AnyObject {
 
 extension StatePolicy {
     public var needsParent: Bool { false }
+
+    public func takeTransition(source: State, transitionIndex: Int, engine: Engine<Self>) {}
 
     public var hostInvokeIDs: [String] { [] }
 

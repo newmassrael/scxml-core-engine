@@ -97,7 +97,7 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 {# A guard lowered with no `cond` written is a branch of a test component's
    match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
 {% if trans.cond or trans.native_guard %}
-{% if trans.native_prelude %}
+{% if trans.native_take %}
 			// docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
 			// guarded by its cond and then its match on the round's snapshot.
 {% elif trans.native_guard and not trans.is_pure_in_predicate %}
@@ -117,7 +117,7 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 					Targets:         transitionTargetsOf{{ machine_name }}[state][{{ trans.transition_index }}],
 {% endif %}
 					TransitionIndex: {{ trans.transition_index }},
-					HasActions:      {{ 'true' if trans.actions or trans.native_prelude else 'false' }},
+					HasActions:      {{ 'true' if trans.actions else 'false' }},
 					IsInternal:      {{ 'true' if trans.type == 'internal' else 'false' }},
 				}, true
 			}
@@ -129,6 +129,31 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 	return sce.EnabledTransition[{{ machine_name }}State, sce.HistoryID]{}, false
 }
 
+{% if model.test_component %}
+// TakeTransition takes a branch of the test component before the microstep
+// exits any state (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3): it removes
+// what the branch matched from the round's snapshot, writes its record in the
+// test log, and holds a message its content reads in the payload field of its
+// record's event (`Transition::native_take`). The policy is a sce.TransitionTaker.
+func (p *{{ machine_name }}Policy) TakeTransition(source {{ machine_name }}State, transitionIndex int, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	switch source {
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions | selectattr("native_take") | list %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+		switch transitionIndex {
+{% for trans in state.transitions %}
+{% if trans.native_take %}
+		case {{ trans.transition_index }}:
+			{{ trans.native_take }}
+{% endif %}
+{% endfor %}
+		}
+{% endif %}
+{% endfor %}
+	}
+}
+
+{% endif %}
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
 {{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
@@ -138,31 +163,18 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionContent(source {{ machine_na
 	p.assertScriptSession()
 {% endif %}
 	switch source {
-{# A transition carries content when the document wrote some, and a branch of
-   a test component always does: the statement taking it, which runs before
-   what the document wrote (`native_prelude`, docs/SCE_TEST_PROFILE.md §4.4
-   (P4 step 1), §12.3). #}
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions | selectattr("actions") | list or state.transitions | selectattr("native_prelude") | list %}
+{% if state.transitions | selectattr("actions") | list %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 		switch transitionIndex {
 {% for trans in state.transitions %}
-{% if trans.actions or trans.native_prelude %}
+{% if trans.actions %}
 		case {{ trans.transition_index }}: {{- annot.annotation_comment(trans, "go", "			") }}
 {% if trans.source_location %}
 {{ sce_map.source_marker(trans.source_location, "go", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
-    component removes what it matched on the round's snapshot before its
-    content runs, and a message the content reads is its `_event.data`, held
-    in the payload field of its record's event from here on
-    (`Transition::native_prelude`). #}
-{% if trans.native_prelude %}
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				{{ trans.native_prelude }}
-{% endif %}
 {# SCE Accepted Subset §2.15: content that reads the event's typed payload
    cannot run for a delivery that did not carry one, and an error stops the
    block it arose in (W3C SCXML 4.9) — so the check guards the whole content,

@@ -36,6 +36,11 @@ package sce
 // Go interfaces only have receiver methods. All methods here take the policy
 // receiver. For "static" metadata methods like InitialState() or IsFinalState(),
 // the generated implementation ignores the receiver and returns constant data.
+//
+// # Taking a transition
+//
+// A policy whose transitions take something before the microstep exits any
+// state is a TransitionTaker too; the engine asks no other policy.
 type StatePolicy[S comparable, E comparable] interface {
 	// ================================================================
 	// Static metadata methods (C++ constexpr static equivalents)
@@ -351,6 +356,19 @@ func (d PolicyDocument[S, E]) HistoryParent(history HistoryID) S {
 // HistoryValue implements Document.
 func (d PolicyDocument[S, E]) HistoryValue(history HistoryID) ([]S, bool) {
 	return d.Policy.HistoryValue(history)
+}
+
+// TransitionTaker is a policy whose transitions take something before the
+// microstep exits any state: a test component, each branch of which removes
+// what it matched from the round's snapshot, writes its record in the test log
+// and holds a message its content reads in the payload channel
+// (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3). The engine takes each
+// selected transition through it (Run.TakeTransition), the default of every
+// other policy being to take nothing.
+type TransitionTaker[S comparable, E comparable] interface {
+	// TakeTransition takes the transition transitionIndex of source, one
+	// FirstEnabledTransition reported, before the microstep's exits.
+	TakeTransition(source S, transitionIndex int, engine *Engine[S, E])
 }
 
 // HistoryDefaultTargets implements Document.

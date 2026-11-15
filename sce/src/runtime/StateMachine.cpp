@@ -140,6 +140,10 @@ struct StateMachine::MicrostepHost {
         return machine.firstEnabledTransition(s, eventName);
     }
 
+    // An interpreted statechart's transition takes nothing before the exits: a
+    // test component runs only as generated code (docs/SCE_TEST_PROFILE.md §12.3).
+    void takeTransition(const Transition &) {}
+
     void exitState(const State &s, const std::vector<State> &configurationBeforeExit) {
         machine.exitStateInMicrostep(s, configurationBeforeExit);
     }

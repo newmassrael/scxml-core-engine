@@ -974,9 +974,7 @@ SavedValues.of({{ name }})
    `kotlin_method_items` items a holder, a transition weighing one and one more
    per target. `firstEnabledTransition` answers with these
    (process_event.kt.jinja2 reads the same `transition_part_of`). A holder is
-   initialised the first time one of its transitions is selected. A branch of a
-   test component has content even where the document wrote none: the
-   statement taking it (`native_prelude`, docs/SCE_TEST_PROFILE.md §12.3). #}
+   initialised the first time one of its transitions is selected. #}
 {% for part in transition_parts %}
 
     private object TransitionsPart{{ loop.index0 }} {
@@ -989,7 +987,7 @@ SavedValues.of({{ name }})
             {{ machine_name }}State.{{ state_id | to_state_class_name }},
             {%+ if trans.targets %}{{ et.entry_targets(trans.targets, model.history_states, machine_name) }}{% else %}emptyList(){% endif %},
             {{ trans.transition_index }},
-            hasActions = {{ 'true' if trans.actions or trans.native_prelude else 'false' }},
+            hasActions = {{ 'true' if trans.actions else 'false' }},
             isInternal = {{ 'true' if trans.type == 'internal' else 'false' }},
         )
 {% endfor %}

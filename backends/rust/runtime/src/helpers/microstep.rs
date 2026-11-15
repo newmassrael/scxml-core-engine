@@ -318,6 +318,13 @@ pub trait Behaviour {
     /// evaluated.
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId>;
 
+    /// Take one selected transition, before any state of the microstep exits:
+    /// what a branch of a test component removes from the round's snapshot
+    /// (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1), which happens before the
+    /// exit set is exited. The default takes nothing: a statechart's transition
+    /// has nothing to take.
+    fn take_transition(&mut self, _transition: TransitionId) {}
+
     /// Run the state's onexit and cancel its invocations. The procedure removes
     /// it from the configuration afterwards.
     fn exit_state(&mut self, state: StateId);
@@ -890,13 +897,15 @@ pub struct Entered {
     pub current: Option<StateId>,
 }
 
-/// Appendix D's microstep: exit, run the transitions' content, enter.
+/// Appendix D's microstep: exit, run the transitions' content, enter; each
+/// transition taken before anything exits ([`take_transitions`]).
 pub fn microstep(
     tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
     mut scratch: Scratch<'_>,
 ) -> Entered {
+    take_transitions(machine, transitions);
     // §scxml-D-microstepProcedure: every exit, then every transition's
     // content, then every entry — for the whole set at once, which is what lets
     // the regions of a `<parallel>` each take their own transition in one step.
@@ -933,6 +942,18 @@ pub fn compute_states_to_exit(
                 }
             }
         }
+    }
+}
+
+/// Take each of the microstep's transitions, in the order they were selected,
+/// before the exit set is exited ([`Behaviour::take_transition`]): a branch of a
+/// test component removes what it matched from the round's snapshot at P4 step
+/// 1, and its exits, content and entries are P4 step 2
+/// (docs/SCE_TEST_PROFILE.md §4.4). Appendix D has no such step; a machine
+/// whose transitions take nothing answers each call with nothing.
+pub fn take_transitions(machine: &mut dyn Behaviour, transitions: &[TransitionId]) {
+    for &transition in transitions {
+        machine.take_transition(transition);
     }
 }
 

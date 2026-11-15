@@ -3956,15 +3956,50 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 
    When no transition in the SM carries a body, the entire dispatch
    collapses to a stub so we keep one canonical signature across
-   fixtures. A transition carries a body when the document wrote content,
-   and a branch of a test component always does: the statement taking it,
-   which runs before what the document wrote (`native_prelude`,
-   docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3). #}
+   fixtures. A transition carries a body when the document wrote content. #}
+{% if model.test_component %}
+/* docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+   component is taken before the microstep exits any state (`take_transitions`,
+   c/microstep.jinja2): it removes what it matched from the round's snapshot,
+   writes its record in the test log, and holds a message its content reads in
+   the payload channel's member of its record's event (`Transition::native_take`).
+   A removal the run refused has ended the run with `error` (P13), so the take
+   ends there and nothing after it is recorded. */
+SCE_SM_FN static void take_transition({{ csym_prefix }}{{ model.name }}_t *sm,
+                                      {{ csym_prefix }}{{ model.name }}_state_t source,
+                                      uint16_t index) {
+    (void)sm;
+    (void)index;
+    switch (source) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.transitions | selectattr('native_take') | list | length > 0 %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
+        switch (index) {
+        {% for trans in state.transitions %}
+        {% if trans.native_take %}
+        case {{ trans.transition_index }}: {
+            {{ trans.native_take }}
+            break;
+        }
+        {% endif %}
+        {% endfor %}
+        default:
+            break;
+        }
+        break;
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
+}
+
+{% endif %}
 {% set any_transition_actions = namespace(value=False) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
 {% for trans in state.transitions %}
-{% if trans.actions or trans.native_prelude %}
+{% if trans.actions %}
 {% set any_transition_actions.value = True %}
 {% endif %}
 {% endfor %}
@@ -3980,27 +4015,17 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
     (void)sm;
     switch (source) {
     {% for state_id, state in model.states | dictsort %}
-    {% set state_has_actions = state.transitions and ((state.transitions | selectattr('actions') | list | length > 0) or (state.transitions | selectattr('native_prelude') | list | length > 0)) %}
+    {% set state_has_actions = state.transitions and (state.transitions | selectattr('actions') | list | length > 0) %}
     {% if state_has_actions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         switch (index) {
         {% for trans in state.transitions %}
-        {% if trans.actions or trans.native_prelude %}
+        {% if trans.actions %}
         case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
 {% if trans.source_location %}
             {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
-{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
-    component removes what it matched on the round's snapshot before its
-    content runs, and a message the content reads is its `_event.data`, held
-    in the payload channel's member of its record's event from here on
-    (`Transition::native_prelude`). What it declares stands in this block,
-    beside the content, and a removal the run refused ends the block. #}
-{% if trans.native_prelude %}
-            /* docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1). */
-            {{ trans.native_prelude }}
-{% endif %}
 {% if trans.content_reads_payload %}
             /* SCE Accepted Subset §2.15: this content reads the event's typed payload, so
                it runs only for a delivery that carried one. A delivery of this event
@@ -4221,7 +4246,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
                 {{ emit_transition_body(trans) }}
             }
         {% elif native_guard_expr %}
-{% if trans.native_prelude %}
+{% if trans.native_take %}
             /* docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
                guarded by its cond and then its match on the round's snapshot,
                which the cond, asked first, keeps from being asked when it is

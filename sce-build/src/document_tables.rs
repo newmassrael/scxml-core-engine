@@ -438,12 +438,11 @@ impl DocumentTables {
                     },
                     targets: names.push_targets(&mut targets, &transition.targets, &referrer)?,
                     internal: transition.transition_type == "internal",
-                    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a
-                    // branch of a test component runs the statement taking it
-                    // before its content, so it has content even where the
-                    // document wrote none.
-                    has_content: !transition.actions.is_empty()
-                        || transition.snapshot_branch.is_some(),
+                    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: the
+                    // statement taking a branch of a test component is the
+                    // policy's take, run before the microstep's exits, and
+                    // no part of the branch's content.
+                    has_content: !transition.actions.is_empty(),
                 });
             }
         }
@@ -648,11 +647,12 @@ mod tests {
         assert_eq!(tables.transition_id("done", 0), None);
     }
 
-    /// docs/SCE_TEST_PROFILE.md §12.3: a branch of a test component, lowered
-    /// for generation, has content even where the document wrote none, since
-    /// taking it runs the statement that removes what it matched.
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of a test
+    /// component, lowered for generation, has content only where the document
+    /// wrote some: the statement taking it is the policy's take, which runs
+    /// before the microstep's exits and is no part of the content.
     #[test]
-    fn a_branch_of_a_test_component_has_content_where_none_is_written() {
+    fn a_branch_of_a_test_component_has_content_only_where_some_is_written() {
         let (mut model, tables) = tables_of(
             r#" initial="idle">
   <state id="idle"><transition event="go" target="done"/></state>
@@ -665,6 +665,11 @@ mod tests {
             Some(crate::test_component::snapshot::SnapshotBranch::Timeout {
                 timer: "patience".to_string(),
             });
+        let tables = DocumentTables::of(&model).expect("tables");
+        assert!(!tables.transitions[written].has_content);
+        model.states.get_mut("idle").expect("idle").transitions[0]
+            .actions
+            .push(crate::model::Action::default());
         let tables = DocumentTables::of(&model).expect("tables");
         assert!(tables.transitions[written].has_content);
     }

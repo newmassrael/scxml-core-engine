@@ -224,15 +224,26 @@ fn a_branch_with_a_cond_is_guarded_by_the_cond_and_then_its_match() {
     );
 }
 
-/// P4 step 1, §12.3: taking a branch runs, before its content, the statement
-/// that removes what it matched and tells the runtime it took a branch. A
-/// receive branch whose content reads the message binds it as `ev`, the
-/// `_event.data` its content reads, so its content needs no binding of its
-/// own from the snapshot's event. A branch whose document writes no content
-/// still has the statement as its content.
+/// The policy's take of a transition and its content, the two functions the
+/// engine calls a microstep apart: the take before the exits, the content
+/// after them (docs/SCE_TEST_PROFILE.md §4.4).
+const TAKE_FN: &str = "fn take_transition(";
+const CONTENT_FN: &str = "fn execute_transition_content(";
+
+/// P4 step 1, §4.4, §12.3: taking a branch is the policy's take of the
+/// transition, which the engine runs before the microstep exits any state and
+/// never in the content: it removes what the branch matched, tells the runtime
+/// it took a branch, and holds a message the content reads in the payload
+/// channel of its record's event. The content, after the exits, binds it as
+/// `ev`, the `_event.data` it reads. A branch whose document writes no content
+/// is taken all the same.
 #[test]
-fn taking_a_branch_removes_what_it_matched_before_its_content() {
+fn taking_a_branch_runs_before_the_exits_and_its_content_after() {
     let asker = text("asker");
+    assert!(asker.contains("const TAKES_TRANSITIONS: bool = true;"));
+    let take = at(&asker, TAKE_FN);
+    let content_fn = at(&asker, CONTENT_FN);
+    assert!(take < content_fn, "the take is a function of its own");
     let receive = at(
         &asker,
         "let sce_message = self.test_context().receive(\"sut\");",
@@ -241,24 +252,39 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         &asker,
         "let sce_value = sce_message.value_as::<reply_ok::Value>().expect(",
     );
-    let bound = at(
+    let held = at(
         &asker,
-        "let ev = AskerJobReplyPayload { job: sce_value.job, code: sce_value.code };",
-    );
-    let content = at(&asker, "self.test_context().stop_timer(\"reply\");");
-    assert!(receive < read && read < bound && bound < content);
-    assert!(
-        !asker.contains("let ev = match &self.pending_payload"),
-        "the content reads the message the statement bound, not the snapshot's event"
+        "self.pending_payload = AskerPayload::JobReply(AskerJobReplyPayload { job: sce_value.job, \
+         code: sce_value.code });",
     );
     let timeout = at(&asker, "self.test_context().timeout(\"reply\");");
+    assert!(
+        take < receive && receive < read && read < held && held < content_fn,
+        "the receive is taken in the take"
+    );
+    assert!(take < timeout && timeout < content_fn, "so is the timeout");
+    let bound = at(
+        &asker,
+        "let ev = match &self.pending_payload { AskerPayload::JobReply(ev) => ev.clone(), _ => \
+         unreachable!(",
+    );
+    let content = at(&asker, "self.test_context().stop_timer(\"reply\");");
+    assert!(
+        content_fn < bound && bound < content,
+        "the content binds the message the take held"
+    );
     let failed = at(
         &asker,
         "self.test_context().setverdict(::sce_rust_runtime::test::Verdict::Fail, &sce_reason);",
     );
-    assert!(timeout < failed);
+    assert!(content_fn < failed);
 
-    assert!(text("coordinator").contains("self.test_context().done_taken(\"answerer\");"));
+    let coordinator = text("coordinator");
+    let done = at(
+        &coordinator,
+        "self.test_context().done_taken(\"answerer\");",
+    );
+    assert!(done < at(&coordinator, CONTENT_FN));
     // A receive any branch with no content still takes its message, and a
     // timeout branch with none still takes its timer.
     assert!(text("idler").contains("self.test_context().receive(\"peer\");"));
@@ -443,11 +469,12 @@ fn a_message_with_a_text_field_its_content_reads_is_refused_on_rust() {
 
 /// §12.3, §12.6: a receive branch whose content reads a message of a record
 /// that holds a composition (`job_status`: a list, a text that may be absent,
-/// numbers that may be absent) binds it as `ev`, the machine's payload struct,
-/// each member made from the value the record's unit holds: a value that
-/// names no record, enum or union is one type in the unit and the machine,
-/// and is copied whole, a number as it is and the rest cloned. The content
-/// reads the member as it reads any composed payload.
+/// numbers that may be absent) has the take hold it in the machine's payload
+/// struct, each member made from the value the record's unit holds: a value
+/// that names no record, enum or union is one type in the unit and the
+/// machine, and is copied whole, a number as it is and the rest cloned. The
+/// content binds it as `ev` and reads the member as it reads any composed
+/// payload.
 #[test]
 fn a_composed_message_its_content_reads_is_bound_in_the_machines_types() {
     let code = text_at(&profile_dir().join("job_tester.scxml"));
@@ -459,19 +486,24 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types() {
         &code,
         "let sce_value = sce_message.value_as::<every_matcher::Value>().expect(",
     );
+    let held = at(
+        &code,
+        "self.pending_payload = JobTesterPayload::JobStatus(JobTesterJobStatusPayload { \
+         elapsed_ms: sce_value.elapsed_ms, note: sce_value.note.clone(), codes: \
+         sce_value.codes.clone(), tag: sce_value.tag, retry: sce_value.retry, count: \
+         sce_value.count });",
+    );
+    let content_fn = at(&code, CONTENT_FN);
     let bound = at(
         &code,
-        "let ev = JobTesterJobStatusPayload { elapsed_ms: sce_value.elapsed_ms, note: \
-         sce_value.note.clone(), codes: sce_value.codes.clone(), tag: sce_value.tag, retry: \
-         sce_value.retry, count: sce_value.count };",
+        "let ev = match &self.pending_payload { JobTesterPayload::JobStatus(ev) => ev.clone(), _ \
+         => unreachable!(",
     );
     let content = at(&code, "self.test_context().stop_timer(\"deadline\");");
-    assert!(receive < read && read < bound && bound < content);
+    assert!(at(&code, TAKE_FN) < receive);
+    assert!(receive < read && read < held && held < content_fn);
+    assert!(content_fn < bound && bound < content);
     assert!(code[bound..].contains("ev.elapsed_ms"), "{code}");
-    assert!(
-        !code.contains("let ev = match &self.pending_payload"),
-        "the content reads the message the statement bound, not the snapshot's event"
-    );
 }
 
 /// The schema and the documents a component over `order_placed` imports:
@@ -532,7 +564,8 @@ fn a_message_holding_records_an_enum_and_a_union_is_made_case_by_case() {
     let code = text_at(&order_reader(dir.path()));
     for needle in [
         "let sce_value = sce_message.value_as::<order_placed_match::Value>().expect(",
-        "let ev = OrderReaderOrderPlacedPayload { order_id: sce_value.order_id, lines: \
+        "self.pending_payload = OrderReaderPayload::OrderPlaced(OrderReaderOrderPlacedPayload { \
+         order_id: sce_value.order_id, lines: \
          ::sce_rust_runtime::portable::BoundedList::widened_map(&sce_value.lines, |v| \
          OrderReaderLineRecord { sku: v.sku.clone(), quantity: v.quantity, color: match \
          v.color { paint_color::PaintColor::",

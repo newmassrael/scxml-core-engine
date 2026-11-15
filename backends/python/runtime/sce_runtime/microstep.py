@@ -205,6 +205,12 @@ class Run(Document[S, H], Protocol[S, H, E]):
         eventless transition whose guard holds. The only place a guard is
         evaluated."""
 
+    def take_transition(self, transition: EnabledTransition[S]) -> None:
+        """Take one selected transition before any state of the microstep
+        exits: what a branch of a test component removes from the round's
+        snapshot (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1). A machine whose
+        transitions take nothing does nothing."""
+
     def exit_state(self, state: S, configuration_before_exit: Sequence[S]) -> None:
         """Record this state's histories from the configuration as it stood
         before the microstep's first exit, run its onexit, cancel its
@@ -434,17 +440,30 @@ def compute_states_to_exit(
 
 
 def microstep(run: Run, transitions: Sequence[EnabledTransition]) -> EntrySet:
-    """Appendix D's microstep: exit, run the transitions' content, enter.
+    """Appendix D's microstep: exit, run the transitions' content, enter; each
+    transition taken before anything exits (``take_transitions``).
 
     Returns what was entered — the entry set, ``states_to_enter`` in entry
     order.
     """
+    take_transitions(run, transitions)
     # §scxml-D-microstepProcedure: every exit, then every transition's content,
     # then every entry — for the whole set at once, which is what lets the
     # regions of a `<parallel>` each take their own transition in one step.
     exit_states(run, transitions)
     execute_transition_content(run, transitions)
     return enter_states(run, [t.entry_transition() for t in transitions])
+
+
+def take_transitions(run: Run, transitions: Sequence[EnabledTransition]) -> None:
+    """Take each of the microstep's transitions, in the order they were
+    selected, before the exit set is exited: a branch of a test component
+    removes what it matched from the round's snapshot at P4 step 1, and its
+    exits, content and entries are P4 step 2 (docs/SCE_TEST_PROFILE.md §4.4).
+    Appendix D has no such step; a machine whose transitions take nothing
+    answers each call with nothing."""
+    for transition in transitions:
+        run.take_transition(transition)
 
 
 def exit_states(run: Run, transitions: Sequence[EnabledTransition]) -> None:

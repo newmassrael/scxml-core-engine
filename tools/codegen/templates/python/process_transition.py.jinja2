@@ -61,6 +61,29 @@
 {% endfor %}
         return None
 
+{% if model.test_component %}
+    # ── Taking a branch (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1) ──
+
+    def take_transition(self, state, transition_index: int, engine) -> None:
+        """Take a branch of the test component before the microstep exits any
+        state: remove what it matched from the round's snapshot, write its
+        record in the test log, and hold a message its content reads in the
+        payload attribute of its record's event (`Transition::native_take`,
+        docs/SCE_TEST_PROFILE.md §12.3). What a take raises is a defect of the
+        run, never `error.execution`."""
+{% for state_id, state in model.states | dictsort %}
+{% for transition in state.transitions %}
+{% if transition.native_take %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }} and transition_index == {{ transition.transition_index }}:
+{% for line in transition.native_take.split('\n') %}
+            {{ line }}
+{% endfor %}
+            return
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+{% endif %}
     # ── Transition content (W3C SCXML 3.13) ───────────────────────
 
     def execute_transition_content(self, state, transition_index: int, engine) -> None:
@@ -70,14 +93,11 @@
    siblings without crashing the engine. One try-wrap per transition
    so each transition is its own block (matches the spec's "executable
    content block" granularity). #}
-{# A transition carries content when the document wrote some, and a branch of
-   a test component always does: the statement taking it, which runs before
-   what the document wrote (`native_prelude`, docs/SCE_TEST_PROFILE.md §4.4
-   (P4 step 1), §12.3). #}
+{# A transition carries content when the document wrote some. #}
 {% for state_id, state in model.states | dictsort %}
 {% set content_ns = namespace(transitions=[]) %}
 {% for transition in state.transitions %}
-{% if transition.actions or transition.native_prelude %}
+{% if transition.actions %}
 {% set content_ns.transitions = content_ns.transitions + [transition] %}
 {% endif %}
 {% endfor %}
@@ -88,18 +108,6 @@
             if transition_index == {{ transition.transition_index }}:{{ annot.annotation_comment(transition, "python", "                ") }}
 {% if transition.source_location %}
                 {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true, symbol_state=transition.symbol_state_path, symbol_artifact=transition.symbol_artifact) | trim }}
-{% endif %}
-{# docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
-   component removes what it matched on the round's snapshot before its
-   content runs, and a message the content reads is its `_event.data`, held in
-   the payload attribute of its record's event from here on
-   (`Transition::native_prelude`). The lines stand outside the block's
-   `try`: what they raise is a defect of the run, never `error.execution`. #}
-{% if transition.native_prelude %}
-                # docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-{% for line in transition.native_prelude.split('\n') %}
-                {{ line }}
-{% endfor %}
 {% endif %}
 {# SCE Accepted Subset §2.15: content that reads the event's typed payload
    cannot run for a delivery that did not carry one, and an error stops the
@@ -113,8 +121,6 @@
                 if self._pending_{{ transition.event | to_snake_case }}_payload is None:
                     return
 {% endif %}
-{# A branch whose document writes no content has the statement above alone, and
-   no block to run. #}
 {% if transition.actions %}
                 try:
 {# `block_flow`: an element that ends the block unconditionally sets it, and

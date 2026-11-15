@@ -169,6 +169,35 @@
         }
     }
 
+{% if model.test_component %}
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+{% for state_id, state in model.states | dictsort %}
+{% for trans in state.transitions %}
+{% if trans.native_take %}
+            // {{ state_id }}, transition {{ trans.transition_index }}
+            {{ tables.written[state_id][trans.transition_index] }} => {
+{{ trans.native_take }}
+            }
+{% endif %}
+{% endfor %}
+{% endfor %}
+            _ => {}
+        }
+    }
+
+{% endif %}
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -185,19 +214,18 @@
         match transition.0 {
 {% for state_id, state in model.states | dictsort %}
 {% for trans in state.transitions %}
-{% if trans.actions or trans.native_prelude %}
+{% if trans.actions %}
             // {{ state_id }}, transition {{ trans.transition_index }}
             {{ tables.written[state_id][trans.transition_index] }} => {  {{- annot.annotation_comment(trans, "rust", "                ") }}
 {% if trans.source_location %}
                 {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                 // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
-{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
-    component removes what it matched on the round's snapshot before its
-    content runs, and a message the content reads is its `_event.data`, bound
-    as `ev`, from here on (`Transition::native_prelude`). #}
+{#  docs/SCE_TEST_PROFILE.md §12.3: a branch of a test component took its
+    message before the microstep exited anything (`take_transition`), and
+    held it in the payload channel; content that reads it binds it as `ev`,
+    its `_event.data` (`Transition::native_prelude`). #}
 {% if trans.native_prelude %}
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
 {{ trans.native_prelude }}
 {% endif %}
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
