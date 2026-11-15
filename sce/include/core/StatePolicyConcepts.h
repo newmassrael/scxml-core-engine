@@ -215,6 +215,20 @@ struct HasHostInvokerChildrenTrait<P, Ending,
                                        std::declval<const std::string &>(), std::declval<const Ending &>()))>>
     : std::true_type {};
 
+/// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a policy whose transitions take
+/// something before the microstep exits any state, a test component's, each branch of
+/// which removes what it matched from the round's snapshot, writes its record in the
+/// test log, and holds a message its content reads in the payload channel. The engine
+/// takes each selected transition through `takeTransition(source, transitionIndex,
+/// engine)` where this holds, and asks no other policy.
+template <typename P, typename E, typename = void> struct HasTakeTransitionTrait : std::false_type {};
+
+template <typename P, typename E>
+struct HasTakeTransitionTrait<P, E,
+                              std::void_t<decltype(std::declval<P &>().takeTransition(
+                                  std::declval<typename P::State>(), std::declval<int>(), std::declval<E &>()))>>
+    : std::true_type {};
+
 /// SCE_MESH.md §9.6: a policy that runs child sessions on remote devices. What their
 /// transport delivers on a thread of its own (the child's session id, its events, its
 /// completion, the loss of its peer) is posted to the engine's inbox, and the engine

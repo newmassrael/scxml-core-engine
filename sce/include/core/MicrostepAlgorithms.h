@@ -50,6 +50,11 @@ namespace SCE::Core {
  *     // enables and whose guard holds; for the host's "no event", its first
  *     // eventless transition whose guard holds. The only place a guard is
  *     // evaluated, so each is evaluated once per selection.
+ * void takeTransition(const EnabledTransition<State, History> &);
+ *     // take one selected transition before any state of the microstep exits:
+ *     // what a branch of a test component removes from the round's snapshot
+ *     // (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1); nothing for a statechart's
+ *     // transition
  * void exitState(const State &, const std::vector<State> &configurationBeforeExit);
  *     // record this state's histories from the configuration as it stood
  *     // before the microstep's first exit, run its onexit, cancel its
@@ -186,12 +191,14 @@ struct MicrostepAlgorithms {
     }
 
     /**
-     * @brief Appendix D's microstep: exit, run the transitions' content, enter
+     * @brief Appendix D's microstep: exit, run the transitions' content, enter;
+     *        each transition taken before anything exits (`takeTransitions`)
      *
      * @return What was entered — the entry set, `statesToEnter` in entry order
      */
     template <typename Host>
     static Entered<Host> microstep(Host &host, const std::vector<Transition<Host>> &transitions) {
+        takeTransitions(host, transitions);
         // §scxml-D-microstepProcedure: every exit, then every transition's
         // content, then every entry — for the whole set at once, which is what
         // lets the regions of a `<parallel>` each take their own transition in
@@ -204,6 +211,21 @@ struct MicrostepAlgorithms {
             entering.push_back(t.toEntryTransition());
         }
         return enterStates(host, entering);
+    }
+
+    /**
+     * @brief Take each of the microstep's transitions, in the order they were
+     *        selected, before the exit set is exited
+     *
+     * A branch of a test component removes what it matched from the round's
+     * snapshot at P4 step 1, and its exits, content and entries are P4 step 2
+     * (docs/SCE_TEST_PROFILE.md §4.4). Appendix D has no such step; a host whose
+     * transitions take nothing answers each call with nothing.
+     */
+    template <typename Host> static void takeTransitions(Host &host, const std::vector<Transition<Host>> &transitions) {
+        for (const Transition<Host> &t : transitions) {
+            host.takeTransition(t);
+        }
     }
 
     template <typename Host> static void exitStates(Host &host, const std::vector<Transition<Host>> &transitions) {

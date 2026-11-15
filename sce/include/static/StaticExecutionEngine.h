@@ -651,6 +651,14 @@ private:
             return engine.policy_.firstEnabledTransition(s, event, engine);
         }
 
+        // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1): only a policy whose transitions
+        // take something is asked, so a statechart's microstep makes no call.
+        void takeTransition([[maybe_unused]] const TransitionInfo &t) {
+            if constexpr (SCE::Core::HasTakeTransitionTrait<StatePolicy, StaticExecutionEngine>::value) {
+                engine.policy_.takeTransition(t.source, t.transitionIndex, engine);
+            }
+        }
+
         void exitState(const State &s, const std::vector<State> &configurationBeforeExit) {
             engine.policy_.executeExitActions(s, engine, configurationBeforeExit);
         }

@@ -1,9 +1,9 @@
 {
-  "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "e696318",
+  "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
+  "embed_version": "f589f58",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 604,
+  "symbol_count": 605,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1627,7 +1627,8 @@
         "template FunctionTemplateDecl microstep",
         "template FunctionTemplateDecl parentOf",
         "template FunctionTemplateDecl removeConflictingTransitions",
-        "template FunctionTemplateDecl selectTransitions"
+        "template FunctionTemplateDecl selectTransitions",
+        "template FunctionTemplateDecl takeTransitions"
       ],
       "name": "SCE::Core::MicrostepAlgorithms"
     },
@@ -1810,6 +1811,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasSessionIdTextTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasTakeTransitionTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
