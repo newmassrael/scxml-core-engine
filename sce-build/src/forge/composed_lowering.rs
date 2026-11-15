@@ -519,6 +519,50 @@ pub trait ComposedSpelling {
         self.copy_present(value)
     }
 
+    /// The read of the field `field` of `held`, a value of a record as its
+    /// event schema's own unit declares it, which the machine's value of the
+    /// record is made from ([`fields_from_unit`]): the message a test
+    /// component's receive branch takes (docs/SCE_TEST_PROFILE.md §12.3).
+    /// `None` for a backend that makes no machine's value from a unit's, which
+    /// the walk refuses by name. A backend that answers holds a value that
+    /// names no record, enum or union in one type in its units and its
+    /// machine, which the walk copies whole ([`Self::copy_whole`]), but for a
+    /// byte string that is one entry of a record ([`Self::unit_entry_bytes`]),
+    /// and answers [`Self::unit_enum`], [`Self::unit_union`] and
+    /// [`Self::record_of`] too.
+    fn unit_field(&self, _held: &Held, _field: &str) -> Option<String> {
+        None
+    }
+    /// The machine's value of `held`, a byte string of at most `max` bytes that
+    /// a record's unit holds as one entry of the record (the field itself, or
+    /// the present value of a field that may be absent), which the unit spells
+    /// as it spells every field of one entry and not as the bounded type a
+    /// composition holds a byte string in ([`crate::forge::schema_unit_type`]):
+    /// `held` copied whole, the default, where the unit's entry is the
+    /// machine's own type; a backend whose machine holds it in a type of its
+    /// bound the unit's entry is not makes that value of it.
+    fn unit_entry_bytes(&self, _max: u32, held: &Held) -> String {
+        self.copy_whole(held, false)
+    }
+    /// The machine's value of the enum `machine` names, made from `held`, a
+    /// value of the type the enum document named `document` declares in its
+    /// own unit: the variant of the same declared name. `None` as for
+    /// [`Self::unit_field`].
+    fn unit_enum(&self, _machine: &MachineEnum, _document: &str, _held: &Held) -> Option<String> {
+        None
+    }
+    /// The machine's value of a union made from `held`, a value of the type
+    /// the union document named `document` declares in its own unit, by the
+    /// arm of the case it is in. `None` as for [`Self::unit_field`].
+    fn unit_union(&self, _held: &Held, _document: &str, _arms: &[UnitUnionArm]) -> Option<String> {
+        None
+    }
+    /// A value of the machine's record held in `ty`, each field's id with its
+    /// value, in the schema's order. `None` as for [`Self::unit_field`].
+    fn record_of(&self, _ty: &str, _fields: &[(String, String)]) -> Option<String> {
+        None
+    }
+
     /// The declaration that writes the composed record `alias` as a saved state
     /// does and reads it back (docs/adr/0092, section 6.1 item 7), for a backend
     /// whose record type carries that form itself (a Swift record has
@@ -888,6 +932,18 @@ pub struct UnionWriteArm {
     pub case_ident: String,
     pub variant: String,
     pub fields: Option<Vec<(String, String)>>,
+}
+
+/// One case of a union whose machine's value is made from the value its own
+/// unit declares ([`ComposedSpelling::unit_union`]): the variant's declared
+/// name, which the unit names its case by, whether the case holds a record,
+/// which the arm binds to [`ComposedSpelling::copy_binding`], and the machine's
+/// value of the case, its record made from the one bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitUnionArm {
+    pub variant: String,
+    pub holds_record: bool,
+    pub value: String,
 }
 
 /// The type `field` has in every case of `union` that declares it, where two
@@ -1536,6 +1592,198 @@ pub fn field_writers(
             ))
         })
         .collect()
+}
+
+/// Whether a value of `ty` names a record, an enum or a union at any depth:
+/// the types a unit and a machine each declare of their own, which
+/// [`from_unit`] makes case by case.
+fn names_a_declared_type(ty: &ValueType) -> bool {
+    match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => true,
+        ValueType::Optional { elem } | ValueType::List { elem, .. } => names_a_declared_type(elem),
+        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
+    }
+}
+
+/// The sentence of `what`, a part of a value the backend makes no machine's
+/// value of from the value its unit declares ([`from_unit`]).
+fn unmade(what: &str) -> String {
+    format!("{what} has no machine's value made from its unit's on this backend")
+}
+
+/// The machine's value of `ty`, written in the scope `within` names, made from
+/// `held`, the same value as the units of its types declare it: a record as
+/// its event schema's unit, an enum as its enum document's, a union as its
+/// union document's (docs/SCE_TEST_PROFILE.md §12.3: the message a test
+/// component's receive branch takes, which its template's unit matched). Each
+/// record, enum and union is made case by case at any depth, the parts of a
+/// list and of a present value through the copy's own map of them
+/// ([`ComposedSpelling::copy_list_into`], [`ComposedSpelling::copy_optional`]);
+/// a value that names none of them is one type in the unit and the machine
+/// ([`ComposedSpelling::unit_field`]) and is copied whole, but a byte string
+/// that is one entry of a record, which the record's own walk makes
+/// ([`field_from_unit`]). `documents` is the
+/// name of the document of each enum, by the alias the machine holds it by,
+/// which the enum's unit is named by. `Err` names a part the backend makes no
+/// value of.
+fn from_unit(
+    ty: &ValueType,
+    within: Option<&str>,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    documents: &BTreeMap<String, String>,
+    spelling: &dyn ComposedSpelling,
+    held: &Held,
+) -> Result<String, String> {
+    let element = Held::reference(spelling.copy_binding());
+    // The type the machine holds a part in, which a backend whose function
+    // literals name their types spells the copy of the part with.
+    let typed = |part: &ValueType| machine_type(part, within, records, enums, spelling);
+    let part = |part: &ValueType, held: &Held| {
+        from_unit(part, within, records, enums, documents, spelling, held)
+    };
+    match ty {
+        ValueType::Optional { elem } if names_a_declared_type(elem) => {
+            Ok(spelling.copy_optional(held, &part(elem, &element)?, &typed(elem)?))
+        }
+        ValueType::List { elem, .. } if names_a_declared_type(elem) => {
+            Ok(spelling.copy_list_into(held, &part(elem, &element)?, &typed(elem)?, &typed(ty)?))
+        }
+        ValueType::Scalar(SceType::Enum(reference)) => {
+            let machine = machine_enum(enums, &reference.alias)?;
+            let document = documents.get(&reference.alias).ok_or_else(|| {
+                format!(
+                    "`enum:{}` names an enum whose document the machine does not hold",
+                    reference.alias
+                )
+            })?;
+            spelling
+                .unit_enum(machine, document, held)
+                .ok_or_else(|| unmade(&format!("`enum:{}`", reference.alias)))
+        }
+        ValueType::Record { alias } => {
+            let record = records.record(within, alias)?;
+            let fields = fields_from_unit(record, records, enums, documents, spelling, held)?;
+            spelling
+                .record_of(&spelling.record_type(record.alias), &fields)
+                .ok_or_else(|| unmade(&format!("`record:{alias}`")))
+        }
+        // docs/adr/0092, section 7: the machine's own sum, its case the one of
+        // the same variant, holding the record made from the unit's case's.
+        ValueType::Union { alias } => {
+            let union = records.union(within, alias)?;
+            let ty = spelling.union_type(&union.union.name);
+            let mut arms = Vec::with_capacity(union.union.cases.len());
+            for case in &union.union.cases {
+                let record = match &case.record {
+                    None => None,
+                    Some(record) => Some(from_unit(
+                        &ValueType::Record {
+                            alias: record.clone(),
+                        },
+                        Some(&union.key),
+                        records,
+                        enums,
+                        documents,
+                        spelling,
+                        &element,
+                    )?),
+                };
+                arms.push(UnitUnionArm {
+                    variant: case.variant.name.clone(),
+                    holds_record: record.is_some(),
+                    value: spelling.union_value(
+                        &ty,
+                        &union.union.tag,
+                        &spelling.union_case_ident(&case.variant.name),
+                        record.as_deref(),
+                    ),
+                });
+            }
+            spelling
+                .unit_union(held, &union.union.name, &arms)
+                .ok_or_else(|| unmade(&format!("`union:{alias}`")))
+        }
+        // A number, a truth value, a text, a byte string, and a list or a
+        // value that may be absent of them: one type in the unit and the
+        // machine.
+        ValueType::Scalar(_)
+        | ValueType::Text { .. }
+        | ValueType::Bytes { .. }
+        | ValueType::Optional { .. }
+        | ValueType::List { .. } => Ok(spelling.copy_whole(held, plain(ty))),
+    }
+}
+
+/// Each field of the record `record` with the machine's value of it, made from
+/// `held`, a value of the record as its event schema's unit declares it
+/// ([`from_unit`]), in the schema's order: what the machine's record is made
+/// of, and what the payload a test component's receive branch binds its
+/// message as is (docs/SCE_TEST_PROFILE.md §12.3). `documents` as
+/// [`from_unit`]'s.
+pub fn fields_from_unit(
+    record: HeldRecord<'_>,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    documents: &BTreeMap<String, String>,
+    spelling: &dyn ComposedSpelling,
+    held: &Held,
+) -> Result<Vec<(String, String)>, String> {
+    record
+        .schema
+        .fields
+        .iter()
+        .map(|field| {
+            let read = spelling.unit_field(held, &field.id).ok_or_else(|| {
+                unmade(&format!(
+                    "the field `{}` of `record:{}`",
+                    field.id, record.alias
+                ))
+            })?;
+            Ok((
+                field.id.clone(),
+                field_from_unit(
+                    &field.sce_type,
+                    Some(record.alias),
+                    records,
+                    enums,
+                    documents,
+                    spelling,
+                    &Held::place(read),
+                )?,
+            ))
+        })
+        .collect()
+}
+
+/// The machine's value of `held`, a field of `ty` of a record as the record's
+/// unit declares it, written in the scope `within` names: a byte string that
+/// is one entry of the record, or the present value of one that may be absent,
+/// as the unit holds every entry ([`ComposedSpelling::unit_entry_bytes`]), and
+/// any other value by [`from_unit`]. `documents` as [`from_unit`]'s.
+fn field_from_unit(
+    ty: &ValueType,
+    within: Option<&str>,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    documents: &BTreeMap<String, String>,
+    spelling: &dyn ComposedSpelling,
+    held: &Held,
+) -> Result<String, String> {
+    match ty {
+        ValueType::Bytes { max } => Ok(spelling.unit_entry_bytes(max.max, held)),
+        ValueType::Optional { elem } => match &**elem {
+            ValueType::Bytes { max } => Ok(spelling.copy_optional(
+                held,
+                &spelling.unit_entry_bytes(max.max, &Held::reference(spelling.copy_binding())),
+                &machine_type(elem, within, records, enums, spelling)?,
+            )),
+            _ => from_unit(ty, within, records, enums, documents, spelling, held),
+        },
+        _ => from_unit(ty, within, records, enums, documents, spelling, held),
+    }
 }
 
 #[cfg(test)]

@@ -1236,6 +1236,22 @@ impl<'a> LiftStatement<'a> {
     }
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.3: the message a receive branch takes, where
+/// the branch's content reads it, as the statement taking the branch holds it
+/// as the content's `_event.data` ([`StaticTarget::take_branch`]).
+#[derive(Debug, Clone)]
+pub enum ReceivedMessage<'a> {
+    /// A record each field of which is one entry, which the target copies
+    /// field by field.
+    Entries(&'a EntrySchema),
+    /// A record that holds a composition (docs/adr/0086): each member of the
+    /// payload struct with the machine's value of it, made by the walk of the
+    /// record's type from the value the statement binds to
+    /// [`StaticTarget::received_binding`]
+    /// ([`crate::forge::composed_lowering::fields_from_unit`]).
+    Composed(Vec<(String, String)>),
+}
+
 /// How one backend spells what a `sce-static` document says. The walk
 /// ([`lower`]) asks; the answer is the only thing that differs by backend.
 pub trait StaticTarget {
@@ -2449,17 +2465,28 @@ pub trait StaticTarget {
     /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: the statement taking
     /// `branch` runs before its content, which removes what the branch matched
     /// and tells the component's runtime that it took a branch. `payload` is
-    /// the schema of the message a receive branch takes when its content reads
-    /// the message, which the statement then holds as the content's
+    /// the message a receive branch takes when its content reads the message
+    /// ([`ReceivedMessage`]), which the statement then holds as the content's
     /// `_event.data`, in the member the payload channel of the machine
     /// `machine` reads it from ([`Self::payload_accessor`]). `None` for a
-    /// target whose test component has not landed.
+    /// target whose test component has not landed, and for a message this
+    /// target does not hold.
     fn take_branch(
         &self,
         _machine: &str,
         _branch: &SnapshotBranch,
-        _payload: Option<&EntrySchema>,
+        _payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
+        None
+    }
+    /// docs/SCE_TEST_PROFILE.md §12.3: the name the statement taking a receive
+    /// branch ([`Self::take_branch`]) binds the value of the message to, as
+    /// the unit of its record declares it, where the branch's content reads a
+    /// composed message: what the machine's value of the message is made from
+    /// ([`crate::forge::composed_lowering::fields_from_unit`]). `None` for a
+    /// target that makes no machine's value of a composed message, which
+    /// refuses such a branch by name.
+    fn received_binding(&self) -> Option<&'static str> {
         None
     }
     /// docs/SCE_TEST_PROFILE.md §11.5, §12.3: `statement`, a statement of a
@@ -3741,7 +3768,7 @@ impl StaticTarget for KotlinTarget {
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -3749,7 +3776,7 @@ impl StaticTarget for KotlinTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 let copies = schema
                     .fields
@@ -3798,6 +3825,10 @@ impl StaticTarget for KotlinTarget {
                     kotlin_payload_field(&template.event)
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{KOTLIN_TEST_CONTEXT}.receive({})", kotlin_text(port))
             }
@@ -3906,6 +3937,12 @@ pub struct RustTarget;
 /// accessor of the context the component binds before the machine starts
 /// (`rust/state_machine.rs.jinja2`).
 const RUST_TEST_CONTEXT: &str = "self.test_context()";
+
+/// The name the statement taking a receive branch of a test component's Rust
+/// machine binds the value of the message to, a reference to the record its
+/// unit declares (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const RUST_RECEIVED_VALUE: &str = "sce_value";
 
 /// The profile's Rust runtime (`backends/rust/runtime/src/test/`), from the
 /// crate root.
@@ -5268,13 +5305,16 @@ impl StaticTarget for RustTarget {
     // in its `SceBytes`, where the unit holds the bounded types of the portable
     // crate, and an enum in its own type, where the unit holds the enum unit's
     // (`forge::generator::build_rust_event_payload`). So a message of a record
-    // with such a field is refused by name, as C++ refuses one with an enum
-    // field.
+    // of entries with such a field is refused by name, as C++ refuses one with
+    // an enum field. A record that holds a composition is held in the
+    // machine's types the walks spell, the portable crate's bounded storage
+    // among them, and each of its members is made from the unit's value by
+    // the walk of its type ([`ReceivedMessage::Composed`]).
     fn take_branch(
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -5282,41 +5322,53 @@ impl StaticTarget for RustTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(message),
             ) => {
-                if schema.fields.iter().any(|f| {
-                    matches!(
-                        f.sce_type.present_type(),
-                        SceType::Enum(_) | SceType::String | SceType::Bytes
-                    )
-                }) {
-                    return None;
-                }
-                let unit = rust_test_template_module(&template.unit);
-                let copies: Vec<String> = schema
-                    .fields
-                    .iter()
-                    .map(|f| {
-                        format!(
-                            "{}: sce_value.{}",
-                            f.id,
-                            crate::forge::generator::event_schema_field_ident(
-                                &f.id,
-                                Language::Rust
+                let members: Vec<(String, String)> = match message {
+                    ReceivedMessage::Entries(schema) => {
+                        if schema.fields.iter().any(|f| {
+                            matches!(
+                                f.sce_type.present_type(),
+                                SceType::Enum(_) | SceType::String | SceType::Bytes
                             )
-                        )
-                    })
-                    .collect();
+                        }) {
+                            return None;
+                        }
+                        schema
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                (
+                                    f.id.clone(),
+                                    format!(
+                                        "{RUST_RECEIVED_VALUE}.{}",
+                                        crate::forge::generator::event_schema_field_ident(
+                                            &f.id,
+                                            Language::Rust
+                                        )
+                                    ),
+                                )
+                            })
+                            .collect()
+                    }
+                    ReceivedMessage::Composed(members) => members.clone(),
+                };
+                let unit = rust_test_template_module(&template.unit);
                 format!(
                     "let sce_message = {RUST_TEST_CONTEXT}.receive({});\n\
-                     let sce_value = sce_message.value_as::<{unit}::Value>().expect(\
+                     let {RUST_RECEIVED_VALUE} = sce_message.value_as::<{unit}::Value>().expect(\
                      \"a receive branch takes the message its guard matched\");\n\
-                     let ev = {} {{ {} }};",
+                     let ev = {};",
                     rust_text(port),
-                    crate::forge::generator::rust_payload_struct(machine, &template.event),
-                    copies.join(", ")
+                    self.record_value(
+                        &crate::forge::generator::rust_payload_struct(machine, &template.event),
+                        &members
+                    )
                 )
             }
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{RUST_TEST_CONTEXT}.receive({});", rust_text(port))
             }
@@ -5327,6 +5379,10 @@ impl StaticTarget for RustTarget {
                 format!("{RUST_TEST_CONTEXT}.done_taken({});", rust_text(ptc))
             }
         })
+    }
+    // The reference `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(RUST_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
     // signed 64-bit count: one past it has no value there. A `reason` is bound
@@ -6649,6 +6705,7 @@ pub fn lower(
         type_scope: crate::forge::value_path::statechart_scope(model),
         lifts: std::cell::Cell::new(false),
         composed_defs: Default::default(),
+        received_imports: Default::default(),
         logs_a_value: std::cell::Cell::new(false),
         text_templates,
         document: model.name.clone(),
@@ -7672,6 +7729,10 @@ pub fn lower(
     // argument crosses into, and the unit of each template a branch matches
     // with or a send sends, whose `match` and `value` the machine calls.
     imports.extend(test_template_enum_imports(model, &rewrites));
+    // ... and the unit of each enum and union a composed message a receive
+    // branch takes holds, whose values the copy into the machine's types
+    // matches by.
+    imports.extend(rewrites.received_imports.take());
     for unit in test_template_units(model) {
         let line = target.test_template_import(&unit).ok_or_else(|| {
             GenerateError::unsupported(format!(
@@ -9128,6 +9189,12 @@ struct Rewrites<'m> {
     /// ([`crate::forge::composed_lowering::ComposedSpelling::take_functions`]).
     /// Each is guarded by its name, so one reached twice is declared once.
     composed_defs: std::cell::RefCell<Vec<String>>,
+    /// The line of the unit of each enum and union a composed message a
+    /// receive branch takes holds, whose values the machine's value of the
+    /// message is made from (docs/SCE_TEST_PROFILE.md §12.3,
+    /// [`received_composed`]), which the machine's unit imports. Set by the
+    /// walk where it meets one, read once it is done.
+    received_imports: std::cell::RefCell<BTreeSet<String>>,
     /// Whether the walk has lowered a `<log>` that writes a value
     /// ([`StaticLowering::logs_a_value`]). Set by the walk where it meets
     /// one, read once it is done.
@@ -10964,7 +11031,7 @@ impl StaticTarget for CppTarget {
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -10972,7 +11039,7 @@ impl StaticTarget for CppTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 if schema
                     .fields
@@ -11002,6 +11069,10 @@ impl StaticTarget for CppTarget {
                     filters::to_event_variant(template.event.clone())
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{CPP_TEST_CONTEXT}->receive({});", cpp_text(port))
             }
@@ -12692,7 +12763,7 @@ impl StaticTarget for GoTarget<'_> {
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -12700,7 +12771,7 @@ impl StaticTarget for GoTarget<'_> {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 let copies = schema
                     .fields
@@ -12743,6 +12814,10 @@ impl StaticTarget for GoTarget<'_> {
                     self.payload_accessor(&template.event)
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{GO_TEST_CONTEXT}.Receive({})", go_text(port))
             }
@@ -14040,7 +14115,7 @@ impl StaticTarget for PythonTarget {
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -14048,7 +14123,7 @@ impl StaticTarget for PythonTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 let value = format!("{PYTHON_TEST_MESSAGE}.value");
                 let copies = schema
@@ -14097,6 +14172,10 @@ impl StaticTarget for PythonTarget {
                     self.payload_accessor(&template.event)
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{PYTHON_TEST_CONTEXT}.receive({})", python_text(port))
             }
@@ -16775,7 +16854,7 @@ impl StaticTarget for CTarget {
         &self,
         _machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -16783,7 +16862,7 @@ impl StaticTarget for CTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 let unit = c_test_template(&template.unit);
                 let accessor = self.payload_accessor(&template.event);
@@ -16834,6 +16913,10 @@ impl StaticTarget for CTarget {
                     c_text(port)
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => format!(
                 "if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, NULL)) {{ return; }}",
                 c_text(port)
@@ -18721,7 +18804,7 @@ impl StaticTarget for SwiftTarget {
         &self,
         machine: &str,
         branch: &SnapshotBranch,
-        payload: Option<&EntrySchema>,
+        payload: Option<&ReceivedMessage<'_>>,
     ) -> Option<String> {
         Some(match (branch, payload) {
             (
@@ -18729,7 +18812,7 @@ impl StaticTarget for SwiftTarget {
                     port,
                     template: Some(template),
                 },
-                Some(schema),
+                Some(ReceivedMessage::Entries(schema)),
             ) => {
                 let copies = schema
                     .fields
@@ -18781,6 +18864,10 @@ impl StaticTarget for SwiftTarget {
                     self.payload_accessor(&template.event)
                 )
             }
+            // A composed message: this target makes no machine's value of
+            // one ([`StaticTarget::received_binding`]), so the branch is
+            // refused.
+            (_, Some(ReceivedMessage::Composed(_))) => return None,
             // The message is removed and not read: a receive any branch, or one
             // whose content does not read it.
             (SnapshotBranch::Receive { port, .. }, _) => {
@@ -19301,7 +19388,9 @@ fn expand_computed_type(send: &Action, if_ordinal: u32) -> Action {
 /// the target spells it — its match after the `cond` already lowered into
 /// [`crate::model::Transition::native_guard`], and the statement taking it
 /// ([`crate::model::Transition::native_prelude`]). `schema` is the schema of
-/// the message a receive branch takes, when the component imports its record.
+/// the message a receive branch takes, when the component imports its record
+/// and each of its fields is one entry; a record that holds a composition has
+/// none, and is read by the walk of its type ([`received_composed`]).
 ///
 /// The statement of a receive branch whose content reads the message holds the
 /// message as that content's `_event.data`, so the content runs with no check
@@ -19343,17 +19432,98 @@ fn lower_snapshot_branch(
     // a pure `In()` condition through.
     transition.is_pure_in_predicate = false;
     let bound = if transition.content_reads_payload {
-        Some(schema.ok_or_else(|| unspelled("a receive branch that reads a composed message"))?)
+        Some(match schema {
+            Some(schema) => ReceivedMessage::Entries(schema),
+            None => ReceivedMessage::Composed(received_composed(ctx, rewrites).map_err(|why| {
+                GenerateError::unsupported(format!(
+                    "a receive branch that reads a composed message of a test component has no \
+                     {lang} lowering yet: {why} (docs/SCE_TEST_PROFILE.md §12.6)"
+                ))
+            })?),
+        })
     } else {
         None
     };
     transition.native_prelude = target
-        .take_branch(rewrites.machine, branch, bound)
+        .take_branch(rewrites.machine, branch, bound.as_ref())
         .ok_or_else(|| unspelled("taking a branch"))?;
     if bound.is_some() {
         transition.content_reads_payload = false;
     }
     Ok(())
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.3: each member of the payload struct a receive
+/// branch whose content reads a composed message binds it as, made from the
+/// value of the message as the unit of its record declares it, which the
+/// statement taking the branch binds to [`StaticTarget::received_binding`]:
+/// the walk of the record's type
+/// ([`crate::forge::composed_lowering::fields_from_unit`]), which makes each
+/// record, enum and union the machine declares apart from its unit at any
+/// depth and copies every other value whole. The unit of each enum and union
+/// the message holds at any depth is imported, those the walk names among them
+/// ([`Rewrites::received_imports`]). `Err` says why the target makes no such
+/// value.
+fn received_composed(
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Vec<(String, String)>, String> {
+    use crate::forge::composed_lowering::{self as composed, RecordEnv};
+    use crate::forge::value_type::ValueType;
+    let target = rewrites.target;
+    let binding = target.received_binding().ok_or_else(|| {
+        "the statement taking the branch binds no value of the message to make the machine's \
+         value from"
+            .to_string()
+    })?;
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_spelling(rewrites.machine),
+    ) else {
+        return Err("it spells no composed value (docs/adr/0086, section 7.3)".to_string());
+    };
+    let place = ctx
+        .value_of(crate::forge::event_schema_check::EVENT_DATA_PATH)
+        .ok_or_else(|| "`_event.data` names no record this build typed".to_string())?;
+    let ValueType::Record { alias } = &place.ty else {
+        return Err(format!(
+            "`_event.data` is a value of `{}`, no record",
+            place.ty
+        ));
+    };
+    // The document of each enum, by the alias the machine holds it by, which
+    // the enum's unit is named by.
+    let documents: BTreeMap<String, String> = rewrites
+        .held_enums
+        .iter()
+        .map(|(held_as, model)| (held_as.clone(), model.name.clone()))
+        .collect();
+    let members = composed::fields_from_unit(
+        names.records.record(None, alias)?,
+        &names.records,
+        &names.enums,
+        &documents,
+        &*spelling,
+        &composed::Held::reference(binding),
+    )?;
+    let mut reached = composed::Reached::default();
+    composed::held_records(&place.ty, None, &names.records, &mut reached)?;
+    let mut imports = rewrites.received_imports.borrow_mut();
+    for held_as in &reached.enums {
+        if let Some(line) = rewrites
+            .held_enums
+            .get(held_as)
+            .and_then(|model| target.enum_import(&model.name))
+        {
+            imports.insert(line);
+        }
+    }
+    for key in &reached.unions {
+        if let Some(line) = target.schema_import(&names.records.union_of_key(key)?.union.name) {
+            imports.insert(line);
+        }
+    }
+    Ok(members)
 }
 
 /// The variables `args` names, bound in order to a test template's formal

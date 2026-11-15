@@ -12,8 +12,10 @@
 //!
 //! A module parameter is read from the run before the machine starts, as on
 //! C++. What Rust refuses that C++ does not is held here too: a receive branch
-//! whose content reads a message of a record the machine spells otherwise than
-//! the record's unit.
+//! whose content reads a message of a record of entries the machine spells
+//! otherwise than the record's unit. A message of a record that holds a
+//! composition is made in the machine's types by the walk of its type, which
+//! C++ and Kotlin do not make, and refuse by name.
 //!
 //! What the generated components do when they run is held by
 //! `backends/rust/tests/tests/a_test_component_runs_through_its_doors.rs`,
@@ -437,6 +439,147 @@ fn a_message_with_a_text_field_its_content_reads_is_refused_on_rust() {
         "::sce_rust_runtime::test::receives::<card_within::Value>(self.test_context(), \"sut\", \
          \"payment.card\", |sce_message| card_within::matches(sce_message, self.most))"
     ));
+}
+
+/// §12.3, §12.6: a receive branch whose content reads a message of a record
+/// that holds a composition (`job_status`: a list, a text that may be absent,
+/// numbers that may be absent) binds it as `ev`, the machine's payload struct,
+/// each member made from the value the record's unit holds: a value that
+/// names no record, enum or union is one type in the unit and the machine,
+/// and is copied whole, a number as it is and the rest cloned. The content
+/// reads the member as it reads any composed payload.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let receive = at(
+        &code,
+        "let sce_message = self.test_context().receive(\"sut\");",
+    );
+    let read = at(
+        &code,
+        "let sce_value = sce_message.value_as::<every_matcher::Value>().expect(",
+    );
+    let bound = at(
+        &code,
+        "let ev = JobTesterJobStatusPayload { elapsed_ms: sce_value.elapsed_ms, note: \
+         sce_value.note.clone(), codes: sce_value.codes.clone(), tag: sce_value.tag, retry: \
+         sce_value.retry, count: sce_value.count };",
+    );
+    let content = at(&code, "self.test_context().stop_timer(\"deadline\");");
+    assert!(receive < read && read < bound && bound < content);
+    assert!(code[bound..].contains("ev.elapsed_ms"), "{code}");
+    assert!(
+        !code.contains("let ev = match &self.pending_payload"),
+        "the content reads the message the statement bound, not the snapshot's event"
+    );
+}
+
+/// The schema and the documents a component over `order_placed` imports:
+/// every record, union and enum the record holds at any depth, which the
+/// machine holds in types of its own.
+fn order_reader(dir: &Path) -> PathBuf {
+    let imports = imports_dir();
+    let export = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ttcn3_export");
+    let component = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="order_reader"
+       datamodel="sce-static" initial="reading">
+  <sce:import kind="test-port-type" src="{export}/orders_port.scxml" as="OrdersPort"/>
+  <sce:import kind="test-template" src="{imports}/order_placed_match.scxml" as="PlacedMatch"/>
+  <sce:import kind="event-schema" src="{imports}/order_placed.scxml" as="Placed"/>
+  <sce:import kind="event-schema" src="{imports}/order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="{imports}/order_customer.scxml" as="Customer"/>
+  <sce:import kind="event-schema" src="{imports}/card_payment.scxml" as="Card"/>
+  <sce:import kind="event-schema" src="{imports}/voucher_payment.scxml" as="Voucher"/>
+  <sce:import kind="union" src="{imports}/order_payment.scxml" as="Payment"/>
+  <sce:import kind="enum" src="{imports}/payment_kind.scxml" as="PaymentKind"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-port id="sut" type="OrdersPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint16" expr="5"/>
+    <data id="order" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="reading">
+    <transition sce:receive="sut" sce:test-template="PlacedMatch"
+                sce:template-args="limit" target="done">
+      <assign location="order" expr="_event.data.order_id"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        export = export.display(),
+        imports = imports.display()
+    );
+    let path = dir.join("order_reader.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    path
+}
+
+/// §12.3, docs/adr/0092: a message whose record holds a list of records with
+/// an enum, a record, and a union binds each in the machine's own types: a
+/// list mapped element by element into the machine's records, an enum by a
+/// `match` into the machine's variant of the same declared name, a union by a
+/// `match` over every case of its unit's sum into the machine's case of the
+/// same variant, and a byte string the case's record holds as one entry from
+/// the unit's `Vec<u8>` into the machine's `SceBytes` of its bound. The
+/// machine imports the unit of the union and of the enum the copy matches the
+/// values of.
+#[test]
+fn a_message_holding_records_an_enum_and_a_union_is_made_case_by_case() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let code = text_at(&order_reader(dir.path()));
+    for needle in [
+        "let sce_value = sce_message.value_as::<order_placed_match::Value>().expect(",
+        "let ev = OrderReaderOrderPlacedPayload { order_id: sce_value.order_id, lines: \
+         ::sce_rust_runtime::portable::BoundedList::widened_map(&sce_value.lines, |v| \
+         OrderReaderLineRecord { sku: v.sku.clone(), quantity: v.quantity, color: match \
+         v.color { paint_color::PaintColor::",
+        "note: sce_value.note.clone(), priority: sce_value.priority, customer: \
+         OrderReaderCustomerRecord { ",
+        "payment: match &sce_value.payment { order_payment::OrderPayment::Card(v) => \
+         OrderReaderOrderPaymentUnion::Card(OrderReaderCardRecord { ",
+        "order_payment::OrderPayment::Cash => OrderReaderOrderPaymentUnion::Cash, ",
+        "order_payment::OrderPayment::Voucher(v) => \
+         OrderReaderOrderPaymentUnion::Voucher(OrderReaderVoucherRecord { voucher_code: \
+         ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(&v.voucher_code).expect(",
+        "use super::order_payment;",
+        "use super::paint_color;",
+    ] {
+        assert!(
+            code.contains(needle),
+            "order_reader holds `{needle}`:\n{code}"
+        );
+    }
+}
+
+/// §12.6: a target that makes no machine's value of a composed message
+/// refuses the branch whose content reads one by name, and says why.
+#[test]
+fn a_composed_message_its_content_reads_is_refused_by_name_where_it_is_not_made() {
+    let path = profile_dir().join("job_tester.scxml");
+    for (language, name) in [(Language::Cpp, "C++"), (Language::Kotlin, "Kotlin")] {
+        let Err(err) = generate(&path, language) else {
+            panic!("a branch reading a composed message generated on {name}");
+        };
+        let refusal = format!("{err:?}");
+        assert!(
+            matches!(
+                err.error.to_diagnostics()[0].code,
+                DiagnosticCode::GenerateUnsupportedFeature
+            ),
+            "{name}: {refusal}"
+        );
+        assert!(
+            refusal.contains(&format!(
+                "a receive branch that reads a composed message of a test component has no \
+                 {name} lowering yet: the statement taking the branch binds no value of the \
+                 message to make the machine's value from"
+            )),
+            "{name}: {refusal}"
+        );
+    }
 }
 
 /// §11.5, §11.8, §12.3: a module parameter is declared with its type and no

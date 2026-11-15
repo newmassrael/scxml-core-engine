@@ -667,6 +667,99 @@ impl ComposedSpelling for RustComposed<'_> {
         )
     }
 
+    // A record's unit names its fields in snake case
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `bool`, a text, a byte string, and a list or an optional value
+    // of them, in the machine's own types: the portable crate's bounded
+    // storage, which the unit names as `::sce_portable_bytes` and the machine
+    // through [`RUST_PORTABLE`], one type. A byte string that is one entry of
+    // the record is the exception (`unit_entry_bytes`).
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Rust
+            )
+        ))
+    }
+    // A unit holds a byte string that is one entry of its record in a
+    // `Vec<u8>` (`forge::generator::rust_type`), which holds no bound, and the
+    // machine in the portable `SceBytes<N>` of the field's bound (docs/adr/0086,
+    // section 7.4). A message holds a value of its type, its bytes within the
+    // bound: a trace's input is held to its type before the run, and a
+    // template's literal where the template is read (docs/SCE_TEST_PROFILE.md
+    // §12.4). So the copy into the bound is not refused, and a value past it,
+    // which only a host's own adapter could hand the run, is a defect that
+    // stops the program, as a message of another type than the one the guard
+    // matched does.
+    fn unit_entry_bytes(&self, max: u32, held: &Held) -> String {
+        format!(
+            "{RUST_PORTABLE}::SceBytes::<{max}>::from_slice({}).expect(\"a message holds its \
+             byte string within the bound its type declares\")",
+            held.borrowed()
+        )
+    }
+    // A `match` over every variant of the unit's enum, each arm the machine's
+    // variant of the same declared name, as a value of an enum crosses a call
+    // (`StaticTarget::enum_crossing`): exhaustive, so a variant either side
+    // gains is a build error.
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        use crate::generator::Language;
+        let unit = crate::forge::generator::enum_qualified_type(document, Language::Rust);
+        let arms: Vec<String> = machine
+            .variants
+            .iter()
+            .map(|(declared, ident)| {
+                format!(
+                    "{} => {}::{ident}",
+                    crate::forge::enum_naming::variant_ref(
+                        Language::Rust,
+                        &unit,
+                        document,
+                        declared
+                    ),
+                    machine.ty
+                )
+            })
+            .collect();
+        Some(format!(
+            "match {} {{ {} }}",
+            rust_copied(held),
+            arms.join(", ")
+        ))
+    }
+    // A `match` over every case of the unit's sum, a case that holds a record
+    // binding it by reference, each arm the machine's case of the same
+    // variant: exhaustive, as a union crosses a call.
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        use crate::generator::Language;
+        let unit = crate::forge::generator::union_unit_type(document, Language::Rust);
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let case = crate::forge::generator::algorithm_union_case(
+                    Language::Rust,
+                    &unit,
+                    &arm.variant,
+                    arm.holds_record.then_some(self.copy_binding()),
+                );
+                format!("{case} => {}, ", arm.value)
+            })
+            .collect();
+        Some(format!("match {} {{ {arms}}}", held.borrowed()))
+    }
+    // The record's struct, each field named by its id as the declaration
+    // names it ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}: {value}"))
+            .collect();
+        Some(format!("{ty} {{ {} }}", members.join(", ")))
+    }
+
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Rust row): named by the union's document, so one union is one type of
     // the machine whichever alias names it.
@@ -1401,5 +1494,124 @@ mod tests {
             ))
         );
         assert_eq!(RUST.saved_field_read(&ty("list<uint8>[3]"), "picked"), None);
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds. Each field is read by its
+    /// snake-case name on the unit's record; a list of records is mapped
+    /// element by element into the machine's records, an enum by a `match`
+    /// into the machine's variant of the same declared name, and every value
+    /// that names no record, enum or union is the machine's own type in the
+    /// unit too, copied whole: a number as it is, a text and a list cloned. A
+    /// byte string that is one entry of its record is the unit's `Vec<u8>`,
+    /// copied into the machine's `SceBytes` of its bound.
+    #[test]
+    fn a_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &RUST,
+            &Held::reference("sce_value"),
+        )
+        .expect("every field is made");
+        let item = "MItemRecord { id: v.id, level: match v.level { level::Level::Low => \
+                    MLevelEnum::Low, level::Level::High => MLevelEnum::High }, due: v.due, \
+                    blob: ::sce_rust_runtime::portable::SceBytes::<4>::from_slice(&v.blob)\
+                    .expect(\"a message holds its byte string within the bound its type \
+                    declares\"), tags: v.tags.clone() }";
+        assert_eq!(
+            fields,
+            vec![
+                (
+                    "items".to_string(),
+                    format!(
+                        "::sce_rust_runtime::portable::BoundedList::widened_map(\
+                         &sce_value.items, |v| {item})"
+                    )
+                ),
+                ("grid".to_string(), "sce_value.grid.clone()".to_string()),
+                ("late".to_string(), "sce_value.late.clone()".to_string()),
+            ]
+        );
+        // An enum whose document the machine does not name has no unit to
+        // make a value from.
+        assert!(fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &BTreeMap::new(),
+            &RUST,
+            &Held::reference("sce_value"),
+        )
+        .unwrap_err()
+        .contains("`enum:Level` names an enum whose document the machine does not hold"));
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a `match` over every case
+    /// of the unit's sum, a case that holds a record binding it, each arm the
+    /// machine's case of the same variant holding the record made from it; a
+    /// union that may be absent is mapped where it is present.
+    #[test]
+    fn a_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = |text: &str, held: &Held| {
+            from_unit(
+                &ty(text),
+                None,
+                &shapes,
+                &kinds(),
+                &BTreeMap::new(),
+                &RUST,
+                held,
+            )
+        };
+        let cases = "shape::Shape::Dot => MShapeUnion::Dot, shape::Shape::Circle(v) => \
+                     MShapeUnion::Circle(MRadiusRecord { radius: v.radius }), \
+                     shape::Shape::Disc(v) => MShapeUnion::Disc(MRadiusRecord { radius: \
+                     v.radius }), ";
+        assert_eq!(
+            made("union:Shape", &Held::place("sce_value.shape")),
+            Ok(format!("match &sce_value.shape {{ {cases}}}"))
+        );
+        assert_eq!(
+            made("optional<union:Shape>", &Held::place("sce_value.shape")),
+            Ok(format!(
+                "sce_value.shape.as_ref().map(|v| match v {{ {cases}}})"
+            ))
+        );
+    }
+
+    /// A backend that makes no machine's value from a unit's (Kotlin, whose
+    /// spelling answers none of the walk's reads of a unit) refuses the walk
+    /// by name, at the first field it would read.
+    #[test]
+    fn a_backend_that_makes_no_value_from_a_units_refuses_by_name() {
+        let kotlin = crate::forge::composed_lowering::KotlinComposed {
+            machine: "M",
+            carrier: crate::forge::composed_lowering::KotlinCarrier::Json,
+        };
+        let held = held();
+        let batch = held.record(None, "Batch").expect("the record");
+        assert_eq!(
+            fields_from_unit(
+                batch,
+                &held,
+                &enums(),
+                &BTreeMap::new(),
+                &kotlin,
+                &Held::reference("sce_value"),
+            ),
+            Err(
+                "the field `items` of `record:Batch` has no machine's value made from its unit's \
+                 on this backend"
+                    .to_string()
+            )
+        );
     }
 }
