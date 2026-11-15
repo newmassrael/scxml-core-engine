@@ -521,7 +521,17 @@ fn the_job_suites_behaviour_is_exported() {
   }
 }"
     );
+    // The helper is invoked by `running`, which holds both labels: its start
+    // stands at each, guarded by its reference, and only a branch that leaves
+    // `running` kills it; the receive branch stays in `running`, so its send on
+    // `ctl` reaches the helper.
     let kill_helper = kill("      ", "v_helper");
+    let create_helper = "  if (v_helper == null) {
+    v_helper := helper.create(\"helper\") alive;
+    connect(mtc:ctl, v_helper:ctl);
+    v_helper.start(f_helper());
+  }
+";
     assert_eq!(
         definition(&export.functions, "f_job_tester_in_tester_and_helper"),
         format!(
@@ -532,14 +542,9 @@ fn the_job_suites_behaviour_is_exported() {
   deadline.start;
   goto requesting;
   label requesting;
-  if (v_helper == null) {{
-    v_helper := helper.create(\"helper\") alive;
-    connect(mtc:ctl, v_helper:ctl);
-    v_helper.start(f_helper());
-  }}
-  alt {{
+{create_helper}  alt {{
     [] sut.receive(every_matcher(elapsed_limit)) -> value v_job_status {{
-{kill_helper}      deadline.stop;
+      deadline.stop;
       elapsed := v_job_status.elapsed_ms;
       ctl.send(job_report);
       settle.start(0.5);
@@ -551,9 +556,9 @@ fn the_job_suites_behaviour_is_exported() {
     }}
   }}
   label settling;
-  alt {{
+{create_helper}  alt {{
     [] settle.timeout {{
-      setverdict(pass);
+{kill_helper}      setverdict(pass);
       return;
     }}
   }}
@@ -657,14 +662,9 @@ function f_job_tester_in_tester_and_helper() runs on job_tester {{
   deadline.start;
   goto requesting;
   label requesting;
-  if (v_helper == null) {{
-    v_helper := helper.create(\"helper\") alive;
-    connect(mtc:ctl, v_helper:ctl);
-    v_helper.start(f_helper());
-  }}
-  alt {{
+{create_helper}  alt {{
     [] sut.receive(every_matcher(elapsed_limit)) -> value v_job_status {{
-{kill_helper}      deadline.stop;
+      deadline.stop;
       elapsed := v_job_status.elapsed_ms;
       ctl.send(job_report);
       settle.start(0.5);
@@ -676,9 +676,9 @@ function f_job_tester_in_tester_and_helper() runs on job_tester {{
     }}
   }}
   label settling;
-  alt {{
+{create_helper}  alt {{
     [] settle.timeout {{
-      setverdict(pass);
+{kill_helper}      setverdict(pass);
       return;
     }}
   }}
@@ -698,6 +698,12 @@ control {{
 }}",
         behaviour_header("job_suite"),
         kill_helper = kill("      ", "v_helper"),
+        create_helper = "  if (v_helper == null) {
+    v_helper := helper.create(\"helper\") alive;
+    connect(mtc:ctl, v_helper:ctl);
+    v_helper.start(f_helper());
+  }
+",
     );
     assert_eq!(export.behaviour_module, expected);
     assert_eq!(
@@ -1218,6 +1224,7 @@ fn each_definition_and_statement_names_its_source() {
             ("E11", "invoke 'helper'"),
             ("E7", "state 'requesting'"),
             ("E6", "state 'settling'"),
+            ("E11", "invoke 'helper'"),
             ("E7", "state 'settling'"),
         ]
     );
@@ -1232,10 +1239,20 @@ fn each_definition_and_statement_names_its_source() {
             "state 'requesting' / transition 2"
         ]
     );
-    let Some(Statement::Kill { source, .. }) = branches[0].block.first() else {
+    // The receive branch stays in `running`, which invoked the helper, so it
+    // kills nothing; the timeout branch leaves `running` and kills it first.
+    assert!(
+        !branches[0]
+            .block
+            .iter()
+            .any(|statement| matches!(statement, Statement::Kill { .. })),
+        "the receive branch keeps the helper: {:?}",
+        branches[0].block
+    );
+    let Some(Statement::Kill { source, .. }) = branches[1].block.first() else {
         panic!(
-            "the receive branch kills the helper first: {:?}",
-            branches[0].block
+            "the timeout branch kills the helper first: {:?}",
+            branches[1].block
         );
     };
     assert_eq!(
@@ -1731,9 +1748,9 @@ fn the_witness_states_the_alt_of_the_job_testers_requesting_state() {
     };
     let tester = |node: &str, line: u32| serde_json::json!({"document": "job_tester.scxml", "node": node, "line": line});
     let function = serde_json::json!({"function": "f_job_tester_in_tester_and_helper"});
-    let requesting = tester("state 'requesting'", 23);
-    let receive = tester("state 'requesting' / transition 1", 29);
-    let timeout = tester("state 'requesting' / transition 2", 35);
+    let requesting = tester("state 'requesting'", 25);
+    let receive = tester("state 'requesting' / transition 1", 30);
+    let timeout = tester("state 'requesting' / transition 2", 36);
 
     assert_eq!(
         entry("state 'requesting'", "E6"),
@@ -1777,14 +1794,14 @@ fn the_witness_states_the_alt_of_the_job_testers_requesting_state() {
                         "state": requesting,
                         "transition": receive,
                         "exited": [requesting],
-                        "entered": [tester("state 'settling'", 39)]
+                        "entered": [tester("state 'settling'", 40)]
                     }
                 },
                 {
                     "module": "job_suite",
                     "path": [
                         function, {"label": "requesting"}, {"statement": 1}, {"alternative": 0},
-                        {"statement": 5}
+                        {"statement": 4}
                     ]
                 }
             ]
@@ -1793,7 +1810,7 @@ fn the_witness_states_the_alt_of_the_job_testers_requesting_state() {
     let timed_out = entry("state 'requesting' / transition 2", "E8");
     assert_eq!(
         timed_out["produced"][0]["claim"]["entered"],
-        serde_json::json!([tester("final 'failed'", 48)])
+        serde_json::json!([tester("final 'failed'", 50)])
     );
     assert_eq!(
         entry("final 'failed'", "E12")["produced"],

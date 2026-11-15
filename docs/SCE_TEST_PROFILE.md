@@ -515,7 +515,7 @@ and E1. The two codec functions of a type are part of that type's E1.
 
 So in the job suite the receive branch of `requesting` is the place
 `[{"function": "f_job_tester_in_tester_and_helper"}, {"label": "requesting"}, {"statement": 1}, {"alternative": 0}]`
-of the module `job_suite`, and the `goto` that ends its block is that path followed by `{"statement": 5}`. Each
+of the module `job_suite`, and the `goto` that ends its block is that path followed by `{"statement": 4}`. Each
 definition, member of a component type and statement of the model the modules are written from (**Provenance** in
 §9.5) is exactly one place, and each place is in exactly one entry. The entries stand in the order of the construct's
 document, its row, its node and the rule; an entry's places in the order of the modules, the types module first.
@@ -1023,7 +1023,7 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-component" name="job_tester"
-       datamodel="sce-static" initial="requesting">
+       datamodel="sce-static" initial="running">
   <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
   <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
   <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
@@ -1036,41 +1036,44 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
     <data id="elapsed_limit" sce:type="uint32" sce:module-parameter="true"/>
     <data id="elapsed" sce:type="uint32" expr="0"/>
   </datamodel>
-  <state id="requesting">
+  <state id="running" initial="requesting">
     <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
-    <onentry>
-      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="JobReport"/>
-      <sce:start-timer timer="deadline"/>
-    </onentry>
-    <transition sce:receive="sut" sce:test-template="EveryMatcher"
-                sce:template-args="elapsed_limit" target="settling">
-      <sce:stop-timer timer="deadline"/>
-      <assign location="elapsed" expr="_event.data.elapsed_ms"/>
-      <send type="http://sce.dev/ext/test-port" target="ctl" sce:test-template="JobReport"/>
-    </transition>
-    <transition sce:timeout="deadline" target="failed">
-      <sce:setverdict value="fail" reason="'no reply in time'"/>
-    </transition>
-  </state>
-  <state id="settling">
-    <onentry>
-      <sce:start-timer timer="settle" duration="500ms"/>
-    </onentry>
-    <transition sce:timeout="settle" target="passed">
-      <sce:setverdict value="pass"/>
-    </transition>
+    <state id="requesting">
+      <onentry>
+        <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="JobReport"/>
+        <sce:start-timer timer="deadline"/>
+      </onentry>
+      <transition sce:receive="sut" sce:test-template="EveryMatcher"
+                  sce:template-args="elapsed_limit" target="settling">
+        <sce:stop-timer timer="deadline"/>
+        <assign location="elapsed" expr="_event.data.elapsed_ms"/>
+        <send type="http://sce.dev/ext/test-port" target="ctl" sce:test-template="JobReport"/>
+      </transition>
+      <transition sce:timeout="deadline" target="failed">
+        <sce:setverdict value="fail" reason="'no reply in time'"/>
+      </transition>
+    </state>
+    <state id="settling">
+      <onentry>
+        <sce:start-timer timer="settle" duration="500ms"/>
+      </onentry>
+      <transition sce:timeout="settle" target="passed">
+        <sce:setverdict value="pass"/>
+      </transition>
+    </state>
   </state>
   <final id="passed"/>
   <final id="failed"/>
 </scxml>
 ```
 
-The main test component creates the PTC `helper` while it waits in `requesting`. It sends the specific template
-`job_report.scxml` to the system under test on `sut`, and waits two seconds for a status `every_matcher` accepts
-within the limit the suite gives as the module parameter `elapsed_limit`. On such a status it keeps the elapsed time
-the status reports and sends the report on `ctl`, the port connected to the helper's; the same branch leaves
-`requesting`, which removes the helper (P9). It then waits half
-a second on a timer with no default duration, and passes. No status in time fails.
+The main test component creates the PTC `helper` while it runs, in the compound state `running`, which holds both
+states it waits in. It sends the specific template `job_report.scxml` to the system under test on `sut`, and waits two
+seconds in `requesting` for a status `every_matcher` accepts within the limit the suite gives as the module parameter
+`elapsed_limit`. On such a status it keeps the elapsed time the status reports and sends the report on `ctl`, the port
+connected to the helper's: the branch leaves `requesting` for `settling` and stays in `running`, so the helper is
+still there to receive it. It then waits half a second on a timer with no default duration, and passes; the branch
+that passes leaves `running`, which removes the helper (P9). No status in time fails, and leaves `running` too.
 
 - **Declarations**, children of `<scxml>`:
   - `<sce:test-port id="p" type="<alias>">`, a port of an imported `test-port-type` (-1 §6.2.10);

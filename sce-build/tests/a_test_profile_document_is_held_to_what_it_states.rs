@@ -686,7 +686,10 @@ fn a_test_component_records_its_declarations_branches_sends_and_statements() {
     assert_eq!(profile.invocations.len(), 1);
     assert_eq!(profile.invocations[0].id.as_deref(), Some("helper"));
     assert_eq!(profile.invocations[0].src.as_deref(), Some("helper.scxml"));
-    assert_eq!(profile.invocations[0].state, "requesting");
+    // The helper lives while the tester runs, through both of its states, so
+    // the receive branch that leaves `requesting` for `settling` keeps it and
+    // its content's send on `ctl` reaches it (P9).
+    assert_eq!(profile.invocations[0].state, "running");
 
     // Each statement is an action of the block that holds it, in its place
     // among the block's other actions (P4), so it runs where it is written.
