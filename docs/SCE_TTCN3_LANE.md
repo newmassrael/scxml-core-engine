@@ -3,10 +3,11 @@
 - Status: design of ADR 0091 order of work step 5, written 2026-11-10. Of what SCE gives the lane, the canonical log
   the lane compares is in place (order of work step 6, TP §12.5): all seven native runtimes write it, and each is held
   to one expected log. The trace surface and native trace replay (S1) are in place on all seven backends (§10.4,
-  §10.5). Of the corpus (S2), every test case of `runtime_suite` has a trace and an expected log; `boundary_suite`,
-  `job_suite`, `orders_suite` and `nested_suite` have their traces and run on the Rust runner, their expected logs
-  still to be written and reviewed; every mapped record a codec format holds has its codec document; and a test
-  holds the corpus to every row and refusal of ADR 0091 (§12.1, §13.1). The lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`,
+  §10.5). Of the corpus (S2), every test case of `runtime_suite` has a trace and an expected log; `boundary_suite`
+  has its traces and its expected logs and runs on the Rust runner; `job_suite`, `orders_suite` and `nested_suite`
+  have their traces and run on the Rust runner, their expected logs still to be written and reviewed; every mapped
+  record a codec format holds has its codec document; and a test holds the corpus to every row and refusal of ADR
+  0091 (§12.1, §13.1). The lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`,
   which exists and is private for now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The
   SCE-side slices S1 and S2 come first, then the downstream slices D1 to D5 (§13).
 - Downstream design: `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, cited as **DD §x**. It
@@ -659,11 +660,12 @@ in the component that invokes it, which is accepted on its own.
 - the record each runner writes of each trace (ADR 0102 §3), held on every backend to one expected record, which
   holds the seven generated codecs of each kind to one encoding of every send;
 - runnable suites that cover the "missing" column of §12.2, including the two `error` cases: `boundary_suite`
-  (§12.1), on the Rust runner, with its expected logs to be written by the Rust runner and reviewed; the other six
-  backends' replay of it remains;
+  (§12.1), on the Rust runner, its expected logs written by the Rust runner and reviewed; the other six backends'
+  replay of it remains;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
-  their rows run as well as export: done on the Rust runner (§12.1), with the same two remainders as
-  `boundary_suite`; they run in the lane only once their mapped records have a codec (above);
+  their rows run as well as export: done on the Rust runner (§12.1), their expected logs still to be written by the
+  Rust runner and reviewed, and the other six backends' replay of them remains; they run in the lane only once
+  their mapped records have a codec (above);
 - a fixture that raises `test-profile/script-engine`, or a recorded reason why no profile document can reach that
   refusal once `datamodel` is held to `sce-static`: done, the reason is recorded in §12.3.
 
@@ -700,9 +702,9 @@ listed in DD §13.2.
   traces they are written for are replayed through S1. The codec documents depend on neither, and can land first.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
 - In place: the traces and the expected logs of every test case of `runtime_suite`, and on each backend the first
-  test above over them (§12.1); the traces of `boundary_suite`, `job_suite`, `orders_suite` and `nested_suite`
-  (§12.1), each replayed by the Rust runner of its suite and held to its expected log; the codec documents (§12.1);
-  and the second test,
+  test above over them (§12.1); the traces and the expected logs of `boundary_suite`, and the traces of
+  `job_suite`, `orders_suite` and `nested_suite` (§12.1), each suite replayed by its Rust runner and each log held
+  to its expected log; the codec documents (§12.1); and the second test,
   `sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs`. It reads the rows of ADR 0091 §2 from
   the ADR's table and the refusals of §3 from its bullets, so a row or a refusal the ADR gains is uncovered until
   the test names its cover. Each row is held by its aspects (a union, `omit`, a restart, ...), each aspect by the
@@ -710,9 +712,10 @@ listed in DD §13.2.
   `error` of P13 by the guard, a test case that can never end and a dynamic error. Each refusal is held by its
   refused fixtures, each one the parser's tests hold to its diagnostic, or by the reason §12.3 records. Every aspect
   has a run.
-- Not in place: the expected logs of the four suites above, which `scripts/regen_corpus_expected_logs.sh` writes
-  from the Rust runner and a review of each against TP §12.5 commits; and the replay of those four suites on the
-  six backends but Rust.
+- Not in place: the expected logs of `job_suite`, `orders_suite` and `nested_suite`, which
+  `scripts/regen_corpus_expected_logs.sh` writes from the Rust runner and a review of each against TP §12.5
+  commits; and the replay of `boundary_suite`, `job_suite`, `orders_suite` and `nested_suite` on the six backends
+  but Rust.
 
 ### 13.2 In the downstream
 
