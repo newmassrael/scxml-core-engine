@@ -107,11 +107,7 @@ class CodecZenohEncoding:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_vle_u32(self.packed_id)
         if self.schema_len is not None:
-            _vle = int(self.schema_len)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.schema_len))
         if self.schema is not None:
             w.write_bytes(self.schema.encode('utf-8'))
 

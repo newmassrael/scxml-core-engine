@@ -130,11 +130,7 @@ class CodecZenohHello:
         w.write_u8(self.cbyte & 0xFF)
         w.write_bytes(self.zid)
         if self.num_locators is not None:
-            _vle = int(self.num_locators)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.num_locators))
         if self.locators is not None:
             for _e in self.locators:
                 _e.encode(w)

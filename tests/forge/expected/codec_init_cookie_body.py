@@ -94,11 +94,7 @@ class CodecInitCookieBody:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.version & 0xFF)
         if self.cookie_size is not None:
-            _vle = int(self.cookie_size)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u16(int(self.cookie_size))
         if self.cookie is not None:
             w.write_bytes(self.cookie)
 

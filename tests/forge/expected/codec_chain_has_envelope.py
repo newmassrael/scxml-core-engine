@@ -173,19 +173,11 @@ class CodecChainHasEnvelope:
             for _e in self.extensions:
                 _e.encode(w)
         if self.payload_len is not None:
-            _vle = int(self.payload_len)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u64(int(self.payload_len))
         if self.payload is not None:
             w.write_bytes(self.payload)
         if self.slice_count is not None:
-            _vle = int(self.slice_count)
-            while _vle >= 0x80:
-                w.write_u8((_vle & 0x7F) | 0x80)
-                _vle >>= 7
-            w.write_u8(_vle)
+            w.write_vle_u32(int(self.slice_count))
         if self.slices is not None:
             for _e in self.slices:
                 _e.encode(w)

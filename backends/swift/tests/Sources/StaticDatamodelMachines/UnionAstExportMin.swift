@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7cb5c601bc5bd6648425cb4d614d7be9f82d1e41816b0f69f2fcd5bc5c43d40b
+// source-hash: 9744814bbcba25096b3a8566c61a417ad0df1ffce3ba2396694e4204f8dd4a7d
 // SCE-MAP: union_ast_export_min.scxml:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
@@ -21,7 +21,7 @@ public enum UnionAstExportMin: Equatable, Sendable {
 
     /// A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `kind` beside the
     /// fields of its record, every bound as this build resolved it.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:union_ast_export_min:1\",\"x-sce-source-hash\":\"7cb5c601bc5bd6648425cb4d614d7be9f82d1e41816b0f69f2fcd5bc5c43d40b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"a\"},\"payload_byte\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"kind\",\"payload_byte\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"b\"}},\"required\":[\"kind\"],\"additionalProperties\":false}]}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:union_ast_export_min:1\",\"x-sce-source-hash\":\"9744814bbcba25096b3a8566c61a417ad0df1ffce3ba2396694e4204f8dd4a7d\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"a\"},\"payload_byte\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"kind\",\"payload_byte\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"b\"}},\"required\":[\"kind\"],\"additionalProperties\":false}]}"
 
     /// The case `a`, holding its record.
     case a(EventSchemaAstExportMinPayload)
