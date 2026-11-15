@@ -62,25 +62,48 @@
 # links a target with what the generated machines it compiles require.
 set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http clock)
 
+# ── What a program's own code requires, which no machine states ──
+#
+# A program's hand-written code can need a service of the runtime that no
+# generated machine calls, and so that the generator never states:
+#
+#   directory  making a directory (`sce/directory.h`'s `sce_directory_make`),
+#              which the runner program of a generated test suite asks of its
+#              platform for its log directory (docs/SCE_TTCN3_LANE.md §4): a
+#              unit that includes the suite and never calls its `main` does
+#              not reference it, so it is the program's, not the suite's
+#
+# SCE_C_RUNTIME_PROGRAM_REQUIREMENTS is every such requirement. A program
+# states one by `sce_c_link_runtime(<target> REQUIRES <requirement>)`, and it
+# is registered and linked as a machine's is
+# (`SCE_C_RUNTIME_REQUIREMENT_<requirement>`).
+# It shares no name with SCE_C_RUNTIME_REQUIREMENTS: what a machine states is
+# the generator's, and a name in both would be a second account of it.
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_PROGRAM_REQUIREMENTS directory)
+
 # sce_c_runtime_libraries(<LIBRARIES_VAR> <UNMET_VAR> <requirement>...)
 #
 #   The libraries of this runtime that implement the requirements a generated
-#   machine states, in LIBRARIES_VAR, each once, and in UNMET_VAR each
-#   requirement whose tier this configuration does not build: a machine that
-#   states one cannot be linked here. A requirement no tier of this runtime
-#   implements is refused rather than linked with nothing: the generator
-#   states one this runtime was never taught.
+#   machine states or a program's own code needs, in LIBRARIES_VAR, each once,
+#   and in UNMET_VAR each requirement whose tier this configuration does not
+#   build: a program that needs one cannot be linked here. A requirement no
+#   tier of this runtime implements is refused rather than linked with
+#   nothing: the generator, or a program, states one this runtime was never
+#   taught.
 function(sce_c_runtime_libraries LIBRARIES_VAR UNMET_VAR)
-    get_property(_KNOWN GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS)
+    get_property(_STATED GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS)
+    get_property(_PROGRAM GLOBAL PROPERTY SCE_C_RUNTIME_PROGRAM_REQUIREMENTS)
+    set(_KNOWN ${_STATED} ${_PROGRAM})
     set(_LIBRARIES "")
     set(_UNMET "")
     foreach(_REQUIREMENT IN LISTS ARGN)
         if(NOT "${_REQUIREMENT}" IN_LIST _KNOWN)
             message(FATAL_ERROR
-                "A generated C11 machine requires `${_REQUIREMENT}`, which no tier of "
+                "A C11 program requires `${_REQUIREMENT}`, which no tier of "
                 "backends/c/runtime implements (it knows: ${_KNOWN}). Name the library "
-                "that implements it in SCE_C_RUNTIME_REQUIREMENTS and register it where "
-                "that library is built.")
+                "that implements it in SCE_C_RUNTIME_REQUIREMENTS (a generated machine "
+                "states it) or SCE_C_RUNTIME_PROGRAM_REQUIREMENTS (only a program's own "
+                "code needs it) and register it where that library is built.")
         endif()
         get_property(_LIBRARY GLOBAL PROPERTY "SCE_C_RUNTIME_REQUIREMENT_${_REQUIREMENT}")
         if("${_LIBRARY}" STREQUAL "")
@@ -115,7 +138,8 @@ endfunction()
 #   too, after them.
 #
 #   REQUIRES  What the target's own hand-written code needs of the runtime
-#             beside its machines (a runner that times itself requires `clock`).
+#             beside its machines (a runner that times itself requires `clock`,
+#             the runner program of a generated suite `directory`).
 #   PROVIDES  What the target implements itself, and so does not link from
 #             the runtime: a test that is the platform for its machine (its
 #             own BasicHTTP client, a manual clock) and whose link is the proof
@@ -250,7 +274,7 @@ endif()
 # runner program of a generated test suite makes, docs/SCE_TTCN3_LANE.md §4).
 # Bare-metal consumers opt out and supply their own `sce_c_runtime_<target>`
 # providing the same symbols. No generated machine states `directory.h`: the
-# runner program, which is hand-written, links this library itself.
+# runner program, which is hand-written, requires it of `sce_c_link_runtime`.
 option(SCE_C_RUNTIME_POSIX "Build the POSIX reference impl for backends/c/runtime" ON)
 if(SCE_C_RUNTIME_POSIX)
     add_library(sce_c_runtime_posix STATIC
@@ -265,8 +289,10 @@ if(SCE_C_RUNTIME_POSIX)
         C_EXTENSIONS OFF
     )
     # The POSIX implementations of the BasicHTTP client a machine that sends
-    # over BasicHTTP links, and of the clock a scheduling machine reads. A
-    # bare-metal consumer's platform tier registers its own.
+    # over BasicHTTP links, of the clock a scheduling machine reads, and of the
+    # directory a suite's runner program makes. A bare-metal consumer's
+    # platform tier registers its own.
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_http sce_c_runtime_posix)
     set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_clock sce_c_runtime_posix)
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_directory sce_c_runtime_posix)
 endif()

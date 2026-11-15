@@ -23,7 +23,12 @@
 //!   requirement, except on a program that tests that library itself and
 //!   compiles no generated machine;
 //! * every program that compiles the sources a plan route hands its caller is
-//!   linked by `sce_c_link_runtime`.
+//!   linked by `sce_c_link_runtime`;
+//! * what a program's own code requires of the runtime (`REQUIRES`) is a
+//!   requirement the runtime knows, either one a machine states
+//!   (`SCE_C_RUNTIME_REQUIREMENTS`) or one only a program's code needs
+//!   (`SCE_C_RUNTIME_PROGRAM_REQUIREMENTS`, the directory a suite's runner
+//!   program makes), each registered by a tier, and the two share no name.
 
 use std::path::{Path, PathBuf};
 
@@ -38,6 +43,20 @@ fn c11_tests() -> String {
     std::fs::read_to_string(repo_root().join("backends/c/tests/CMakeLists.txt"))
         .expect("read backends/c/tests/CMakeLists.txt")
 }
+
+fn c11_runtime() -> String {
+    std::fs::read_to_string(repo_root().join("backends/c/runtime/CMakeLists.txt"))
+        .expect("read backends/c/runtime/CMakeLists.txt")
+}
+
+/// What a machine states (`SCE_C_RUNTIME_REQUIREMENTS`).
+const MACHINE_VOCABULARY: &str = "SCE_C_RUNTIME_REQUIREMENTS";
+
+/// What only a program's own code needs (`SCE_C_RUNTIME_PROGRAM_REQUIREMENTS`).
+const PROGRAM_VOCABULARY: &str = "SCE_C_RUNTIME_PROGRAM_REQUIREMENTS";
+
+/// The keywords of `sce_c_link_runtime`, each opening a list of requirements.
+const LINK_KEYWORDS: [&str; 3] = ["REQUIRES", "PROVIDES", "EXCLUDES"];
 
 /// The libraries of the runtime that implement a requirement a machine states.
 const REQUIREMENT_LIBRARIES: [&str; 4] = [
@@ -173,6 +192,72 @@ fn violations(text: &str) -> Vec<String> {
     found
 }
 
+/// The words of the runtime's `set_property(GLOBAL PROPERTY <property> ...)`,
+/// empty where it declares none.
+fn vocabulary(runtime: &str, property: &str) -> Vec<String> {
+    let opening = format!("set_property(GLOBAL PROPERTY {property} ");
+    code(runtime)
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix(opening.as_str())
+                .and_then(|rest| rest.strip_suffix(')'))
+                .map(|rest| rest.split_whitespace().map(str::to_string).collect())
+        })
+        .unwrap_or_default()
+}
+
+/// The words a `sce_c_link_runtime` call lists after `keyword`.
+fn listed_after<'a>(arguments: &'a str, keyword: &str) -> Vec<&'a str> {
+    let mut listing = false;
+    let mut found = Vec::new();
+    for word in arguments.split_whitespace().skip(1) {
+        if LINK_KEYWORDS.contains(&word) {
+            listing = word == keyword;
+        } else if listing {
+            found.push(word);
+        }
+    }
+    found
+}
+
+/// Every requirement a program of the C11 tests states by `REQUIRES` that the
+/// runtime does not know or registers no library for, and every name both
+/// vocabularies of the runtime hold.
+fn unknown_requirements(tests: &str, runtime: &str) -> Vec<String> {
+    let machine = vocabulary(runtime, MACHINE_VOCABULARY);
+    let program = vocabulary(runtime, PROGRAM_VOCABULARY);
+    let mut found: Vec<String> = program
+        .iter()
+        .filter(|name| machine.contains(*name))
+        .map(|name| {
+            format!(
+                "`{name}` is in both {MACHINE_VOCABULARY} and {PROGRAM_VOCABULARY}; what a \
+                 machine states is the generator's, and only a program's own code needs the other"
+            )
+        })
+        .collect();
+    for arguments in calls(&code(tests), "sce_c_link_runtime") {
+        let target = target_of(&arguments);
+        for name in listed_after(&arguments, "REQUIRES") {
+            if !machine.iter().chain(&program).any(|known| known == name) {
+                found.push(format!(
+                    "`{target}` requires `{name}`, which the runtime knows in neither \
+                     {MACHINE_VOCABULARY} nor {PROGRAM_VOCABULARY}"
+                ));
+            } else if !runtime.contains(&format!(
+                "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_{name} "
+            )) {
+                found.push(format!(
+                    "`{target}` requires `{name}`, for which no tier of the runtime registers \
+                     a library"
+                ));
+            }
+        }
+    }
+    found
+}
+
 #[test]
 fn every_c11_program_links_what_its_machines_require() {
     let text = c11_tests();
@@ -244,4 +329,100 @@ fn a_runtime_library_named_by_hand_is_refused() {
 
     // A comment that names a library is not a link.
     assert!(violations("# target_link_libraries(x PRIVATE lua54)\n").is_empty());
+}
+
+/// The runner program of a generated suite makes its log directory through
+/// `sce_directory_make`, which no machine states: the program requires it,
+/// and the runtime knows that requirement and registers the tier that
+/// implements it.
+#[test]
+fn what_a_program_requires_of_the_runtime_is_a_requirement_it_knows() {
+    let tests = c11_tests();
+    let runtime = c11_runtime();
+    assert!(
+        vocabulary(&runtime, PROGRAM_VOCABULARY)
+            .iter()
+            .any(|name| name == "directory"),
+        "backends/c/runtime/CMakeLists.txt declares no `directory` in {PROGRAM_VOCABULARY}; \
+         the reader is broken, or the runner program has lost its requirement"
+    );
+    let runners: Vec<String> = calls(&code(&tests), "sce_c_link_runtime")
+        .into_iter()
+        .filter(|arguments| listed_after(arguments, "REQUIRES").contains(&"directory"))
+        .map(|arguments| target_of(&arguments).to_string())
+        .collect();
+    assert_eq!(
+        runners,
+        [
+            "sce_c_runtime_suite_runner",
+            "sce_c_integration_a_runner_program_writes_the_log_of_each_trace",
+        ],
+        "the programs that make a suite's log directory no longer state `directory`"
+    );
+    let found = unknown_requirements(&tests, &runtime);
+    assert!(
+        found.is_empty(),
+        "a C11 program requires what the runtime does not link:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// A requirement a program states that the runtime does not know, one it
+/// knows and registers no tier for, and a name in both vocabularies are each
+/// refused.
+#[test]
+fn a_program_requirement_the_runtime_does_not_link_is_refused() {
+    let tests = c11_tests();
+    let runtime = c11_runtime();
+
+    let declared = "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_PROGRAM_REQUIREMENTS directory)";
+    assert!(
+        runtime.contains(declared),
+        "the program vocabulary is no longer declared as this case expects"
+    );
+    let forgotten = runtime.replace(
+        declared,
+        "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_PROGRAM_REQUIREMENTS none)",
+    );
+    let found = unknown_requirements(&tests, &forgotten);
+    assert!(
+        found.iter().any(|v| v.contains(
+            "`sce_c_runtime_suite_runner` requires `directory`, which the runtime knows"
+        )),
+        "a requirement missing from both vocabularies was accepted: {found:?}"
+    );
+
+    let registered =
+        "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_directory sce_c_runtime_posix)";
+    assert!(
+        runtime.contains(registered),
+        "the directory's registration is no longer spelled as this case expects"
+    );
+    let unregistered = runtime.replace(registered, "");
+    let found = unknown_requirements(&tests, &unregistered);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("requires `directory`, for which no tier")),
+        "a requirement no tier registers was accepted: {found:?}"
+    );
+
+    let doubled = runtime.replace(
+        declared,
+        "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_PROGRAM_REQUIREMENTS directory clock)",
+    );
+    let found = unknown_requirements(&tests, &doubled);
+    assert!(
+        found.iter().any(|v| v.contains("`clock` is in both")),
+        "a name in both vocabularies was accepted: {found:?}"
+    );
+
+    // A word after another keyword is not a requirement the program states.
+    assert_eq!(
+        listed_after(
+            "t REQUIRES a b EXCLUDES c PROVIDES d REQUIRES e",
+            "REQUIRES"
+        ),
+        ["a", "b", "e"]
+    );
 }

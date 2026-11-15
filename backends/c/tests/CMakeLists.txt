@@ -4711,9 +4711,11 @@ set_tests_properties(c11_integration_a_record_reads_back_the_form_it_writes PROP
 # line, calls it, as a build that holds a generated suite does. Its machines and
 # tables are the ones generated above for the suite test. It makes the directory
 # its logs go to through `sce_directory_make` (sce/directory.h), which no
-# generated machine states: the POSIX tier that implements it is linked here by
-# name, so the program and its tests are built where that tier is.
-if(TARGET sce_c_runtime_posix AND NOT EMSCRIPTEN)
+# generated machine states, since a unit that never calls the suite's `main`
+# does not reference it: the program requires it (`REQUIRES directory`), and the
+# program and its tests are built where a tier that implements it is.
+sce_c_runtime_libraries(_sce_c_runner_libraries _sce_c_runner_unmet directory)
+if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
     add_executable(sce_c_runtime_suite_runner
         integration/runtime_suite_runner.c
         ${_TS_SOURCES}
@@ -4724,8 +4726,8 @@ if(TARGET sce_c_runtime_posix AND NOT EMSCRIPTEN)
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
         "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
     )
-    sce_c_link_runtime(sce_c_runtime_suite_runner EXCLUDES lua dom http clock)
-    target_link_libraries(sce_c_runtime_suite_runner PRIVATE sce_c_runtime_posix m)
+    sce_c_link_runtime(sce_c_runtime_suite_runner REQUIRES directory EXCLUDES lua dom http clock)
+    target_link_libraries(sce_c_runtime_suite_runner PRIVATE m)
     target_compile_options(sce_c_runtime_suite_runner PRIVATE
         -Wall -Wextra -Werror -Wpedantic
         -Wconversion -Wsign-conversion -Wshadow -Wcast-align
@@ -4754,9 +4756,8 @@ if(TARGET sce_c_runtime_posix AND NOT EMSCRIPTEN)
         "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
     )
     sce_c_link_runtime(sce_c_integration_a_runner_program_writes_the_log_of_each_trace
-        EXCLUDES lua dom http clock)
-    target_link_libraries(sce_c_integration_a_runner_program_writes_the_log_of_each_trace PRIVATE
-        sce_c_runtime_posix m)
+        REQUIRES directory EXCLUDES lua dom http clock)
+    target_link_libraries(sce_c_integration_a_runner_program_writes_the_log_of_each_trace PRIVATE m)
     target_compile_definitions(sce_c_integration_a_runner_program_writes_the_log_of_each_trace PRIVATE
         SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
         SCE_RUNTIME_SUITE_RUNNER="$<TARGET_FILE:sce_c_runtime_suite_runner>")
