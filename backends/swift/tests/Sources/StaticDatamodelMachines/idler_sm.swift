@@ -384,7 +384,7 @@ public final class IdlerPolicy: InvocablePolicy {
                         source: state,
                         targets: [.state(.done)],
                         transitionIndex: 0,
-                        hasActions: true,
+                        hasActions: false,
                         isInternal: false
                     )
                 }
@@ -395,14 +395,16 @@ public final class IdlerPolicy: InvocablePolicy {
         return nil
     }
 
-    /// Runs one transition's executable content (W3C SCXML 3.13), between the
-    /// microstep's exits and its entries.
-    public func executeTransitionContent(source: IdlerState, transitionIndex: Int, engine: Engine<IdlerPolicy>) {
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: takes a branch of the test
+    /// component before the microstep exits any state: it removes what the branch
+    /// matched from the round's snapshot, writes its record in the test log, and
+    /// holds a message its content reads in the payload property of its record's
+    /// event (`Transition::native_take`).
+    public func takeTransition(source: IdlerState, transitionIndex: Int, engine: Engine<IdlerPolicy>) {
         switch source {
         case .idling:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
                 _ = self.sceTestContext.receive("peer")
             default:
                 break
@@ -410,6 +412,12 @@ public final class IdlerPolicy: InvocablePolicy {
         default:
             break
         }
+    }
+
+    /// Runs one transition's executable content (W3C SCXML 3.13), between the
+    /// microstep's exits and its entries.
+    public func executeTransitionContent(source: IdlerState, transitionIndex: Int, engine: Engine<IdlerPolicy>) {
+        // W3C SCXML 3.13: no transition in this document has content.
     }}
 
 // ======================================================================

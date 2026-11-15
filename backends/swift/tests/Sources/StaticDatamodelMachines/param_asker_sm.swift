@@ -588,6 +588,27 @@ public final class ParamAskerPolicy: InvocablePolicy {
         return nil
     }
 
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: takes a branch of the test
+    /// component before the microstep exits any state: it removes what the branch
+    /// matched from the round's snapshot, writes its record in the test log, and
+    /// holds a message its content reads in the payload property of its record's
+    /// event (`Transition::native_take`).
+    public func takeTransition(source: ParamAskerState, transitionIndex: Int, engine: Engine<ParamAskerPolicy>) {
+        switch source {
+        case .asking:
+            switch transitionIndex {
+            case 0:
+                do { let sceMessage = self.sceTestContext.receive("sut"); guard let sceValue = sceMessage.valueAs(ReplyOk.Value.self) else { preconditionFailure("a receive branch takes the message its guard matched") }; self.pendingJobReplyPayload = ParamAskerJobReplyPayload(job: sceValue.job, code: sceValue.code) }
+            case 1:
+                self.sceTestContext.timeout("deadline")
+            default:
+                break
+            }
+        default:
+            break
+        }
+    }
+
     /// Runs one transition's executable content (W3C SCXML 3.13), between the
     /// microstep's exits and its entries.
     public func executeTransitionContent(source: ParamAskerState, transitionIndex: Int, engine: Engine<ParamAskerPolicy>) {
@@ -595,8 +616,6 @@ public final class ParamAskerPolicy: InvocablePolicy {
         case .asking:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                do { let sceMessage = self.sceTestContext.receive("sut"); guard let sceValue = sceMessage.valueAs(ReplyOk.Value.self) else { preconditionFailure("a receive branch takes the message its guard matched") }; self.pendingJobReplyPayload = ParamAskerJobReplyPayload(job: sceValue.job, code: sceValue.code) }
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -610,8 +629,6 @@ public final class ParamAskerPolicy: InvocablePolicy {
 
                 }
             case 1:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.sceTestContext.timeout("deadline")
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

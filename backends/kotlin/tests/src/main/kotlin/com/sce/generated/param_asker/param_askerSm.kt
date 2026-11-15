@@ -643,6 +643,24 @@ class ParamAskerStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: ParamAskerState, transitionIndex: Int) {
+        when {
+            source is ParamAskerState.Asking && transitionIndex == 0 -> {
+                val sceMessage = sceTestContext.receive("sut")
+                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.reply_ok.Value>()) { "a receive branch takes the message its guard matched" }
+                pendingJobReplyPayload = ParamAskerJobReplyPayload(job = sceValue.job, code = sceValue.code)
+            }
+            source is ParamAskerState.Asking && transitionIndex == 1 -> {
+                sceTestContext.timeout("deadline")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: param_asker.scxml:6 :: _machine
     override fun executeTransitionContent(source: ParamAskerState, transitionIndex: Int) {
@@ -670,10 +688,6 @@ class ParamAskerStateMachine(
 
     private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: param_asker.scxml:26 :: asking :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                val sceMessage = sceTestContext.receive("sut")
-                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.reply_ok.Value>()) { "a receive branch takes the message its guard matched" }
-                pendingJobReplyPayload = ParamAskerJobReplyPayload(job = sceValue.job, code = sceValue.code)
 
             sceTestContext.stopTimer("deadline")
 
@@ -682,8 +696,6 @@ class ParamAskerStateMachine(
 
     private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: param_asker.scxml:30 :: asking :: _transition_1
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.timeout("deadline")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.FAIL, "no matching reply in time")
     }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 242afb729b9865bf6d727ab9bf3b98d23b9e6f9c59d9d146a0381a194dfbe13b
+// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -770,6 +770,23 @@ impl StatePolicy for NoVerdictSetterPolicy {
                 None
             }
             _ => None,
+        }
+    }
+
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            _ => {}
         }
     }
 

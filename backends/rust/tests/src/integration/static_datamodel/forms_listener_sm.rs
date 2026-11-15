@@ -176,9 +176,9 @@ pub const FORMS_LISTENER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         histories: &[],
         transitions: &[
             // 0: first, transition 0
-            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, true),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // 1: second, transition 0
-            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, true),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 2: third, transition 0
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(3)), false, true),
             // 3: the document's initial transition
@@ -796,6 +796,35 @@ impl StatePolicy for FormsListenerPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // first, transition 0
+            0 => {
+                self.test_context().receive("sut");
+            }
+            // second, transition 0
+            1 => {
+                self.test_context().receive("sut");
+            }
+            // third, transition 0
+            2 => {
+                self.test_context().receive("sut");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -807,30 +836,10 @@ impl StatePolicy for FormsListenerPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         match transition.0 {
-            // first, transition 0
-            0 => {
-                // SCE-MAP: forms_listener.scxml:11 :: first :: _transition_0
-                // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("sut");
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                'action_block: {}
-            }
-            // second, transition 0
-            1 => {
-                // SCE-MAP: forms_listener.scxml:14 :: second :: _transition_0
-                // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("sut");
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                'action_block: {}
-            }
             // third, transition 0
             2 => {
                 // SCE-MAP: forms_listener.scxml:17 :: third :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("sut");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>

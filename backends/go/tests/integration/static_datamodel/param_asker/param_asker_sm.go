@@ -1087,6 +1087,23 @@ func (p *ParamAskerPolicy) FirstEnabledTransition(state ParamAskerState, event P
 	return sce.EnabledTransition[ParamAskerState, sce.HistoryID]{}, false
 }
 
+// TakeTransition takes a branch of the test component before the microstep
+// exits any state (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3): it removes
+// what the branch matched from the round's snapshot, writes its record in the
+// test log, and holds a message its content reads in the payload field of its
+// record's event (`Transition::native_take`). The policy is a sce.TransitionTaker.
+func (p *ParamAskerPolicy) TakeTransition(source ParamAskerState, transitionIndex int, engine *sce.Engine[ParamAskerState, ParamAskerEvent]) {
+	switch source {
+	case ParamAskerStateAsking:
+		switch transitionIndex {
+		case 0:
+			{ sceValue, sceTaken := scetestprofile.ValueAs[sce_reply_ok.Value](p.sceTestContext.Receive("sut")); if !sceTaken { panic("a receive branch takes the message its guard matched") }; p.pendingJobReplyPayload = ParamAskerJobReplyPayload{job: sceValue.Job, code: sceValue.Code} }
+		case 1:
+			p.sceTestContext.Timeout("deadline")
+		}
+	}
+}
+
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
 //line param_asker.scxml:6
@@ -1098,8 +1115,6 @@ func (p *ParamAskerPolicy) ExecuteTransitionContent(source ParamAskerState, tran
 //line param_asker.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				{ sceValue, sceTaken := scetestprofile.ValueAs[sce_reply_ok.Value](p.sceTestContext.Receive("sut")); if !sceTaken { panic("a receive branch takes the message its guard matched") }; p.pendingJobReplyPayload = ParamAskerJobReplyPayload{job: sceValue.Job, code: sceValue.Code} }
 
 	// docs/SCE_TEST_PROFILE.md §4.7: <sce:stop-timer>
 
@@ -1114,8 +1129,6 @@ func (p *ParamAskerPolicy) ExecuteTransitionContent(source ParamAskerState, tran
 //line param_asker.scxml:30
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Timeout("deadline")
 
 	// docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
 

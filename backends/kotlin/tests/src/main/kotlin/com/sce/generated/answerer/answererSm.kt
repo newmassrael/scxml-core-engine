@@ -481,6 +481,19 @@ class AnswererStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: AnswererState, transitionIndex: Int) {
+        when {
+            source is AnswererState.Asking && transitionIndex == 0 -> {
+                sceTestContext.receive("peer")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: answerer.scxml:5 :: _machine
     override fun executeTransitionContent(source: AnswererState, transitionIndex: Int) {
@@ -506,8 +519,6 @@ class AnswererStateMachine(
 
     private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: answerer.scxml:22 :: asking :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.receive("peer")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.PASS, "")
     }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 242afb729b9865bf6d727ab9bf3b98d23b9e6f9c59d9d146a0381a194dfbe13b
+// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
 #![doc = "SCE-MAP: signed_configuration.scxml:4 :: _forge_body"]
 // SCE-MAP: signed_configuration.scxml:4 :: _forge_body
 

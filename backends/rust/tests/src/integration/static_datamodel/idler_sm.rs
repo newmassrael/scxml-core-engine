@@ -169,7 +169,7 @@ pub const IDLER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
         histories: &[],
         transitions: &[
             // 0: idling, transition 0
-            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, true),
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // 1: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
@@ -762,6 +762,27 @@ impl StatePolicy for IdlerPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // idling, transition 0
+            0 => {
+                self.test_context().receive("peer");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -772,18 +793,8 @@ impl StatePolicy for IdlerPolicy {
         transition: ::sce_rust_runtime::TransitionId,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        match transition.0 {
-            // idling, transition 0
-            0 => {
-                // SCE-MAP: idler.scxml:15 :: idling :: _transition_0
-                // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("peer");
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                'action_block: {}
-            }
-            _ => {}
-        }
+        // W3C SCXML 3.13: no transition in this document has content.
+        let _ = (transition, engine);
     }
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is

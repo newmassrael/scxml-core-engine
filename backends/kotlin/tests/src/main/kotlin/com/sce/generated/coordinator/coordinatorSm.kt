@@ -656,6 +656,24 @@ class CoordinatorStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: CoordinatorState, transitionIndex: Int) {
+        when {
+            source is CoordinatorState.Serving && transitionIndex == 0 -> {
+                val sceMessage = sceTestContext.receive("peer")
+                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.any_request.Value>()) { "a receive branch takes the message its guard matched" }
+                pendingJobRequestPayload = CoordinatorJobRequestPayload(job = sceValue.job)
+            }
+            source is CoordinatorState.Working && transitionIndex == 0 -> {
+                sceTestContext.doneTaken("answerer")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: coordinator.scxml:6 :: _machine
     override fun executeTransitionContent(source: CoordinatorState, transitionIndex: Int) {
@@ -682,10 +700,6 @@ class CoordinatorStateMachine(
 
     private fun transitionContentOfServingAt0() {
                 // SCE-MAP: coordinator.scxml:25 :: serving :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                val sceMessage = sceTestContext.receive("peer")
-                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.any_request.Value>()) { "a receive branch takes the message its guard matched" }
-                pendingJobRequestPayload = CoordinatorJobRequestPayload(job = sceValue.job)
 
             vRequested = pendingJobRequestPayload!!.job
 
@@ -749,8 +763,6 @@ class CoordinatorStateMachine(
 
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: coordinator.scxml:21 :: working :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.doneTaken("answerer")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.PASS, "")
     }

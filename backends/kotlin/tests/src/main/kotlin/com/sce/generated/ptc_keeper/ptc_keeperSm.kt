@@ -267,7 +267,7 @@ class PtcKeeperStateMachine(
             PtcKeeperState.Watching,
             listOf(StateTarget(PtcKeeperState.Lingering)),
             0,
-            hasActions = true,
+            hasActions = false,
             isInternal = false,
         )
     }
@@ -458,12 +458,27 @@ class PtcKeeperStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: PtcKeeperState, transitionIndex: Int) {
+        when {
+            source is PtcKeeperState.Lingering && transitionIndex == 0 -> {
+                sceTestContext.timeout("linger")
+            }
+            source is PtcKeeperState.Watching && transitionIndex == 0 -> {
+                sceTestContext.timeout("patience")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: ptc_keeper.scxml:6 :: _machine
     override fun executeTransitionContent(source: PtcKeeperState, transitionIndex: Int) {
         when (source) {
             is PtcKeeperState.Lingering -> transitionContentOfLingering(transitionIndex)
-            is PtcKeeperState.Watching -> transitionContentOfWatching(transitionIndex)
             else -> {}
         }
     }
@@ -484,28 +499,7 @@ class PtcKeeperStateMachine(
 
     private fun transitionContentOfLingeringAt0() {
                 // SCE-MAP: ptc_keeper.scxml:23 :: lingering :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.timeout("linger")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.PASS, "")
-    }
-
-    // The content of `watching`'s own transitions, by the index the
-    // selection answered with. A transition without content is never
-    // dispatched here — the microstep asks only for transitions that carry
-    // some — so the remaining indices are unreachable, which is what an empty
-    // `else` says.
-    private fun transitionContentOfWatching(transitionIndex: Int) {
-        when (transitionIndex) {
-            0 -> transitionContentOfWatchingAt0()
-            else -> {}
-        }
-    }
-
-
-    private fun transitionContentOfWatchingAt0() {
-                // SCE-MAP: ptc_keeper.scxml:17 :: watching :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.timeout("patience")
     }
 }

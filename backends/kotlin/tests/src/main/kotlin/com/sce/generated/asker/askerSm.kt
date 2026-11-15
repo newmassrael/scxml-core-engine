@@ -618,6 +618,24 @@ class AskerStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: AskerState, transitionIndex: Int) {
+        when {
+            source is AskerState.Asking && transitionIndex == 0 -> {
+                val sceMessage = sceTestContext.receive("sut")
+                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.reply_ok.Value>()) { "a receive branch takes the message its guard matched" }
+                pendingJobReplyPayload = AskerJobReplyPayload(job = sceValue.job, code = sceValue.code)
+            }
+            source is AskerState.Asking && transitionIndex == 1 -> {
+                sceTestContext.timeout("reply")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: asker.scxml:7 :: _machine
     override fun executeTransitionContent(source: AskerState, transitionIndex: Int) {
@@ -645,10 +663,6 @@ class AskerStateMachine(
 
     private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: asker.scxml:27 :: asking :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                val sceMessage = sceTestContext.receive("sut")
-                val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.reply_ok.Value>()) { "a receive branch takes the message its guard matched" }
-                pendingJobReplyPayload = AskerJobReplyPayload(job = sceValue.job, code = sceValue.code)
 
             sceTestContext.stopTimer("reply")
 
@@ -659,8 +673,6 @@ class AskerStateMachine(
 
     private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: asker.scxml:32 :: asking :: _transition_1
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.timeout("reply")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.FAIL, "no matching reply in time")
     }

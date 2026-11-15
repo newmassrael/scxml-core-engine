@@ -395,7 +395,7 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
                         source: state,
                         targets: [.state(.second)],
                         transitionIndex: 0,
-                        hasActions: true,
+                        hasActions: false,
                         isInternal: false
                     )
                 }
@@ -409,7 +409,7 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
                         source: state,
                         targets: [.state(.third)],
                         transitionIndex: 0,
-                        hasActions: true,
+                        hasActions: false,
                         isInternal: false
                     )
                 }
@@ -434,14 +434,16 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
         return nil
     }
 
-    /// Runs one transition's executable content (W3C SCXML 3.13), between the
-    /// microstep's exits and its entries.
-    public func executeTransitionContent(source: ClosedEnumFormsListenerState, transitionIndex: Int, engine: Engine<ClosedEnumFormsListenerPolicy>) {
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: takes a branch of the test
+    /// component before the microstep exits any state: it removes what the branch
+    /// matched from the round's snapshot, writes its record in the test log, and
+    /// holds a message its content reads in the payload property of its record's
+    /// event (`Transition::native_take`).
+    public func takeTransition(source: ClosedEnumFormsListenerState, transitionIndex: Int, engine: Engine<ClosedEnumFormsListenerPolicy>) {
         switch source {
         case .first:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
                 _ = self.sceTestContext.receive("sut")
             default:
                 break
@@ -449,7 +451,6 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
         case .second:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
                 _ = self.sceTestContext.receive("sut")
             default:
                 break
@@ -457,8 +458,22 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
         case .third:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
                 _ = self.sceTestContext.receive("sut")
+            default:
+                break
+            }
+        default:
+            break
+        }
+    }
+
+    /// Runs one transition's executable content (W3C SCXML 3.13), between the
+    /// microstep's exits and its entries.
+    public func executeTransitionContent(source: ClosedEnumFormsListenerState, transitionIndex: Int, engine: Engine<ClosedEnumFormsListenerPolicy>) {
+        switch source {
+        case .third:
+            switch transitionIndex {
+            case 0:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

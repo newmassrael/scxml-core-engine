@@ -888,6 +888,21 @@ func (p *AnswererPolicy) FirstEnabledTransition(state AnswererState, event Answe
 	return sce.EnabledTransition[AnswererState, sce.HistoryID]{}, false
 }
 
+// TakeTransition takes a branch of the test component before the microstep
+// exits any state (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3): it removes
+// what the branch matched from the round's snapshot, writes its record in the
+// test log, and holds a message its content reads in the payload field of its
+// record's event (`Transition::native_take`). The policy is a sce.TransitionTaker.
+func (p *AnswererPolicy) TakeTransition(source AnswererState, transitionIndex int, engine *sce.Engine[AnswererState, AnswererEvent]) {
+	switch source {
+	case AnswererStateAsking:
+		switch transitionIndex {
+		case 0:
+			p.sceTestContext.Receive("peer")
+		}
+	}
+}
+
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
 //line answerer.scxml:5
@@ -899,8 +914,6 @@ func (p *AnswererPolicy) ExecuteTransitionContent(source AnswererState, transiti
 //line answerer.scxml:22
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Receive("peer")
 
 	// docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
 

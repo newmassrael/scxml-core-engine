@@ -780,7 +780,7 @@ func (p *IdlerPolicy) FirstEnabledTransition(state IdlerState, event IdlerEvent,
 					Source:          state,
 					Targets:         transitionTargetsOfIdler[state][0],
 					TransitionIndex: 0,
-					HasActions:      true,
+					HasActions:      false,
 					IsInternal:      false,
 				}, true
 			}
@@ -789,20 +789,24 @@ func (p *IdlerPolicy) FirstEnabledTransition(state IdlerState, event IdlerEvent,
 	return sce.EnabledTransition[IdlerState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
-// 3.13), between the microstep's exits and its entries.
-//line idler.scxml:5
-func (p *IdlerPolicy) ExecuteTransitionContent(source IdlerState, transitionIndex int, engine *sce.Engine[IdlerState, IdlerEvent]) {
+// TakeTransition takes a branch of the test component before the microstep
+// exits any state (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3): it removes
+// what the branch matched from the round's snapshot, writes its record in the
+// test log, and holds a message its content reads in the payload field of its
+// record's event (`Transition::native_take`). The policy is a sce.TransitionTaker.
+func (p *IdlerPolicy) TakeTransition(source IdlerState, transitionIndex int, engine *sce.Engine[IdlerState, IdlerEvent]) {
 	switch source {
 	case IdlerStateIdling:
 		switch transitionIndex {
 		case 0:
-//line idler.scxml:15
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Receive("peer")
-			}()
+			p.sceTestContext.Receive("peer")
 		}
 	}
+}
+
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
+//line idler.scxml:5
+func (p *IdlerPolicy) ExecuteTransitionContent(source IdlerState, transitionIndex int, engine *sce.Engine[IdlerState, IdlerEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

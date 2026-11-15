@@ -246,7 +246,7 @@ class FormsListenerStateMachine(
             FormsListenerState.First,
             listOf(StateTarget(FormsListenerState.Second)),
             0,
-            hasActions = true,
+            hasActions = false,
             isInternal = false,
         )
 
@@ -255,7 +255,7 @@ class FormsListenerStateMachine(
             FormsListenerState.Second,
             listOf(StateTarget(FormsListenerState.Third)),
             0,
-            hasActions = true,
+            hasActions = false,
             isInternal = false,
         )
 
@@ -412,55 +412,34 @@ class FormsListenerStateMachine(
 
 
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: FormsListenerState, transitionIndex: Int) {
+        when {
+            source is FormsListenerState.First && transitionIndex == 0 -> {
+                sceTestContext.receive("sut")
+            }
+            source is FormsListenerState.Second && transitionIndex == 0 -> {
+                sceTestContext.receive("sut")
+            }
+            source is FormsListenerState.Third && transitionIndex == 0 -> {
+                sceTestContext.receive("sut")
+            }
+        }
+    }
+
     // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: forms_listener.scxml:4 :: _machine
     override fun executeTransitionContent(source: FormsListenerState, transitionIndex: Int) {
         when (source) {
-            is FormsListenerState.First -> transitionContentOfFirst(transitionIndex)
-            is FormsListenerState.Second -> transitionContentOfSecond(transitionIndex)
             is FormsListenerState.Third -> transitionContentOfThird(transitionIndex)
             else -> {}
         }
     }
 
-
-    // The content of `first`'s own transitions, by the index the
-    // selection answered with. A transition without content is never
-    // dispatched here — the microstep asks only for transitions that carry
-    // some — so the remaining indices are unreachable, which is what an empty
-    // `else` says.
-    private fun transitionContentOfFirst(transitionIndex: Int) {
-        when (transitionIndex) {
-            0 -> transitionContentOfFirstAt0()
-            else -> {}
-        }
-    }
-
-
-    private fun transitionContentOfFirstAt0() {
-                // SCE-MAP: forms_listener.scxml:11 :: first :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.receive("sut")
-    }
-
-    // The content of `second`'s own transitions, by the index the
-    // selection answered with. A transition without content is never
-    // dispatched here — the microstep asks only for transitions that carry
-    // some — so the remaining indices are unreachable, which is what an empty
-    // `else` says.
-    private fun transitionContentOfSecond(transitionIndex: Int) {
-        when (transitionIndex) {
-            0 -> transitionContentOfSecondAt0()
-            else -> {}
-        }
-    }
-
-
-    private fun transitionContentOfSecondAt0() {
-                // SCE-MAP: forms_listener.scxml:14 :: second :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.receive("sut")
-    }
 
     // The content of `third`'s own transitions, by the index the
     // selection answered with. A transition without content is never
@@ -477,8 +456,6 @@ class FormsListenerStateMachine(
 
     private fun transitionContentOfThirdAt0() {
                 // SCE-MAP: forms_listener.scxml:17 :: third :: _transition_0
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                sceTestContext.receive("sut")
 
             sceTestContext.setverdict(com.sce.runtime.test.Verdict.PASS, "")
     }

@@ -1113,6 +1113,38 @@ impl StatePolicy for CoordinatorPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // serving, transition 0
+            1 => {
+                let sce_message = self.test_context().receive("peer");
+                let sce_value = sce_message
+                    .value_as::<any_request::Value>()
+                    .expect("a receive branch takes the message its guard matched");
+                self.pending_payload =
+                    CoordinatorPayload::JobRequest(CoordinatorJobRequestPayload {
+                        job: sce_value.job,
+                    });
+            }
+            // working, transition 0
+            0 => {
+                self.test_context().done_taken("answerer");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -1128,12 +1160,12 @@ impl StatePolicy for CoordinatorPolicy {
             1 => {
                 // SCE-MAP: coordinator.scxml:25 :: serving :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                let sce_message = self.test_context().receive("peer");
-                let sce_value = sce_message
-                    .value_as::<any_request::Value>()
-                    .expect("a receive branch takes the message its guard matched");
-                let ev = CoordinatorJobRequestPayload { job: sce_value.job };
+                let ev = match &self.pending_payload {
+                    CoordinatorPayload::JobRequest(ev) => ev.clone(),
+                    _ => unreachable!(
+                        "a receive branch holds the message it took before its content runs"
+                    ),
+                };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="requested">
@@ -1195,8 +1227,6 @@ impl StatePolicy for CoordinatorPolicy {
             0 => {
                 // SCE-MAP: coordinator.scxml:21 :: working :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().done_taken("answerer");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>

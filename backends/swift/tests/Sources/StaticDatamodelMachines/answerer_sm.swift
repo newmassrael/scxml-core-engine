@@ -448,6 +448,25 @@ public final class AnswererPolicy: InvocablePolicy {
         return nil
     }
 
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: takes a branch of the test
+    /// component before the microstep exits any state: it removes what the branch
+    /// matched from the round's snapshot, writes its record in the test log, and
+    /// holds a message its content reads in the payload property of its record's
+    /// event (`Transition::native_take`).
+    public func takeTransition(source: AnswererState, transitionIndex: Int, engine: Engine<AnswererPolicy>) {
+        switch source {
+        case .asking:
+            switch transitionIndex {
+            case 0:
+                _ = self.sceTestContext.receive("peer")
+            default:
+                break
+            }
+        default:
+            break
+        }
+    }
+
     /// Runs one transition's executable content (W3C SCXML 3.13), between the
     /// microstep's exits and its entries.
     public func executeTransitionContent(source: AnswererState, transitionIndex: Int, engine: Engine<AnswererPolicy>) {
@@ -455,8 +474,6 @@ public final class AnswererPolicy: InvocablePolicy {
         case .asking:
             switch transitionIndex {
             case 0:
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                _ = self.sceTestContext.receive("peer")
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

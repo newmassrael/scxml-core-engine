@@ -191,7 +191,7 @@ pub const NESTED_TESTER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
             // 1: outer, transition 1
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), true, true),
             // 2: first, transition 0
-            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, true),
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 3: first, transition 1
             TransitionRow::new(Some(StateId(1)), Target::NONE, false, true),
             // 4: deep, transition 0
@@ -920,6 +920,43 @@ impl StatePolicy for NestedTesterPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // deep, transition 0
+            4 => {
+                self.test_context().timeout("tick");
+            }
+            // first, transition 0
+            2 => {
+                self.test_context().timeout("tick");
+            }
+            // first, transition 1
+            3 => {
+                self.test_context().receive("sut");
+            }
+            // outer, transition 0
+            0 => {
+                self.test_context().timeout("limit");
+            }
+            // outer, transition 1
+            1 => {
+                self.test_context().receive("sut");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -935,8 +972,6 @@ impl StatePolicy for NestedTesterPolicy {
             4 => {
                 // SCE-MAP: nested_tester.scxml:60 :: deep :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("tick");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
@@ -944,21 +979,10 @@ impl StatePolicy for NestedTesterPolicy {
                         .setverdict(::sce_rust_runtime::test::Verdict::Pass, "");
                 }
             }
-            // first, transition 0
-            2 => {
-                // SCE-MAP: nested_tester.scxml:36 :: first :: _transition_0
-                // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("tick");
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                'action_block: {}
-            }
             // first, transition 1
             3 => {
                 // SCE-MAP: nested_tester.scxml:37 :: first :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("sut");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 4.7: <log>
@@ -969,8 +993,6 @@ impl StatePolicy for NestedTesterPolicy {
             0 => {
                 // SCE-MAP: nested_tester.scxml:23 :: outer :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("limit");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
@@ -985,8 +1007,6 @@ impl StatePolicy for NestedTesterPolicy {
             1 => {
                 // SCE-MAP: nested_tester.scxml:26 :: outer :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().receive("sut");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 4.7: <log>

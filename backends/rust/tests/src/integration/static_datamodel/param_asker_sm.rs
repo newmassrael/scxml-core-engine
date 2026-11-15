@@ -1046,6 +1046,38 @@ impl StatePolicy for ParamAskerPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // asking, transition 0
+            0 => {
+                let sce_message = self.test_context().receive("sut");
+                let sce_value = sce_message
+                    .value_as::<reply_ok::Value>()
+                    .expect("a receive branch takes the message its guard matched");
+                self.pending_payload = ParamAskerPayload::JobReply(ParamAskerJobReplyPayload {
+                    job: sce_value.job,
+                    code: sce_value.code,
+                });
+            }
+            // asking, transition 1
+            1 => {
+                self.test_context().timeout("deadline");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -1061,14 +1093,11 @@ impl StatePolicy for ParamAskerPolicy {
             0 => {
                 // SCE-MAP: param_asker.scxml:26 :: asking :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                let sce_message = self.test_context().receive("sut");
-                let sce_value = sce_message
-                    .value_as::<reply_ok::Value>()
-                    .expect("a receive branch takes the message its guard matched");
-                let ev = ParamAskerJobReplyPayload {
-                    job: sce_value.job,
-                    code: sce_value.code,
+                let ev = match &self.pending_payload {
+                    ParamAskerPayload::JobReply(ev) => ev.clone(),
+                    _ => unreachable!(
+                        "a receive branch holds the message it took before its content runs"
+                    ),
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1083,8 +1112,6 @@ impl StatePolicy for ParamAskerPolicy {
             1 => {
                 // SCE-MAP: param_asker.scxml:30 :: asking :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("deadline");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>

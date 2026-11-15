@@ -791,7 +791,7 @@ func (p *FormsListenerPolicy) FirstEnabledTransition(state FormsListenerState, e
 					Source:          state,
 					Targets:         transitionTargetsOfFormsListener[state][0],
 					TransitionIndex: 0,
-					HasActions:      true,
+					HasActions:      false,
 					IsInternal:      false,
 				}, true
 			}
@@ -805,7 +805,7 @@ func (p *FormsListenerPolicy) FirstEnabledTransition(state FormsListenerState, e
 					Source:          state,
 					Targets:         transitionTargetsOfFormsListener[state][0],
 					TransitionIndex: 0,
-					HasActions:      true,
+					HasActions:      false,
 					IsInternal:      false,
 				}, true
 			}
@@ -828,39 +828,42 @@ func (p *FormsListenerPolicy) FirstEnabledTransition(state FormsListenerState, e
 	return sce.EnabledTransition[FormsListenerState, sce.HistoryID]{}, false
 }
 
+// TakeTransition takes a branch of the test component before the microstep
+// exits any state (docs/SCE_TEST_PROFILE.md §4.4, P4 step 1, §12.3): it removes
+// what the branch matched from the round's snapshot, writes its record in the
+// test log, and holds a message its content reads in the payload field of its
+// record's event (`Transition::native_take`). The policy is a sce.TransitionTaker.
+func (p *FormsListenerPolicy) TakeTransition(source FormsListenerState, transitionIndex int, engine *sce.Engine[FormsListenerState, FormsListenerEvent]) {
+	switch source {
+	case FormsListenerStateFirst:
+		switch transitionIndex {
+		case 0:
+			p.sceTestContext.Receive("sut")
+		}
+	case FormsListenerStateSecond:
+		switch transitionIndex {
+		case 0:
+			p.sceTestContext.Receive("sut")
+		}
+	case FormsListenerStateThird:
+		switch transitionIndex {
+		case 0:
+			p.sceTestContext.Receive("sut")
+		}
+	}
+}
+
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
 //line forms_listener.scxml:4
 func (p *FormsListenerPolicy) ExecuteTransitionContent(source FormsListenerState, transitionIndex int, engine *sce.Engine[FormsListenerState, FormsListenerEvent]) {
 	switch source {
-	case FormsListenerStateFirst:
-		switch transitionIndex {
-		case 0:
-//line forms_listener.scxml:11
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Receive("sut")
-			}()
-		}
-	case FormsListenerStateSecond:
-		switch transitionIndex {
-		case 0:
-//line forms_listener.scxml:14
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Receive("sut")
-			}()
-		}
 	case FormsListenerStateThird:
 		switch transitionIndex {
 		case 0:
 //line forms_listener.scxml:17
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Receive("sut")
 
 	// docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8957049d6e3664213f07710e16f42947c0b405de8fa5ea61d8821d57277f69f6
+// source-hash: 3597e3f72da4de581fec75005e4626784f4597e82167ed4f92cb88e065a0deca
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -97,12 +97,13 @@ use sce_rust_runtime::{Engine, StatePolicy};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u16)]
 pub enum JobTesterState {
+    Running = 0,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
-    Requesting = 0,
-    Settling = 1,
-    Passed = 2,
-    Failed = 3,
+    Requesting = 1,
+    Settling = 2,
+    Passed = 3,
+    Failed = 4,
 }
 
 // ======================================================================
@@ -129,12 +130,12 @@ pub enum JobTesterEvent {
 
 /// A configuration of this machine, in its own states: what
 /// `Engine::get_active_states` returns and a host observes. The engine keeps
-/// the configuration itself as numbers (docs/adr/0064). Its capacity, 1, is
+/// the configuration itself as numbers (docs/adr/0064). Its capacity, 2, is
 /// the most states one configuration of this document holds, read from its
 /// state tree; the runtime names no size of its own. A `Vec` under std, where
 /// the capacity is not read.
 pub type JobTesterConfiguration =
-    ::sce_rust_runtime::helpers::hierarchy::BoundedVec<JobTesterState, 1>;
+    ::sce_rust_runtime::helpers::hierarchy::BoundedVec<JobTesterState, 2>;
 
 // ======================================================================
 // The document's tables (docs/adr/0064)
@@ -169,28 +170,32 @@ pub const JOB_TESTER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     };
     DocumentTables {
         states: &[
-            // 0: requesting
-            StateRow::new(None, StateKind::Atomic, StateId(0), None),
-            // 1: settling
-            StateRow::new(None, StateKind::Atomic, StateId(1), None),
-            // 2: passed
-            StateRow::new(None, StateKind::Final, StateId(2), None),
-            // 3: failed
+            // 0: running
+            StateRow::new(None, StateKind::Compound, StateId(2), Some(TransitionId(3))),
+            // 1: requesting
+            StateRow::new(Some(StateId(0)), StateKind::Atomic, StateId(1), None),
+            // 2: settling
+            StateRow::new(Some(StateId(0)), StateKind::Atomic, StateId(2), None),
+            // 3: passed
             StateRow::new(None, StateKind::Final, StateId(3), None),
+            // 4: failed
+            StateRow::new(None, StateKind::Final, StateId(4), None),
         ],
         histories: &[],
         transitions: &[
             // 0: requesting, transition 0
-            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, true),
-            // 1: requesting, transition 1
-            TransitionRow::new(Some(StateId(0)), Target::state(StateId(3)), false, true),
-            // 2: settling, transition 0
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, true),
-            // 3: the document's initial transition
+            // 1: requesting, transition 1
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(4)), false, true),
+            // 2: settling, transition 0
+            TransitionRow::new(Some(StateId(2)), Target::state(StateId(3)), false, true),
+            // 3: running, initial
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
+            // 4: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(3),
+        initial: TransitionId(4),
         default_state: ::sce_rust_runtime::StateId(JobTesterState::Requesting as u16),
         null_event: ::sce_rust_runtime::EventId(4),
         error_events: &[::sce_rust_runtime::EventId(1)],
@@ -419,10 +424,10 @@ impl JobTesterPersist for Engine<JobTesterPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "32a14282696e9d2653d16f45b027e50f2e4962fa490ada18badfffc23a6228a6",
-            revised: "8fb54370d540865a5644131c113c22973dd48d79979c65683f2f5b8dda6d593a",
-            format2_first: "32a14282696e9d2653d16f45b027e50f2e4962fa490ada18badfffc23a6228a6",
-            format2_revised: "8fb54370d540865a5644131c113c22973dd48d79979c65683f2f5b8dda6d593a",
+            first: "689ce8cee02eb78271b7c9143d396966a18b74c4702ca715d4e2d8228d45343c",
+            revised: "18ae334a0a37446d1a771fdde3dae61652c94ca824c2e4f820d7f81c4e659242",
+            format2_first: "689ce8cee02eb78271b7c9143d396966a18b74c4702ca715d4e2d8228d45343c",
+            format2_revised: "18ae334a0a37446d1a771fdde3dae61652c94ca824c2e4f820d7f81c4e659242",
             records: &[],
             enums: &[],
             features: None,
@@ -811,10 +816,9 @@ impl StatePolicy for JobTesterPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: the state
-    // `requesting` holds an <invoke>, which raises its errors when it starts,
-    // after the macrostep, and whose <finalize> runs before the event it
-    // forwards.
+    // No depth is proven, so it is the external queue's: the state `running`
+    // holds an <invoke>, which raises its errors when it starts, after the
+    // macrostep, and whose <finalize> runs before the event it forwards.
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
@@ -847,6 +851,7 @@ impl StatePolicy for JobTesterPolicy {
     // enum's discriminant.
     const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &JOB_TESTER_TABLES;
     const STATES: &'static [Self::State] = &[
+        JobTesterState::Running,
         JobTesterState::Requesting,
         JobTesterState::Settling,
         JobTesterState::Passed,
@@ -877,22 +882,22 @@ impl StatePolicy for JobTesterPolicy {
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
     // this document's size and no larger, in both profiles. Every set of states
-    // the runtime keeps is a bit vector of this document's 4 state(s); a
-    // configuration holds 1 state(s) at most, the capacity of the
+    // the runtime keeps is a bit vector of this document's 5 state(s); a
+    // configuration holds 2 state(s) at most, the capacity of the
     // `Configuration` a host reads; a selection enables 1 transition(s) at most, one from each atomic state
     // of one configuration; a microstep owes 0 history default(s) at most;
     // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
-    // call needs no depth the program has to assume: 5 step(s) at most, three
+    // call needs no depth the program has to assume: 7 step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
     // run store, the configuration and what each of the 0 `<history>`
     // element(s) recorded, one such set each, is the engine's.
     type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(4) }, 1, 5, 0>;
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(5) }, 1, 7, 0>;
     type RunStore = ::sce_rust_runtime::RunStore<
-        { ::sce_rust_runtime::state_words(4) },
-        { ::sce_rust_runtime::record_words(4, 0) },
+        { ::sce_rust_runtime::state_words(5) },
+        { ::sce_rust_runtime::record_words(5, 0) },
         0,
     >;
     type Configuration = JobTesterConfiguration;
@@ -962,6 +967,7 @@ impl StatePolicy for JobTesterPolicy {
             JobTesterState::Failed => "failed",
             JobTesterState::Passed => "passed",
             JobTesterState::Requesting => "requesting",
+            JobTesterState::Running => "running",
             JobTesterState::Settling => "settling",
         }
     }
@@ -974,6 +980,7 @@ impl StatePolicy for JobTesterPolicy {
             "failed" => Some(JobTesterState::Failed),
             "passed" => Some(JobTesterState::Passed),
             "requesting" => Some(JobTesterState::Requesting),
+            "running" => Some(JobTesterState::Running),
             "settling" => Some(JobTesterState::Settling),
             _ => None,
         }
@@ -1062,7 +1069,7 @@ impl StatePolicy for JobTesterPolicy {
     ) {
         match state {
             JobTesterState::Requesting => {
-                // SCE-MAP: job_tester.scxml:23 :: requesting :: _state_body
+                // SCE-MAP: job_tester.scxml:25 :: requesting :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1120,6 +1127,9 @@ impl StatePolicy for JobTesterPolicy {
                     // docs/SCE_TEST_PROFILE.md §4.7: <sce:start-timer>
                     self.test_context().start_timer("deadline", 2000000);
                 }
+            }
+            JobTesterState::Running => {
+                // SCE-MAP: job_tester.scxml:23 :: running :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1128,19 +1138,19 @@ impl StatePolicy for JobTesterPolicy {
                 // dispatch into the host's invoker instead of a raise.
                 {
                     let generated_invoke_id =
-                        format!("{}.{}.helper", "requesting", self as *const _ as usize);
+                        format!("{}.{}.helper", "running", self as *const _ as usize);
                     sce_rust_runtime::invoke::defer_invoke(
                         &mut self.pending_invokes,
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
-                            state: JobTesterState::Requesting,
+                            state: JobTesterState::Running,
                             document_id: "helper",
                         },
                     );
                 }
             }
             JobTesterState::Settling => {
-                // SCE-MAP: job_tester.scxml:39 :: settling :: _state_body
+                // SCE-MAP: job_tester.scxml:40 :: settling :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1177,13 +1187,13 @@ impl StatePolicy for JobTesterPolicy {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on
         // state exit — after the onexit above, per §scxml-D-exitStates.
         match state {
-            JobTesterState::Requesting => {
+            JobTesterState::Running => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
                 // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
-                    JobTesterState::Requesting,
+                    JobTesterState::Running,
                 );
                 // §scxml-6.4: the host's invocation ends with the state that
                 // started it. Unconditional here: the engine knows whether
@@ -1242,6 +1252,46 @@ impl StatePolicy for JobTesterPolicy {
         }
     }
 
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: each selected branch
+    // is taken before the microstep exits anything: it removes what it matched
+    // from the round's snapshot, writes its record in the test log, and holds
+    // a message its content reads in the payload channel, which the content
+    // binds as its `_event.data` (`Transition::native_take`).
+    const TAKES_TRANSITIONS: bool = true;
+
+    fn take_transition(
+        &mut self,
+        transition: ::sce_rust_runtime::TransitionId,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match transition.0 {
+            // requesting, transition 0
+            0 => {
+                let sce_message = self.test_context().receive("sut");
+                let sce_value = sce_message
+                    .value_as::<every_matcher::Value>()
+                    .expect("a receive branch takes the message its guard matched");
+                self.pending_payload = JobTesterPayload::JobStatus(JobTesterJobStatusPayload {
+                    elapsed_ms: sce_value.elapsed_ms,
+                    note: sce_value.note.clone(),
+                    codes: sce_value.codes.clone(),
+                    tag: sce_value.tag,
+                    retry: sce_value.retry,
+                    count: sce_value.count,
+                });
+            }
+            // requesting, transition 1
+            1 => {
+                self.test_context().timeout("deadline");
+            }
+            // settling, transition 0
+            2 => {
+                self.test_context().timeout("settle");
+            }
+            _ => {}
+        }
+    }
+
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
@@ -1255,20 +1305,13 @@ impl StatePolicy for JobTesterPolicy {
         match transition.0 {
             // requesting, transition 0
             0 => {
-                // SCE-MAP: job_tester.scxml:29 :: requesting :: _transition_0
+                // SCE-MAP: job_tester.scxml:30 :: requesting :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                let sce_message = self.test_context().receive("sut");
-                let sce_value = sce_message
-                    .value_as::<every_matcher::Value>()
-                    .expect("a receive branch takes the message its guard matched");
-                let ev = JobTesterJobStatusPayload {
-                    elapsed_ms: sce_value.elapsed_ms,
-                    note: sce_value.note.clone(),
-                    codes: sce_value.codes.clone(),
-                    tag: sce_value.tag,
-                    retry: sce_value.retry,
-                    count: sce_value.count,
+                let ev = match &self.pending_payload {
+                    JobTesterPayload::JobStatus(ev) => ev.clone(),
+                    _ => unreachable!(
+                        "a receive branch holds the message it took before its content runs"
+                    ),
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1332,10 +1375,8 @@ impl StatePolicy for JobTesterPolicy {
             }
             // requesting, transition 1
             1 => {
-                // SCE-MAP: job_tester.scxml:35 :: requesting :: _transition_1
+                // SCE-MAP: job_tester.scxml:36 :: requesting :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("deadline");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
@@ -1348,10 +1389,8 @@ impl StatePolicy for JobTesterPolicy {
             }
             // settling, transition 0
             2 => {
-                // SCE-MAP: job_tester.scxml:43 :: settling :: _transition_0
+                // SCE-MAP: job_tester.scxml:44 :: settling :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
-                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("settle");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
@@ -1374,7 +1413,7 @@ impl StatePolicy for JobTesterPolicy {
     // hands to a host.
     fn host_invoke_owner(processor_type: &str, invoke_id: &str) -> Option<Self::State> {
         match (processor_type, invoke_id) {
-            ("http://sce.dev/ext/test-component", "helper") => Some(JobTesterState::Requesting),
+            ("http://sce.dev/ext/test-component", "helper") => Some(JobTesterState::Running),
             _ => None,
         }
     }
