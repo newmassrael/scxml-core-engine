@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.4 (P4), §12.5: a reply at 500 takes the
+     receive branch, whose message is received before `listening` logs its
+     exit; the timer then runs out at 1500 and is timed out before `waiting`
+     logs its exit, and the MTC passes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="takes_before_its_exits"
+       sce:configuration="Leaving">
+  <sce:import kind="test-configuration" src="leaving_configuration.scxml" as="Leaving"/>
+</scxml>

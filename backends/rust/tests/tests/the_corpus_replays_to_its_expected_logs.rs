@@ -30,14 +30,15 @@ struct Replayed {
 }
 
 /// docs/SCE_TTCN3_LANE.md §12.2: signed and 64-bit integers in a message, the
-/// verdicts `fail` and `none`, and the two ways to `error` a document leads a
-/// run to, a test case that can never end and a dynamic error.
+/// verdicts `fail` and `none`, the two ways to `error` a document leads a run
+/// to, a test case that can never end and a dynamic error, and a branch taken
+/// before the states it leaves log their exits (docs/SCE_TEST_PROFILE.md §4.4).
 const BOUNDARY: Replayed = Replayed {
     suite: "boundary_suite",
     runner: env!("CARGO_BIN_EXE_boundary_suite_runner"),
     world: "",
     verdicts: "exchanges_signed_numbers pass\nanswers_another_job fail\nsets_no_verdict none\n\
-               never_ends error\nsends_to_a_removed_ptc error\n",
+               never_ends error\nsends_to_a_removed_ptc error\ntakes_before_its_exits pass\n",
 };
 
 /// docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of `every_matcher`

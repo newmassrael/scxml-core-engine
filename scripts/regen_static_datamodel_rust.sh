@@ -186,15 +186,18 @@ TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
 TRACE_FORMS=(form_extras forms_listener forms_configuration replays_every_form)
 # The corpus's suite of what runtime_suite leaves out of every run (docs/SCE_TTCN3_LANE.md
 # §12.2): signed and 64-bit integers, the verdicts `fail` and `none`, a test case that can
-# never end and a dynamic error. Its record, templates, components, configurations, test
-# cases and suite, beside the runtime's records, templates and asking_configuration,
-# which it reuses; tests/the_corpus_replays_to_its_expected_logs.rs runs its runner program.
+# never end, a dynamic error, and a branch taken before the states it leaves log their exits.
+# Its record, templates, components, configurations, test cases and suite, beside the
+# runtime's records, templates and asking_configuration, which it reuses;
+# tests/the_corpus_replays_to_its_expected_logs.rs runs its runner program.
 BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
 BOUNDARY=(signed_reading signed_reading_sent signed_reading_within)
 BOUNDARY+=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
+BOUNDARY+=(leaving_logger)
 BOUNDARY+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
+BOUNDARY+=(leaving_configuration)
 BOUNDARY+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
-BOUNDARY+=(sends_to_a_removed_ptc boundary_suite)
+BOUNDARY+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
 # The corpus's suites that the TTCN-3 export is held to, made runnable (docs/SCE_TTCN3_LANE.md
 # §12.4): job_suite, whose records and templates TEST_PROFILE generates above, with the job's
 # completion of the kind examples its port sends; and orders_suite and nested_suite, whose

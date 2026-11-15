@@ -538,6 +538,11 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
     trace holds no input, so no branch fires and no instant is pending: `error` at 0 (P13).
   - `sends_to_a_removed_ptc`: the MTC creates a PTC connected to it, leaves the invoking state at 1 ms, which
     removes the PTC, and sends on the connected port: a dynamic error, `error` at 1000 (P6, P13).
+  - `takes_before_its_exits`: a reply at 500 takes the MTC's receive branch, whose `message-received` is
+    written before the state it leaves logs its exit and before the branch's content logs; the timer the next
+    state starts runs out at 1500 and its `timer-timed-out` is written before that state logs its exit, and the
+    MTC passes at 1500 (TP §4.4, P4: the take is step 1, the exits step 2, as the TTCN-3 side's
+    `p.receive(t) -> value v { ... }` and `t.timeout { ... }` log them).
 
   The suite's Rust runner, `boundary_suite_runner`, replays the directory and each log is held to its expected log
   (`backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs`); `sce-codegen check-trace` holds each

@@ -211,6 +211,7 @@ const CORPUS_RUNS: &[CorpusRuns] = &[
             "sets_no_verdict",
             "never_ends",
             "sends_to_a_removed_ptc",
+            "takes_before_its_exits",
         ],
     },
     CorpusRuns {
