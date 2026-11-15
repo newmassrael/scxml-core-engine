@@ -2126,8 +2126,13 @@ one set of bytes.
    parameter, whose value Rust's suite tables give. Rust then generates the configuration, case and suite tables
    over the rows C++ spells (`forge::generator::test_tables`) and runs the examples end to end through
    `sce_rust_runtime::test::run_suite`; the refusal is lifted for Rust for the remaining kinds, and for a
-   component's module parameter. Kotlin's runtime library of §12.2 (`com.sce.runtime.test`) is the Rust one ported
-   type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
+   component's module parameter. A receive branch whose content reads a message whose record holds a
+   composition (a list, a record within the record, a union, an optional one of them) takes it into the
+   machine's own types: each record, enum and union of it, at any depth, is made from the value its units hold,
+   and every other value, which the units and the machine hold in one type, is copied whole
+   (`forge::composed_lowering::fields_from_unit`). Rust makes it; every other backend refuses such a branch by
+   name, saying it makes no machine's value of the message. Kotlin's runtime library of §12.2
+   (`com.sce.runtime.test`) is the Rust one ported type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
    for `test-template`. Kotlin generates test components next, through the doors of §12.3, and runs them through
