@@ -8,7 +8,7 @@
 // `sce-build/tests/fixtures/test_profile/runtime/` into a package each beside
 // this file, and the components are the machines it writes from the components
 // there, each in the package its configuration's table imports it from (regen:
-// `scripts/regen_static_datamodel_go.sh`). Only the system adapter, which plays
+// `scripts/materialize.sh go-static-datamodel`). Only the system adapter, which plays
 // the system under test, is written here; the same suite is also replayed from
 // the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5)
 // through testprofile.RunSuiteWithTraces, and from every committed trace, each

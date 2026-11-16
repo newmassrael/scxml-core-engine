@@ -6,7 +6,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The unit `sce-codegen generate -l swift` writes for an enum document
-// (`scripts/regen_static_datamodel_swift.sh`): a closed enum over the document's own
+// (`scripts/materialize.sh swift-static-datamodel`): a closed enum over the document's own
 // carrier. `enum_item_status.scxml` declares its values apart from the variants'
 // positions, and spells `in_progress` with an underscore, so a value that crossed by
 // its position or by Swift's own spelling of the case would not be the one the

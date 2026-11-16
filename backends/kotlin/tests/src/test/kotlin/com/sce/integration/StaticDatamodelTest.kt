@@ -6,7 +6,7 @@
 //
 // The committed SMs (com/sce/integration/static_datamodel/<machine>/<machine>Sm.kt) are
 // generated from sce-build/tests/fixtures/static_datamodel/<machine>.scxml
-// (regen: scripts/regen_static_datamodel_kotlin.sh). Their variables are
+// (regen: scripts/materialize.sh kotlin-static-datamodel). Their variables are
 // Kotlin fields and every expression — the guard reading `count` and `In()`,
 // the `<assign>`s, the `<if>` / `<elseif>` pair, a record's field updates —
 // was lowered to native Kotlin, so each machine is constructed with NO script

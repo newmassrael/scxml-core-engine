@@ -15,7 +15,7 @@ import XCTest
 // closed_enum_form_extras (a list of optional elements, a 64-bit integer, a list with a lower count, an
 // optional list and a list of lists). The units are generated from
 // `sce-build/tests/fixtures/test_profile/trace_forms/` into the target `StaticDatamodelMachines` (regen:
-// `scripts/regen_static_datamodel_swift.sh`).
+// `scripts/materialize.sh swift-static-datamodel`).
 //
 // A value written by `canonical_<record>` and read back by `read_<record>` is the value it was, through
 // the canonical text; each malformed spelling of a form is refused, naming where it stands; and a trace

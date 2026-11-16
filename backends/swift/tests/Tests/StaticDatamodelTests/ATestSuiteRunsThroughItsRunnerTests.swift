@@ -11,7 +11,7 @@ import XCTest
 // run end to end by the profile's runner, `SceTestProfile.runSuite`. The suite, its test cases and their
 // configurations are the tables sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into the target `StaticDatamodelMachines` (regen:
-// `scripts/regen_static_datamodel_swift.sh`), each the members of an enum named by its document, and the
+// `scripts/materialize.sh swift-static-datamodel`), each the members of an enum named by its document, and the
 // components are the machines it writes from the components there. Only the system adapter, which plays
 // the system under test, is written here; the same suite is also replayed from the committed trace of
 // `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5) through `SceTestProfile.runSuiteWithTraces`, and from

@@ -10,7 +10,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_static_datamodel_go.sh
+//	scripts/materialize.sh go-static-datamodel
 
 package static_datamodel
 

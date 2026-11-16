@@ -5,7 +5,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The lookups `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The lookups `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a table read by exact match, a static function of the caseless enum its own unit declares.
 // What a key the table does not list answers is the table's declaration: no value, which is an
 // error, or a default.

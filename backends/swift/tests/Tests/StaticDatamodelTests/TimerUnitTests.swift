@@ -6,7 +6,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The timers `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The timers `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a class that starts a periodic timer of the document's period on a clock the host provides,
 // fires its handler each period, restarts on the reset event's hook and stops on the cancel hook.
 // The clock here is a manual one a test advances, as a host's own tests of a unit use.

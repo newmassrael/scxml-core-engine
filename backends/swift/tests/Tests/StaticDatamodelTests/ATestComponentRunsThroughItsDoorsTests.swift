@@ -9,7 +9,7 @@ import XCTest
 // the profile's runtime, `SceTestProfile.TestCaseRun`. The machines are the statecharts sce-codegen
 // writes from the fixtures under `sce-build/tests/fixtures/test_profile/runtime/` into the target
 // `StaticDatamodelMachines`, beside the records and templates they name (regen:
-// `scripts/regen_static_datamodel_swift.sh`), driven only through the doors of §12.3; the
+// `scripts/materialize.sh swift-static-datamodel`), driven only through the doors of §12.3; the
 // configuration, the factory of machines and the system adapter are written here.
 //
 // Each test is the twin of the Rust case of the same name in

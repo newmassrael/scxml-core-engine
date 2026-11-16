@@ -5,7 +5,7 @@
 //! committed (`backends/rust/tests/src/integration/static_datamodel/`) under the
 //! path `sce-rust-tests` gives them, and read by the compiler as they are:
 //! nothing is copied and nothing is rewritten, so a regeneration
-//! (`scripts/regen_static_datamodel_rust.sh`) reaches this crate with no step of
+//! (`scripts/materialize.sh rust-static-datamodel`) reaches this crate with no step of
 //! its own.
 
 // The path is read from this file's directory (`src/`). In an inline module it

@@ -19,7 +19,7 @@ import XCTest
 // fixtures, and `order_placed_match` over a record whose `payment` is a union, whose `canonical`
 // writes the case as `{variant: record}` or `{variant: {}}`. The units are generated from the
 // fixtures under `sce-build/tests/fixtures/test_profile/` and the union documents they name under
-// `sce-build/tests/fixtures/union/` by `scripts/regen_static_datamodel_swift.sh` into the target
+// `sce-build/tests/fixtures/union/` by `scripts/materialize.sh swift-static-datamodel` into the target
 // `StaticDatamodelMachines`, each template an enum named by its document. Every character outside
 // ASCII is written as its escape.
 final class ATestTemplateMatchesItsValuesTests: XCTestCase {

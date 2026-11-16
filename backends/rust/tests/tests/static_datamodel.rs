@@ -7,7 +7,7 @@
 //
 // The committed SMs under `src/integration/static_datamodel/` are generated
 // from `sce-build/tests/fixtures/static_datamodel/<machine>.scxml` (regen:
-// `scripts/regen_static_datamodel_rust.sh`). Their variables are fields of
+// `scripts/materialize.sh rust-static-datamodel`). Their variables are fields of
 // the policy and every expression — the guard reading `count` and `In()`, the
 // `<assign>`s, the `<if>` / `<elseif>` pair, a record's field updates, a
 // bounded list — was lowered to Rust, so each machine is constructed with NO

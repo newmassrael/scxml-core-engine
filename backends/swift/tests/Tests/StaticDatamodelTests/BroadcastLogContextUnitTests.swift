@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The logs `sce-codegen orchestrate -l swift` writes for the shared conformance documents
-// `tests/forge/conformance/broadcast_log_context` (`scripts/regen_static_datamodel_swift.sh`): logs over
+// `tests/forge/conformance/broadcast_log_context` (`scripts/materialize.sh swift-static-datamodel`): logs over
 // an element whose codec asks its caller for what its wire form does not carry (ADR 0062 section 4).
 // An entry is the length word, the context words, then the bytes, so that a reader decodes the entry
 // under what it was published under: `Chosen` stores the tag of the arm a value holds, `Flagged` the

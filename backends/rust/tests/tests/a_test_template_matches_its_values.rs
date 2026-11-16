@@ -8,7 +8,7 @@
 // variant of its case (docs/adr/0092). The committed units under
 // `src/integration/static_datamodel/` are generated from the fixtures under
 // `sce-build/tests/fixtures/test_profile/` and `sce-build/tests/fixtures/union/`
-// (regen: `scripts/regen_static_datamodel_rust.sh`); the C++ suite holds the
+// (regen: `scripts/materialize.sh rust-static-datamodel`); the C++ suite holds the
 // same templates to the same values (`tests/integration/ATestTemplateMatchesItsValuesTest.cpp`).
 
 use sce_portable_bytes::{BoundedList, SceString};

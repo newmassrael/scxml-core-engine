@@ -9,7 +9,7 @@
 // Fixture: sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_static_datamodel_rust.sh
+//   scripts/materialize.sh rust-static-datamodel
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

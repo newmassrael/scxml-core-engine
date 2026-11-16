@@ -17,7 +17,7 @@ import XCTest
 // `forge-runtime`'s tests; this file holds what the generated unit adds.
 //
 // The units come from `tests/forge/resources/queue_conformance_*.scxml`, written by
-// `scripts/regen_static_datamodel_swift.sh`. The two `intrusive` fixtures are not among them: Swift
+// `scripts/materialize.sh swift-static-datamodel`. The two `intrusive` fixtures are not among them: Swift
 // refuses that storage by name.
 
 /// An allocator that grants `limit` segments at a time and counts what it was asked. A segment given

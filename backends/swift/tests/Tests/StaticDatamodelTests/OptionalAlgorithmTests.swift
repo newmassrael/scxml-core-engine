@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The algorithms `sce-codegen generate -l swift` writes over a value that may be absent
-// (`scripts/regen_static_datamodel_swift.sh`): the value is a `T?`, absent is `nil`, a
+// (`scripts/materialize.sh swift-static-datamodel`): the value is a `T?`, absent is `nil`, a
 // test of presence is `== nil` and `!= nil`, a read with a default is `??`, and a read
 // of a value proven present is `SceOptional.proven`. A value of zero is a value:
 // presence is what is tested, never the value.

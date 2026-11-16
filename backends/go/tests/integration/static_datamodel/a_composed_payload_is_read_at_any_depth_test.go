@@ -7,7 +7,7 @@
 // AComposedPayloadIsReadAtAnyDepthTest.kt). The committed machine under
 // `static_composed_payload/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
-// (regen: `scripts/regen_static_datamodel_go.sh`).
+// (regen: `scripts/materialize.sh go-static-datamodel`).
 //
 // A delivery whose every list is full is lifted into the machine's own types,
 // and each read at depths 1 to 3 is what a host reads back. A delivery one past

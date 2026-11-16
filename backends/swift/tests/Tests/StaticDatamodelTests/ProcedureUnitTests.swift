@@ -6,7 +6,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The procedures `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The procedures `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a class that adopts the runtime's `ProcedureStateMachine`, whose run loop takes it from the
 // initial state through its service sends to a final state. The units are the documents
 // `tests/forge/resources/procedure_startup_check.scxml` (a decision tree over two inputs) and

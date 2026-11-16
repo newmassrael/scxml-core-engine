@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The algorithms `sce-codegen generate -l swift` writes that call another algorithm
-// (`scripts/regen_static_datamodel_swift.sh`): the callee is a static member of the
+// (`scripts/materialize.sh swift-static-datamodel`): the callee is a static member of the
 // enum its own unit declares, called as `Pascal.camel(…)` in the same module, and a
 // callee that may fail has its failure passed on by the caller.
 final class CallAlgorithmTests: XCTestCase {

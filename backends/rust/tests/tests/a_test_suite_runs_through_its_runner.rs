@@ -7,7 +7,7 @@
 // configurations are the tables sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into
 // `src/integration/static_datamodel/` (regen:
-// `scripts/regen_static_datamodel_rust.sh`), and the components are the
+// `scripts/materialize.sh rust-static-datamodel`), and the components are the
 // machines it writes from the components there. Only the system adapter, which
 // plays the system under test, is written here.
 //

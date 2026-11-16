@@ -6,7 +6,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The unit `sce-codegen generate -l swift` writes for an event schema
-// (`scripts/regen_static_datamodel_swift.sh`): the struct the schema's fields are,
+// (`scripts/materialize.sh swift-static-datamodel`): the struct the schema's fields are,
 // and the constants a host names the event by.
 final class EventSchemaUnitTests: XCTestCase {
     func testAPayloadHoldsTheFieldsItIsBuiltWith() {

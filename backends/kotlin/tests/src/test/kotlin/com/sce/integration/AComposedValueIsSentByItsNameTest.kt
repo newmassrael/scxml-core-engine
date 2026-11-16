@@ -8,7 +8,7 @@
 // `src/main/kotlin/com/sce/integration/static_datamodel/static_composed_send/`
 // is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`
-// (regen: `scripts/regen_static_datamodel_kotlin.sh`).
+// (regen: `scripts/materialize.sh kotlin-static-datamodel`).
 //
 // The first delivery of `batch.sent` is forwarded to the machine itself: four
 // lists and an optional list named as the parts of the payload they are, and a

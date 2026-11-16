@@ -12,7 +12,7 @@
 // external event with its payload and what the machine must hold after it runs
 // to quiescence: its current state and any of its published variables.
 //
-// The machines are the ones scripts/regen_static_datamodel_go.sh commits, one
+// The machines are the ones `scripts/materialize.sh go-static-datamodel` commits, one
 // package each. Those with no scenario here are imported for their effect: a
 // machine nobody built would be a machine nobody type-checked.
 

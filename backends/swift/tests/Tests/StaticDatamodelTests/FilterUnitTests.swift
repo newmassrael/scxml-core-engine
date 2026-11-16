@@ -5,7 +5,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The filters `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The filters `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a class whose `update` reads one sample and answers the filtered one, and whose `reset` forgets
 // what it has seen. The units are of the conformance corpus, whose documents declare the
 // window and the alpha.

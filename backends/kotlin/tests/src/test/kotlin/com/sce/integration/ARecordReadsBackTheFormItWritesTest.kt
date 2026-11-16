@@ -11,7 +11,7 @@
 // of optional elements, a 64-bit integer, a list with a lower count, an
 // optional list and a list of lists). The units are generated from
 // `sce-build/tests/fixtures/test_profile/trace_forms/` (regen:
-// `scripts/regen_static_datamodel_kotlin.sh`).
+// `scripts/materialize.sh kotlin-static-datamodel`).
 //
 // The twin of backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs,
 // with the same values, the same malformed spellings and the same refusals

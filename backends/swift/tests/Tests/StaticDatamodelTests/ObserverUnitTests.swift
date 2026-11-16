@@ -6,7 +6,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The observers `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The observers `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a class that holds a hysteresis state for each monitor, whose `update` answers the events a sample
 // raised in the order the monitors are written, and that raises nothing on a sample that changes no
 // monitor. The unit is the document of `tests/forge/resources/observer_coolant.scxml`.

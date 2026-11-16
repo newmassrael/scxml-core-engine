@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The algorithms `sce-codegen generate -l swift` writes that build a list and hand it
-// back (`scripts/regen_static_datamodel_swift.sh`): the buffer is a local `Array` the
+// back (`scripts/materialize.sh swift-static-datamodel`): the buffer is a local `Array` the
 // body appends to, and what is returned is that array by value.
 final class ListAlgorithmTests: XCTestCase {
     func testAListOfNumbersIsBuiltAndReturned() throws {

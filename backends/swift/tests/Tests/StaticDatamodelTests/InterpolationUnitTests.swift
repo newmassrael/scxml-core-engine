@@ -5,7 +5,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The interpolations `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The interpolations `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a table interpolated between its breakpoints, a static function of the caseless enum its own unit
 // declares, over arrays it holds. An input outside an axis answers the value at the nearer end.
 // The tables of the conformance corpus are units of this target as the fixtures' are.

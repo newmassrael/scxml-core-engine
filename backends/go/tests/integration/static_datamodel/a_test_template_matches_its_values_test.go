@@ -12,7 +12,7 @@
 // is the value struct its unit declares, built by the constructor of its case.
 // The committed units beside this file are generated from the fixtures under
 // `sce-build/tests/fixtures/test_profile/` and the unions they match from
-// `sce-build/tests/fixtures/union/` (regen: `scripts/regen_static_datamodel_go.sh`).
+// `sce-build/tests/fixtures/union/` (regen: `scripts/materialize.sh go-static-datamodel`).
 
 package static_datamodel
 

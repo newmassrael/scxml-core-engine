@@ -9,7 +9,7 @@
 // `a_test_template_matches_its_values.rs`, which holds the same templates to the
 // same values. The committed units under `src/main/kotlin/com/sce/generated/` are
 // generated from the fixtures under `sce-build/tests/fixtures/test_profile/` and
-// `sce-build/tests/fixtures/union/` (regen: `scripts/regen_static_datamodel_kotlin.sh`).
+// `sce-build/tests/fixtures/union/` (regen: `scripts/materialize.sh kotlin-static-datamodel`).
 
 package com.sce.integration
 
