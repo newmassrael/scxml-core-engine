@@ -29,7 +29,9 @@
 //! codec's source interface, so a value is made of any source of the body, and
 //! is written by that codec's own `EncodeSource`. The encode counts a body
 //! over the runtime's `codec.CountingSink` where a length measures its frame
-//! or where its encode can refuse, before the first byte. A number the encode
+//! or where its encode can refuse, before the first byte. A list is the
+//! runtime's `codec.List` of its entries' source interface, held to its bound
+//! and walked through an `iter.Seq`. A number the encode
 //! derives into a field is answered by a method of the value,
 //! `Wire{Field}`, as the frame carries it.
 //!
@@ -62,14 +64,16 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets,
-/// enums, byte strings, texts and bodies of codecs it prints, each always
+/// enums, byte strings, texts, and bodies and lists of codecs it prints, held
+/// to no law and walked with no flag set or handed to an entry, each always
 /// there or decided by a gate on a flag of the codec's own carriers or on an
 /// input the encode is handed, the integers written whole, in bytes they share
 /// with other fields, or as a variable-length integer of 16, 32 or 64 bits,
 /// the byte strings and texts written to the end of the frame or by a length,
 /// and a body handed each flag input it does not say from a carrier or an
 /// input of this codec's; whose every derived element is a length of byte
-/// strings or texts or the encoded length of a body, held in a field or in a
+/// strings or texts, the count of a list, or the encoded length of a body,
+/// held in a field or in a
 /// flag of a carrier the value presents, its `sce:length-arith` never taking
 /// it below zero, or a flag the presence of one element says; and whose
 /// encode refuses what its totality names of these, a refusal of a body it
@@ -143,8 +147,17 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     ));
                 }
             }
-            Value::List { codec, .. } => {
-                forms.push(format!("field '{id}': a list of `{codec}`"));
+            // Walked, each entry written by its codec's own `EncodeSource`,
+            // handed as a body is.
+            Value::List { codec, law, .. } => {
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a list of `{codec}`, which the Go backend does not print"
+                    ));
+                }
+                if !law.is_none() {
+                    forms.push(format!("field '{id}': a list held to a law"));
+                }
             }
         }
     }
@@ -214,8 +227,20 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 if *guard == Guard::Gate {
                     forms.extend(gate_form(plan, field));
                 }
-                // A list or a chain, which the elements above name.
-                if list.is_some() {
+                // A walk of each entry in turn; a chain that sets its entries'
+                // flag, hands an entry what the one before it was, holds a
+                // bare entry's place or is held to a law is not printed yet.
+                if let Some(walk) = list {
+                    if !walk.previous.is_empty()
+                        || walk.slots.is_some()
+                        || walk.ends.is_some()
+                        || walk.lawful
+                    {
+                        forms.push(format!(
+                            "field '{}': a chain whose walk sets or hands its entries a flag",
+                            field.id
+                        ));
+                    }
                     continue;
                 }
                 match &field.bit_size {
@@ -267,10 +292,8 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             } => forms.push(format!(
                 "element '{element}': a length its arithmetic may take below zero"
             )),
-            Measured::Bytes { .. } => {}
-            Measured::Entries { .. } => {
-                forms.push(format!("element '{element}': a count of a list"));
-            }
+            // The bytes of a byte string or a text, or the entries of a list.
+            Measured::Bytes { .. } | Measured::Entries { .. } => {}
             // Counted by the body's own encode over a sink that keeps nothing.
             Measured::Encoded { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
@@ -678,8 +701,9 @@ fn wire_methods(
 fn held_element(l: &LangCtx, measure: &Measure<'_>) -> String {
     let content = match &measure.of {
         Measured::Bytes { field, .. } => field,
+        Measured::Entries { list } => list,
         Measured::Encoded { body, .. } => body,
-        _ => unreachable!("`unlowered` prints a length of bytes, texts or bodies only"),
+        _ => unreachable!("`unlowered` prints a length or a count of content only"),
     };
     format!("s.{}()", l.codec_field_id(&content.id))
 }
@@ -703,6 +727,8 @@ fn held_measure(
             String::new(),
             format!("{held}.Len(){}", length_arith(offset)),
         ),
+        // The entries of the list.
+        Measured::Entries { .. } => (String::new(), format!("{held}.Len()")),
         Measured::Encoded { codec, .. } => (
             format!(
                 "{indent}var _k codec.CountingSink\n\
@@ -711,7 +737,7 @@ fn held_measure(
             ),
             "_k.Position()".to_string(),
         ),
-        _ => unreachable!("`unlowered` prints a length of bytes, texts or bodies only"),
+        _ => unreachable!("`unlowered` prints a length or a count of content only"),
     }
 }
 
@@ -780,15 +806,22 @@ fn count_body(
     if plan.totality.refuses(RefusalKind::Child, &body.id) {
         plan.totality.require(RefusalKind::Child, &body.id);
     }
-    let call = body_encode(
-        plan,
-        imports,
-        alias,
-        &reads.value(&body.id),
-        &format!("&{k}"),
-        carrier,
-    );
-    let check = format!("if err := {call}; err != nil {{\n\treturn err\n}}\n");
+    // A list's entries, each in turn; a body, whole.
+    let list = matches!(plan.value(body), Value::List { .. });
+    let source = if list {
+        "_e".to_string()
+    } else {
+        reads.value(&body.id)
+    };
+    let call = body_encode(plan, imports, alias, &source, &format!("&{k}"), carrier);
+    let mut check = format!("if err := {call}; err != nil {{\n\treturn err\n}}\n");
+    if list {
+        check = format!(
+            "for _e := range {}.All() {{\n{}}}\n",
+            reads.value(&body.id),
+            indented(&check)
+        );
+    }
     out.push_str(&format!("\tvar {k} codec.CountingSink\n"));
     if element_of(plan, &body.id).is_some_and(|e| e.presence.optional()) {
         out.push_str(&format!(
@@ -894,6 +927,68 @@ pub(super) fn render(
                 zero.insert(method.clone(), format!("&{value}{{}}"));
                 source
             };
+            held.insert(id.clone(), ty.clone());
+            elements.push((method, member(id), ty));
+            continue;
+        }
+        // A list or a chain is presented as the runtime's `codec.List` of its
+        // entries' source interface, held to the bound type the codec names
+        // for it (docs/adr/0065 §6 R2) and read through an `iter.Seq`. The
+        // decode read the entries as values of their codec; the list holds
+        // their addresses, made within the bound or refused as the runtime
+        // refuses it.
+        if let Value::List { codec, bound, .. } = &element.value {
+            let (source, value) = body_source(imports, codec);
+            let bound_name = bound_type(struct_name, id);
+            let (held_as, most) = match bound.most {
+                Some(most) => (
+                    format!("{} to {most} entries", bound.least),
+                    most.to_string(),
+                ),
+                None => (
+                    format!(
+                        "{} or more entries, the protocol stating no most",
+                        bound.least
+                    ),
+                    "codec.Unbounded".to_string(),
+                ),
+            };
+            before.push_str(&format!(
+                "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
+                 // (docs/adr/0065 §6 R2). A List of it is made only within it.\n\
+                 type {bound_name} struct{{}}\n\
+                 \n\
+                 // Least is the fewest entries the element holds.\n\
+                 func ({bound_name}) Least() int {{ return {least} }}\n\
+                 \n\
+                 // Most is the most entries the element holds.\n\
+                 func ({bound_name}) Most() int {{ return {most} }}\n\n",
+                least = bound.least
+            ));
+            let list = format!("codec.List[{bound_name}, {source}]");
+            let address = format!("func(e *{value}) {source} {{ return e }}");
+            let (ty, make) = if optional {
+                (
+                    format!("optional.Of[{list}]"),
+                    format!(
+                        "codec.MakeOptionalList[{bound_name}](codec.OptionalSourcesOf({method}, \
+                         {address}))"
+                    ),
+                )
+            } else {
+                (
+                    list,
+                    format!("codec.MakeList[{bound_name}](codec.SourcesOf({method}, {address}))"),
+                )
+            };
+            let local = format!("_l{method}");
+            decoded.push_str(&format!(
+                "\t{local}, err := {make}\n\
+                 \tif err != nil {{\n\
+                 \t\treturn nil, err\n\
+                 \t}}\n"
+            ));
+            made.insert(id.clone(), local);
             held.insert(id.clone(), ty.clone());
             elements.push((method, member(id), ty));
             continue;
@@ -1347,11 +1442,11 @@ fn encode_source(
             refusal(plan, RefusalKind::PresentIfMismatch, &field.id)
         ));
     }
-    // A body whose encode can refuse, which no length counted, is encoded over
-    // a sink that keeps nothing before the first byte, so its refusal leaves w
-    // as it was.
+    // A body whose encode can refuse, which no length counted, and each entry
+    // of a list whose entries' encode can, is encoded over a sink that keeps
+    // nothing before the first byte, so its refusal leaves w as it was.
     for element in &plan.elements {
-        if let Value::Body { codec } = &element.value {
+        if let Value::Body { codec } | Value::List { codec, .. } = &element.value {
             if plan.totality.refuses(RefusalKind::Child, &element.field.id) {
                 count_body(
                     imports,
@@ -1422,7 +1517,21 @@ fn encode_source(
                             body_encode(plan, imports, codec, &read(field), "w", &read)
                         )
                     }
-                    _ => unreachable!("`unlowered` prints no list"),
+                    // Each entry in turn, by its codec's own encode.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        let Value::List { codec, .. } = plan.value(field) else {
+                            unreachable!("a repeated field or a chain holds a list");
+                        };
+                        format!(
+                            "\tfor _e := range {}.All() {{\n\
+                             \t\tif err := {}; err != nil {{\n\
+                             \t\t\treturn err\n\
+                             \t\t}}\n\
+                             \t}}\n",
+                            read(field),
+                            body_encode(plan, imports, codec, "_e", "w", &read)
+                        )
+                    }
                 };
                 out.push_str(&match guard {
                     Guard::Always => body,
@@ -1461,11 +1570,14 @@ struct MeasureText {
 /// string or a text, less or more its `sce:length-arith`, tested present
 /// where a gate may leave it out.
 fn plain_measure(reads: &SourceReads<'_, '_>, measure: &Measure<'_>) -> MeasureText {
-    let Measured::Bytes { field, offset } = &measure.of else {
-        unreachable!("`unlowered` prints a length of byte strings or texts only");
+    let (field, arith) = match &measure.of {
+        Measured::Bytes { field, offset } => (field, length_arith(offset)),
+        // How many entries the list holds.
+        Measured::Entries { list } => (list, String::new()),
+        _ => unreachable!("`unlowered` prints a length of bytes, texts or bodies, or a count"),
     };
     MeasureText {
-        size: format!("{}.Len(){}", reads.value(&field.id), length_arith(offset)),
+        size: format!("{}.Len(){arith}", reads.value(&field.id)),
         present: measure.gated.then(|| reads.present(&field.id)),
     }
 }

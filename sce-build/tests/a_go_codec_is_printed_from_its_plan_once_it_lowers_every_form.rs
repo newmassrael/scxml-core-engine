@@ -444,6 +444,53 @@ fn a_body_is_presented_as_its_source_and_its_encoded_length_is_counted() {
     );
 }
 
+/// A list is presented as the runtime's `codec.List` of its entries' source
+/// interface, held to the bound type the codec names for it, its count
+/// derived from how many entries it holds, and each entry written by its
+/// codec's own encode as the list's `iter.Seq` yields it; a chain that ends
+/// with its scope is walked as a list is.
+///
+/// Turns red where `go_source::render` presents a list as a slice of values,
+/// where the decode makes the list without `codec.MakeList` over the entries'
+/// addresses, where the count is read off the source, or where the walk
+/// ranges over anything but `All()`.
+#[test]
+fn a_list_is_held_to_its_bound_walked_by_its_sequence_and_counted() {
+    assert!(unlowered("codec_declared_bounds").is_empty());
+    let text = resource_go("codec_declared_bounds");
+    holds(
+        "codec_declared_bounds",
+        &text,
+        &[
+            "func (CodecDeclaredBoundsItemsBound) Most() int { return 2 }\n",
+            "\tItems() codec.List[CodecDeclaredBoundsItemsBound, codec_repeat_elem.CodecRepeatElemSource]\n",
+            "\t_dCount := uint8(src.Items().Len())\n",
+            "\tfor _e := range src.Items().All() {\n\
+             \t\tif err := codec_repeat_elem.EncodeSource(_e, w); err != nil {\n\
+             \t\t\treturn err\n\
+             \t\t}\n\
+             \t}\n",
+            "\t_lItems, err := codec.MakeList[CodecDeclaredBoundsItemsBound](codec.SourcesOf(Items, \
+             func(e *codec_repeat_elem.CodecRepeatElem) codec_repeat_elem.CodecRepeatElemSource { return e }))\n",
+            "\t\titems: _lItems,\n",
+            "func (s *CodecDeclaredBounds) WireCount() uint8 {\n\treturn uint8(s.Items().Len())\n}\n",
+        ],
+    );
+    holds_none(
+        "codec_declared_bounds",
+        &text,
+        &["src.Count()", "\tcount uint8\n"],
+    );
+    assert!(unlowered("codec_tlv_chain_basic").is_empty());
+    let text = resource_go("codec_tlv_chain_basic");
+    holds(
+        "codec_tlv_chain_basic",
+        &text,
+        &["\tfor _e := range src.Extensions().All() {\n\
+           \t\tif err := codec_tlv_entry.EncodeSource(_e, w); err != nil {\n"],
+    );
+}
+
 /// A procedure over `codec_length_ref` that assigns `location` from `expr`,
 /// its input `blob` a byte string of at most 32 bytes and `n` an integer.
 fn length_ref_procedure(location: &str, expr: &str) -> String {
@@ -593,7 +640,7 @@ fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures()
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_chain_has_marker", "a list of"),
+        ("codec_chain_has_marker", "a group of fields"),
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
@@ -684,6 +731,8 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_length_shared",
         "codec_length_stated",
         "codec_encoded_length_checked",
+        "codec_declared_bounds",
+        "codec_tlv_chain_basic",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
