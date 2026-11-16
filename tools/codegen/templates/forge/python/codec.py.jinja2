@@ -353,7 +353,7 @@ class {{ struct_name }}:
         raise ValueError(f"no variant arm is named {self.body.kind!r}")
 
 {% endif %}
-    def encode(self, w: SceSink{{ params_after_first_arg }}) -> None:
+    def encode(self, w: SceSink{{ encode_params_after_first_arg }}) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
@@ -363,9 +363,10 @@ class {{ struct_name }}:
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with.{% endif %}"""
 {% if python_source %}
-{# A printed codec's value says none of its flag inputs, so the encode is
-   handed every one, as the decode is. #}
-        encode_source(self, w{{ params_first_arg_with_comma }})
+{# A printed codec's encode is handed the flag inputs its value does not say
+   (docs/adr/0065 §6 R4a), and reads the others off the value; the decode is
+   handed every one. #}
+        encode_source(self, w{{ encode_args_with_comma }})
 {% else %}
 {% if has_parent_flags %}
         # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.
@@ -449,11 +450,11 @@ class {{ struct_name }}:
 {% endif %}
 {% endif %}
 
-    def encode_to_bytes(self{{ params_after_first_arg }}) -> bytes:
+    def encode_to_bytes(self{{ encode_params_after_first_arg }}) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst){{ params_first_arg_with_comma }})
+        self.encode(BytearraySink(_dst){{ encode_args_with_comma }})
         return bytes(_dst)

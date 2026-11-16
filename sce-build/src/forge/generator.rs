@@ -15177,21 +15177,23 @@ fn render_codec(
         "params_first_arg_with_comma".into(),
         flag_input_call_args_with_comma.into(),
     );
-    // The Rust encode, and that of a C++ codec printed from its plan, is handed
-    // only the inputs its value does not say (docs/adr/0065 §6 R4a); the decode
-    // is handed every input. Another encode is handed every input until it
-    // takes the source interface.
-    let encode_inputs: Vec<FlagInput> =
-        if matches!(lang, crate::generator::Language::Rust) || cpp_printed.is_some() {
-            let roles = crate::forge::codec_roles::classify(m, imports);
-            m.flag_inputs
-                .iter()
-                .filter(|input| !roles.says_input(&input.name))
-                .cloned()
-                .collect()
-        } else {
-            m.flag_inputs.clone()
-        };
+    // The Rust encode, and that of a C++ or a Python codec printed from its
+    // plan, is handed only the inputs its value does not say (docs/adr/0065 §6
+    // R4a); the decode is handed every input. Another encode is handed every
+    // input until it takes the source interface.
+    let encode_inputs: Vec<FlagInput> = if matches!(lang, crate::generator::Language::Rust)
+        || cpp_printed.is_some()
+        || python_printed.is_some()
+    {
+        let roles = crate::forge::codec_roles::classify(m, imports);
+        m.flag_inputs
+            .iter()
+            .filter(|input| !roles.says_input(&input.name))
+            .cloned()
+            .collect()
+    } else {
+        m.flag_inputs.clone()
+    };
     let (encode_params_after_first_arg, encode_params_first_arg) =
         compute_flag_input_param_fragments(&encode_inputs, lang);
     ctx.insert(
@@ -19346,11 +19348,18 @@ fn embed_flag_bind_thread_args_supplying(
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
-        // A C++ codec is printed from its plan, and is not handed, on encode,
-        // an input its value says (docs/adr/0065 §6 R4a): its encode reads it
-        // off the value. Its decode is handed every input.
-        let encode_hands =
-            !(matches!(lang, Language::Cpp) && imp.codec_says_inputs.contains(&input.name));
+        // A C++ codec is printed from its plan, and so is a Python codec the
+        // Python printer lowers; neither is handed, on encode, an input its
+        // value says (docs/adr/0065 §6 R4a): its encode reads it off the
+        // value. Its decode is handed every input.
+        let printed = match lang {
+            Language::Cpp => true,
+            Language::Python => imp.python_printed,
+            Language::Rust | Language::Kotlin | Language::Go | Language::C11 | Language::Swift => {
+                false
+            }
+        };
+        let encode_hands = !(printed && imp.codec_says_inputs.contains(&input.name));
         if let Some(arg) = supplied(&input.name) {
             // A Swift codec takes its inputs as labelled parameters, named as the leaf names them.
             let passed = match lang {
