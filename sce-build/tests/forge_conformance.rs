@@ -18377,13 +18377,15 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
 
 // ── A value past its bound: what the generated encode DOES ─────────────────
 //
-// Go, Kotlin and Python hold a byte string and a list in a container any length
-// fits, so their encode refuses a value outside the field's bound before its
-// first byte, with the error a decode of that frame gives (docs/adr/0077 §3),
-// and their convenience facade answers no frame. A C++ codec printed from its
-// plan presents a byte string as `Bytes<MAX>` and a list as `List<T, MAX>`,
-// which hold the bound, so such a value cannot be made and its encode refuses
-// nothing (docs/adr/0081 step 4). Rust cannot be handed such a value either
+// Go and Kotlin hold a byte string and a list in a container any length fits,
+// so their encode refuses a value outside the field's bound before its first
+// byte, with the error a decode of that frame gives (docs/adr/0077 §3), and
+// their convenience facade answers no frame. A C++ codec printed from its plan
+// presents a byte string as `Bytes<MAX>` and a list as `List<T, MAX>`, which
+// hold the bound, so such a value cannot be made and its encode refuses
+// nothing (docs/adr/0081 step 4). A printed Python codec holds them as
+// `BoundedBytes` and `BoundedTuple`, which refuse the value where it is made
+// with the same error, and derives the length and the count it writes. Rust cannot be handed such a value either
 // (its types hold the bounds), and C11 is held by `codec_encode_bound_test.c`.
 // `codec_length_ref` holds at most 32 bytes and `codec_repeat_basic` at most
 // 32 two-byte entries.
@@ -18398,24 +18400,22 @@ fn bound_python_program() -> String {
     r#"from bound_pkg.codec_length_ref import CodecLengthRef
 from bound_pkg.codec_repeat_basic import CodecRepeatBasic
 from bound_pkg.codec_repeat_elem import CodecRepeatElem
-from sce_forge_runtime.codec import BytearraySink, LengthOutOfRange, TooManyElements
+from sce_forge_runtime.codec import LengthOutOfRange, TooManyElements
 
 
-def refused(value, error):
-    out = bytearray()
+def refused(make, error):
     try:
-        value.encode(BytearraySink(out))
+        value = make()
     except error:
-        assert out == bytearray(), "a refusal writes nothing"
         return
-    raise AssertionError(f"{type(value).__name__} encoded a value past its bound")
+    raise AssertionError(f"{type(value).__name__} was made past its bound")
 
 
-refused(CodecLengthRef(msg_id=1, len=33, payload=bytes(33)), LengthOutOfRange)
-at = CodecLengthRef(msg_id=1, len=32, payload=bytes(32)).encode_to_bytes()
+refused(lambda: CodecLengthRef(msg_id=1, payload=bytes(33)), LengthOutOfRange)
+at = CodecLengthRef(msg_id=1, payload=bytes(32)).encode_to_bytes()
 assert at == bytes([1, 32]) + bytes(32), at
-refused(CodecRepeatBasic(num_frags=33, frags=[CodecRepeatElem() for _ in range(33)]), TooManyElements)
-full = CodecRepeatBasic(num_frags=32, frags=[CodecRepeatElem() for _ in range(32)]).encode_to_bytes()
+refused(lambda: CodecRepeatBasic(frags=[CodecRepeatElem() for _ in range(33)]), TooManyElements)
+full = CodecRepeatBasic(frags=[CodecRepeatElem() for _ in range(32)]).encode_to_bytes()
 assert len(full) == 1 + 32 * 2, len(full)
 "#
     .to_string()
@@ -20911,7 +20911,7 @@ z = v.exts[1].body.codec_zenoh_value_zbuf
 assert z.value_len == 1026, "the declared length is read, not trusted"
 assert z.value is None, "no plain value after the marker"
 assert z.encoding == 0 and z.slice_count == 1, "encoding and slice count"
-assert [(s.kind, s.len, s.data) for s in z.slices] == [
+assert [(s.kind, len(s.data), s.data) for s in z.slices] == [
     (1, 7, bytes([0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]))
 ], "the slice"
 assert v.encode_to_bytes() == SHM, "shm round trip"
