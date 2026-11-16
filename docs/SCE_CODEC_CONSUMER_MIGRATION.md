@@ -2849,3 +2849,23 @@ for). Every other C11 codec is unchanged.
 - The header declares `{codec}_value_<element>` (the value's readers) and `{codec}_value_source`; a function or a
   macro of yours by one of those names now collides with it.
 
+## A printed C11 codec derives its byte strings' lengths, and presents each byte string as a bounded view (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the
+positional codecs that also hold byte strings and texts, each always there, whose every derived element is the
+length of one of them in a field of its own (`sce_build::c11_codec_printed_file` answers `Some(true)`).
+
+- A length the encode derives is no longer a member of `{codec}_t`: `msg.len` is gone, and `decode` sets none.
+  Delete each `msg.len = ...;` and set the byte string's own `msg.payload_len`, as before; read `msg.payload_len`
+  where you read the length. Where the length's field was named `payload_len`, the member stays and is the byte
+  string's own length, now a `size_t`.
+- `{codec}_encode` writes the length of the bytes it writes, less or more what `sce:length-arith` says, so a value
+  whose length member disagreed with its bytes, which wrote a frame no decode reads back as the value, now writes
+  the bytes it holds. It refuses, before the first byte, a byte string or text whose length is outside its bound
+  (`SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`, now also below a least, such as the one byte a `-1` arithmetic needs) and
+  a text no UTF-8 holds (`SCE_FORGE_CODEC_INVALID_UTF8`).
+- A source presents a byte string as `{codec}_{element}_bytes_t` and a text as `{codec}_{element}_text_t`, a
+  `{ data, len }` view of bytes it does not own. Make one with `{codec}_{element}_bytes_make(&view, data, len)`
+  (or `_text_make`), which answers `SCE_FORGE_CODEC_OK` or the refusal of a length outside the bound or of a text
+  no UTF-8 holds; the encode over a source then refuses nothing of it.
+

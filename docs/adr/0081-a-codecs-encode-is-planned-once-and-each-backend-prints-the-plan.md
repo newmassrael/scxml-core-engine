@@ -1900,6 +1900,28 @@ old encode, the old encode and its templates are removed in the same landing.
    `a_c11_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a printed header, that every codec of the
    resources is printed exactly where the printer lowers every form of it, and a consumer's record of its own layout
    encoded through a table of its own to the value's bytes.
+
+   *The second C11 landing, 2026-11-16:* byte strings and texts of a positional layout, always there, and the lengths
+   derived from one of them into a field of its own that the length fits, its `sce:length-arith` never taking it
+   below zero. The refinement of R1 is the first C11 refinement, and its shape is the C one §2 names: a view of a
+   type of its own for each element, `{codec}_{element}_bytes_t` or `{codec}_{element}_text_t`, `{ data, len }`,
+   made by one function, `{codec}_{element}_bytes_make(&view, data, len)`, which answers
+   `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` for a length outside the bound and, for a text, `SCE_FORGE_CODEC_INVALID_UTF8`
+   for bytes no UTF-8 holds. The source presents the element as that view, so the encode over a source writes it
+   whole and refuses nothing of it, and a consumer views bytes it holds anywhere with no copy. The suffix keeps the
+   view's name apart from the struct of another codec named after the element (`codec_zenoh_push` and
+   `codec_zenoh_push_body`). A derived length leaves the value (§3): the struct declares no member of it, the
+   encode computes it from the view's `len`, less or more its arithmetic, and the decode reads it into a local
+   (`_d_<field>`, `c11_source::derived_local`) that it cuts the bytes by. Where the length's field is named as the
+   array's own length member (`payload_len` beside `payload`), the array keeps a `size_t` length member of that
+   name, as it does beside any other length. The value's struct holds a byte string in an array beside its length,
+   as C holds a value with no allocator, and C cannot keep that length within the view's bound by a type, so the
+   value's `encode` holds the array to the bound (the element's, or the array's own where a capacity makes it
+   smaller), a text to UTF-8, before the first byte, and then encodes over the value's table: a value past them is no
+   value of the codec, as docs/adr/0086 §5.4 holds a value a host built in C. A streamed layout's byte strings and the
+   lengths it carries, which its decode reads through a statement for each field, wait for their own landing. The C11
+   harness sets a byte string's array and length by statements, and its `cases` and the test-vector sidecar
+   neither set nor read back an element the encode derives.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
