@@ -2177,6 +2177,9 @@ Landing: the commit that adds this section, and each later one that names a form
   type that declares the properties is encoded with no copy into the struct. A type of the consumer's own module
   named `{Codec}Source` is renamed.
 - The forms printed so far: a frame laid out by byte of numbers each always there (an integer, a flag set presented
-  whole, a value of an imported enum), none derived, with no flag input and no one-bit flag a parent sets. A codec
-  that holds another form keeps its template's encode, unchanged, until a later landing names it here.
+  whole, a value of an imported enum), none derived, with no flag input. A codec that holds another form keeps its
+  template's encode, unchanged, until a later landing names it here.
+- A one-bit flag of a printed codec that a parent may set in place of the value's own (the flag a chain's entries end
+  on) is a member of `{Codec}.Overrides`, `nil` by default, and `encodeSource` takes `overrides:` last, defaulting to
+  none set.
 

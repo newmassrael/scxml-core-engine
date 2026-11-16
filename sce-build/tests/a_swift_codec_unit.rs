@@ -95,9 +95,28 @@ fn a_flag_of_one_bit_is_a_bool_property_over_its_carrier() {
         "{code}"
     );
     assert!(
-        code.contains("storeInteger(self.header, into: &frame, at: 0, .big)"),
+        code.contains("storeInteger(header_folded, into: &frame, at: 0, .big)"),
         "the flags do not change the wire: {code}"
     );
+    // A one-bit flag a parent may set (the flag a chain's entries end on) is a member of the
+    // codec's `Overrides`, folded into its carrier before the carrier is written.
+    for (expected, why) in [
+        (
+            "public var headerReliable: Bool?",
+            "the override of a flag is named for its carrier and itself",
+        ),
+        (
+            "into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {",
+            "a caller that sets no flag hands nothing",
+        ),
+        ("var header_folded = source.header", "the carrier as the value presents it"),
+        (
+            "if let set = overrides.headerReliable { header_folded = set ? (header_folded | 0x80) : (header_folded & ~0x80) }",
+            "a flag the parent sets replaces the value's own",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
 }
 
 #[test]
@@ -224,6 +243,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_subbyte.scxml",
         "tests/forge/resources/codec_enum_fields.scxml",
         "tests/forge/resources/codec_zenoh_keep_alive.scxml",
+        "tests/forge/resources/codec_flags_basic.scxml",
+        "tests/forge/resources/codec_optional_field_attributes.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -239,8 +260,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
     }
     for (template, why) in [
         (
-            "tests/forge/resources/codec_flags_basic.scxml",
-            "a one-bit flag a parent may set",
+            "tests/forge/resources/codec_present_if_basic.scxml",
+            "an element a gate decides",
         ),
         (
             "tests/forge/resources/codec_length_ref.scxml",
@@ -738,15 +759,15 @@ fn a_field_whose_bits_leave_its_byte_is_read_from_its_word_and_written_by_its_pi
         "a decode reads the big-endian word of bytes 1 and 2, moves it down and masks it: {code}"
     );
     assert!(
-        code.contains("frame[1] |= UInt8(truncatingIfNeeded: (self.reading >> 4) & 0xFF) << 0"),
+        code.contains("frame[1] |= UInt8(truncatingIfNeeded: (source.reading >> 4) & 0xFF) << 0"),
         "byte 1 holds the high eight of the twelve bits: {code}"
     );
     assert!(
-        code.contains("frame[2] |= UInt8(truncatingIfNeeded: self.reading & 0xF) << 4"),
+        code.contains("frame[2] |= UInt8(truncatingIfNeeded: source.reading & 0xF) << 4"),
         "the high nibble of byte 2 holds the low four: {code}"
     );
     assert!(
-        code.contains("storeInteger(self.status, into: &frame, at: 0, .little)"),
+        code.contains("storeInteger(status_folded, into: &frame, at: 0, .little)"),
         "a field that is the whole of its integer is stored whole: {code}"
     );
     assert!(

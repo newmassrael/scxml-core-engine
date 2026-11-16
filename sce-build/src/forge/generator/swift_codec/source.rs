@@ -14,7 +14,9 @@
 //! form it does not lower yet keeps the encode of its template, and [`unlowered`] names that form,
 //! so no codec has two encodes. The forms printed are a positional frame laid out by byte, of
 //! numbers each always there (an integer, a flag set presented whole, a value of an imported enum),
-//! none derived, with no flag input, no flag a parent sets, and an encode that refuses nothing.
+//! none derived, with no flag input and an encode that refuses nothing; a one-bit flag a parent may
+//! set in place of the one the value presents (`EncodePlan::overridable`) is a member of the
+//! codec's `Overrides`, which the encode is handed and folds into its carrier.
 
 use super::*;
 use crate::forge::encode_plan::{CodecPlan, EncodePlan, Presence, Value, Write};
@@ -72,12 +74,6 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
     {
         return Some(format!("the flag input `{}`", input.name));
     }
-    if let Some((carrier, flag)) = plan.overridable.first() {
-        return Some(format!(
-            "the flag `{}` of `{}`, which a parent may set",
-            flag.name, carrier.id
-        ));
-    }
     if !plan.totality.is_total() {
         return Some("an encode that refuses a value".to_string());
     }
@@ -128,19 +124,49 @@ pub(super) fn context(
             .get(&f.id)
             .expect("every field the printer writes holds a number")
     };
-    let mut writes = Vec::new();
+    // The one-bit flags a parent may set in place of the ones the value presents (the flag a chain's
+    // entries end on), each a member of `Overrides`, and the carriers they are folded into before a
+    // byte is written: what the parent says is what the wire holds.
+    let mut overrides = Vec::new();
+    let mut folds: Vec<String> = Vec::new();
+    let mut folded: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for &(carrier, flag) in &plan.overridable {
+        let member = override_member(&carrier.id, &flag.name);
+        let local = folded_carrier(&carrier.id);
+        if folded.insert(carrier.id.as_str()) {
+            folds.push(format!("var {local} = {SOURCE}.{}", carrier.id));
+        }
+        let mask = format!("0x{:X}", 1u64 << flag.bit);
+        folds.push(format!(
+            "if let set = overrides.{member} {{ {local} = set ? ({local} | {mask}) : ({local} & ~{mask}) }}"
+        ));
+        overrides.push(serde_json::json!({
+            "member": member,
+            "flag": flag.name,
+            "carrier": carrier.id,
+        }));
+    }
+    // A field as the encode reads it: the carrier the overrides are folded into, else the source's.
+    let read = |f: &CodecField| {
+        if folded.contains(f.id.as_str()) {
+            folded_carrier(&f.id)
+        } else {
+            format!("{SOURCE}.{}", f.id)
+        }
+    };
+    let mut writes = folds;
     for write in &plan.program {
         match *write {
             Write::Whole(f) => writes.extend(whole_write(
                 l,
                 f,
                 carrier_of(f),
-                SOURCE,
+                &read(f),
                 plan.model.default_endian,
             )),
             Write::Byte { at, ref pieces } => {
                 for &(f, piece) in pieces {
-                    writes.push(piece_write(l, f, carrier_of(f), SOURCE, at, piece));
+                    writes.push(piece_write(l, carrier_of(f), &read(f), at, piece));
                 }
             }
             Write::Tail { .. } | Write::Streamed { .. } | Write::Variant => {
@@ -152,5 +178,18 @@ pub(super) fn context(
         "protocol": source_protocol(&plan.model.name),
         "requirements": requirements,
         "writes": writes,
+        "overrides": overrides,
     })
+}
+
+/// The member of a printed codec's `Overrides` that sets the flag `flag` of the carrier `carrier`:
+/// the two names in lower camel case, so two carriers' flags of one name are two members.
+pub(crate) fn override_member(carrier: &str, flag: &str) -> String {
+    filters::to_camel_case(format!("{carrier}_{flag}"))
+}
+
+/// The local a printed encode folds the flags a parent sets into the carrier `carrier` in. A field is
+/// read through the source and never bare, so the local hides no field.
+fn folded_carrier(carrier: &str) -> String {
+    format!("{carrier}_folded")
 }

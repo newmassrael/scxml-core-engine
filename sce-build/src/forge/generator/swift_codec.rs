@@ -704,19 +704,13 @@ fn bits_of_word(span: &BitSpan, swift_type: &str) -> String {
     }
 }
 
-/// The statement that ors the piece `piece` of the field `f` of `holder` (the value an encode
-/// writes: `self`, or the source a printed encode is handed) into byte `at` of the frame
-/// (docs/adr/0095 §2): the value moved down to the piece's first bit and masked, narrowed to a
-/// byte where the field is wider than one, and moved up to where the piece lands in the byte.
-fn piece_write(
-    l: &LangCtx,
-    f: &CodecField,
-    carrier: &Carrier,
-    holder: &str,
-    at: u32,
-    piece: Piece,
-) -> String {
-    let value = carrier.to_wire(l, &format!("{holder}.{}", f.id));
+/// The statement that ors the piece `piece` of a field into byte `at` of the frame
+/// (docs/adr/0095 §2), `read` being the field's value as the encode reads it (`self.f`, the source
+/// a printed encode is handed, or a carrier it has folded flags into): the value moved down to the
+/// piece's first bit and masked, narrowed to a byte where the field is wider than one, and moved up
+/// to where the piece lands in the byte.
+fn piece_write(l: &LangCtx, carrier: &Carrier, read: &str, at: u32, piece: Piece) -> String {
+    let value = carrier.to_wire(l, read);
     let down = if piece.from == 0 {
         value
     } else {
@@ -754,11 +748,23 @@ fn fixed_writes(
     for slot in crate::forge::bit_layout::slots(&m.fields, m.default_endian) {
         match slot {
             Slot::Whole(f) => {
-                lines.extend(whole_write(l, f, carrier_of(f), "self", m.default_endian));
+                lines.extend(whole_write(
+                    l,
+                    f,
+                    carrier_of(f),
+                    &format!("self.{}", f.id),
+                    m.default_endian,
+                ));
             }
             Slot::Byte { at, pieces } => {
                 for (f, piece) in pieces {
-                    lines.push(piece_write(l, f, carrier_of(f), "self", at, piece));
+                    lines.push(piece_write(
+                        l,
+                        carrier_of(f),
+                        &format!("self.{}", f.id),
+                        at,
+                        piece,
+                    ));
                 }
             }
         }
@@ -766,30 +772,28 @@ fn fixed_writes(
     lines
 }
 
-/// The statements that write the field `f` of `holder`, a fixed field that shares none of its
-/// bytes, into a frame of zeros (docs/adr/0095 §2): stored as its bytes in its byte order where it
-/// is the whole of its carrier, and else by the piece it holds in each of its bytes.
+/// The statements that write the fixed field `f`, which shares none of its bytes, into a frame of
+/// zeros (docs/adr/0095 §2), `read` being its value as the encode reads it: stored as its bytes in
+/// its byte order where it is the whole of its carrier, and else by the piece it holds in each of
+/// its bytes.
 fn whole_write(
     l: &LangCtx,
     f: &CodecField,
     carrier: &Carrier,
-    holder: &str,
+    read: &str,
     default_endian: Endian,
 ) -> Vec<String> {
     let span = BitSpan::of(f, default_endian).expect("a fixed field");
     if whole_of_its_type(&span, carrier.width) {
         return vec![format!(
             "storeInteger({}, into: &frame, at: {}, .{})",
-            carrier.to_wire(l, &format!("{holder}.{}", f.id)),
+            carrier.to_wire(l, read),
             span.byte,
             order_of(span.endian)
         )];
     }
     (span.byte..span.end())
-        .filter_map(|at| {
-            span.piece(at)
-                .map(|p| piece_write(l, f, carrier, holder, at, p))
-        })
+        .filter_map(|at| span.piece(at).map(|p| piece_write(l, carrier, read, at, p)))
         .collect()
 }
 

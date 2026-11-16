@@ -300,11 +300,29 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     }
 
 {% if printed %}
+{% if printed.overrides %}
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `{{ struct_name }}` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+{% for o in printed.overrides %}
+        /// The `{{ o.flag }}` flag of `{{ o.carrier }}`, where a parent sets it.
+        public var {{ o.member }}: Bool?
+{% endfor %}
+
+        public init({% for o in printed.overrides %}{{ o.member }}: Bool? = nil{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for o in printed.overrides %}
+            self.{{ o.member }} = {{ o.member }}
+{% endfor %}
+        }
+    }
+
+{% endif %}
     /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
     /// (docs/adr/0081): any type that presents the elements of `{{ printed.protocol }}` is written,
     /// with no copy into `{{ struct_name }}`. It refuses nothing; a bounded sink that cannot hold
     /// all of the frame answers `bufferOverflow` and holds none of it.
-    public static func encodeSource<S: {{ printed.protocol }}, Sink: SceSink>(_ source: S, into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<S: {{ printed.protocol }}, Sink: SceSink>(_ source: S, into sink: inout Sink{% if printed.overrides %}, overrides: Overrides = Overrides(){% endif %}) throws(CodecError) {
         {{ "var" if printed.writes else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
 {% for line in printed.writes %}
         {{ line }}

@@ -5808,8 +5808,8 @@ mod tests {
             first["checks"][2]["holds"],
             serde_json::json!("decoded.payload == value.payload")
         );
-        // A one-bit flag a parent may set is a form the printer does not lower yet.
-        let template = fixture("codec_flags_basic");
+        // An element a gate decides is a form the printer does not lower yet.
+        let template = fixture("codec_present_if_basic");
         let mut value = serde_json::to_value(template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
