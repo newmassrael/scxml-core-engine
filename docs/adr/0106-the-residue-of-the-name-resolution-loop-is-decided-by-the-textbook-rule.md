@@ -95,6 +95,17 @@ same text (a YAML event reader that reports line and column), consulted only on 
 key path a refusal already names (`machines.x.bindings.y`) to the row of its last key. Left: it adds a dependency,
 which needs a lockfile change and a build this ADR could not make.
 
+Implemented (2026-11-16): `yaml-rust2` 0.11 (MSRV 1.65, without its input-encoding feature) is the marked reader
+(`mesh::deploy_marks`). `DeployError::key_path` gives every refusal the key it is about, by an exhaustive match, so a
+new refusal cannot be added without deciding where it stands; the refusals about no key (an unreadable file, a YAML
+syntax error that serde places in its message, an identifier count past its ceiling, a link no deployment declares)
+answer `None`. A path names the machine's device as any key (a refusal names the machine, not its device), a
+queryable by its `name`, a machine of a partition's list by its value, and an unknown binding key by the dotted
+location the refusal already spelled. The lookup stands on the deepest key of the path that was written (a missing
+field stands on the entry it is missing from) and, when the record carries `actual`, on the key or value of that
+entry or a parent of it that is `actual`. `DeployConfig` keeps the text it was parsed from; the CLI's deploy reader,
+the mesh transport compile and the orchestrator's deploy-side checks place their refusals through it.
+
 ### #112 — an arriving event name is matched by its token prefix
 
 Fixed before this ADR: `a6806700fb` (2026-10-04) resolves an arriving name to the longest token prefix the document

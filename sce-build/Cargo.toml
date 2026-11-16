@@ -60,6 +60,12 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # YAML parsing for deploy.yaml (SCE Mesh topology configuration).
 # serde_yaml_ng is the actively-maintained successor to the deprecated serde_yaml.
 serde_yaml_ng = "0.9"
+# The marked reading of the same deploy.yaml text: a YAML event parser that
+# reports where each key was written, consulted when a deployment is refused
+# so the refusal names the row and column of the key it is about
+# (docs/adr/0106, #76). serde_yaml_ng keeps no marks. MSRV 1.65; the text is
+# already a `&str`, so the input-encoding feature is not taken.
+yaml-rust2 = { version = "0.11", default-features = false }
 # ECMAScript→Lua regex transformations
 regex = "1"
 # Derive macros for std::error::Error — structured error hierarchy

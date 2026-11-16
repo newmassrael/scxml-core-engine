@@ -434,6 +434,15 @@ own sites still place some records at the element that holds the token,
 and are moved to it as they are measured (docs/adr/0106, item #81), which
 is why §3.1.1's guard reads `line` and not yet `col`.
 
+A refusal of a deployment (`deploy.yaml`) stands at the key it names: the
+key path each refusal is about (`DeployError::key_path`) is looked up in a
+marked reading of the deployment's text, and the record is placed at the
+deepest key of that path the author wrote, or where its `actual` is written
+on that key or a parent of it. A refusal that is about no key (the file
+could not be read, a count over the whole deployment ran past a ceiling)
+names the file alone; a YAML syntax refusal carries serde's row in its
+message.
+
 `file` names the document **as the caller named it** — the path passed
 to `check` / `generate`, not its basename. A consumer opens it to apply
 a fix, and `file` is one of the id's hash inputs, so a producer that

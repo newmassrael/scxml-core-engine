@@ -162,6 +162,14 @@ pub struct DeployConfig {
     /// `None` for a text parsed with no path ([`Self::label`]).
     #[serde(skip)]
     pub source: Option<String>,
+
+    /// The text this deployment was read from, set by [`parse_deploy_str`]:
+    /// a refusal of a fact it states is placed at the row and column of the
+    /// key it names by reading this text again, with marks
+    /// ([`Self::mark_of`], docs/adr/0106 #76). Not a key of the file; `None`
+    /// for a deployment built in code.
+    #[serde(skip)]
+    pub text: Option<std::sync::Arc<str>>,
 }
 
 /// The name a deployment given as text, with no path, is labelled by: the
@@ -3774,7 +3782,7 @@ pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
 
 /// Parse deploy.yaml from a string (filesystem-free, testable).
 pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
-    let cfg: DeployConfig = serde_yaml_ng::from_str(content).map_err(|e| {
+    let mut cfg: DeployConfig = serde_yaml_ng::from_str(content).map_err(|e| {
         let msg = e.to_string();
         // Promote the sentinel-tagged custom error emitted by
         // `PartitionMap::deserialize` into a structured diagnostic.
@@ -3794,6 +3802,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
         }
         DeployError::Yaml(msg)
     })?;
+    cfg.text = Some(std::sync::Arc::from(content));
 
     if let Some(v) = &cfg.version {
         if !SUPPORTED_VERSIONS.contains(&v.as_str()) {
@@ -7630,6 +7639,22 @@ impl DeployConfig {
     /// name, and two deployments of one build were reported at the same one.
     pub fn label(&self) -> &str {
         self.source.as_deref().unwrap_or(DEPLOY_FILE_NAME)
+    }
+
+    /// Where in this deployment's text `err` stands, when it is a refusal of
+    /// a key of it ([`DeployError::mark_in`]): with [`Self::label`], the
+    /// `location` of its record. `None` for any other refusal, and for a
+    /// deployment that keeps no text.
+    pub fn mark_of(
+        &self,
+        err: &crate::mesh::error::MeshError,
+    ) -> Option<crate::mesh::deploy_marks::Mark> {
+        match err {
+            crate::mesh::error::MeshError::Deploy(refusal) => {
+                refusal.mark_in(self.text.as_deref()?)
+            }
+            _ => None,
+        }
     }
 
     /// What this deployment's storing forms hold (docs/adr/0077 §7), as a

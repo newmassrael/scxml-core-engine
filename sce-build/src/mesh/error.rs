@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+use crate::mesh::deploy_marks::{DeployKeyPath, DeployMarks, Mark};
+
 /// Render the " — closest legal key: `x`" clause for
 /// [`DeployError::UnknownBindingField`], or the empty string when nothing
 /// in the legal set is near enough to be a plausible slip.
@@ -2771,6 +2773,309 @@ pub enum DeployError {
         /// `Display` text.
         reason: EventSchemaMismatchReason,
     },
+}
+
+impl DeployError {
+    /// The key of the deployment this refusal is about (docs/adr/0106, #76):
+    /// what [`Self::mark_in`] places it by. A refusal of a key the author did
+    /// not write names the key it is missing from, or the missing key itself
+    /// under it (the lookup stands on the deepest key that was written).
+    ///
+    /// `None` for the refusals that are about no key: the file could not be
+    /// read, its YAML could not be (serde places that one in its message), or a
+    /// count over the whole deployment ran past a ceiling.
+    ///
+    /// ⚠ No `_` arm: a new refusal decides where it stands here, or the crate
+    /// does not build.
+    pub fn key_path(&self) -> Option<DeployKeyPath> {
+        use DeployKeyPath as P;
+        let binding =
+            |machine: &str, binding: &str| P::machine(machine).key("bindings").key(binding);
+        let queryable =
+            |machine: &str, name: &str| P::machine(machine).key("queryables").item("name", name);
+        let session_runtime =
+            |machine: &str| P::machine(machine).key("scheduler").key("session_runtime");
+        let last = |names: &[String]| names.last().cloned().unwrap_or_default();
+        Some(match self {
+            Self::ReadFile { .. }
+            | Self::Yaml(_)
+            | Self::SomeipScxmlInvokeServiceIdOverflow { .. }
+            | Self::SomeipLivenessServiceIdOverflow { .. }
+            | Self::SomeipMachineLivenessServiceIdOverflow { .. }
+            | Self::LinkNotDeclaredInDeploy { .. } => return None,
+            Self::UnsupportedVersion { .. } => P::root("version"),
+            Self::DuplicateMachine { machine, .. }
+            | Self::ScxmlInvokeTargetConflict { machine, .. }
+            | Self::PartitionSynthInfixCollision { machine } => P::machine(machine),
+            Self::ChildEntryShape { machine, .. } => P::machine(machine).key("invoked_by"),
+            Self::ChildUnknownParent { machine, .. } | Self::ChildPooledParent { machine, .. } => {
+                P::machine(machine).key("invoked_by").key("machine")
+            }
+            Self::ChildDuplicateSite { second, .. } => P::machine(second).key("invoked_by"),
+            Self::ChildPartitioned { machine, partition } => {
+                P::partition(partition).key("machines").value(machine)
+            }
+            Self::ChildUnknownInvoke { machine, .. } | Self::ChildGeneratedId { machine, .. } => {
+                P::machine(machine).key("invoked_by").key("invoke")
+            }
+            Self::ChildUndeclared { parent, .. } => P::machine(parent),
+            Self::InvalidOrderingTimings { machine, .. } => P::machine(machine).key("ordering"),
+            Self::InvalidDedupWindow { machine, .. } => P::machine(machine).key("dedup"),
+            Self::DeliveryConflict {
+                machine, target, ..
+            } => binding(machine, target),
+            Self::InvalidCustomTcpSocket { device, .. } => {
+                P::device(device).key("transports").key("custom_tcp")
+            }
+            Self::InvalidDdsQos { device, .. } => {
+                P::device(device).key("transports").key("dds").key("qos")
+            }
+            Self::InvalidLiveliness { machine, .. } => P::machine(machine).key("liveliness"),
+            Self::InvalidServerResponseDeadline { machine, .. } => P::machine(machine)
+                .key("server")
+                .key("response_deadline_ms"),
+            Self::InvalidOutboundBuffer { machine, .. } => {
+                P::machine(machine).key("outbound_buffer")
+            }
+            Self::InvalidRetryPolicy {
+                machine, target, ..
+            } => binding(machine, target).key("retry"),
+            Self::InvalidAuthPolicy {
+                machine, target, ..
+            } => binding(machine, target).key("auth"),
+            Self::DiscoveryNotSupported { .. } => P::root("discovery"),
+            Self::PoolNotSupportedByTransport {
+                machine,
+                binding: b,
+                ..
+            }
+            | Self::PoolMissingMemberList {
+                machine,
+                binding: b,
+                ..
+            }
+            | Self::PoolInvalidPlaceholder {
+                machine,
+                binding: b,
+                ..
+            } => binding(machine, b),
+            Self::CrossTargetReplyNotSupported {
+                machine,
+                binding: b,
+                ..
+            }
+            | Self::InvalidReplyFrom {
+                machine,
+                binding: b,
+                ..
+            } => binding(machine, b).key("reply_from"),
+            Self::UnknownBindingField {
+                location, field, ..
+            } => P::Dotted(format!("{location}.{field}")),
+            Self::PoolEmptyMemberList {
+                machine,
+                binding: b,
+                declared_field,
+            }
+            | Self::PoolBindingFieldNotSupported {
+                machine,
+                binding: b,
+                declared_field,
+                ..
+            } => binding(machine, b).key(declared_field),
+            Self::PoolDispatchWithoutMember {
+                machine,
+                binding: b,
+                feature,
+                ..
+            } => binding(machine, b).key(feature),
+            Self::ServerPoolNotSupported { machine, .. } => {
+                P::machine(machine).key("server").key("instances")
+            }
+            Self::StagePoolNotDeclared {
+                machine,
+                binding: b,
+                ..
+            }
+            | Self::StagePoolWrongKind {
+                machine,
+                binding: b,
+                ..
+            }
+            | Self::StagePoolTransportMismatch {
+                machine,
+                binding: b,
+                ..
+            } => binding(machine, b).key("stage_pool"),
+            Self::PartitionDuplicateName { name } => P::partition(name),
+            Self::PartitionMultiDevice { partition, .. } => P::partition(partition).key("machines"),
+            Self::PartitionUnitDuplicate { partitions, .. } => P::partition(&last(partitions)),
+            Self::PartitionMachineNotListed { partition, .. } => {
+                P::partition(partition).key("contains")
+            }
+            Self::PartitionEmpty { partition } | Self::PartitionNameNotIdentifier { partition } => {
+                P::partition(partition)
+            }
+            Self::PartitionUncoveredUnit { .. }
+            | Self::PartitionPartialCoverageRequiresDefault { .. } => P::root("partitions"),
+            Self::PartitionPoolMachine { machine, partition } => {
+                P::partition(partition).key("machines").value(machine)
+            }
+            Self::PartitionTransportBindingUnsupported { partition, .. }
+            | Self::PartitionWire21CustomTcpUnimplemented { partition, .. } => {
+                P::partition(partition).key("transport_binding")
+            }
+            Self::ScxmlInvokeCrossDeviceTransport(payload) => P::machine(&payload.peer),
+            Self::SomeipScxmlInvokeServiceIdPinOutOfRange { machine, .. } => {
+                P::machine(machine).key("someip_service_id")
+            }
+            Self::SomeipScxmlInvokeServiceIdPinCollision { machines, .. } => {
+                P::machine(&last(machines)).key("someip_service_id")
+            }
+            Self::SomeipLivenessServiceIdPinOutOfRange { partition_key, .. } => {
+                P::partition(partition_key).key("someip_liveness_service_id")
+            }
+            Self::SomeipLivenessServiceIdPinCollision { partition_keys, .. } => {
+                P::partition(&last(partition_keys)).key("someip_liveness_service_id")
+            }
+            Self::SomeipMachineLivenessServiceIdPinOutOfRange { machine, .. } => {
+                P::machine(machine).key("someip_machine_liveness_service_id")
+            }
+            Self::SomeipMachineLivenessServiceIdPinCollision { machines, .. } => {
+                P::machine(&last(machines)).key("someip_machine_liveness_service_id")
+            }
+            Self::PartitionBarrierTimeoutInvalid { partition, .. }
+            | Self::PartitionBarrierTimeoutWithoutRoot { partition, .. } => {
+                P::partition(partition).key("barrier_timeout_ms")
+            }
+            Self::PartitionParallelRootUndesignated {
+                hosting_partitions, ..
+            } => P::partition(&last(hosting_partitions)).key("hosts_parallel_roots"),
+            Self::PartitionParallelRootAmbiguous {
+                claiming_partitions,
+                ..
+            } => P::partition(&last(claiming_partitions)).key("hosts_parallel_roots"),
+            Self::PartitionParallelRootNotInMachines { partition, .. }
+            | Self::PartitionParallelRootNonHost { partition, .. } => {
+                P::partition(partition).key("hosts_parallel_roots")
+            }
+            Self::DistributabilityR1SharedWrite { .. }
+            | Self::DistributabilityR2CrossRegionTransition { .. } => P::root("distributability"),
+            Self::PlatformClassOsMismatch { machine, .. } => {
+                P::machine(machine).key("platform").key("os")
+            }
+            Self::SchedulerCooperativeMissingStackBudget { machine } => P::machine(machine)
+                .key("scheduler")
+                .key("worker_stack_budget"),
+            Self::SchedulerCooperativeMissingSlotBudget { machine } => P::machine(machine)
+                .key("scheduler")
+                .key("worker_slot_budget_us"),
+            Self::SchedulerCooperativeMissingKeepaliveJitterBudget { machine } => {
+                P::machine(machine)
+                    .key("scheduler")
+                    .key("keepalive_jitter_budget_us")
+            }
+            Self::SchedulerSessionRuntimeNotApplicable { machine, .. } => session_runtime(machine),
+            Self::SchedulerWorkerThreadsInvalid { machine, .. } => {
+                session_runtime(machine).key("worker_threads")
+            }
+            Self::SchedulerRxBusyPollInvalid { machine, .. } => {
+                session_runtime(machine).key("rx_busy_poll_us")
+            }
+            Self::QueryableKeyInvalid { machine, name, .. } => queryable(machine, name).key("key"),
+            Self::QueryableKeyDuplicate {
+                machine, second, ..
+            } => queryable(machine, second).key("key"),
+            Self::QueryableNameInvalid { machine, name, .. } => {
+                queryable(machine, name).key("name")
+            }
+            Self::QueryableReplyInvalid { machine, name, .. } => {
+                queryable(machine, name).key("reply")
+            }
+            Self::QueryableDocumentInvalid { machine, name, .. } => {
+                queryable(machine, name).key("reply").key("document")
+            }
+            Self::SchedulerIncompatibleWithWorkerCount { machine, .. } => {
+                P::machine(machine).key("scheduler")
+            }
+            Self::TimerSlotOverflow { machine, .. } => P::machine(machine)
+                .key("scheduler")
+                .key("timer_wheel_depth"),
+            Self::LinkDriverUnknown {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("driver"),
+            Self::LinkDriverClassMismatch(payload) => {
+                P::link(&payload.machine, &payload.link_name).key("driver")
+            }
+            Self::LinkMtuMissingOnFragmentingLink { machine, link_name }
+            | Self::LinkMtuBelowDriverFloor {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("mtu_bytes"),
+            Self::LinkExpectedP99ExceedsMtu {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("expected_p99_bytes"),
+            Self::LinkBurstAbsorptionInsufficient {
+                machine, link_name, ..
+            }
+            | Self::LinkBurstPpsMissingOnIsrDispatch { machine, link_name } => {
+                P::link(machine, link_name).key("burst_pps")
+            }
+            Self::LinkRxDispatchWorkerTickOnHighBurst {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("rx_dispatch"),
+            Self::LinkNotDeclaredInForge {
+                machine, link_name, ..
+            } => P::link(machine, link_name),
+            Self::StageCopyPolicyUnknown { machine, .. } => P::machine(machine)
+                .key("pool_defaults")
+                .key("stage_copy_policy"),
+            Self::SessionArmingQuotaMissing { machine, link_name }
+            | Self::SessionArmingQuotaVsPeerTableInvariantViolated {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("session_arming_quota"),
+            Self::AcceptRateConfigMissing {
+                machine, link_name, ..
+            } => P::link(machine, link_name).key("accept_rate_per_sec"),
+            Self::SessionArmingFieldsOnNonArmingLink {
+                machine, link_name, ..
+            } => P::link(machine, link_name)
+                .key("domain_attrs")
+                .key("trust_class"),
+            Self::StatelessAcceptRequiredOnUntrustedSource { machine, link_name } => {
+                P::link(machine, link_name).key("stateless_accept")
+            }
+            Self::StatelessAcceptKeyRotationShorterThanLifetime {
+                machine, link_name, ..
+            } => P::link(machine, link_name)
+                .key("stateless_accept")
+                .key("key_rotation_s"),
+            Self::StatelessAcceptExternNotWhitelisted {
+                machine,
+                link_name,
+                role,
+                ..
+            } => P::link(machine, link_name)
+                .key("stateless_accept")
+                .key(&format!("{role}_extern")),
+            Self::LinkConcurrentCountExceedsSchedulerSlots { machine, .. } => {
+                P::machine(machine).key("links")
+            }
+            Self::LinkPerLinkBudgetExceedsTickPeriod { machine, .. } => P::machine(machine)
+                .key("scheduler")
+                .key("per_link_budget_us"),
+            Self::EventSchemaMismatch { sender_machine, .. } => P::machine(sender_machine),
+        })
+    }
+
+    /// Where in `text`, the deployment this refusal is of, the refusal stands:
+    /// the key its [`Self::key_path`] names, or where its `actual` is written
+    /// on that key or a parent of it. `None` for a refusal of no key, and for
+    /// a text the marked reading cannot read.
+    pub fn mark_in(&self, text: &str) -> Option<Mark> {
+        let path = self.key_path()?;
+        let marks = DeployMarks::read(text)?;
+        marks.locate(&path, deploy_fields(self).actual.as_deref())
+    }
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────

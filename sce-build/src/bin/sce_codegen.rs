@@ -5745,8 +5745,15 @@ fn load_deploy_config(
             ..cfg
         },
         Err(e) => {
+            // Placed at the key the refusal names (docs/adr/0106 #76).
+            let at = e.mark_in(&content);
             let forge_err: ForgeError = sce_build::mesh::error::MeshError::from(e).into();
-            let located = Located::new(forge_err, path, None, None);
+            let located = Located::new(
+                forge_err,
+                path,
+                at.map(|mark| mark.line),
+                at.map(|mark| mark.col),
+            );
             error_format.emit_forge_and_exit(&located)
         }
     }
@@ -8596,6 +8603,25 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                     report.artifacts.push(file_path.clone());
                     output_paths.push(file_path);
                 }
+            }
+            // A refusal of the deployment is placed in it, at the key it names
+            // (docs/adr/0106 #76); a refusal of the documents keeps its own place.
+            Err(e @ sce_build::mesh::error::MeshError::Deploy(_)) => {
+                let at = fs::read_to_string(deploy_file)
+                    .ok()
+                    .and_then(|text| match &e {
+                        sce_build::mesh::error::MeshError::Deploy(refusal) => {
+                            refusal.mark_in(&text)
+                        }
+                        _ => None,
+                    });
+                let located = Located::new(
+                    ForgeError::from(e),
+                    deploy_file,
+                    at.map(|mark| mark.line),
+                    at.map(|mark| mark.col),
+                );
+                error_format.emit_and_exit(&located, "Mesh error: ")
             }
             Err(e) => error_format.emit_and_exit(&e, "Mesh error: "),
         }

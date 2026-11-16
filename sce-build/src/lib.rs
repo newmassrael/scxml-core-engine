@@ -5943,7 +5943,7 @@ fn compile_document_set(
 
         mesh::deploy::validate_links_cross_doc(deploy_cfg, &forge_link_names)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
+            .map_err(|e| deploy_refusal(deploy_cfg, e))?;
 
         mesh::deploy::validate_links_burst_invariants(
             deploy_cfg,
@@ -5951,11 +5951,11 @@ fn compile_document_set(
             &pool_models_view,
         )
         .map_err(mesh::error::MeshError::from)
-        .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
+        .map_err(|e| deploy_refusal(deploy_cfg, e))?;
 
         mesh::deploy::validate_link_driver_class_consistency(deploy_cfg, &forge_link_models_view)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
+            .map_err(|e| deploy_refusal(deploy_cfg, e))?;
 
         mesh::deploy::validate_reassembly_cross_doc(
             deploy_cfg,
@@ -5979,7 +5979,7 @@ fn compile_document_set(
         let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, deploy_label)?;
         mesh::deploy::validate_stateless_accept_externs(deploy_cfg, &orchestrator_plugin_symbols)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
+            .map_err(|e| deploy_refusal(deploy_cfg, e))?;
 
         // ── Cross-machine EventSchema validation ─────────────────
         //
@@ -5993,7 +5993,7 @@ fn compile_document_set(
         // cannot exhibit a cross-machine mismatch by construction.
         mesh::deploy::validate_event_schemas_cross_machine(deploy_cfg, &scxml_models)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
+            .map_err(|e| deploy_refusal(deploy_cfg, e))?;
 
         // ── link/inbound-event-queue-unsized (§synth-5-N) ──
         //
@@ -6469,14 +6469,7 @@ fn compile_document_set(
                 // block and independent of its links and scheduler.
                 let queryable_legs =
                     mesh::queryable::resolve_queryables(machine_name, &machine.queryables)
-                        .map_err(|e| {
-                            Located::new(
-                                forge::error::ForgeError::from(mesh::error::MeshError::from(e)),
-                                deploy_cfg.label(),
-                                None,
-                                None,
-                            )
-                        })?;
+                        .map_err(|e| deploy_refusal(deploy_cfg, mesh::error::MeshError::from(e)))?;
                 files.extend(
                     forge::queryables::render_machine_queryables_artifacts(
                         &template_base,
@@ -8089,6 +8082,23 @@ fn validate_link_pool_refs(
         }
     }
     Ok(())
+}
+
+/// A refusal of a fact the deployment `deploy` states, placed in it: its
+/// `location.file` is the deployment's label, and its row and column are those
+/// of the key the refusal names (`DeployConfig::mark_of`, docs/adr/0106 #76),
+/// or none for a refusal of no key.
+fn deploy_refusal(
+    deploy: &mesh::deploy::DeployConfig,
+    err: mesh::error::MeshError,
+) -> forge::error::Located<forge::error::ForgeError> {
+    let at = deploy.mark_of(&err);
+    forge::error::Located::new(
+        err.into(),
+        deploy.label(),
+        at.map(|mark| mark.line),
+        at.map(|mark| mark.col),
+    )
 }
 
 /// RFC §synth-5-C cross-resolution: every `<sce:framer ref>` on a link
