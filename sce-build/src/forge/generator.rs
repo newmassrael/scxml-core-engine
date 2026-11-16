@@ -112,6 +112,13 @@ pub(crate) fn swift_codec_printed(
 /// value of. See [`kotlin_source::refinement_class`].
 pub(crate) use kotlin_source::refinement_class as kotlin_refinement_class;
 
+/// A byte case of the Kotlin conformance harness, its source a value the
+/// printed data class's constructor makes (docs/adr/0081 §5). See
+/// [`kotlin_source::source_case::source_case`].
+pub(crate) use kotlin_source::source_case::{
+    source_case as kotlin_source_case, CodecPath as KotlinCodecPath, SourceCase as KotlinSourceCase,
+};
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(

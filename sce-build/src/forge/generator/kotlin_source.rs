@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The Kotlin printer of a codec's encode plan (docs/adr/0081 §2, step 4).
@@ -29,6 +29,8 @@ use crate::forge::encode_plan::{
 };
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+
+pub(super) mod source_case;
 
 /// The first form of `plan` the Kotlin printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.

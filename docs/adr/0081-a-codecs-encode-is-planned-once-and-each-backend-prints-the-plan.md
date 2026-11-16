@@ -1318,6 +1318,14 @@ old encode, the old encode and its templates are removed in the same landing.
    codec's file and that every codec of the resources is printed exactly where the printer lowers every form of it.
    The broadcast log of records holds a payload past its bound as no value, as its C++ test does, where its Kotlin
    test held the encode's refusal.
+
+   The Kotlin harness then runs each printed codec's `sources` (§5) as the Python harness does. The Kotlin case
+   printer (`kotlin_source::source_case`) writes each `source` as the data class made by its constructor, every
+   name written by its document's package so the harness imports nothing for a case, a number as a literal of the
+   element's type and a byte string by the factory of its value class; it reads the notation where the Rust, C++
+   and Python cases read it. The harness encodes the value by the companion's `encodeSource`, compares the bytes,
+   decodes them and compares each element, a byte string by its content, as a value class over an array compares
+   the array by identity. It states only the shapes the Kotlin printer prints and refuses any other by name.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

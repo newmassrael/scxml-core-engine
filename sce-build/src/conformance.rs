@@ -3922,7 +3922,8 @@ fn codec_case_rows<'r>(
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
 /// whose value is `{Codec}Parts` (docs/adr/0058 §4), the C++ one, whose value
 /// its constructor makes (docs/adr/0081 step 4), the Python one, whose value
-/// its dataclass's constructor makes, or the Swift one.
+/// its dataclass's constructor makes, the Swift one, or the Kotlin one, whose
+/// value its data class's constructor makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CasePrinter {
     Rust,
@@ -3931,6 +3932,7 @@ enum CasePrinter {
     /// The Swift one, whose value its initializer makes (docs/adr/0081 step 5), for a codec the
     /// Swift printer prints (`printed`, read by `swift_codec_printed_file`).
     Swift,
+    Kotlin,
 }
 
 impl CasePrinter {
@@ -3939,10 +3941,10 @@ impl CasePrinter {
     /// codec the C++ backend does not print (`printed`) is refused by
     /// name: a printer runs every case of every shape it prints
     /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
-    /// constructor makes from the case. Python prints a codec one landing at a
-    /// time (§6): a codec it prints runs its cases as a value of its source,
-    /// and one it does not runs its `cases` on the template's encode. Swift
-    /// prints one form at a time the same way (step 5).
+    /// constructor makes from the case. Python and Kotlin print a codec one
+    /// landing at a time (§6): a codec one prints runs its cases as a value of
+    /// its source, and one it does not runs its `cases` on the template's
+    /// encode. Swift prints one form at a time the same way (step 5).
     fn of(
         printed: bool,
         language: Language,
@@ -3961,6 +3963,7 @@ impl CasePrinter {
             }
             Language::Python if printed => Some(CasePrinter::Python),
             Language::Swift if printed => Some(CasePrinter::Swift),
+            Language::Kotlin if printed => Some(CasePrinter::Kotlin),
             // Their encodes do not print the plan, or not this codec's yet:
             // they run the `cases`.
             Language::Kotlin
@@ -3978,6 +3981,7 @@ impl CasePrinter {
             CasePrinter::Cpp => Language::Cpp,
             CasePrinter::Python => Language::Python,
             CasePrinter::Swift => Language::Swift,
+            CasePrinter::Kotlin => Language::Kotlin,
         }
     }
 }
@@ -4024,6 +4028,12 @@ impl PrintedCase {
             },
             CasePrinter::Rust | CasePrinter::Python => PrintedCase {
                 note: note.to_string(),
+                ..self
+            },
+            // The Kotlin fragment hands the note to a string literal, where a
+            // `$` would start a template.
+            CasePrinter::Kotlin => PrintedCase {
+                note: note.replace('$', "\\$"),
                 ..self
             },
         }
@@ -4083,6 +4093,22 @@ impl From<crate::forge::generator::SwiftSourceCase> for PrintedCase {
     }
 }
 
+impl From<crate::forge::generator::KotlinSourceCase> for PrintedCase {
+    /// The value is one expression, so it needs no binding. The Kotlin
+    /// printer prints no codec that takes a flag input or a caller's tag, so a
+    /// decode and an encode are handed nothing after the cursor or the sink.
+    fn from(case: crate::forge::generator::KotlinSourceCase) -> Self {
+        PrintedCase {
+            bindings: Vec::new(),
+            literal: case.literal,
+            checks: case.checks,
+            inputs: Vec::new(),
+            encode_inputs: Vec::new(),
+            note: String::new(),
+        }
+    }
+}
+
 /// Each row of a codec fixture's byte cases under `key`, its `source` made into
 /// the value `printer` spells (after the bindings it reads, with its checks and
 /// inputs), read from the codec's plan, and handed with its row and its place
@@ -4118,6 +4144,7 @@ fn fold_case_rows(
             };
             let cpp_path = crate::forge::generator::CppCodecPath::new(type_name.clone());
             let python_path = crate::forge::generator::PythonCodecPath::new(&fixture.name);
+            let kotlin_path = crate::forge::generator::KotlinCodecPath::new(&fixture.name);
             rows.iter()
                 .enumerate()
                 .map(|(i, row)| {
@@ -4153,6 +4180,17 @@ fn fold_case_rows(
                                     crate::forge::generator::python_source_case(
                                         plan,
                                         &python_path,
+                                        source,
+                                        inputs,
+                                        tag,
+                                        &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
+                                CasePrinter::Kotlin => PrintedCase::from(
+                                    crate::forge::generator::kotlin_source_case(
+                                        plan,
+                                        &kotlin_path,
                                         source,
                                         inputs,
                                         tag,
@@ -4215,6 +4253,14 @@ fn fold_case_rows(
                                      value of it is made from a case"
                                 ))
                             }
+                            // The Kotlin printer prints positional codecs only,
+                            // so `CasePrinter::of` answers it for no map.
+                            CasePrinter::Kotlin => {
+                                return Err(format!(
+                                    "{at}: the Kotlin printer prints no CBOR map, so no \
+                                     value of it is made from a case"
+                                ))
+                            }
                         },
                         CodecPlan::ContentLine(plan) => match printer {
                             CasePrinter::Cpp => PrintedCase::from(
@@ -4241,6 +4287,14 @@ fn fold_case_rows(
                             CasePrinter::Swift => {
                                 return Err(format!(
                                     "{at}: the Swift printer prints no content-line \
+                                     component, so no value of it is made from a case"
+                                ))
+                            }
+                            // The Kotlin printer prints positional codecs only,
+                            // so `CasePrinter::of` answers it for no component.
+                            CasePrinter::Kotlin => {
+                                return Err(format!(
+                                    "{at}: the Kotlin printer prints no content-line \
                                      component, so no value of it is made from a case"
                                 ))
                             }
@@ -5528,6 +5582,78 @@ mod tests {
             serde_json::json!([
                 { "element": "msgId", "holds": "decoded.msg_id == value.msg_id" },
                 { "element": "payload", "holds": "decoded.payload == value.payload" },
+            ])
+        );
+
+        let (folded, value) = fold(false).expect("a codec on the template is handed nothing");
+        assert!(!folded && value.get("sources").is_none());
+    }
+
+    /// A byte case of a codec the Kotlin backend prints from its plan is
+    /// written as a value its data class's constructor makes, every name
+    /// written by its package, the byte string made by the factory of the
+    /// value class of its bound, and no element the encode derives; one of a
+    /// codec it does not print reaches the harness as no case (docs/adr/0081
+    /// §5, §6).
+    ///
+    /// Turns red where `CasePrinter::of` stops answering Kotlin for a printed
+    /// codec, where `kotlin_source::source_case` states the derived length,
+    /// spells a byte string other than through its class's `of`, or compares
+    /// it by identity rather than content.
+    #[test]
+    fn a_source_case_of_a_printed_kotlin_codec_is_a_value_of_its_data_class() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_length_ref")
+            .expect("the catalog holds codec_length_ref");
+        let reference = serde_json::json!({ "codecs": { "codec_length_ref": { "sources": [{
+            "source": { "msgId": 1, "payload": [10, 20, 200] },
+            "encoded": [1, 3, 10, 20, 200],
+            "note": "three bytes, one past 127"
+        }] } } });
+        let fold = |printed: bool| {
+            let mut fixture = fixture.clone();
+            if let FixtureSpec::Codec {
+                printed: by_plan, ..
+            } = &mut fixture.spec
+            {
+                *by_plan = printed;
+            }
+            let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+            fold_source_cases(
+                &mut value,
+                &reference,
+                &fixture,
+                Language::Kotlin,
+                &resource_dir,
+                &reference_path,
+            )
+            .map(|folded| (folded, value))
+        };
+
+        let (folded, value) = fold(true).expect("Kotlin states it");
+        assert!(folded);
+        assert_eq!(
+            value["sources"][0]["literal"],
+            "com.sce.generated.codec_length_ref.CodecLengthRef(msgId = 1u, payload = \
+             com.sce.generated.codec_length_ref.CodecLengthRefPayloadBytes.of(\
+             byteArrayOf(10, 20, -56))!!)"
+        );
+        assert_eq!(
+            value["sources"][0]["checks"],
+            serde_json::json!([
+                { "element": "msgId", "holds": "decoded.msgId == value.msgId" },
+                {
+                    "element": "payload",
+                    "holds": "decoded.payload.bytes.contentEquals(value.payload.bytes)"
+                },
             ])
         );
 

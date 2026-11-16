@@ -111,6 +111,55 @@
         }
 {% endif %}
 
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5), the same cases the Rust, C++ and Python fragments run,
+   for a codec the Kotlin backend prints from its plan: each `source` is the
+   printed data class, made by its constructor from the case, written by the
+   generator from the codec's plan, and its bytes were computed by an
+   independent model. The value is encoded by the companion's `encodeSource`
+   and compared with the bytes (law 4 of docs/adr/0058 §5), and the bytes are
+   decoded and what the decode presents compared with the value, element by
+   element (law 1). Independent of `oracle_eligible`, which speaks of the
+   `cases`. #}
+{% for s in f.sources %}
+        run {
+            val value = {{ s.literal }}
+            val sink = mutableListOf<Byte>()
+            assertTrue(
+                {{ f.name | to_pascal_case }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink)) == null,
+                "{{ f.name }} source {{ loop.index0 }}: the encode answered an error: {{ s.note }}",
+            )
+            val expected = byteArrayOf({% for b in s.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
+            assertTrue(
+                sink.toByteArray().contentEquals(expected),
+                "{{ f.name }} source {{ loop.index0 }}: actual=${sink.joinToString()} expected=${expected.joinToString()}: {{ s.note }}",
+            )
+            val cursor = com.sce.forge.runtime.SceCursor(expected)
+{% if s.checks %}
+            val decoded = {{ f.name | to_pascal_case }}.decode(cursor)
+                .valueOr { refused -> error("{{ f.name }} source {{ loop.index0 }}: decode refused as ${refused.error}: {{ s.note }}") }
+{% else %}
+            {# A codec that presents no element has nothing to compare. #}
+            val read = {{ f.name | to_pascal_case }}.decode(cursor)
+            assertTrue(
+                read is com.sce.forge.runtime.Decoded.Ok,
+                "{{ f.name }} source {{ loop.index0 }}: decode refused as ${read.errorOrNull()}: {{ s.note }}",
+            )
+{% endif %}
+            assertEquals(
+                0,
+                cursor.remaining(),
+                "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread",
+            )
+{% for c in s.checks %}
+            assertTrue(
+                {{ c.holds }},
+                "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
+            )
+{% endfor %}
+        }
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. A Kotlin decode answers `Decoded.Refused` with the kind that refused
    the frame (docs/adr/0099, amendment of 2026-11-16), and `r.symbol` is that
