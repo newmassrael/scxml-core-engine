@@ -1520,3 +1520,74 @@ fn a_declaration_does_not_refuse_a_glob_that_matches_nothing() {
         "an empty glob must add no target to a declaration and must not stop it"
     );
 }
+
+/// The generated machine a tree target names, by its path under the root.
+const TREE_TARGET: &str =
+    "rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs";
+
+/// A casefile whose one target is `tree_target` (`<tree>:<path>`, docs/adr/0097)
+/// and whose one case edits `anchor` in it under that name.
+fn tree_fixture(tree_target: &str, anchor: &str) -> (TempDir, PathBuf) {
+    let dir = tempdir().expect("temp dir");
+    let oracle = dir.path().join("oracle.txt");
+    fs::write(&oracle, "the assertions that would catch it\n").expect("write the oracle");
+    let casefile = dir.path().join("fixture.cases");
+    fs::write(
+        &casefile,
+        format!(
+            "{selector}\nmutation_targets {tree_target}\nmutation_oracles {oracle}\n\n\
+             mutation_case \"the machine's state type is renamed\" <<'PY'\n\
+             edit({tree_target:?}, {anchor:?}, \"pub enum Renamed\")\nPY\n",
+            selector = LIVE_SELECTOR,
+            oracle = oracle.display(),
+        ),
+    )
+    .expect("write the casefile");
+    (dir, casefile)
+}
+
+/// A target in a tree the checkout does not commit is checked against the tree
+/// its actions write: the check materializes it into its own scratch and
+/// applies the case there, so the case applies and nothing in the checkout is
+/// written.
+#[test]
+fn a_tree_target_is_checked_against_the_tree_its_actions_write() {
+    let (_dir, casefile) = tree_fixture(TREE_TARGET, "pub enum AiLoopState");
+    let in_checkout = repo_root().join("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs");
+    let before = fs::read(&in_checkout).ok();
+    let (ok, output) = check(&casefile);
+    assert!(
+        ok,
+        "a case that edits a tree target by an anchor the tree holds was refused:\n{output}"
+    );
+    assert_eq!(
+        labels_reported(&output),
+        ["the machine's state type is renamed"],
+        "the case was not reported as applying:\n{output}"
+    );
+    assert_eq!(
+        fs::read(&in_checkout).ok(),
+        before,
+        "the check wrote the tree target's path in the checkout"
+    );
+}
+
+/// A tree target whose tree places nothing at its path is refused by name: a
+/// target that stands for no file would leave every case reading nothing it
+/// declared.
+#[test]
+fn a_tree_target_the_tree_does_not_place_is_refused() {
+    let (_dir, casefile) = tree_fixture(
+        "rust-integration:backends/rust/tests/src/integration/ai_loop/no_such_sm.rs",
+        "pub enum AiLoopState",
+    );
+    let (ok, output) = check(&casefile);
+    assert!(
+        !ok,
+        "a tree target the tree does not place was accepted:\n{output}"
+    );
+    assert!(
+        output.contains("names no file the round compiles"),
+        "refused, but not for the reason under test:\n{output}"
+    );
+}

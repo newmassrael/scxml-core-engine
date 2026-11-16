@@ -6,8 +6,9 @@
 #
 # Each case takes the run-time half away: the param that holds the count is no longer one that can
 # fail, so the `<send>` evaluates it where no failure is read; or the runtime's check passes a short
-# list. The machine reaches the lane only through the committed tree its regeneration writes, so
-# the tree is a declared target and the regeneration carries a mutated generator into it.
+# list. The machine reaches the lane through the test crate's build script, which generates the
+# tree `rust-static-datamodel` into OUT_DIR and reruns when the generator does (docs/adr/0097), so
+# a mutated generator reaches the machine with nothing declared between them.
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_list_sent_short_of_its_fields_lower_count_is_refused_when_it_runs_rust.cases`.
@@ -17,8 +18,6 @@
 
 mutation_tests -p sce-rust-tests --test a_composed_value_is_sent_by_its_name
 mutation_targets sce-build/src/forge/static_lowering.rs backends/rust/forge-runtime/src/algorithm.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_composed_send_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
 
 mutation_case "the param that holds the count is written as one that cannot fail" <<'PY'

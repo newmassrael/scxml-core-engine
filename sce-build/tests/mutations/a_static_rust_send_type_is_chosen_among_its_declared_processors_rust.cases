@@ -11,7 +11,7 @@
 # serves, and BasicHTTP, which this build serves but this send did not declare — is
 # `error.execution` with nothing sent (`refused`). The expansion that makes the
 # choice is the walk's, shared by every language, so the mutants edit it and the
-# regeneration carries them into the committed machine; each still compiles:
+# test crate's build script carries them into the machine; each still compiles:
 #
 #   the value is compared for inequality, so no processor is ever the one chosen;
 #   a value that is none of the declared processors is delivered through the
@@ -24,8 +24,6 @@
 
 mutation_tests -p sce-rust-tests --test static_scenarios static_send_type
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_send_type_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/static_send_type.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json
 
 mutation_case "no processor is ever the one chosen" <<'PY'

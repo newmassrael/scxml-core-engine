@@ -18,17 +18,16 @@
 # tells them apart: its body is `label`, read through a condition over `huge`, and
 # `bloat` makes only that condition fail while the `src` still computes.
 #
-# The template reaches the tests only through the committed tree the
-# regeneration writes, so the tree is a declared target and the command is what
-# carries a mutated template into it.
+# The template reaches the tests through the test crate's build script, which
+# generates the tree into OUT_DIR and reruns when a template it read changes
+# (docs/adr/0097), so a mutated template reaches the machine with nothing
+# declared between them.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test a_static_machines_typed_params_reach_the_host
 mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2
-mutation_targets backends/rust/tests/src/integration/host_processor/statechart_static_host_params_sm.rs
-mutation_regen scripts/materialize.sh rust-integration
 mutation_oracles backends/rust/tests/tests/a_static_machines_typed_params_reach_the_host.rs sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── The body is read and handed over ───────────────────────────────

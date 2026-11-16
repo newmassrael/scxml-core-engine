@@ -13,16 +13,14 @@
 #
 #   a byte slice crosses as its UTF-8 decoding, which replaces what is not UTF-8.
 #
-# A mutant that refused the `<param>` is no case here: the regeneration skips a document a
-# language refuses, and would leave the machine it generated before standing.
+# A mutant that refused the `<param>` is no case here: the tree leaves out a document a
+# language refuses, and the tests that name its machine would not compile.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_bytes_wire_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
 
 mutation_case "a byte slice crosses as its UTF-8 decoding" <<'PY'

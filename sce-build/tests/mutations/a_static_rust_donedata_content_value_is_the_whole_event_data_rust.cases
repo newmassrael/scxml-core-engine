@@ -19,17 +19,16 @@
 # is a number, `named` is a string and `lost` is `count * 2000000000` over a
 # counter at 3.
 #
-# The template reaches the tests only through the committed tree the
-# regeneration writes, so the tree is a declared target and the command is what
-# carries a mutated template into it.
+# The template reaches the tests through the test crate's build script, which
+# generates the tree into OUT_DIR and reruns when a template it read changes
+# (docs/adr/0097), so a mutated template reaches the machine with nothing
+# declared between them.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test static_scenarios
 mutation_targets tools/codegen/templates/rust/entry_exit_actions.rs.jinja2
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_donedata_content_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
 
 # ── A value that cannot be computed is the empty string ────────────

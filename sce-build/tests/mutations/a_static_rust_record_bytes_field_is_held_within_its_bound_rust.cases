@@ -28,8 +28,6 @@ mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
 mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/runtime/src/saved_state.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_record_bytes_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
 
 mutation_case "a byte string past a record field's bound is not refused" <<'PY'

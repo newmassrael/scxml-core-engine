@@ -257,6 +257,10 @@ MUTATION_TEST_ARGS=()
 MUTATION_BUILD_DIR=""
 MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
+# A declared `<tree>:<path>` target and the files it stands for, one per line:
+# filled by `mutation_resolve_tree_targets` and read by every listing of the
+# targets (`mutation_physical`) and by the case bodies' `edit()`.
+declare -A MUTATION_TREE_PATHS=()
 MUTATION_ORACLE_FILES=()
 MUTATION_REGEN_CMDS=()
 MUTATION_NEEDS=()
@@ -703,6 +707,139 @@ mutation_oracles() { MUTATION_ORACLE_FILES+=("$@"); }
 # carry the last case's mutation out of the round and into the working tree.
 mutation_regen() { MUTATION_REGEN_CMDS+=("$*"); }
 
+# A target in a tree the checkout does not commit, named `<tree>:<path>`
+# (docs/adr/0097, answer 7): `<tree>` is a manifest of tools/codegen/trees and
+# `<path>` the path the file has under the checkout's root, which is where a
+# materialization places it. Declared with `mutation_targets` and edited by a
+# case body under the same name, like any target:
+#
+#     mutation_targets rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+#
+# Mutating generated output is what proves a test reads it, and the output of
+# a build-time tree is not in the checkout to be mutated: the file the tests
+# compile is wherever the lane's build wrote it. So the name is resolved, once
+# per round and before anything is read, to the copies that are compiled:
+#
+#   - a cargo round builds its selector first (`cargo test --no-run`), which
+#     runs the build scripts that write the trees, and the name stands for
+#     `<OUT_DIR>/sce-trees/<path>` of every package of that build that holds
+#     it (`sce_build::action::build_script`). Each copy is edited, hashed,
+#     snapshotted and restored as one target;
+#   - any other runner reads a tree where `scripts/materialize.sh` and the
+#     lanes write it, at `<path>` in the checkout;
+#   - `--check` builds nothing, so it materializes the tree into its scratch
+#     (`sce-codegen materialize`) and applies each case to that copy, which
+#     holds the bytes the build compiles because both come from the actions.
+#
+# A name whose tree has no manifest is a path like any other, and fails the
+# existence check by that name.
+mutation_tree_target_parts() {
+    local declared="$1"
+    [[ "$declared" =~ ^([a-z0-9][a-z0-9-]*):(.+)$ ]] || return 1
+    [[ -f "$SCE_REPO_ROOT/tools/codegen/trees/${BASH_REMATCH[1]}.toml" ]] || return 1
+    printf '%s\n%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+}
+
+# Fill MUTATION_TREE_PATHS for every declared `<tree>:<path>` target, by the
+# rule above. Refuses a name that resolves to no file, naming it: a target
+# that stands for nothing would leave every case reading a tree it never
+# reached.
+mutation_resolve_tree_targets() {
+    local declared tree path out_dir copies codegen
+    local -a names=() out_dirs=() parts=()
+    local -A materialized=()
+    while IFS= read -r declared; do
+        [[ -n "$declared" ]] || continue
+        mutation_tree_target_parts "$declared" >/dev/null || continue
+        names+=("$declared")
+    done < <(printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
+                           ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
+             mutation_unique)
+    (( ${#names[@]} > 0 )) || return 0
+
+    if [[ "$MUTATION_MODE" == "run" && "$MUTATION_RUNNER" == "cargo" ]]; then
+        local json
+        json="$(cargo test --no-run --message-format=json "${MUTATION_RUNNER_ARGS[@]}" 2>/dev/null)" || {
+            red "build failed while resolving the trees a <tree>:<path> target names"
+            cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" 2>&1 | tail -30
+            return 1
+        }
+        mapfile -t out_dirs < <(printf '%s\n' "$json" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        continue
+    if rec.get("reason") == "build-script-executed" and rec.get("out_dir"):
+        print(rec["out_dir"])
+' | LC_ALL=C sort -u)
+    fi
+
+    for declared in "${names[@]}"; do
+        mapfile -t parts < <(mutation_tree_target_parts "$declared")
+        tree="${parts[0]}"
+        path="${parts[1]}"
+        copies=""
+        if [[ "$MUTATION_MODE" == "check" ]]; then
+            if [[ -z "${materialized[$tree]+set}" ]]; then
+                # shellcheck source=lib/sce_codegen.sh
+                source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
+                codegen="$(sce_codegen_require "$SCE_REPO_ROOT")" || return 1
+                if ! "$codegen" materialize "$tree" --into "$WORK/trees" >"$WORK/materialize.log" 2>&1; then
+                    red "sce-codegen materialize $tree failed, so $declared cannot be checked:"
+                    tail -20 "$WORK/materialize.log" >&2
+                    return 1
+                fi
+                materialized[$tree]=1
+            fi
+            [[ -f "$WORK/trees/$path" ]] && copies="$WORK/trees/$path"
+        elif [[ "$MUTATION_RUNNER" == "cargo" ]]; then
+            for out_dir in ${out_dirs[@]+"${out_dirs[@]}"}; do
+                [[ -f "$out_dir/sce-trees/$path" ]] || continue
+                copies+="${copies:+$'\n'}$out_dir/sce-trees/$path"
+            done
+        else
+            [[ -f "$path" ]] && copies="$path"
+        fi
+        if [[ -z "$copies" ]]; then
+            red "$declared names no file the round compiles: tree '$tree' places nothing at $path"
+            red "(in a cargo round, no build script of the selector's build wrote it into"
+            red "its OUT_DIR; with --check, the tree's materialization does not hold it)"
+            return 1
+        fi
+        MUTATION_TREE_PATHS[$declared]="$copies"
+    done
+}
+
+# The lines on stdin with each resolved `<tree>:<path>` target replaced by the
+# files it stands for; every other line as it came.
+mutation_physical() {
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ -n "${MUTATION_TREE_PATHS[$line]+set}" ]]; then
+            printf '%s\n' "${MUTATION_TREE_PATHS[$line]}"
+        else
+            printf '%s\n' "$line"
+        fi
+    done
+}
+
+# `<declared>\t<file>` for every file a resolved `<tree>:<path>` target stands
+# for, which a case body's `edit()` reads to edit each copy under the name the
+# casefile declared.
+mutation_tree_target_table() {
+    local declared file
+    for declared in ${MUTATION_TREE_PATHS[@]+"${!MUTATION_TREE_PATHS[@]}"}; do
+        while IFS= read -r file; do
+            [[ -n "$file" ]] && printf '%s\t%s\n' "$declared" "$file"
+        done <<<"${MUTATION_TREE_PATHS[$declared]}"
+    done
+}
+
 # A service outside this tree that the round's SUITE needs running — not a
 # compiler, not a configured build directory, but a listener something under
 # test talks to.
@@ -975,10 +1112,14 @@ mutation_unique() {
 # reach the snapshot, the restore, or — above all — the hash list the restore
 # is checked against, where a repeated path makes the baseline and the
 # post-restore reading disagree over files that are in fact identical.
+#
+# A `<tree>:<path>` target is listed as the files it was resolved to, so the
+# snapshot, the hashes and the restore read the copies the round compiles;
+# before it is resolved (`--declares`), as declared.
 mutation_all_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
                   ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
-        mutation_unique
+        mutation_physical | mutation_unique
 }
 
 # Every service the round needs, once each — deduplicated for the same reason
@@ -1163,7 +1304,7 @@ mutation_all_oracles() {
 # INCONCLUSIVE with its real verdict discarded.
 mutation_compiled_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} |
-        mutation_unique
+        mutation_physical | mutation_unique
 }
 
 # "<sha> <path>" for each path read on stdin, in the order given. Reads a
@@ -3726,6 +3867,10 @@ mutation_init() {
             dim "test binaries are bounded at ${MUTATION_ARTIFACT_TIMEOUT}s, as the casefile declares"
         fi
     fi
+    # A `<tree>:<path>` target stands for the files a round compiles, which
+    # exist only once the tree is written: resolved before anything reads the
+    # targets, so every reading below is of those files.
+    mutation_resolve_tree_targets || exit 2
     # Before the snapshot, which reads every declared file and would other-
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
@@ -4002,6 +4147,7 @@ mutation_case() {
             ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
             ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"})" \
         MUTATION_MODE="$MUTATION_MODE" \
+        MUTATION_TREE_TARGETS="$(mutation_tree_target_table)" \
         python3 - "$WORK/case.py" <<'PY' || applied=$?
 import os
 import sys
@@ -4025,6 +4171,14 @@ _copies = {}
 # one that only appears to.
 _declared = {line for line in os.environ.get("MUTATION_DECLARED_FILES", "").splitlines() if line}
 
+# A `<tree>:<path>` target edits each file it was resolved to: the copies the
+# round's build compiles, or the one `--check` materialized.
+_tree_files = {}
+for _line in os.environ.get("MUTATION_TREE_TARGETS", "").splitlines():
+    _name, _, _file = _line.partition("\t")
+    if _file:
+        _tree_files.setdefault(_name, []).append(_file)
+
 
 def edit(path, old, new):
     if path not in _declared:
@@ -4040,6 +4194,11 @@ def edit(path, old, new):
             "%s: this edit replaces its anchor with itself, so the case "
             "mutates nothing.\n  %r" % (path, old[:120])
         )
+    for file in _tree_files.get(path, [path]):
+        _edit_file(file, old, new)
+
+
+def _edit_file(path, old, new):
     src = _copies[path] if path in _copies else open(path).read()
     occurrences = src.count(old)
     if occurrences == 0:
