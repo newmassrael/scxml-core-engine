@@ -560,6 +560,19 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
 3. **A backend or position that does not lower a composition yet refuses it by name** with
    `generate/unsupported-feature` (as `swift_event_schema_unlowered`, `generator.rs:28396`, does today), naming the
    field and the constructor. That is a step of the landing, not a rule of the language.
+
+   *A name a backend reserves is no such refusal* (amended 2026-11-16). A field of a record a composed value holds
+   is a member of the struct a backend holds the record in, so a field named by a word one backend reserves could
+   not be declared there. The parser refuses that name once, for every backend, at the row of the document that
+   declares it (`validation/reserved-code-identifier`, `reject_malformed` in `sce-build/src/scxml_identifier.rs`,
+   docs/SCE_ACCEPTED_SUBSET.md section 2.14), and every record a payload holds at any depth is a document of its
+   own and passes through it. The Swift and C11 gates each repeated that judgment over the records a composed
+   payload names (`SwiftTarget::unsupported`, `CTarget::unsupported`); no route reaches them past the parser, so
+   they could never answer, and a mutant of either could only survive. They are removed, and the refusal is pinned
+   where it is made, one record below the payload, on Swift with `fileprivate` and on C11 with `restrict`
+   (`a_composed_record_whose_field_swift_reserves_is_refused_by_name`,
+   `a_composed_record_whose_field_c_reserves_is_refused_where_it_is_declared`), each run for a second backend
+   too, which the same document is refused for.
 4. **A Rust machine holds every bound in its type** (amended 2026-11-04, answer G). The machine row of the table is
    every place a Rust machine has, not only a composed one: a variable, a record the machine declares, the payload
    struct of an event it reads, at the top level and at any depth. A `list<T>[N]` is

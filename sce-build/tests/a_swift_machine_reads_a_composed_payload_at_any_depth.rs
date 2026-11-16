@@ -15,7 +15,7 @@
 //! Swift lowers `datamodel="sce-static"` in part (`lowers_static_datamodel`
 //! is false for it), so the suites that ask the table which whole backends
 //! lower a composed position do not ask it; this file asks it of each
-//! position its row lowers, and of the union its row does not.
+//! position its row lowers, the union among them.
 //!
 //! # What is held
 //!
@@ -33,8 +33,10 @@
 //! * A `<send>` that names each composed field's place, each written as the
 //!   `WireValue` a send holds its params in, and one that gives a field of the
 //!   first revision no value, refused.
-//! * A payload that holds a union stays refused by name on Swift, which holds
-//!   no union yet (docs/adr/0092, section 7).
+//! * A payload that holds a union is read by the tag it tests (docs/adr/0092,
+//!   section 7, the Swift row).
+//! * A field of a record a payload holds, named by a word Swift reserves, is
+//!   refused where the record's document declares it, for every backend.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -487,13 +489,16 @@ fn a_send_that_gives_a_first_revision_field_no_value_is_refused_on_swift() {
 
 /// A field of a record that holds a composed value is a member of the struct
 /// Swift holds it in and a label of its initializer, so a name Swift reserves is
-/// refused by name rather than written as a member that does not compile. The
-/// document is judged for the reserved words of the language it is built for
-/// before the Swift gate reads it (`validation/reserved-code-identifier`, SCE
-/// Accepted Subset §2.14), so that is the refusal a build for Swift answers; the
-/// gate's own sentence of the same field (`SwiftTarget::unsupported`,
-/// `sce-build/src/forge/static_lowering.rs`) backs it for a route that skips the
-/// validation.
+/// refused by name rather than written as a member that does not compile.
+/// Pinned by the parser's sweep of every `<data id>` of a forge document
+/// (`reject_malformed`, `sce-build/src/scxml_identifier.rs`), which every record
+/// a payload holds at any depth passes through, each being a document of its
+/// own: a name any backend reserves is refused there for every backend at once
+/// (`validation/reserved-code-identifier`, SCE Accepted Subset §2.14), at the
+/// row of the record's document that declares it, and the Swift gate asks
+/// nothing of it again (docs/adr/0086, section 7.3). `fileprivate` sits one
+/// record below the payload's own fields, in the item a list of the payload
+/// holds.
 #[test]
 fn a_composed_record_whose_field_swift_reserves_is_refused_by_name() {
     let item =
@@ -507,20 +512,32 @@ fn a_composed_record_whose_field_swift_reserves_is_refused_by_name() {
         std::fs::copy(fixtures().join(sibling), dir.path().join(sibling)).expect("copy a sibling");
     }
     std::fs::write(dir.path().join("event_batch_item.scxml"), &reserved).expect("the item");
-    let (ok, out) = run(
-        &["check", "-l", "swift"],
-        dir.path(),
-        &SIBLINGS,
-        "batch_reader.scxml",
-        READER,
-    );
-    assert!(!ok, "a member Swift reserves is no member:\n{out}");
-    for part in [
-        "validation/reserved-code-identifier",
-        "<data id=\\\"fileprivate\\\">",
-        "'fileprivate' is a reserved word in swift",
-    ] {
-        assert!(out.contains(part), "expected `{part}` in:\n{out}");
+    // A build for another backend that reads the payload is refused the same,
+    // where the item declares the field: the refusal is the document's, not
+    // the Swift gate's.
+    for language in ["swift", "python"] {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            dir.path(),
+            &SIBLINGS,
+            "batch_reader.scxml",
+            READER,
+        );
+        assert!(
+            !ok,
+            "{language}: a member Swift reserves is no member:\n{out}"
+        );
+        for part in [
+            "validation/reserved-code-identifier",
+            "<data id=\\\"fileprivate\\\">",
+            "'fileprivate' is a reserved word in swift",
+            "event_batch_item.scxml",
+        ] {
+            assert!(
+                out.contains(part),
+                "{language}: expected `{part}` in:\n{out}"
+            );
+        }
     }
 }
 

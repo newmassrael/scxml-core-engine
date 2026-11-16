@@ -527,6 +527,54 @@ fn c11_takes_the_read_the_copy_and_the_send() {
     }
 }
 
+/// A field of a record that holds a composed value is a member of the struct
+/// C11 holds it in, so a name C reserves is refused by name rather than written
+/// as a member that does not compile. Pinned by the parser's sweep of every
+/// `<data id>` of a forge document (`reject_malformed`,
+/// `sce-build/src/scxml_identifier.rs`), which every record a payload holds at
+/// any depth passes through, each being a document of its own: the name is
+/// refused for every backend at once (`validation/reserved-code-identifier`,
+/// SCE Accepted Subset §2.14), at the row of the record's document that
+/// declares it, and the C11 gate asks nothing of it again (docs/adr/0086,
+/// section 7.3). `restrict` is a keyword of C alone (ISO/IEC 9899:2011 §6.4.1),
+/// so the refusal names C11 and no other backend, and it sits one record below
+/// the payload's own fields, in the item a list of the payload holds.
+#[test]
+fn a_composed_record_whose_field_c_reserves_is_refused_where_it_is_declared() {
+    let item =
+        std::fs::read_to_string(fixtures().join("event_batch_item.scxml")).expect("the item");
+    let reserved = item.replace("<data id=\"label\"", "<data id=\"restrict\"");
+    assert_ne!(reserved, item, "the item declares `label`");
+    let dir = tempdir().expect("tempdir");
+    for sibling in SIBLINGS {
+        std::fs::copy(fixtures().join(sibling), dir.path().join(sibling)).expect("copy a sibling");
+    }
+    std::fs::write(dir.path().join("event_batch_item.scxml"), &reserved).expect("the item");
+    // A build for another backend that reads the payload is refused the same:
+    // the refusal is the document's, not the C11 gate's.
+    for language in ["c11", "rust"] {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            dir.path(),
+            &SIBLINGS,
+            "batch_reader.scxml",
+            READER,
+        );
+        assert!(!ok, "{language}: a member C reserves is no member:\n{out}");
+        for part in [
+            "validation/reserved-code-identifier",
+            "<data id=\\\"restrict\\\">",
+            "'restrict' is a reserved word in c11",
+            "event_batch_item.scxml",
+        ] {
+            assert!(
+                out.contains(part),
+                "{language}: expected `{part}` in:\n{out}"
+            );
+        }
+    }
+}
+
 /// Pinned by the gate's `<send>` arm (`first_unlowered_composed_use`,
 /// `sce-build/src/forge/event_schema_check.rs`): a composed field of the
 /// schema's first revision is carried by every delivery (docs/adr/0086,

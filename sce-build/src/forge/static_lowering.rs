@@ -15511,21 +15511,11 @@ impl StaticTarget for CTarget {
         }
         // A record or a payload that holds a composed value (docs/adr/0086) is a
         // struct of its schema's fields too ([`crate::forge::composed_lowering::C11Composed`]),
-        // each a member named as the author wrote it, so a name C reserves
-        // cannot be one.
-        if let Some((schema, field)) = model
-            .imported_records
-            .values()
-            .chain(model.imported_event_schemas.values())
-            .filter(|schema| schema.entry_schema().is_err())
-            .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
-            .find(|(_, field)| crate::reader_names::is_reserved_word(Language::C11, &field.id))
-        {
-            return Some(format!(
-                "the field `{}` of `{}`, which holds a composed value, a name C reserves",
-                field.id, schema.name
-            ));
-        }
+        // each a member named as the author wrote it. A name C reserves is no such
+        // member, and is refused where the schema's document declares it, for every
+        // backend at once (`validation/reserved-code-identifier`,
+        // [`crate::scxml_identifier::reject_malformed`]); the gate asks nothing of it
+        // again (docs/adr/0086, section 7.3).
         if !model.global_scripts.is_empty() {
             return Some("a <script>".to_string());
         }
@@ -18056,21 +18046,13 @@ impl StaticTarget for SwiftTarget {
         // A record or a payload that holds a composed value (docs/adr/0086) is a struct
         // of its schema's fields too ([`crate::forge::composed_lowering::SwiftComposed`]),
         // each a member named as the author wrote it and a label of the initializer a
-        // value is built by, so a name Swift reserves cannot be one. A field that may be
+        // value is built by. A name Swift reserves is no such member, and is refused
+        // where the schema's document declares it, for every backend at once
+        // (`validation/reserved-code-identifier`,
+        // [`crate::scxml_identifier::reject_malformed`]), which every record a payload
+        // holds at any depth passes through, each being a document of its own; the gate
+        // asks nothing of it again (docs/adr/0086, section 7.3). A field that may be
         // absent is `T?` over whatever its element is held in, a byte string included.
-        if let Some((schema, field)) = model
-            .imported_records
-            .values()
-            .chain(model.imported_event_schemas.values())
-            .filter(|schema| schema.entry_schema().is_err())
-            .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
-            .find(|(_, field)| crate::reader_names::is_reserved_word(Language::Swift, &field.id))
-        {
-            return Some(format!(
-                "the field `{}` of `{}`, which holds a composed value, a name Swift reserves",
-                field.id, schema.name
-            ));
-        }
         for state in model.states.values() {
             let blocks = state
                 .on_entry_blocks
@@ -18298,8 +18280,9 @@ impl StaticTarget for SwiftTarget {
                 .collect::<String>(),
         )
     }
-    // The author's spelling, which is what an expression's member access writes;
-    // [`Self::unsupported`] has refused a name Swift reserves.
+    // The author's spelling, which is what an expression's member access writes; a
+    // name Swift reserves was refused where the schema's document declares it
+    // ([`crate::scxml_identifier::reject_malformed`]).
     fn record_field(&self, id: &str) -> String {
         id.to_string()
     }
