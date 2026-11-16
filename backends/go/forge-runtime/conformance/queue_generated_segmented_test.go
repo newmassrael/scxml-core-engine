@@ -93,23 +93,23 @@ func TestTheLinkedLamportPackageHandsElementsOverAcrossSegmentsAndReportsARefuse
 		t.Fatal("a new queue is empty")
 	}
 	for i := 0; i < 2*linked.Segment; i++ {
-		if producer.TryPush(element.QueueConformanceEvent{SensorId: 1, Value: uint16(i)}) != queue.PushOK {
+		if producer.TryPush(element.MakeQueueConformanceEvent(1, uint16(i))) != queue.PushOK {
 			t.Fatalf("push %d fits the two segments", i)
 		}
 	}
-	if producer.TryPush(element.QueueConformanceEvent{SensorId: 9, Value: 99}) != queue.PushOutOfMemory {
+	if producer.TryPush(element.MakeQueueConformanceEvent(9, 99)) != queue.PushOutOfMemory {
 		t.Fatal("the allocator refuses a third segment")
 	}
 	for i := 0; i < 2*linked.Segment; i++ {
 		got, ok := consumer.TryPop()
-		if !ok || got.SensorId != 1 || got.Value != uint16(i) {
+		if !ok || got.SensorId() != 1 || got.Value() != uint16(i) {
 			t.Fatalf("pop %d: got (%+v, %v): first in, first out", i, got, ok)
 		}
 	}
 	if _, ok := consumer.TryPop(); ok {
 		t.Fatal("drained")
 	}
-	if producer.TryPush(element.QueueConformanceEvent{SensorId: 1, Value: 100}) != queue.PushOK {
+	if producer.TryPush(element.MakeQueueConformanceEvent(1, 100)) != queue.PushOK {
 		t.Fatal("a segment the consumer gave back is room again")
 	}
 }

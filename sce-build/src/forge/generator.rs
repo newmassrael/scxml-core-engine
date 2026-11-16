@@ -28,6 +28,7 @@ mod c11_test_template;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod go_source;
 mod go_test_tables;
 mod go_test_template;
 mod kotlin_source;
@@ -559,6 +560,16 @@ pub struct ImportContext {
     /// that keeps the template's encode.
     #[serde(skip)]
     pub kotlin_printed: bool,
+
+    /// docs/adr/0081 step 4: `true` when the generation is for Go and the Go
+    /// backend prints the imported codec from its plan, so its value holds its
+    /// elements in unexported fields and presents each through a method, and
+    /// a parent or a procedure reads them by call (`entry.Kind()`), not as
+    /// fields, and makes a value by its `Make{Codec}`. `false` on every other
+    /// backend, for non-codec imports, and for a codec that keeps the
+    /// template's encode.
+    #[serde(skip)]
+    pub go_printed: bool,
 
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
@@ -1648,6 +1659,7 @@ fn resolve_single_import(
         python_unlowered: None,
         swift_printed: false,
         kotlin_printed: false,
+        go_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -10873,6 +10885,22 @@ pub(crate) fn kotlin_content_line_printed(
     })
 }
 
+/// Whether the Go backend prints `m` from its encode plan (docs/adr/0081 step
+/// 4, §6): its plan uses only the forms the Go printer lowers. Such a value
+/// holds its elements in unexported fields, presents each through a method of
+/// its `{Codec}Source`, and is made by `Make{Codec}`; any other codec keeps the
+/// template's encode whole.
+pub(crate) fn go_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    go_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+}
+
+/// Every form of `m`'s encode plan the Go printer does not lower, as the
+/// clause that names it, in the order the printer meets them; empty where
+/// [`go_codec_printed`].
+pub(crate) fn go_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    go_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+}
+
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
@@ -13790,6 +13818,24 @@ fn render_codec(
     } else {
         None
     };
+    // docs/adr/0081 step 4: a Go codec whose plan uses only the forms the Go
+    // printer lowers is printed from its plan, its value holding its elements
+    // in unexported fields behind its methods and its encode over any source;
+    // any other keeps the template's encode whole (§6), so no codec has two.
+    // The plan is kept beside the text, as its totality answers whether the
+    // facade that returns the bytes can fail.
+    let go_printed = if matches!(lang, crate::generator::Language::Go) {
+        let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+        match (go_source::unlowered(&plan), plan) {
+            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
+                let printed = go_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                Some((p, printed))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
@@ -14869,9 +14915,13 @@ fn render_codec(
             }
             // The name the value holds the field under: its own where the
             // field is a public member, the private one a C++ value printed
-            // from its plan holds behind its accessor (docs/adr/0081 step 4).
+            // from its plan holds behind its accessor (docs/adr/0081 step 4),
+            // or the unexported one a Go value printed from its plan holds
+            // behind its method.
             let member = if cpp_printed.is_some() {
                 cpp_source::member(&l.codec_field_id(&f.id))
+            } else if go_printed.is_some() {
+                go_source::member(&f.id)
             } else {
                 l.codec_field_id(&f.id)
             };
@@ -15103,9 +15153,12 @@ fn render_codec(
             if let Some(q) = f.quantity {
                 // The accessors read and write the raw value where the value
                 // holds it: a C++ value printed from its plan holds it in its
-                // private member, as its flag accessors do.
+                // private member, as its flag accessors do, and a Go value
+                // printed from its plan in its unexported field.
                 let raw_ref = if cpp_printed.is_some() {
                     member.clone()
+                } else if go_printed.is_some() {
+                    l.codec_field_ref(&member)
                 } else {
                     l.codec_field_ref(&l.codec_field_id(&f.id))
                 };
@@ -15273,6 +15326,15 @@ fn render_codec(
                         "made": group.made,
                     }))
                     .collect::<Vec<_>>(),
+            }),
+        );
+    }
+    if let Some((_, printed)) = &go_printed {
+        ctx.insert(
+            "go_source".into(),
+            serde_json::json!({
+                "before": printed.before,
+                "after": printed.after,
             }),
         );
     }
@@ -15614,7 +15676,8 @@ fn render_codec(
     }
     // A printed C++ encode refuses what its plan's totality names; it runs no
     // prologue of the template's.
-    // A printed Python encode, likewise.
+    // A printed Python encode, likewise. A printed Go encode, likewise, and the
+    // Go template runs the prologue only on its own encode.
     let encode_can_refuse = if cpp_printed.is_some() {
         cpp_printed_refuses
     } else if let Some((plan, _)) = &python_printed {
@@ -15623,6 +15686,8 @@ fn render_codec(
         // A printed Kotlin value's own `encode` also holds each input its value
         // says to what its caller hands it.
         !plan.totality.is_total() || !plan.said.is_empty()
+    } else if let Some((plan, _)) = &go_printed {
+        !plan.totality.is_total()
     } else {
         refuses_mismatch || !bound_lines.is_empty()
     };
@@ -17558,8 +17623,8 @@ fn resolve_chain_entry_identifier(
 /// How a codec reads its chains' entries' identifiers (see
 /// [`chain_identifier_masks`]): for the chains that leave flags out of it, the
 /// bits of an entry's value that are the identifier; and the chains whose entry
-/// codec the C++ backend prints from its plan, whose elements are read through
-/// accessors (docs/adr/0081 step 4).
+/// codec the C++ or the Go backend prints from its plan, whose elements are
+/// read through accessors (docs/adr/0081 step 4).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ChainIdentifierMasks {
     masks: std::collections::BTreeMap<String, u64>,
@@ -17574,7 +17639,7 @@ impl ChainIdentifierMasks {
     }
 
     /// Whether the entries of `chain` present their elements through
-    /// accessors, a C++ codec printed from its plan.
+    /// accessors, a C++ or a Go codec printed from its plan.
     pub(crate) fn reads_accessor(&self, chain: &str) -> bool {
         self.accessors.contains(chain)
     }
@@ -17598,7 +17663,7 @@ pub(crate) fn chain_identifier_masks(
             .tlv_chain_body_alias
             .as_deref()
             .and_then(|alias| imports.iter().find(|i| i.alias == alias))
-            .is_some_and(|entry| entry.cpp_printed.is_some())
+            .is_some_and(|entry| entry.cpp_printed.is_some() || entry.go_printed)
         {
             masks.accessors.insert(chain.id.clone());
         }
@@ -25235,8 +25300,8 @@ fn chain_entry_identifier(
             format!("{entry}.{getter}()")
         }
     } else if accessor {
-        // A C++ entry printed from its plan presents the field through its
-        // accessor (docs/adr/0081 step 4).
+        // A C++ or a Go entry printed from its plan presents the field
+        // through its accessor (docs/adr/0081 step 4).
         format!(
             "{entry}.{}()",
             codec_field_local_name(&identifier.name, lang)
@@ -31741,6 +31806,13 @@ fn render_bounded_collection_go(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field_pascal => index_by_field_pascal,
+        // An element the Go backend prints from its plan presents the index
+        // field through its method (docs/adr/0081 step 4).
+        index_by_accessor => options
+            .bounded_collection_resolutions
+            .as_ref()
+            .and_then(|map| map.get(&m.name))
+            .is_some_and(|resolution| resolution.element_go_printed),
         index_by_go_type => inputs.index_type,
         index_imports => inputs.index_imports,
         runtime_dep => "self-contained — Go stdlib `errors` only",
@@ -35380,7 +35452,7 @@ fn stateful_import_field_renames(
                 // its accessor and holds no number its encode derives, which a
                 // function of its namespace derives as the encode does
                 // (docs/adr/0081 step 4, §3); an assign to an element is a
-                // rebuild ([`cpp_rebuilt_element_assign`]), not this read. A
+                // rebuild ([`rebuilt_element_assign`]), not this read. A
                 // field the value does not present alone, a member of a group,
                 // is no member a reader names (`validate_and_enrich_imports`).
                 generator::Language::Cpp => match &imp.cpp_printed {
@@ -35400,6 +35472,13 @@ fn stateful_import_field_renames(
                 generator::Language::Rust => {
                     let snake_field = filters::to_snake_case(field.to_string());
                     format!("self.{}.{}", imp.member_name, snake_field)
+                }
+                // A codec the Go printer prints presents each element through
+                // its method (docs/adr/0081 step 4); an assign to one is a
+                // rebuild ([`rebuilt_element_assign`]), not this read.
+                generator::Language::Go if imp.go_printed => {
+                    let pascal_field = filters::to_pascal_case(field.to_string());
+                    format!("{go_receiver}.{}.{}()", imp.member_name, pascal_field)
                 }
                 generator::Language::Go => {
                     let pascal_field = filters::to_pascal_case(field.to_string());
@@ -35782,7 +35861,7 @@ fn build_procedure_states_with_assigns(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
     import_lowerings: &[expr::ImportLowering],
-    cpp_imports: &[ImportContext],
+    printed_imports: &[ImportContext],
 ) -> Result<Vec<serde_json::Value>, ForgeError> {
     // Bounded-bytes cap contract: bytes-typed slot id → resolved
     // cap. The cpp branch consumes these fields directly; the other
@@ -35881,9 +35960,13 @@ fn build_procedure_states_with_assigns(
                             let is_bytes_with_cap = cap_check_target
                                 && slot_cap.is_some()
                                 && matches!(lhs_ty, crate::forge::types::InferredType::Bytes);
-                            let rebuilt =
-                                cpp_rebuilt_element_assign(cpp_imports, &a.location, &wrapped)
-                                    .map_err(|refusal| location.place(refusal))?;
+                            let rebuilt = rebuilt_element_assign(
+                                target,
+                                printed_imports,
+                                &a.location,
+                                &wrapped,
+                            )
+                            .map_err(|refusal| location.place(refusal))?;
                             let (location_emitted, wrapped, made) = match rebuilt {
                                 Some(rebuilt) => (rebuilt.location, rebuilt.value, rebuilt.made),
                                 None => (location_emitted, wrapped, None),
@@ -35921,7 +36004,7 @@ fn build_procedure_states_with_assigns(
 }
 
 /// An assign to an element of a printed codec, made a rebuild of the value
-/// that holds it ([`cpp_rebuilt_element_assign`]).
+/// that holds it ([`rebuilt_element_assign`]).
 struct RebuiltAssign {
     /// The place the value is held in, which the rebuilt value is assigned to.
     location: String,
@@ -35935,9 +36018,10 @@ struct RebuiltAssign {
     made: Option<(String, String)>,
 }
 
-/// The C++ statement that assigns `value` to the element `location` names
-/// (`alias.element`) of an imported codec the C++ printer prints; `None` where
-/// `location` names no field of such a codec.
+/// The statement that assigns `value` to the element `location` names
+/// (`alias.element`) of an imported codec the `target` backend prints from its
+/// plan; `None` where `location` names no field of such a codec, and on a
+/// backend that prints no codec a procedure holds.
 ///
 /// A printed codec's value is made only by its constructor (docs/adr/0081
 /// step 4), so an element is not assigned in place: the value is made again
@@ -35947,20 +36031,62 @@ struct RebuiltAssign {
 /// ([`cpp_source::CppPrinted::rebuilt`]). A byte string or a text is first
 /// made into its bounded value, which can fail. A number the encode derives
 /// is no element of the value, so an assign to one is refused, as is an
-/// assign to a body or a list, which no expression gives. `cpp_imports` is
-/// empty for every other backend.
-fn cpp_rebuilt_element_assign(
-    cpp_imports: &[ImportContext],
+/// assign to a body or a list, which no expression gives. Go calls the
+/// codec's `Make{Codec}`, whose parameters have the types the fields the
+/// assignment wrote had. `printed_imports` is empty for a backend that prints
+/// none.
+fn rebuilt_element_assign(
+    target: ExprTarget,
+    printed_imports: &[ImportContext],
     location: &str,
     value: &str,
 ) -> Result<Option<RebuiltAssign>, crate::forge::expr::Refusal> {
     let Some((alias, element)) = location.trim().split_once('.') else {
         return Ok(None);
     };
-    let Some((imp, printed)) = cpp_imports.iter().find_map(|imp| match &imp.cpp_printed {
-        Some(printed) if imp.is_stateful && imp.alias == alias => Some((imp, printed)),
-        _ => None,
-    }) else {
+    if let ExprTarget::Go = target {
+        let Some(imp) = printed_imports
+            .iter()
+            .find(|imp| imp.go_printed && imp.is_stateful && imp.alias == alias)
+        else {
+            return Ok(None);
+        };
+        if !imp.codec_fields.iter().any(|f| f.id == element) {
+            return Ok(None);
+        }
+        let held = format!("{GO_PROCEDURE_RECEIVER}.{}", imp.member_name);
+        let arguments: Vec<String> = imp
+            .codec_fields
+            .iter()
+            .map(|f| {
+                if f.id == element {
+                    value.to_string()
+                } else {
+                    format!("{held}.{}()", filters::to_pascal_case(f.id.clone()))
+                }
+            })
+            .collect();
+        // `package.Codec` is made by `package.MakeCodec`.
+        let make = match imp.member_type.rsplit_once('.') {
+            Some((package, codec)) => format!("{package}.Make{codec}"),
+            None => format!("Make{}", imp.member_type),
+        };
+        return Ok(Some(RebuiltAssign {
+            location: held,
+            value: format!("{make}({})", arguments.join(", ")),
+            made: None,
+        }));
+    }
+    let printed_by_cpp = matches!(target, ExprTarget::Cpp);
+    let Some((imp, printed)) = printed_imports
+        .iter()
+        .find_map(|imp| match &imp.cpp_printed {
+            Some(printed) if printed_by_cpp && imp.is_stateful && imp.alias == alias => {
+                Some((imp, printed))
+            }
+            _ => None,
+        })
+    else {
         return Ok(None);
     };
     if !imp.codec_fields.iter().any(|f| f.id == element) {
@@ -37268,7 +37394,7 @@ fn render_procedure_go(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-        &[],
+        imports,
     )?;
 
     // Cross-file imports
@@ -45437,12 +45563,13 @@ impl<'a> AlgorithmTypes<'a> {
                 &m.body,
                 imports,
                 schemas,
-                // One of the two is populated, for the backend the algorithm
-                // is generated for.
+                // One of the three is populated, for the backend the
+                // algorithm is generated for.
                 options
                     .element_type_cpp_printed
                     .as_ref()
-                    .or(options.element_type_kotlin_printed.as_ref()),
+                    .or(options.element_type_kotlin_printed.as_ref())
+                    .or(options.element_type_go_printed.as_ref()),
                 &mut foreach_members,
             );
         }
@@ -46119,10 +46246,11 @@ fn render_algorithm(
             ));
         }
     }
-    // A field of a collection element the C++ backend prints from its plan is
-    // presented through the element's accessor (docs/adr/0081 step 4), so the
-    // item's field is read as a call.
-    if matches!(lang, Language::Cpp) {
+    // A field of a collection element the C++ or the Go backend prints from
+    // its plan is presented through the element's accessor (docs/adr/0081
+    // step 4), so the item's field is read as a call. The set of printed
+    // elements is of the backend this compile is for, and empty on any other.
+    if matches!(lang, Language::Cpp | Language::Go) {
         for (path, item, field) in &types.member_accessors {
             record_renames.push((
                 path.clone(),
@@ -48811,6 +48939,7 @@ mod tests {
             python_unlowered: None,
             swift_printed: false,
             kotlin_printed: false,
+            go_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49743,6 +49872,7 @@ mod tests {
                 python_unlowered: None,
                 swift_printed: false,
                 kotlin_printed: false,
+                go_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49818,6 +49948,7 @@ mod tests {
                 python_unlowered: None,
                 swift_printed: false,
                 kotlin_printed: false,
+                go_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

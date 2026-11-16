@@ -69,16 +69,16 @@ func TestTheLamportRingPackageHandsElementsOverInOrderAndRefusesWhenFull(t *test
 		t.Fatal("a new queue is empty")
 	}
 	for i := 0; i < spsc.Capacity; i++ {
-		if producer.TryPush(element.QueueConformanceEvent{SensorId: 1, Value: uint16(i)}) != queue.PushOK {
+		if producer.TryPush(element.MakeQueueConformanceEvent(1, uint16(i))) != queue.PushOK {
 			t.Fatalf("push %d of %d must fit", i, spsc.Capacity)
 		}
 	}
-	if producer.TryPush(element.QueueConformanceEvent{SensorId: 9, Value: 99}) != queue.PushFull {
+	if producer.TryPush(element.MakeQueueConformanceEvent(9, 99)) != queue.PushFull {
 		t.Fatal("a full queue refuses the push")
 	}
 	for i := 0; i < spsc.Capacity; i++ {
 		got, ok := consumer.TryPop()
-		if !ok || got.SensorId != 1 || got.Value != uint16(i) {
+		if !ok || got.SensorId() != 1 || got.Value() != uint16(i) {
 			t.Fatalf("pop %d: got (%+v, %v): first in, first out", i, got, ok)
 		}
 	}

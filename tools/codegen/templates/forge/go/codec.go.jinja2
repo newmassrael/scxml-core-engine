@@ -82,16 +82,28 @@ type {{ struct_name }}Variant struct {
 }
 
 {% endif %}
+{# docs/adr/0081 step 4: a codec printed from its plan is read through the
+   interface of its source, holds each element in an unexported field
+   (`field.member`) behind its method, is made by its `Make` constructor, and
+   is encoded by `EncodeSource` over any source of it. #}
+{% if go_source %}
+{{ go_source.before }}
+
+{% endif %}
 // {{ struct_name }} represents the codec frame layout.
 type {{ struct_name }} struct {
 {% for field in fields %}
-	{{ field.id }} {{ field.go_type }}
+	{{ field.member }} {{ field.go_type }}
 {% endfor %}
 {% if has_variant %}
 	Body {{ struct_name }}Variant
 {% endif %}
 }
 
+{% if go_source %}
+{{ go_source.after }}
+
+{% endif %}
 {% if has_variant %}
 {% set ns = namespace(default_arm=none) %}
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
@@ -108,7 +120,7 @@ func New{{ struct_name }}() *{{ struct_name }} {
 	return &{{ struct_name }}{
 {% for field in fields %}
 {% if field.go_flag_default_literal is defined %}
-		{{ field.id }}: {{ field.go_flag_default_literal }},
+		{{ field.member }}: {{ field.go_flag_default_literal }},
 {% endif %}
 {% endfor %}
 {% if has_variant and ns.default_arm %}
@@ -200,7 +212,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	}
 	return &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.id }},
+		{{ field.member }}: {{ field.id }},
 {% endfor %}
 		Body: body,
 	}, nil
@@ -229,7 +241,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endfor %}
 	return &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.id }},
+		{{ field.member }}: {{ field.id }},
 {% endfor %}
 	}, nil
 {% elif has_variable_fields %}
@@ -248,7 +260,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endfor %}
 	value := &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.id }},
+		{{ field.member }}: {{ field.id }},
 {% endfor %}
 	}
 	if err := cursor.Advance(frameLen); err != nil {
@@ -265,7 +277,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endfor %}
 	value := &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.id }},
+		{{ field.member }}: {{ field.id }},
 {% endfor %}
 	}
 	if err := cursor.Advance({{ min_bytes }}); err != nil {
@@ -312,25 +324,25 @@ func (s *{{ struct_name }}) {{ field.quantity_accessor.setter_name }}(value {{ f
 {% for fl in field.flags %}
 {% if fl.multi_bit %}
 func (s *{{ struct_name }}) {{ fl.name_acc }}() {{ fl.result_type }} {
-	return {{ fl.result_type }}((s.{{ field.id }} >> {{ fl.bit }}) & {{ fl.value_mask_literal }})
+	return {{ fl.result_type }}((s.{{ field.member }} >> {{ fl.bit }}) & {{ fl.value_mask_literal }})
 }
 
 func (s *{{ struct_name }}) {{ fl.name_set }}(v {{ fl.result_type }}) {
 	const _shiftedMask {{ field.go_type }} = {{ fl.value_mask_literal }} << {{ fl.bit }}
 	_val := ({{ field.go_type }}(v) & {{ fl.value_mask_literal }}) << {{ fl.bit }}
-	s.{{ field.id }} = (s.{{ field.id }} &^ _shiftedMask) | _val
+	s.{{ field.member }} = (s.{{ field.member }} &^ _shiftedMask) | _val
 }
 
 {% else %}
 func (s *{{ struct_name }}) {{ fl.name_acc }}() bool {
-	return (s.{{ field.id }} & {{ fl.mask_literal }}) != 0
+	return (s.{{ field.member }} & {{ fl.mask_literal }}) != 0
 }
 
 func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 	if v {
-		s.{{ field.id }} |= {{ fl.mask_literal }}
+		s.{{ field.member }} |= {{ fl.mask_literal }}
 	} else {
-		s.{{ field.id }} &^= {{ fl.mask_literal }}
+		s.{{ field.member }} &^= {{ fl.mask_literal }}
 	}
 }
 
@@ -366,6 +378,9 @@ func (s *{{ struct_name }}) Tag() byte {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) error {
+{% if go_source %}
+	return EncodeSource(s, w)
+{% else %}
 {% if has_parent_tag_derivation %}
 	// RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
 	// parent-tag variant's active arm before the carrier byte is
@@ -458,6 +473,7 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) 
 	}
 {% endfor %}
 	return nil
+{% endif %}
 {% endif %}
 }
 

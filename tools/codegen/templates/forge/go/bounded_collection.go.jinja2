@@ -225,6 +225,8 @@ func (t *{{ pascal }}) GetBySlot(slot uint32) (*{{ element_qualified }}, bool) {
 }
 
 {% if has_index_by %}
+{# An element printed from its plan (docs/adr/0081 step 4) presents the index
+   field through its method (`index_by_accessor`). #}
 // FindByIndex (spec line 2615). Linear scan over occupied slots
 // (CAPACITY upper bound is compile-time constant → satisfies §synth-5-A
 // `max-iter` requirement when called from algorithm bodies). On
@@ -234,7 +236,7 @@ func (t *{{ pascal }}) FindByIndex(key {{ index_by_go_type }}) ({{ pascal }}Hand
 		if !t.occupied[slot] {
 			continue
 		}
-		if t.slots[slot].{{ index_by_field_pascal }} == key {
+		if t.slots[slot].{{ index_by_field_pascal }}{% if index_by_accessor %}(){% endif %} == key {
 			return New{{ pascal }}Handle(uint32(slot), t.generation[slot]), true
 		}
 	}

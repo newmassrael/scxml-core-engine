@@ -142,9 +142,9 @@ func TestBroadcastLogEntriesComeBackWholeAndInOrderThroughTheTypedFunctions(t *t
 
 	// Values that fill every byte of the packed word and differ in each.
 	sent := []blogevent.BroadcastLogConformanceEvent{
-		{SensorId: 1, Value: 0x0102},
-		{SensorId: 2, Value: 0xFFEE},
-		{SensorId: 255, Value: 0},
+		blogevent.MakeBroadcastLogConformanceEvent(1, 0x0102),
+		blogevent.MakeBroadcastLogConformanceEvent(2, 0xFFEE),
+		blogevent.MakeBroadcastLogConformanceEvent(255, 0),
 	}
 	for n := range sent {
 		if seq := blogPublishEvent(t, publisher, sent[n]); seq != uint64(n) {
@@ -171,8 +171,8 @@ func TestBroadcastLogEntriesComeBackWholeAndInOrderThroughTheTypedFunctions(t *t
 func TestBroadcastLogPacksTheLengthThenTheBytesLittleEndianEightToAWord(t *testing.T) {
 	log := blogliteral.NewBroadcastLogConformanceLiteral()
 	publisher := blogNewLiteralPublisher(t, log)
-	blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 1, Value: 0x0102})
-	blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 2, Value: 0xFFEE})
+	blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(1, 0x0102))
+	blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(2, 0xFFEE))
 
 	// The element is little-endian: the id, then the low byte of the value, then
 	// its high byte. 1, 0x02, 0x01 packs to 0x01<<16 | 0x02<<8 | 0x01 = 0x010201,
@@ -201,7 +201,7 @@ func TestBroadcastLogAReaderThePublisherLapsIsToldHowManyItMissedAndResumesAtThe
 	// Six entries, sequence numbers 0 to 5, into a log that retains three: the
 	// window is [6 - 3, 6) = [3, 6), so the reader at 0 missed 3 - 0 = 3.
 	for n := uint16(0); n < 6; n++ {
-		blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 9, Value: n})
+		blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(9, n))
 	}
 	lagged := blogReadEvent(log, &slow)
 	if lagged.err != nil || lagged.answer.Kind != broadcastlog.ReadLagged || lagged.answer.Skipped != 3 || lagged.element != nil {
@@ -213,7 +213,7 @@ func TestBroadcastLogAReaderThePublisherLapsIsToldHowManyItMissedAndResumesAtThe
 
 	for n := uint16(3); n < 6; n++ {
 		got := blogReadEvent(log, &slow)
-		want := blogevent.BroadcastLogConformanceEvent{SensorId: 9, Value: n}
+		want := blogevent.MakeBroadcastLogConformanceEvent(9, n)
 		if got.err != nil || got.answer.Kind != broadcastlog.ReadItem || got.answer.Seq != uint64(n) || got.element == nil || *got.element != want {
 			t.Fatalf("after the lag, read of %d: %+v (element %+v), want the item %+v", n, got, got.element, want)
 		}
@@ -229,8 +229,8 @@ func TestBroadcastLogAReaderThePublisherLapsIsToldHowManyItMissedAndResumesAtThe
 func TestBroadcastLogTwoReadersKeepSeparateCursors(t *testing.T) {
 	log := blogliteral.NewBroadcastLogConformanceLiteral()
 	publisher := blogNewLiteralPublisher(t, log)
-	blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 1, Value: 10})
-	blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 2, Value: 20})
+	blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(1, 10))
+	blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(2, 20))
 
 	// Opened at the oldest entry held (0, as nothing was forgotten), at sequence
 	// number 1, and at the head, which is 2.
@@ -238,8 +238,8 @@ func TestBroadcastLogTwoReadersKeepSeparateCursors(t *testing.T) {
 	second := log.ReaderAt(1)
 	late := log.ReaderHead()
 
-	one := blogevent.BroadcastLogConformanceEvent{SensorId: 1, Value: 10}
-	two := blogevent.BroadcastLogConformanceEvent{SensorId: 2, Value: 20}
+	one := blogevent.MakeBroadcastLogConformanceEvent(1, 10)
+	two := blogevent.MakeBroadcastLogConformanceEvent(2, 20)
 	expectItem := func(name string, got blogEventRead, seq uint64, want blogevent.BroadcastLogConformanceEvent) {
 		t.Helper()
 		if got.err != nil || got.answer.Kind != broadcastlog.ReadItem || got.answer.Seq != seq || got.element == nil || *got.element != want {
@@ -264,8 +264,8 @@ func TestBroadcastLogTwoReadersKeepSeparateCursors(t *testing.T) {
 	if got := blogReadEvent(log, &late); got.answer.Kind != broadcastlog.ReadEmpty {
 		t.Fatalf("a reader at the head sees nothing published before it: %+v", got)
 	}
-	blogPublishEvent(t, publisher, blogevent.BroadcastLogConformanceEvent{SensorId: 3, Value: 30})
-	expectItem("late reader", blogReadEvent(log, &late), 2, blogevent.BroadcastLogConformanceEvent{SensorId: 3, Value: 30})
+	blogPublishEvent(t, publisher, blogevent.MakeBroadcastLogConformanceEvent(3, 30))
+	expectItem("late reader", blogReadEvent(log, &late), 2, blogevent.MakeBroadcastLogConformanceEvent(3, 30))
 }
 
 // ─── What the element's bound does ───

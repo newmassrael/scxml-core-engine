@@ -3362,6 +3362,44 @@ pub fn kotlin_codec_unlowered_file(
     )
 }
 
+/// Whether the Go tree prints the codec at `path` from its encode plan
+/// (docs/adr/0081 step 4): its value holds its elements in unexported fields,
+/// presents each through a method of its `{Codec}Source`, and is made by
+/// `Make{Codec}`. Read as the Go tree reads it, its imports resolved. `None`
+/// for a document that is not a codec.
+pub fn go_codec_printed_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Go,
+        |model, imports, _| forge::generator::go_codec_printed(&model, imports),
+    )
+}
+
+/// Every form of the codec at `path` that the Go printer does not lower
+/// (docs/adr/0081 step 4), in the order the printer meets them; empty where it
+/// lowers every form and the codec is printed. A codec it does not print keeps
+/// the template's encode whole. Read as [`go_codec_printed_file`] reads it.
+/// `None` for a document that is not a codec.
+pub fn go_codec_unlowered_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<Vec<String>>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Go,
+        |model, imports, _| forge::generator::go_codec_unlowered(&model, imports),
+    )
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.
@@ -4064,6 +4102,7 @@ pub fn compile_forge_with_deploy(
                 // collection declares no index here.
                 element_cpp_printed: false,
                 element_kotlin_printed: false,
+                element_go_printed: false,
             },
         );
         Some(map)
@@ -4585,6 +4624,14 @@ pub struct ForgeCompileOptions {
     /// C++ compile only; `None` elsewhere, where no field is read by call.
     pub element_type_cpp_printed: Option<std::collections::HashSet<String>>,
 
+    /// docs/adr/0081 step 4: the element-type candidates the Go backend
+    /// prints from their encode plan, by the snake element name of
+    /// [`Self::element_type_field_schemas`]. Such an element presents each
+    /// field through its method, so an algorithm iterating a collection of it
+    /// reads `entry.<field>` as a call. Populated with the schemas, on a Go
+    /// compile only; `None` elsewhere.
+    pub element_type_go_printed: Option<std::collections::HashSet<String>>,
+
     /// docs/adr/0081 step 5: the element-type candidates the Swift backend
     /// prints from their encode plan (`swift_codec_printed_file`), by the snake
     /// element name. Such an element's encode takes no flag input its value
@@ -4679,6 +4726,11 @@ pub struct BoundedCollectionResolution {
     /// every other backend, for an element that is no codec, and when the
     /// element document is not in hand.
     pub element_kotlin_printed: bool,
+    /// docs/adr/0081 step 4: whether the Go backend prints the element codec
+    /// from its plan, so the collection reads the `<sce:index-by>` field of an
+    /// element through its method. `false` on every other backend, for an
+    /// element that is no codec, and when the element document is not in hand.
+    pub element_go_printed: bool,
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-P — what a queue's two
@@ -5640,6 +5692,9 @@ fn compile_document_set(
     // Likewise on a Kotlin compile: a reader of such an element reads each
     // byte string and text through the value class of its bound.
     let mut element_type_kotlin_printed: HashSet<String> = HashSet::new();
+    // Likewise on a Go compile: a reader of such an element reads each field
+    // through its method.
+    let mut element_type_go_printed: HashSet<String> = HashSet::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5789,6 +5844,11 @@ fn compile_document_set(
                         && cpp_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
                     {
                         element_type_cpp_printed.insert(filters::to_snake_case(key.clone()));
+                    }
+                    if language == generator::Language::Go
+                        && go_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_go_printed.insert(filters::to_snake_case(key.clone()));
                     }
                     if language == generator::Language::Swift
                         && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
@@ -6269,6 +6329,8 @@ fn compile_document_set(
                     .contains(&filters::to_snake_case(bc.element_type.clone())),
                 element_kotlin_printed: element_type_kotlin_printed
                     .contains(&filters::to_snake_case(bc.element_type.clone())),
+                element_go_printed: element_type_go_printed
+                    .contains(&filters::to_snake_case(bc.element_type.clone())),
             },
         );
     }
@@ -6370,6 +6432,7 @@ fn compile_document_set(
         || !element_type_cpp_printed.is_empty()
         || !element_type_swift_printed.is_empty()
         || !element_type_kotlin_printed.is_empty()
+        || !element_type_go_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
         || broadcast_log_resolutions_override.is_some();
@@ -6394,6 +6457,9 @@ fn compile_document_set(
         }
         if !element_type_cpp_printed.is_empty() {
             overridden.element_type_cpp_printed = Some(element_type_cpp_printed);
+        }
+        if !element_type_go_printed.is_empty() {
+            overridden.element_type_go_printed = Some(element_type_go_printed);
         }
         if !element_type_swift_printed.is_empty() {
             overridden.element_type_swift_printed = Some(element_type_swift_printed);
@@ -7597,6 +7663,15 @@ fn validate_and_enrich_imports(
                 if matches!(language, generator::Language::Kotlin) {
                     ctx.kotlin_printed =
                         kotlin_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                }
+                // docs/adr/0081 step 4: whether the Go backend prints the
+                // import from its plan, so a parent, a procedure or a
+                // validator reads its elements through methods and makes a
+                // value of it by its `Make{Codec}`. Read as the import is
+                // generated, its own imports resolved.
+                if matches!(language, generator::Language::Go) {
+                    ctx.go_printed =
+                        go_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
                 }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.

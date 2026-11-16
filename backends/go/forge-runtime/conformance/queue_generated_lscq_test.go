@@ -74,13 +74,13 @@ func TestTheLscqPackageHandsElementsOverAcrossSegmentsAndGivesEachSegmentBack(t 
 		t.Fatal("a new queue is empty")
 	}
 	for i := 0; i < total; i++ {
-		if producer.TryPush(element.QueueConformanceEvent{SensorId: 2, Value: uint16(i)}) != queue.PushOK {
+		if producer.TryPush(element.MakeQueueConformanceEvent(2, uint16(i))) != queue.PushOK {
 			t.Fatalf("push %d", i)
 		}
 	}
 	for i := 0; i < total; i++ {
 		got, ok := consumer.TryPop()
-		if !ok || got.SensorId != 2 || got.Value != uint16(i) {
+		if !ok || got.SensorId() != 2 || got.Value() != uint16(i) {
 			t.Fatalf("pop %d: got (%+v, %v): first in, first out", i, got, ok)
 		}
 	}

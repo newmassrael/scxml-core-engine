@@ -2560,3 +2560,25 @@ is printed.
 - A refused value leaves the sink untouched: the component is written into a staged sink first. Before, the lines
   before the refused one had reached the sink. The encode's answer names the rule, as it did.
 
+## A printed Go codec is made by its constructor and read through its methods (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Go tree is regenerated after it. It moves the positional codecs
+whose elements are integers, flag sets and enums, each always there, written whole, in bytes they share, or as a
+variable-length integer, which derive no element and whose encode refuses nothing (the codecs
+`sce_build::go_codec_printed_file` answers `Some(true)` for). Every other Go codec is unchanged.
+
+- The value's fields are unexported. Read an element through its method, which has the name the field had:
+  `frame.MsgId` is `frame.MsgId()`. A flag's accessor and setter (`frame.Reliable()`, `frame.SetReliable(true)`)
+  are unchanged and read and write the carrier the value holds.
+- Make a value with `Make{Codec}`, which takes every element in declaration order and returns the value, not a
+  pointer: `&pkg.Frame{MsgId: 1, Length: 2, Payload: 3}` is `pkg.MakeFrame(1, 2, 3)`, and `v.MsgId = 4` is
+  `v = pkg.MakeFrame(4, v.Length(), v.Payload())`. A positional constructor fails to build where a call leaves
+  an element out, which a keyed literal did not. `New{Codec}()`, which a codec with declared flag defaults has,
+  and the zero value `pkg.Frame{}` still make a value.
+- `EncodeSource(src, w)` of the codec's package encodes any value that presents the codec's elements, which
+  `{Codec}Source`, an interface of one method for each element, names: `*{Codec}` is one, and so is any type of
+  yours with those methods. `Encode` and `EncodeToBytes` keep their signatures.
+- A parent, a procedure, a validator, a collection and an algorithm that this generator writes read such a codec
+  through its methods too, and a procedure that assigns one of its elements makes the value again by
+  `Make{Codec}`. A value compares with `==` as before.
+

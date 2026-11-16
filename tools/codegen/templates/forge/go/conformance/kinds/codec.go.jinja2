@@ -42,11 +42,17 @@
 		   bytes decode to the value and are read whole, and the encode is not
 		   held to them. #}
 		if !c.DecodeOnly {
+{% if f.printed %}
+			{# Made by its constructor, its elements in declaration order, which
+			   is the order the catalog lists them in (docs/adr/0081 step 4). #}
+			value := {{ f.name }}.Make{{ f.name | to_pascal_case }}({% for field in f.fields if not field.derived %}d.{{ field.name | to_pascal_case }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% else %}
 			value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
 {% for field in f.fields %}
 				{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
 {% endfor %}
 			}
+{% endif %}
 {% if f.cbor or f.encode_refuses_bound %}
 			{# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
 			   field (docs/adr/0077 §3), refuses a value past its declared bound
@@ -90,28 +96,32 @@
 			continue
 		}
 {% endif %}
-{% for field in f.fields %}
+{# A codec printed from its plan presents each element through its method,
+   and holds no element its encode derives, which is neither handed to its
+   constructor nor read back (docs/adr/0081 §3). #}
+{% for field in f.fields if not (f.printed and field.derived) %}
 {% set fp = field.name | to_pascal_case %}
+{% set got = "roundTripped." ~ fp ~ ("()" if f.printed else "") %}
 {% if field.optional %}
 		{# Present on both sides with one value, or absent on both: the optional
 		   type's own equality, which compares a byte string as its bytes. #}
-		if !roundTripped.{{ fp }}.Equal(d.{{ fp }}) {
-			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ fp }}, d.{{ fp }})
+		if !{{ got }}.Equal(d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, {{ got }}, d.{{ fp }})
 		}
 {% elif field.type == "bytes" %}
-		if len(roundTripped.{{ field.name | to_pascal_case }}) != len(d.{{ field.name | to_pascal_case }}) {
-			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: length actual=%d expected=%d", i, len(roundTripped.{{ field.name | to_pascal_case }}), len(d.{{ field.name | to_pascal_case }}))
+		if len({{ got }}) != len(d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: length actual=%d expected=%d", i, len({{ got }}), len(d.{{ fp }}))
 		} else {
-			for j := range d.{{ field.name | to_pascal_case }} {
-				if roundTripped.{{ field.name | to_pascal_case }}[j] != d.{{ field.name | to_pascal_case }}[j] {
-					t.Errorf("{{ f.name }} case %d decode {{ field.name }} byte %d: actual=%d expected=%d", i, j, roundTripped.{{ field.name | to_pascal_case }}[j], d.{{ field.name | to_pascal_case }}[j])
+			for j := range d.{{ fp }} {
+				if {{ got }}[j] != d.{{ fp }}[j] {
+					t.Errorf("{{ f.name }} case %d decode {{ field.name }} byte %d: actual=%d expected=%d", i, j, {{ got }}[j], d.{{ fp }}[j])
 					break
 				}
 			}
 		}
 {% else %}
-		if roundTripped.{{ field.name | to_pascal_case }} != d.{{ field.name | to_pascal_case }} {
-			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ field.name | to_pascal_case }}, d.{{ field.name | to_pascal_case }})
+		if {{ got }} != d.{{ fp }} {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, {{ got }}, d.{{ fp }})
 		}
 {% endif %}
 {% endfor %}

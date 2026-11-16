@@ -4667,10 +4667,10 @@ pub fn render_harness(
             } => {
                 // Whether this language's backend prints the codec from its
                 // plan (docs/adr/0081 step 4): C++ every codec it writes, Python
-                // Swift (step 5) and Kotlin each whose forms its printer lowers.
-                // A Swift codec printed from its plan holds no element its
-                // encode derives and each byte string and text in its bounded
-                // type, which its `cases` fragment makes.
+                // Swift (step 5), Kotlin and Go each whose forms its printer
+                // lowers. A Swift codec printed from its plan holds no element
+                // its encode derives and each byte string and text in its
+                // bounded type, which its `cases` fragment makes.
                 if document_exists(&scxml_path) {
                     let options = crate::ForgeCompileOptions::default();
                     let read = match language {
@@ -4686,7 +4686,10 @@ pub fn render_harness(
                         Language::Kotlin => {
                             Some(crate::kotlin_codec_printed_file(&scxml_path, &[], &options))
                         }
-                        Language::Rust | Language::Go | Language::C11 => None,
+                        Language::Go => {
+                            Some(crate::go_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Rust | Language::C11 => None,
                     };
                     if let Some(read) = read {
                         *printed = read

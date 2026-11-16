@@ -71,16 +71,16 @@ func TestTheScqPackageHoldsExactlyItsCapacityAtRestAndKeepsOrder(t *testing.T) {
 		t.Fatal("a fresh queue hands out a handle a side")
 	}
 	for i := 0; i < scq.Capacity; i++ {
-		if producer.TryPush(element.QueueConformanceEvent{SensorId: 2, Value: uint16(i)}) != queue.PushOK {
+		if producer.TryPush(element.MakeQueueConformanceEvent(2, uint16(i))) != queue.PushOK {
 			t.Fatalf("push %d of %d must fit", i, scq.Capacity)
 		}
 	}
-	if producer.TryPush(element.QueueConformanceEvent{SensorId: 9, Value: 99}) != queue.PushFull {
+	if producer.TryPush(element.MakeQueueConformanceEvent(9, 99)) != queue.PushFull {
 		t.Fatal("a seventh element does not fit a queue of six")
 	}
 	for i := 0; i < scq.Capacity; i++ {
 		got, ok := consumer.TryPop()
-		if !ok || got.SensorId != 2 || got.Value != uint16(i) {
+		if !ok || got.SensorId() != 2 || got.Value() != uint16(i) {
 			t.Fatalf("pop %d: got (%+v, %v): first in, first out", i, got, ok)
 		}
 	}
@@ -133,7 +133,7 @@ func TestTheScqPackageLosesNothingBetweenGoroutines(t *testing.T) {
 				if e, ok := consumer.TryPop(); ok {
 					taken.Add(1)
 					mu.Lock()
-					seen[[2]uint16{uint16(e.SensorId), e.Value}]++
+					seen[[2]uint16{uint16(e.SensorId()), e.Value()}]++
 					mu.Unlock()
 				}
 			}
@@ -146,7 +146,7 @@ func TestTheScqPackageLosesNothingBetweenGoroutines(t *testing.T) {
 			producer, _ := q.Producer()
 			defer producer.Release()
 			for i := uint16(0); i < perProducer; i++ {
-				for producer.TryPush(element.QueueConformanceEvent{SensorId: sensor, Value: i}) != queue.PushOK {
+				for producer.TryPush(element.MakeQueueConformanceEvent(sensor, i)) != queue.PushOK {
 				}
 			}
 		}()
