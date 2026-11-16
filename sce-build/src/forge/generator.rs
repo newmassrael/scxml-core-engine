@@ -16094,19 +16094,19 @@ fn render_codec(
                 crate::generator::Language::Rust => {
                     "let _peek = cursor.peek_slice(1)?[0];".to_string()
                 }
-                crate::generator::Language::Cpp => {
+                crate::generator::Language::Cpp => format!(
                     "const std::uint8_t* _peek_raw = cursor.peek_slice(1);\n        \
-                     if (_peek_raw == nullptr) return std::nullopt;\n        \
+                     if (_peek_raw == nullptr) {CPP_NEED_MORE_BYTES}\n        \
                      const std::uint8_t _peek = _peek_raw[0];"
-                        .to_string()
-                }
+                ),
                 crate::generator::Language::Kotlin => {
                     // `peekSlice` returns `ByteArray`; element access yields
                     // `Byte`. Variant-tag arithmetic uses `UByte` so the
                     // shift/mask result stays in the unsigned domain.
-                    "val _peekRaw = cursor.peekSlice(1) ?: return null\n        \
-                     val _peek: UByte = _peekRaw[0].toUByte()"
-                        .to_string()
+                    format!(
+                        "val _peekRaw = cursor.peekSlice(1) ?: {KOTLIN_NEED_MORE_BYTES}\n        \
+                         val _peek: UByte = _peekRaw[0].toUByte()"
+                    )
                 }
                 crate::generator::Language::Go => "_peekSlice, err := cursor.PeekSlice(1)\n\t\
                      if err != nil {\n\t\treturn nil, err\n\t}\n\t\
@@ -18373,9 +18373,10 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             ))
         }
         // Cpp: each `body_type::decode(cursor)` returns
-        // `std::optional<body_type>`. Mirror the variant arm pattern:
-        // unwrap with `.has_value()` check, return std::nullopt on
-        // truncation so the parent decode unwinds the partial frame.
+        // `Decoded<body_type>`. Mirror the variant arm pattern: unwrap
+        // with a `.has_value()` check and answer the entry's refusal, so the
+        // parent decode unwinds the partial frame with the kind that
+        // refused it.
         (Language::Cpp, CountRef::LengthField(len_field)) => {
             let guard = repeat_count_guard(field, fields, len_field, lang, "        ");
             format!(
@@ -18383,7 +18384,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                  {guard}{id}.reserve(cursor.entries_backed({len_field}));\n        \
                  for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     if (!_elem.has_value()) return _elem.error();\n            \
                      {id}.push_back(*_elem);\n        \
                  }}"
             )
@@ -18395,17 +18396,17 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                 "std::vector<{body_type}> {id};\n        \
                  while (cursor.remaining() > 0) {{\n            \
                      {room}auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     if (!_elem.has_value()) return _elem.error();\n            \
                      {id}.push_back(*_elem);\n        \
                  }}"
             )
         }
         // Kotlin: `mutableListOf<T>().also { ... }` chains the build
         // step inline so the result `val` carries the typed list.
-        // `{body_type}.decode(cursor)` returns `T?`; `?: return null`
-        // unwinds the partial frame from the `companion.decode()`
-        // body (12-space indent context; inner block lines render at
-        // 16 spaces, closing brace at 12).
+        // `{body_type}.decode(cursor)` returns `Decoded<T>`; `valueOr`
+        // answers the entry's refusal from the `companion.decode()` body
+        // (12-space indent context; inner block lines render at 16 spaces,
+        // closing brace at 12).
         //
         // Length-field counts: `repeat(N) { ... }` is the Kotlin
         // idiomatic count loop; the carrier widens through `.toInt()`
@@ -18417,7 +18418,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             format!(
                 "{guard}val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                      repeat({len_field}.toInt()) {{\n                    \
-                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
+                         add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                \
                      }}\n            \
                  }}"
             )
@@ -18427,7 +18428,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             format!(
                 "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                      while (cursor.remaining() > 0) {{\n                    \
-                         {room}add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                \
+                         {room}add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                \
                      }}\n            \
                  }}"
             )
@@ -18531,23 +18532,19 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         // Python: dataclass field receives the populated list at
         // class instantiation time. The `for _ in range(N)` loop
         // pattern matches Python's idiomatic count loop; until-eof
-        // uses `while cursor.remaining() > 0`. Element decode returns
-        // `Optional[T]`; `None` propagates up via early `return None`
-        // from the surrounding `try:` block in the codec template.
-        // 12-space indent context (class + method + try); inner
-        // statements at 12 + 4 = 16 spaces.
+        // uses `while cursor.remaining() > 0`. An element's refusal is
+        // the `CodecError` its decode raises, which leaves this decode as
+        // it is. 8-space indent context (class + method); inner
+        // statements at 8 + 4 = 12 spaces.
         (Language::Python, CountRef::LengthField(len_field)) => {
             // `id` is already the decode local; the count is a sibling's.
             let py_id = id;
             let py_len = python_field_local(len_field);
-            let guard = repeat_count_guard(field, fields, &py_len, lang, "            ");
+            let guard = repeat_count_guard(field, fields, &py_len, lang, "        ");
             format!(
-                "{guard}{py_id} = []\n            \
-                 for _ in range({py_len}):\n                \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
-                     if _elem is None:\n                    \
-                         return None\n                \
-                     {py_id}.append(_elem)"
+                "{guard}{py_id} = []\n        \
+                 for _ in range({py_len}):\n            \
+                     {py_id}.append({body_type}.decode(cursor{decode_arg}))"
             )
         }
         (Language::Python, CountRef::UntilEof) => {
@@ -18557,15 +18554,12 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                 fields,
                 &format!("len({py_id})"),
                 lang,
-                "                ",
+                "            ",
             );
             format!(
-                "{py_id} = []\n            \
-                 while cursor.remaining() > 0:\n                \
-                     {room}_elem = {body_type}.decode(cursor{decode_arg})\n                \
-                     if _elem is None:\n                    \
-                         return None\n                \
-                     {py_id}.append(_elem)"
+                "{py_id} = []\n        \
+                 while cursor.remaining() > 0:\n            \
+                     {room}{py_id}.append({body_type}.decode(cursor{decode_arg}))"
             )
         }
     }
@@ -18788,14 +18782,14 @@ fn embed_streaming_decode_stmt(
         Language::Cpp => match (&test_lit, len_expr(Language::Cpp)) {
             (None, None) => format!(
                 "auto _emb_{id} = {body_type}::decode(cursor{thread_arg});\n        \
-                 if (!_emb_{id}.has_value()) return std::nullopt;\n        \
+                 if (!_emb_{id}.has_value()) return _emb_{id}.error();\n        \
                  auto {id} = std::move(*_emb_{id});"
             ),
             (Some(test), None) => format!(
                 "std::optional<{body_type}> {id};\n        \
                  if ({test}) {{\n            \
                      auto _emb = {body_type}::decode(cursor{thread_arg});\n            \
-                     if (!_emb.has_value()) return std::nullopt;\n            \
+                     if (!_emb.has_value()) return _emb.error();\n            \
                      {id} = std::move(*_emb);\n        \
                  }}"
             ),
@@ -18804,11 +18798,11 @@ fn embed_streaming_decode_stmt(
                  {{\n            \
                      std::size_t _len = static_cast<std::size_t>({sibling});\n            \
                      const std::uint8_t* _raw = cursor.peek_slice(_len);\n            \
-                     if (_raw == nullptr) return std::nullopt;\n            \
+                     if (_raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      ::SCE::Forge::SceCursor _inner(_raw, _len);\n            \
                      auto _emb = {body_type}::decode(_inner{thread_arg});\n            \
-                     if (!_emb.has_value()) return std::nullopt;\n            \
-                     if (!cursor.advance(_len)) return std::nullopt;\n            \
+                     if (!_emb.has_value()) return _emb.error();\n            \
+                     if (!cursor.advance(_len)) {CPP_NEED_MORE_BYTES}\n            \
                      {id} = std::move(*_emb);\n        \
                  }}"
             ),
@@ -18817,22 +18811,22 @@ fn embed_streaming_decode_stmt(
                  if ({test}) {{\n            \
                      std::size_t _len = static_cast<std::size_t>({sibling});\n            \
                      const std::uint8_t* _raw = cursor.peek_slice(_len);\n            \
-                     if (_raw == nullptr) return std::nullopt;\n            \
+                     if (_raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      ::SCE::Forge::SceCursor _inner(_raw, _len);\n            \
                      auto _emb = {body_type}::decode(_inner{thread_arg});\n            \
-                     if (!_emb.has_value()) return std::nullopt;\n            \
-                     if (!cursor.advance(_len)) return std::nullopt;\n            \
+                     if (!_emb.has_value()) return _emb.error();\n            \
+                     if (!cursor.advance(_len)) {CPP_NEED_MORE_BYTES}\n            \
                      {id} = std::move(*_emb);\n        \
                  }}"
             ),
         },
         Language::Kotlin => match (&test_lit, len_expr(Language::Kotlin)) {
             (None, None) => format!(
-                "val {id} = {body_type}.decode(cursor{thread_arg}) ?: return null"
+                "val {id} = {body_type}.decode(cursor{thread_arg}).{KOTLIN_OR_REFUSE}"
             ),
             (Some(test), None) => format!(
                 "val {id}: {body_type}? = if ({test}) {{\n                \
-                     {body_type}.decode(cursor{thread_arg}) ?: return null\n            \
+                     {body_type}.decode(cursor{thread_arg}).{KOTLIN_OR_REFUSE}\n            \
                  }} else {{\n                \
                      null\n            \
                  }}"
@@ -18840,20 +18834,20 @@ fn embed_streaming_decode_stmt(
             (None, Some(sibling)) => format!(
                 "val {id} = run {{\n                \
                      val _len = ({sibling}).toInt()\n                \
-                     val _raw = cursor.peekSlice(_len) ?: return null\n                \
+                     val _raw = cursor.peekSlice(_len) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _inner = SceCursor(_raw)\n                \
-                     val _v = {body_type}.decode(_inner{thread_arg}) ?: return null\n                \
-                     if (!cursor.advance(_len)) return null\n                \
+                     val _v = {body_type}.decode(_inner{thread_arg}).{KOTLIN_OR_REFUSE}\n                \
+                     if (!cursor.advance(_len)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }}"
             ),
             (Some(test), Some(sibling)) => format!(
                 "val {id}: {body_type}? = if ({test}) {{\n                \
                      val _len = ({sibling}).toInt()\n                \
-                     val _raw = cursor.peekSlice(_len) ?: return null\n                \
+                     val _raw = cursor.peekSlice(_len) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _inner = SceCursor(_raw)\n                \
-                     val _v = {body_type}.decode(_inner{thread_arg}) ?: return null\n                \
-                     if (!cursor.advance(_len)) return null\n                \
+                     val _v = {body_type}.decode(_inner{thread_arg}).{KOTLIN_OR_REFUSE}\n                \
+                     if (!cursor.advance(_len)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }} else {{\n                \
                      null\n            \
@@ -19002,43 +18996,29 @@ fn embed_streaming_decode_stmt(
         }
         Language::Python => {
             let py_id = id;
+            // A refusal of the body, or of the cursor, is the `CodecError` it
+            // raises, which leaves this decode as it is.
             match (&test_lit, len_expr(Language::Python)) {
-                (None, None) => format!(
-                    "{py_id} = {body_type}.decode(cursor{thread_arg})\n            \
-                     if {py_id} is None:\n                \
-                         return None"
-                ),
+                (None, None) => format!("{py_id} = {body_type}.decode(cursor{thread_arg})"),
                 (Some(test), None) => format!(
-                    "if {test}:\n                \
-                         {py_id} = {body_type}.decode(cursor{thread_arg})\n                \
-                         if {py_id} is None:\n                    \
-                             return None\n            \
-                     else:\n                \
+                    "if {test}:\n            \
+                         {py_id} = {body_type}.decode(cursor{thread_arg})\n        \
+                     else:\n            \
                          {py_id} = None"
                 ),
                 (None, Some(sibling)) => format!(
-                    "_len = int({sibling})\n            \
-                     _raw = cursor.peek_slice(_len)\n            \
-                     if _raw is None:\n                \
-                         return None\n            \
-                     _inner = SceCursor(bytes(_raw))\n            \
-                     {py_id} = {body_type}.decode(_inner{thread_arg})\n            \
-                     if {py_id} is None:\n                \
-                         return None\n            \
+                    "_len = int({sibling})\n        \
+                     _inner = SceCursor(bytes(cursor.peek_slice(_len)))\n        \
+                     {py_id} = {body_type}.decode(_inner{thread_arg})\n        \
                      cursor.advance(_len)"
                 ),
                 (Some(test), Some(sibling)) => format!(
-                    "if {test}:\n                \
-                         _len = int({sibling})\n                \
-                         _raw = cursor.peek_slice(_len)\n                \
-                         if _raw is None:\n                    \
-                             return None\n                \
-                         _inner = SceCursor(bytes(_raw))\n                \
-                         {py_id} = {body_type}.decode(_inner{thread_arg})\n                \
-                         if {py_id} is None:\n                    \
-                             return None\n                \
-                         cursor.advance(_len)\n            \
-                     else:\n                \
+                    "if {test}:\n            \
+                         _len = int({sibling})\n            \
+                         _inner = SceCursor(bytes(cursor.peek_slice(_len)))\n            \
+                         {py_id} = {body_type}.decode(_inner{thread_arg})\n            \
+                         cursor.advance(_len)\n        \
+                     else:\n            \
                          {py_id} = None"
                 ),
             }
@@ -19867,8 +19847,8 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         // Cpp: pre-declare std::optional<vector>, populate inside the
         // True arm. Co-gated count unwraps via `.value()` (sound by
         // validator); unconditional count is read directly.
-        // `_elem.has_value()` early-returns std::nullopt on element decode
-        // truncation, mirroring the non-gated path.
+        // An entry's refusal is answered as this decode's own, mirroring the
+        // non-gated path.
         (Language::Cpp, CountRef::LengthField(len_field)) => {
             let count_read = if count_is_gated {
                 format!("{len_field}.value()")
@@ -19884,7 +19864,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  _list.reserve(cursor.entries_backed(_n));\n            \
                  for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
-                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     if (!_elem.has_value()) return _elem.error();\n                \
                      _list.push_back(*_elem);\n            \
                  }}\n            \
                  {id} = std::move(_list);\n        \
@@ -19899,7 +19879,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      std::vector<{body_type}> _list;\n            \
                      while (cursor.remaining() > 0) {{\n                \
                          {room}auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
-                         if (!_elem.has_value()) return std::nullopt;\n                \
+                         if (!_elem.has_value()) return _elem.error();\n                \
                          _list.push_back(*_elem);\n            \
                      }}\n            \
                      {id} = std::move(_list);\n        \
@@ -19928,7 +19908,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  val _n = {count_read}\n                \
                  {guard}mutableListOf<{body_type}>().apply {{\n                    \
                      repeat(_n.toInt()) {{\n                        \
-                         add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
+                         add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
@@ -19940,7 +19920,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
                      mutableListOf<{body_type}>().apply {{\n                    \
                          while (cursor.remaining() > 0) {{\n                        \
-                             {room}add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                    \
+                             {room}add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                    \
                          }}\n                \
                      }}\n            \
                  }} else null"
@@ -20061,16 +20041,13 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         (Language::Python, CountRef::LengthField(len_field)) => {
             let py_id = id;
             let py_len = python_field_local(len_field);
-            let guard = repeat_count_guard(field, fields, &py_len, lang, "                ");
+            let guard = repeat_count_guard(field, fields, &py_len, lang, "            ");
             format!(
-                "if {test}:\n                \
-                     {guard}{py_id} = []\n                \
-                     for _ in range({py_len}):\n                    \
-                         _elem = {body_type}.decode(cursor{decode_arg})\n                    \
-                         if _elem is None:\n                        \
-                             return None\n                    \
-                         {py_id}.append(_elem)\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {guard}{py_id} = []\n            \
+                     for _ in range({py_len}):\n                \
+                         {py_id}.append({body_type}.decode(cursor{decode_arg}))\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -20081,17 +20058,14 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 fields,
                 &format!("len({py_id})"),
                 lang,
-                "                    ",
+                "                ",
             );
             format!(
-                "if {test}:\n                \
-                     {py_id} = []\n                \
-                     while cursor.remaining() > 0:\n                    \
-                         {room}_elem = {body_type}.decode(cursor{decode_arg})\n                    \
-                         if _elem is None:\n                        \
-                             return None\n                    \
-                         {py_id}.append(_elem)\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {py_id} = []\n            \
+                     while cursor.remaining() > 0:\n                \
+                         {room}{py_id}.append({body_type}.decode(cursor{decode_arg}))\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -20230,6 +20204,31 @@ struct TlvChainDecode<'a> {
 /// `_peek`), because an author's field is a local of the same body and may be
 /// called `out`.
 const RUST_DECODE_OUT: &str = "_out";
+
+/// The call a Kotlin decode takes a nested `Decoded<T>` apart with: the value,
+/// or the refusal answered as this decode's own (docs/adr/0099, amendment of
+/// 2026-11-16), Kotlin's spelling of Rust's `?`. `valueOr` is inline, so the
+/// `return` leaves the generated `decode` itself. The lambda names its
+/// parameter, underscore-led as the other names a decode body introduces, so
+/// that it shadows no `it` of a lambda around it.
+const KOTLIN_OR_REFUSE: &str = "valueOr { _refused -> return _refused }";
+
+/// What a Kotlin decode answers when the frame ends before the codec's shape:
+/// the refusal of `CodecFailure::NeedMoreBytes` on Kotlin, spelled once for the
+/// statements that are written whole
+/// (`tests::a_whole_statement_refuses_with_the_tables_spelling`).
+const KOTLIN_NEED_MORE_BYTES: &str = "return Decoded.Refused(CodecError.NeedMoreBytes)";
+
+/// [`KOTLIN_NEED_MORE_BYTES`] on C++.
+const CPP_NEED_MORE_BYTES: &str = "return ::SCE::Forge::CodecError::NeedMoreBytes;";
+
+/// What a Kotlin decode answers for a text whose bytes are not UTF-8: the
+/// refusal of `CodecFailure::InvalidUtf8` on Kotlin, held to the table as
+/// [`KOTLIN_NEED_MORE_BYTES`] is.
+const KOTLIN_INVALID_UTF8: &str = "return Decoded.Refused(CodecError.InvalidUtf8)";
+
+/// [`KOTLIN_INVALID_UTF8`] on C++.
+const CPP_INVALID_UTF8: &str = "return ::SCE::Forge::CodecError::InvalidUtf8;";
 
 /// What a Rust storing decode notes a capacity in: past what its profile holds
 /// it reads the frame on and answers `CapacityExceeded` once the frame is read
@@ -20813,11 +20812,9 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         }
         // Cpp: bounded `std::vector<T>::reserve(max_depth)` then loop with
         // early-break on cursor exhaustion. Element decode returns
-        // `std::optional<T>`; truncation propagates via `return std::nullopt`
-        // from the parent codec's decode (mirrors the repeat / variant arm
-        // shape). A chain past its depth records its refusal on the cursor
-        // first. Entry-
-        // flag termination reads the optional's value method then push.
+        // `Decoded<T>`; its refusal is answered as the parent codec's own
+        // (mirrors the repeat / variant arm shape). Entry-flag termination
+        // reads the decoded entry's value method then push.
         Language::Cpp => {
             let overflow_check =
                 tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "        ");
@@ -20825,10 +20822,10 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 (None, true) => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n            \
-                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     if (!_elem.has_value()) return _elem.error();\n            \
                      {id}.push_back(*_elem);\n        "
                 ),
-                // The decoded entry is read off its optional when the loop
+                // The decoded entry is read off its `Decoded` when the loop
                 // reads something off it, before it moves into the list.
                 (acc, _) => {
                     let indent = "            ";
@@ -20836,7 +20833,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                         chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break;");
                     lines.extend([
                         format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
-                        "if (!_elem.has_value()) return std::nullopt;".to_string(),
+                        "if (!_elem.has_value()) return _elem.error();".to_string(),
                     ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem->{acc}();"));
@@ -20865,14 +20862,13 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // Kotlin: `mutableListOf<T>().also { ... }` build-then-bind shape
         // mirrors repeat. `for (_i in 0 until max_depth)` is the bounded
         // count loop (avoids `repeat()` which doesn't allow `break`).
-        // Element decode returns `T?`; `?: return null` unwinds the
-        // partial frame. A chain past its depth records its refusal on the
-        // cursor first, as C++ does.
+        // Element decode returns `Decoded<T>`; `valueOr` answers its
+        // refusal as this decode's own.
         // Entry-flag termination reads the entry accessor (camelCase)
         // before adding to the list and breaks when clear.
         Language::Kotlin => {
             // The guard sits inside the `also` lambda, next to the loop it
-            // judges — `also` is inline, so the non-local `return null` the
+            // judges — `also` is inline, so the non-local `return` the
             // element decode already uses is equally available here.
             let overflow_check = tlv_chain_guard(
                 lang,
@@ -20883,7 +20879,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
+                     it.add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                "
                 ),
                 // The entry is bound to a local when the loop reads something
                 // off it, before it goes into the list.
@@ -20892,7 +20888,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     let mut lines =
                         chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break");
                     lines.push(format!(
-                        "val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"
+                        "val _entry = {body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE}"
                     ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}()"));
@@ -20966,54 +20962,48 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 go_chain_capacity(max_depth)
             )
         }
-        // Python: build the list inside the surrounding `try:` block
-        // (mirrors repeat shape). `for _ in range(max_depth)` is the
-        // bounded count loop. Element decode returns `Optional[T]`;
-        // `None` propagates via early `return None`. 12-space
-        // indent context (class + method + try); body lines at 16.
+        // Python: build the list in the decode's body (mirrors repeat
+        // shape). `for _ in range(max_depth)` is the bounded count loop.
+        // An entry's refusal is the `CodecError` its decode raises, which
+        // leaves this decode as it is. 8-space indent context (class +
+        // method); body lines at 12.
         // Entry-flag termination reads the entry's snake_case
         // accessor as a method (the codec_zenoh_ext_entry codec's
         // flag accessor pattern in py_codec template).
         Language::Python => {
             let py_id = id;
             let overflow_check =
-                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "        ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
-                    "                if cursor.remaining() == 0:\n                    \
-                         break\n                \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                \
-                     if _elem is None:\n                    \
-                         return None\n                \
-                     {py_id}.append(_elem)"
+                    "            if cursor.remaining() == 0:\n                \
+                         break\n            \
+                     {py_id}.append({body_type}.decode(cursor{decode_arg}))"
                 ),
                 // `_elem` is read when the loop reads something off the
                 // entry, before it is appended.
                 (acc, _) => {
-                    let indent = "                ";
+                    let indent = "            ";
                     let mut lines = chain_end_of_frame_stop(
                         acc,
-                        "if cursor.remaining() == 0:\n                    break",
+                        "if cursor.remaining() == 0:\n                break",
                     );
-                    lines.extend([
-                        format!("_elem = {body_type}.decode(cursor{decode_arg})"),
-                        "if _elem is None:\n                    return None".to_string(),
-                    ]);
+                    lines.push(format!("_elem = {body_type}.decode(cursor{decode_arg})"));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
                     lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
                     lines.push(format!("{py_id}.append(_elem)"));
                     if acc.is_some() {
-                        lines.push("if not _more:\n                    break".to_string());
+                        lines.push("if not _more:\n                break".to_string());
                     }
                     chain_loop_body(indent, None, &lines)
                 }
             };
             let loop_head = chain_loop_head(lang, max_depth);
-            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "        ");
             format!(
-                "{py_id} = []\n            \
+                "{py_id} = []\n        \
                  {more_decl}{loop_head}\n{body}{overflow_check}"
             )
         }
@@ -21232,7 +21222,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 (None, true) => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
                      auto _elem = {body_type}::decode(cursor{decode_arg});\n                \
-                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     if (!_elem.has_value()) return _elem.error();\n                \
                      _list.push_back(*_elem);\n            "
                 ),
                 (acc, _) => {
@@ -21241,7 +21231,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                         chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break;");
                     lines.extend([
                         format!("auto _elem = {body_type}::decode(cursor{decode_arg});"),
-                        "if (!_elem.has_value()) return std::nullopt;".to_string(),
+                        "if (!_elem.has_value()) return _elem.error();".to_string(),
                     ]);
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem->{acc}();"));
@@ -21279,14 +21269,14 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
-                     it.add({body_type}.decode(cursor{decode_arg}) ?: return null)\n                "
+                     it.add({body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE})\n                "
                 ),
                 (acc, _) => {
                     let indent = "                    ";
                     let mut lines =
                         chain_end_of_frame_stop(acc, "if (cursor.remaining() == 0) break");
                     lines.push(format!(
-                        "val _entry = {body_type}.decode(cursor{decode_arg}) ?: return null"
+                        "val _entry = {body_type}.decode(cursor{decode_arg}).{KOTLIN_OR_REFUSE}"
                     ));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _entry.{acc}()"));
@@ -21428,49 +21418,39 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         }
         Language::Python => {
             let py_id = id;
-            let overflow_check = tlv_chain_guard(
-                lang,
-                entry_flag_acc.is_some(),
-                max_depth,
-                "                ",
-            );
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
-                    "                    if cursor.remaining() == 0:\n                        \
-                         break\n                    \
-                     _elem = {body_type}.decode(cursor{decode_arg})\n                    \
-                     if _elem is None:\n                        \
-                         return None\n                    \
-                     {py_id}.append(_elem)"
+                    "                if cursor.remaining() == 0:\n                    \
+                         break\n                \
+                     {py_id}.append({body_type}.decode(cursor{decode_arg}))"
                 ),
                 (acc, _) => {
-                    let indent = "                    ";
+                    let indent = "                ";
                     let mut lines = chain_end_of_frame_stop(
                         acc,
-                        "if cursor.remaining() == 0:\n                        break",
+                        "if cursor.remaining() == 0:\n                    break",
                     );
-                    lines.extend([
-                        format!("_elem = {body_type}.decode(cursor{decode_arg})"),
-                        "if _elem is None:\n                        return None".to_string(),
-                    ]);
+                    lines.push(format!("_elem = {body_type}.decode(cursor{decode_arg})"));
                     if let Some(acc) = acc {
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
                     lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
                     lines.push(format!("{py_id}.append(_elem)"));
                     if acc.is_some() {
-                        lines.push("if not _more:\n                        break".to_string());
+                        lines.push("if not _more:\n                    break".to_string());
                     }
                     chain_loop_body(indent, None, &lines)
                 }
             };
             let loop_head = chain_loop_head(lang, max_depth);
-            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
+            let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
-                "if {test}:\n                \
-                     {py_id} = []\n                \
-                     {more_decl}{loop_head}\n{body}{overflow_check}\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {py_id} = []\n            \
+                     {more_decl}{loop_head}\n{body}{overflow_check}\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -21925,6 +21905,7 @@ fn streaming_fixed_enum_conversion(
     carrier_read: &str,
     indent: &str,
 ) -> (String, String) {
+    use crate::forge::codec_failure::CodecFailure;
     use crate::generator::Language;
     let SceType::Enum(r) = &field.sce_type else {
         return (String::new(), carrier_read.to_string());
@@ -21941,17 +21922,16 @@ fn streaming_fixed_enum_conversion(
         ),
         Language::Kotlin => (
             String::new(),
-            format!("{from}({carrier_read}) ?: return null"),
+            format!(
+                "{from}({carrier_read}) ?: {}",
+                CodecFailure::UndeclaredEnumValue.raise_stmt(Language::Kotlin)
+            ),
         ),
-        // Refused on the cursor, so that it is not read as running out of
-        // bytes.
         Language::Cpp => (
             format!(
                 "const auto _enum_v = {from}({carrier_read});\n{indent}\
-                 if (!_enum_v.has_value()) {{\n{indent}\
-                 \x20   cursor.refuse(::SCE::Forge::CodecError::UndeclaredEnumValue);\n{indent}\
-                 \x20   return std::nullopt;\n{indent}\
-                 }}\n{indent}"
+                 if (!_enum_v.has_value()) {}\n{indent}",
+                CodecFailure::UndeclaredEnumValue.raise_stmt(Language::Cpp)
             ),
             "*_enum_v".to_string(),
         ),
@@ -22051,9 +22031,9 @@ fn present_if_decode_fixed(
                 "{ty} {id};\n        \
                  {{\n            \
                      const std::uint8_t* raw = cursor.peek_slice({n});\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      {conv12}{id} = static_cast<{ty}>({body12});\n            \
-                     if (!cursor.advance({n})) return std::nullopt;\n        \
+                     if (!cursor.advance({n})) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
@@ -22064,9 +22044,9 @@ fn present_if_decode_fixed(
                 "std::optional<{ty}> {id};\n        \
                  if ({test}) {{\n            \
                      const std::uint8_t* raw = cursor.peek_slice({n});\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      {conv12}{id} = static_cast<{ty}>({body12});\n            \
-                     if (!cursor.advance({n})) return std::nullopt;\n        \
+                     if (!cursor.advance({n})) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
@@ -22074,16 +22054,16 @@ fn present_if_decode_fixed(
         // the typed value; gated uses `if (predicate) { ... } else { null }`
         // and infers the carrier's nullable type from the union of the
         // carrier-typed last expression and `null`. Both forms allow the
-        // non-local `return null` (the inline `run` lambda returns from
-        // `decode`) so `peekSlice`/`advance` failures unwind correctly.
+        // non-local `return` of a refusal (the inline `run` lambda returns
+        // from `decode`) so `peekSlice`/`advance` failures unwind correctly.
         // The template inserts the result inside the companion-object
         // `decode()` body (12-space indent) so inner block lines render
         // at 16 spaces and closing braces at 12.
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
-                 val raw = cursor.peekSlice({n}) ?: return null\n                \
+                 val raw = cursor.peekSlice({n}) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                  {conv16}val _v = {body16}\n                \
-                 if (!cursor.advance({n})) return null\n                \
+                 if (!cursor.advance({n})) {KOTLIN_NEED_MORE_BYTES}\n                \
                  _v\n            \
              }}"
         ),
@@ -22091,9 +22071,9 @@ fn present_if_decode_fixed(
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
-                     val raw = cursor.peekSlice({n}) ?: return null\n                \
+                     val raw = cursor.peekSlice({n}) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      {conv16}val _v = {body16}\n                \
-                     if (!cursor.advance({n})) return null\n                \
+                     if (!cursor.advance({n})) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }} else {{\n                \
                      null\n            \
@@ -22186,21 +22166,19 @@ fn present_if_decode_fixed(
                  }}"
             )
         }
-        // Python: per-field reads live inside one outer `try:` block in
-        // the template (mirrors the existing has_vle_fields shape), so
-        // the per-field statement carries no exception handler — the
-        // first `peek_slice` / `advance` failure unwinds to the
-        // template's `except NeedMoreBytes: return None` arm. Gated
-        // fields bind the local to `None` on the absent branch so the
-        // dataclass instantiation can pass the local through unchanged.
-        // The template inserts the result at 12-space indent (class +
-        // method + try); continuation lines render at 12 spaces and
-        // gated inner blocks at 16.
+        // Python: the per-field statement carries no exception handler —
+        // the first `peek_slice` / `advance` failure raises the
+        // `CodecError` that names it out of `decode`. Gated fields bind the
+        // local to `None` on the absent branch so the dataclass
+        // instantiation can pass the local through unchanged. The template
+        // inserts the result at 8-space indent (class + method);
+        // continuation lines render at 8 spaces and gated inner blocks at
+        // 12.
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "raw = cursor.peek_slice({n})\n            \
-                 {conv12}{py_id} = {body12}\n            \
+                "raw = cursor.peek_slice({n})\n        \
+                 {conv8}{py_id} = {body8}\n        \
                  cursor.advance({n})"
             )
         }
@@ -22208,12 +22186,12 @@ fn present_if_decode_fixed(
             let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
-                "if {test}:\n                \
-                     raw = cursor.peek_slice({n})\n                \
-                     {conv16}_v = {body16}\n                \
-                     cursor.advance({n})\n                \
-                     {py_id} = _v\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     raw = cursor.peek_slice({n})\n            \
+                     {conv12}_v = {body12}\n            \
+                     cursor.advance({n})\n            \
+                     {py_id} = _v\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -22269,9 +22247,9 @@ fn present_if_decode_tail(
              {{\n            \
                  std::size_t _n = cursor.remaining();\n            {guard}\
                  const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                 if (raw == nullptr) return std::nullopt;\n            \
+                 if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                  {id}.assign(raw, raw + _n);\n            \
-                 if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
              }}"
         ),
         (Language::Cpp, Some(p)) => {
@@ -22281,9 +22259,9 @@ fn present_if_decode_tail(
                  if ({test}) {{\n            \
                      std::size_t _n = cursor.remaining();\n            {guard}\
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      {id}.emplace(raw, raw + _n);\n            \
-                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                     if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
@@ -22294,9 +22272,9 @@ fn present_if_decode_tail(
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
                  val _n = cursor.remaining()\n                {guard}\
-                 val raw = cursor.peekSlice(_n) ?: return null\n                \
+                 val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                  val _v = raw.copyOf()\n                \
-                 if (!cursor.advance(_n)) return null\n                \
+                 if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                  _v\n            \
              }}"
         ),
@@ -22305,9 +22283,9 @@ fn present_if_decode_tail(
             format!(
                 "val {id} = if ({test}) {{\n                \
                      val _n = cursor.remaining()\n                {guard}\
-                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _v = raw.copyOf()\n                \
-                     if (!cursor.advance(_n)) return null\n                \
+                     if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }} else {{\n                \
                      null\n            \
@@ -22414,9 +22392,9 @@ fn present_if_decode_tail(
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "_n = cursor.remaining()\n            {guard}\
-                 raw = cursor.peek_slice(_n)\n            \
-                 {py_id} = bytes(raw)\n            \
+                "_n = cursor.remaining()\n        {guard}\
+                 raw = cursor.peek_slice(_n)\n        \
+                 {py_id} = bytes(raw)\n        \
                  cursor.advance(_n)"
             )
         }
@@ -22424,13 +22402,13 @@ fn present_if_decode_tail(
             let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
-                "if {test}:\n                \
-                     _n = cursor.remaining()\n                {guard}\
-                     raw = cursor.peek_slice(_n)\n                \
-                     _v = bytes(raw)\n                \
-                     cursor.advance(_n)\n                \
-                     {py_id} = _v\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     _n = cursor.remaining()\n            {guard}\
+                     raw = cursor.peek_slice(_n)\n            \
+                     _v = bytes(raw)\n            \
+                     cursor.advance(_n)\n            \
+                     {py_id} = _v\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -22546,9 +22524,9 @@ fn present_if_decode_length_ref(
              {{\n            \
                  {count}\n            \
                  const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                 if (raw == nullptr) return std::nullopt;\n            \
+                 if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                  {id}.assign(raw, raw + _n);\n            \
-                 if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
              }}"
         ),
         (Language::Cpp, Some(p)) => {
@@ -22558,18 +22536,18 @@ fn present_if_decode_length_ref(
                  if ({test}) {{\n            \
                      {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
                      {id}.emplace(raw, raw + _n);\n            \
-                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                     if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
                  {count}\n                \
-                 val raw = cursor.peekSlice(_n) ?: return null\n                \
+                 val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                  val _v = raw.copyOf()\n                \
-                 if (!cursor.advance(_n)) return null\n                \
+                 if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                  _v\n            \
              }}"
         ),
@@ -22578,9 +22556,9 @@ fn present_if_decode_length_ref(
             format!(
                 "val {id} = if ({test}) {{\n                \
                      {count}\n                \
-                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _v = raw.copyOf()\n                \
-                     if (!cursor.advance(_n)) return null\n                \
+                     if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }} else {{\n                \
                      null\n            \
@@ -22664,9 +22642,9 @@ fn present_if_decode_length_ref(
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "{count}\n            \
-                 raw = cursor.peek_slice(_n)\n            \
-                 {py_id} = bytes(raw)\n            \
+                "{count}\n        \
+                 raw = cursor.peek_slice(_n)\n        \
+                 {py_id} = bytes(raw)\n        \
                  cursor.advance(_n)"
             )
         }
@@ -22674,13 +22652,13 @@ fn present_if_decode_length_ref(
             let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
-                "if {test}:\n                \
-                     {count}\n                \
-                     raw = cursor.peek_slice(_n)\n                \
-                     _v = bytes(raw)\n                \
-                     cursor.advance(_n)\n                \
-                     {py_id} = _v\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {count}\n            \
+                     raw = cursor.peek_slice(_n)\n            \
+                     _v = bytes(raw)\n            \
+                     cursor.advance(_n)\n            \
+                     {py_id} = _v\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -22762,10 +22740,10 @@ fn present_if_decode_string_length_ref(
                  {{\n            \
                      {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
-                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
+                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) {CPP_INVALID_UTF8}\n            \
                      {id}.assign(reinterpret_cast<const char*>(raw), _n);\n            \
-                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                     if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
@@ -22776,10 +22754,10 @@ fn present_if_decode_string_length_ref(
                  if ({test}) {{\n            \
                      {count}\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
-                     if (raw == nullptr) return std::nullopt;\n            \
-                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
+                     if (raw == nullptr) {CPP_NEED_MORE_BYTES}\n            \
+                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) {CPP_INVALID_UTF8}\n            \
                      {id}.emplace(reinterpret_cast<const char*>(raw), _n);\n            \
-                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                     if (!cursor.advance(_n)) {CPP_NEED_MORE_BYTES}\n        \
                  }}"
             )
         }
@@ -22793,12 +22771,12 @@ fn present_if_decode_string_length_ref(
             format!(
                 "val {id} = run {{\n                \
                      {count}\n                \
-                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _v = try {{\n                    \
                          java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
                              .decode(java.nio.ByteBuffer.wrap(raw)).toString()\n                \
-                     }} catch (_: java.nio.charset.CharacterCodingException) {{ return null }}\n                \
-                     if (!cursor.advance(_n)) return null\n                \
+                     }} catch (_: java.nio.charset.CharacterCodingException) {{ {KOTLIN_INVALID_UTF8} }}\n                \
+                     if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }}"
             )
@@ -22808,12 +22786,12 @@ fn present_if_decode_string_length_ref(
             format!(
                 "val {id} = if ({test}) {{\n                \
                      {count}\n                \
-                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val raw = cursor.peekSlice(_n) ?: {KOTLIN_NEED_MORE_BYTES}\n                \
                      val _v = try {{\n                    \
                          java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
                              .decode(java.nio.ByteBuffer.wrap(raw)).toString()\n                \
-                     }} catch (_: java.nio.charset.CharacterCodingException) {{ return null }}\n                \
-                     if (!cursor.advance(_n)) return null\n                \
+                     }} catch (_: java.nio.charset.CharacterCodingException) {{ {KOTLIN_INVALID_UTF8} }}\n                \
+                     if (!cursor.advance(_n)) {KOTLIN_NEED_MORE_BYTES}\n                \
                      _v\n            \
                  }} else {{\n                \
                      null\n            \
@@ -22865,12 +22843,12 @@ fn present_if_decode_string_length_ref(
         (Language::Python, None) => {
             let py_id = id;
             format!(
-                "{count}\n            \
-                 raw = cursor.peek_slice(_n)\n            \
-                 try:\n                \
-                     {py_id} = bytes(raw).decode('utf-8')\n            \
-                 except UnicodeDecodeError as exc:\n                \
-                     raise InvalidUtf8() from exc\n            \
+                "{count}\n        \
+                 raw = cursor.peek_slice(_n)\n        \
+                 try:\n            \
+                     {py_id} = bytes(raw).decode('utf-8')\n        \
+                 except UnicodeDecodeError as exc:\n            \
+                     raise InvalidUtf8() from exc\n        \
                  cursor.advance(_n)"
             )
         }
@@ -22878,16 +22856,16 @@ fn present_if_decode_string_length_ref(
             let py_id = id;
             let test = present_if_test_literal(fields, p, lang);
             format!(
-                "if {test}:\n                \
-                     {count}\n                \
-                     raw = cursor.peek_slice(_n)\n                \
-                     try:\n                    \
-                         _v = bytes(raw).decode('utf-8')\n                \
-                     except UnicodeDecodeError as exc:\n                    \
-                         raise InvalidUtf8() from exc\n                \
-                     cursor.advance(_n)\n                \
-                     {py_id} = _v\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {count}\n            \
+                     raw = cursor.peek_slice(_n)\n            \
+                     try:\n                \
+                         _v = bytes(raw).decode('utf-8')\n            \
+                     except UnicodeDecodeError as exc:\n                \
+                         raise InvalidUtf8() from exc\n            \
+                     cursor.advance(_n)\n            \
+                     {py_id} = _v\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -23151,7 +23129,7 @@ fn length_count_stmts(
                 String::new()
             } else {
                 format!(
-                    "if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - {up}u) return std::nullopt;\n{indent}"
+                    "if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - {up}u) {CPP_NEED_MORE_BYTES}\n{indent}"
                 )
             };
             format!(
@@ -23228,7 +23206,9 @@ fn host_int_room(
     match lang {
         Language::Kotlin => {
             let wide = if bits == 64 { "toULong" } else { "toUInt" };
-            format!("if ({value} > (Int.MAX_VALUE - {up}).{wide}()) return null\n{indent}")
+            format!(
+                "if ({value} > (Int.MAX_VALUE - {up}).{wide}()) {KOTLIN_NEED_MORE_BYTES}\n{indent}"
+            )
         }
         Language::Go => format!(
             "if uint64({value}) > uint64(^uint(0)>>1)-{up} {{\n{indent}\treturn nil, codec.ErrNeedMoreBytes\n{indent}}}\n{indent}"
@@ -23591,8 +23571,8 @@ fn length_block_indent(lang: crate::generator::Language, gated: bool) -> &'stati
         (Language::Rust | Language::Cpp, _) => "            ",
         (Language::Kotlin, _) => "                ",
         (Language::Go, _) => "\t\t",
-        (Language::Python, false) => "            ",
-        (Language::Python, true) => "                ",
+        (Language::Python, false) => "        ",
+        (Language::Python, true) => "            ",
         (Language::C11, _) => "        ",
         (Language::Swift, _) => "",
     }
@@ -23810,10 +23790,10 @@ fn present_if_decode_vle(
             let py_id = id;
             // vle_decode_stmt for Python binds `_v` as an int local.
             format!(
-                "if {test}:\n                \
-                     {inner}\n                \
-                     {py_id} = {body_id}\n            \
-                 else:\n                \
+                "if {test}:\n            \
+                     {inner}\n            \
+                     {py_id} = {body_id}\n        \
+                 else:\n            \
                      {py_id} = None"
             )
         }
@@ -25834,7 +25814,8 @@ fn with_chain_has_decls(
 /// Per-language VLE decode statement: declares a local of the field's
 /// SceType (uint16/uint32/uint64) and reads a `vle_u<N>` value from the
 /// cursor, propagating `NeedMoreBytes` / `VleWidthOverflow` per the
-/// language's idiom (Result `?`, std::optional check, error pair, raise).
+/// language's idiom (Result `?`, a `Decoded` answered as the decode's own,
+/// error pair, raise).
 fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     match (lang, width_bits) {
@@ -25845,9 +25826,9 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
         (Language::Rust, 64) =>
             format!("let {field_id} = cursor.read_vle_u64()?;"),
         (Language::Cpp, n) => format!(
-            "auto {field_id}_opt = cursor.read_vle_u{n}();\n        \
-             if (!{field_id}_opt.has_value()) return std::nullopt;\n        \
-             auto {field_id} = static_cast<std::uint{n}_t>(*{field_id}_opt);"
+            "auto {field_id}_read = cursor.read_vle_u{n}();\n        \
+             if (!{field_id}_read.has_value()) return {field_id}_read.error();\n        \
+             auto {field_id} = static_cast<std::uint{n}_t>(*{field_id}_read);"
         ),
         (Language::C11, n) => format!(
             "uint{n}_t {field_id};\n    \
@@ -25857,11 +25838,11 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
              }}"
         ),
         (Language::Kotlin, 16) =>
-            format!("val {field_id} = cursor.readVleU16() ?: return null"),
+            format!("val {field_id} = cursor.readVleU16().{KOTLIN_OR_REFUSE}"),
         (Language::Kotlin, 32) =>
-            format!("val {field_id} = cursor.readVleU32() ?: return null"),
+            format!("val {field_id} = cursor.readVleU32().{KOTLIN_OR_REFUSE}"),
         (Language::Kotlin, 64) =>
-            format!("val {field_id} = cursor.readVleU64() ?: return null"),
+            format!("val {field_id} = cursor.readVleU64().{KOTLIN_OR_REFUSE}"),
         (Language::Go, 16) => format!(
             "{field_id}, err := cursor.ReadVLEU16()\n\tif err != nil {{ return nil, err }}"
         ),
@@ -47723,6 +47704,31 @@ mod tests {
         assert_eq!(
             filled("_out.links = span;"),
             "#[allow(clippy::needless_late_init)]\n        let links: Ty;\n        links = span;"
+        );
+    }
+
+    /// The refusals spelled once for the statements written whole are the
+    /// failure table's own, so a decode that runs out of bytes answers the
+    /// kind a caller compares it with.
+    #[test]
+    fn a_whole_statement_refuses_with_the_tables_spelling() {
+        use crate::forge::codec_failure::CodecFailure;
+        use crate::generator::Language;
+        assert_eq!(
+            KOTLIN_NEED_MORE_BYTES,
+            CodecFailure::NeedMoreBytes.raise_stmt(Language::Kotlin)
+        );
+        assert_eq!(
+            CPP_NEED_MORE_BYTES,
+            CodecFailure::NeedMoreBytes.raise_stmt(Language::Cpp)
+        );
+        assert_eq!(
+            KOTLIN_INVALID_UTF8,
+            CodecFailure::InvalidUtf8.raise_stmt(Language::Kotlin)
+        );
+        assert_eq!(
+            CPP_INVALID_UTF8,
+            CodecFailure::InvalidUtf8.raise_stmt(Language::Cpp)
         );
     }
 
