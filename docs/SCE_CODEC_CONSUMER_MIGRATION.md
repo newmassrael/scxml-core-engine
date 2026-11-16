@@ -2883,3 +2883,38 @@ regenerated after them. A consumer regenerates the C++ CBOR codecs it owns.
 - The functions that read and write a record are the static members of the codec's `Composites` struct, named for
   the record's document (`decode_record_<document>`), where they were `Records::decode_record_<alias>`.
 
+## A Mesh library is taken from a release, or from a commit with the generator (ADR 0097 §7)
+
+Landing: the commit that adds this section. Nothing a consumer compiles changes in it; it says how to take the Mesh
+libraries before their generated trees leave version control (ADR 0097, landing 7), so that a consumer moves before
+that landing rather than at it.
+
+- **What moves.** The generated part of each Mesh library (`backends/rust/mesh/src/generated`,
+  `backends/kotlin/mesh/src/commonMain/kotlin/generated`, `backends/swift/mesh/Sources/SceMesh/Generated`,
+  `backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated`, `sce/src/mesh/generated`) is committed today and will
+  be a build output: written by the build from the trees `tools/codegen/trees/mesh-*.toml` declare, and not in a
+  checkout of a commit.
+- **A release.** A tag `v<major>.<minor>.<patch>` on `main` publishes, as that tag's release, one source archive
+  per package (`sce-rust-mesh`, `sce-kotlin-mesh`, `SceMesh`, `SceMeshWss`, `sce-cpp`;
+  `tools/codegen/release.toml`), each with its generated trees materialized inside it and a
+  `generated-provenance.json` at its root. A consumer that takes a release needs no generator and no Rust
+  toolchain.
+- **A release commit, for Go and SwiftPM.** Both resolve source by a tag, so the release also writes a child of the
+  tagged commit that adds the materialized trees, tagged `release/v<version>` (and `<dir>/v<version>` for a Go
+  module whose path is this repository's). Pin that tag where you pinned a commit: a submodule or a vendored
+  checkout at `release/v<version>` builds as a checkout of today's `main` does, trees included. SwiftPM resolves a
+  package by URL only from a repository whose root holds `Package.swift`, which this one does not, so a Swift
+  consumer takes the release commit as a submodule and names the package by path
+  (`.package(path: "vendor/sce/backends/swift/mesh")`), as it names a commit today. The release commit is never
+  merged back, so `main`'s history does not hold it.
+- **A commit pin stays supported.** A consumer that pins a commit of `main` keeps doing so once the trees leave.
+  The Rust crate then writes its generated part in its build script, with `sce-build` as a build-dependency, as
+  `backends/rust/tests/build.rs` does today; the Kotlin, Swift and C++ libraries call the generator,
+  `sce-codegen materialize <tree> --into <checkout>`, which the consumer then needs on its machine (`cargo build
+  --bin sce-codegen --features cli -p sce-build`).
+- **Checking a release.** Each tree in `generated-provenance.json` names the generator (`generator.source`, the
+  digest of its source closure), every action by its REAPI key with the Merkle roots of what it read and wrote, the
+  digest of every file it read, and `output_tree`, the Merkle root of the files as written (SHA-256, written
+  `<hex>/<size>`). From a checkout of the released commit, `sce-codegen materialize <tree> --into <dir>
+  --provenance <file>` writes the same record, and equal `output_tree` values mean equal files.
+

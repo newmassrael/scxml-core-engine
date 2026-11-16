@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The packages a release publishes (ADR 0097, section 7), read by
+# scripts/release.py and by nothing else.
+#
+# A package is a directory of the repository, published with the generated
+# trees it compiles materialized inside it (`sce-codegen materialize <tree>
+# --provenance`) and the `generated-provenance.json` that records what each
+# tree was made from. A tree is named as its manifest under
+# tools/codegen/trees/ names it, and only a tree whose roots lie under the
+# package's directory belongs to it.
+#
+# Every package's directory, with its trees, is also in the release commit:
+# the child of the released commit that adds the materialized trees, tagged
+# `release/v<version>`, which a Go or SwiftPM consumer resolves by its tag.
+
+[[package]]
+name = "sce-rust-mesh"
+path = "backends/rust/mesh"
+trees = ["mesh-rust"]
+
+[[package]]
+name = "sce-kotlin-mesh"
+path = "backends/kotlin/mesh"
+trees = ["mesh-kotlin"]
+
+[[package]]
+name = "SceMesh"
+path = "backends/swift/mesh"
+trees = ["mesh-swift"]
+
+[[package]]
+name = "SceMeshWss"
+path = "backends/swift/mesh-wss"
+trees = ["mesh-swift-wss"]
+
+# The C++ Mesh envelope, in the source package of the embed kind: the engine
+# tree with its generated Mesh machines.
+[[package]]
+name = "sce-cpp"
+path = "sce"
+trees = ["mesh-cpp"]

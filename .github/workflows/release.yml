@@ -1,0 +1,101 @@
+name: Release
+
+# The release pipeline (ADR 0097, section 7, landing 6).
+#
+# A tag v<major>.<minor>.<patch> on a commit of `main` releases that commit:
+# `scripts/release.py` materializes, with the generator of the commit, every
+# tree each package of tools/codegen/release.toml compiles into that package,
+# with the `generated-provenance.json` that records what each tree was made
+# from (the generator, every action's key, the roots of what it read and
+# wrote, the digest of every file read, the root of the tree as written), and
+# packs each package as a reproducible source archive. It writes the release
+# commit, a child of the tagged commit that adds the materialized trees,
+# tagged `release/v<version>` (and `<dir>/v<version>` for a Go module of this
+# repository's path), which a Go or SwiftPM consumer resolves by its tag. This
+# lane pushes those tags and publishes the archives as the tag's release.
+#
+# It publishes and reaches no verdict about a change, so no gate mirrors it;
+# `scripts/release.py --check` reads its declaration on a workstation.
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release of the tagged commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    # `contents: write` pushes the release tags and creates the release.
+    permissions:
+      contents: write
+
+    steps:
+    # Full history: the release is refused unless the tagged commit is on
+    # `main`, and the release commit is written on top of it.
+    - name: Checkout Repository
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        fetch-depth: 0
+
+    - name: Refuse a commit that is not on main
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "$GITHUB_REF_NAME names $GITHUB_SHA, which is not on main: only a commit of main is released." >&2
+          exit 1
+        fi
+
+    # libxml2 backs the default `xsd` feature the generator builds with, and
+    # clang-format-19 is the formatter the generator runs on the C++ trees and
+    # refuses without (docs/SCE_CODEGEN_DETERMINISM.md section 9).
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
+
+    # The release rust-toolchain.toml pins, which lists rustfmt: the Rust
+    # trees are formatted with it.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
+
+    - name: Build the generator of the commit
+      run: cargo build --bin sce-codegen --features cli -p sce-build
+
+    - name: Read the declaration
+      run: python3 scripts/release.py --check --tag "$GITHUB_REF_NAME"
+
+    # The pipeline's own commit and tags: an identity of its own, and no
+    # local hook (the release commit holds generated trees and is no change
+    # of the repository's history; it is never merged back).
+    - name: Make the release
+      run: python3 scripts/release.py --tag "$GITHUB_REF_NAME" --out "${{ runner.temp }}/release"
+
+    - name: Push the release tags
+      run: |
+        set -euo pipefail
+        mapfile -t tags < <(python3 -c 'import json, sys; [print(t) for t in json.load(open(sys.argv[1]))["tags"]]' "${{ runner.temp }}/release/release.json")
+        refs=()
+        for tag in "${tags[@]}"; do refs+=("refs/tags/$tag"); done
+        git push origin "${refs[@]}"
+
+    - name: Publish the archives
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        release="${{ runner.temp }}/release"
+        commit=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["release_commit"])' "$release/release.json")
+        {
+          echo "Packages of $GITHUB_REF_NAME, each with its generated trees and their generated-provenance.json."
+          echo
+          echo "Release commit for Go and SwiftPM: $commit (tag release/$GITHUB_REF_NAME)."
+        } > "$release/notes.md"
+        gh release create "$GITHUB_REF_NAME" "$release"/dist/*.tar.gz "$release/release.json" \
+          --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$release/notes.md"
