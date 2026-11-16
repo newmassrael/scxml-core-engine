@@ -1,21 +1,30 @@
 {
   "machine": "static_lift_list",
-  "about": "A text read into a record that holds a list of records, lift_answer_list.scxml, or its refusal kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, section 9.1, items 1 and 2, and Landing order item 8). Each well-formed text replaces `answer` whole, its items in their order, and leaves `why` absent; each ill-formed one leaves `answer` as it was and keeps the code, the strict RFC 6901 pointer and the bound of the first place refused, at depth 1 (a field of the answer), 2 (an element of its list) and 3 (a field of an item). The list's counts are held before any element is read, so a list past its bound is refused as `tooMany` and an empty one as `tooFew` whatever its elements hold. The deepest container a value of the schema holds is an item (depth 3), so a container opened inside an item, by a field it declares or by an element of an element, is refused as `tooDeep` with the bound 3 before the text is read as JSON. The statement raises nothing, so `lifts` counts every lift and `errors` stays 0. Expected values are derived from the document and the refusal table, not observed from a backend.",
+  "about": "A text read into a record that holds a list of records, lift_answer_list.scxml, or its refusal kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, section 9.1, items 1 and 2, and Landing order item 8). Each well-formed text replaces `answer` whole, its items in their order, and leaves `why` absent; each ill-formed one leaves `answer` as it was and keeps the code, the strict RFC 6901 pointer and the bound of the first place refused, at depth 1 (a field of the answer), 2 (an element of its list) and 3 (a field of an item). The list's counts are held before any element is read, so a list past its bound is refused as `tooMany` and an empty one as `tooFew` whatever its elements hold. The deepest container a value of the schema holds is an item (depth 3), so a container opened inside an item, by a field it declares or by an element of an element, is refused as `tooDeep` with the bound 3 before the text is read as JSON. The statement raises nothing, so `lifts` counts every lift and `errors` stays 0. Where the answer is present, its `priority` and the length of its list are read into variables after each lift, and `answer.read` is guarded by a test of its title and its priority: `weeks` counts the reads of the week of priority 1, `other_reads` every other, an absent answer among them. Expected values are derived from the document and the refusal table, not observed from a backend.",
   "steps": [
     { "note": "nothing is lifted yet: no answer and no refusal",
-      "expect": {"state": "lifting", "variables": {"answer": null, "why": null, "lifts": 0, "errors": 0}} },
+      "expect": {"state": "lifting", "variables": {"answer": null, "why": null, "lifts": 0, "errors": 0, "priority": 0, "held_items": 0, "weeks": 0, "other_reads": 0}} },
+
+    { "note": "a read of an absent answer: the guard's test of presence is false, and no field of it is read",
+      "event": "answer.read", "expect": {"variables": {"weeks": 0, "other_reads": 1}} },
 
     { "note": "the canonical text of a record of two items: the record replaces the answer, its items in their order",
-      "event": "text.given", "data": {"text": "{\"title\":\"Week\",\"items\":[{\"title\":\"Plan\",\"at\":9},{\"title\":\"Ship\",\"at\":17}],\"priority\":1}"}, "expect": {"variables": {"answer": {"title": "Week", "items": [{"title": "Plan", "at": 9}, {"title": "Ship", "at": 17}], "priority": 1}, "why": null, "lifts": 1, "errors": 0}} },
+      "event": "text.given", "data": {"text": "{\"title\":\"Week\",\"items\":[{\"title\":\"Plan\",\"at\":9},{\"title\":\"Ship\",\"at\":17}],\"priority\":1}"}, "expect": {"variables": {"answer": {"title": "Week", "items": [{"title": "Plan", "at": 9}, {"title": "Ship", "at": 17}], "priority": 1}, "why": null, "lifts": 1, "errors": 0, "priority": 1, "held_items": 2}} },
+
+    { "note": "a read of the week of priority 1: the guard reads the record's text and number where it is proven present",
+      "event": "answer.read", "expect": {"variables": {"weeks": 1, "other_reads": 1}} },
 
     { "note": "keys in another order at each depth, a key the schema does not declare at each depth, whitespace, and a text of the first revision, which reads the later field at its default; the containers under the unknown key stand within the depth",
-      "event": "text.given", "data": {"text": "{ \"items\" : [ {\"at\": 0, \"extra\": \"x\", \"title\": \"One\"} ],\n  \"note\": {\"a\": []}, \"title\": \"Day\" }"}, "expect": {"variables": {"answer": {"title": "Day", "items": [{"title": "One", "at": 0}], "priority": 3}, "why": null, "lifts": 2}} },
+      "event": "text.given", "data": {"text": "{ \"items\" : [ {\"at\": 0, \"extra\": \"x\", \"title\": \"One\"} ],\n  \"note\": {\"a\": []}, \"title\": \"Day\" }"}, "expect": {"variables": {"answer": {"title": "Day", "items": [{"title": "One", "at": 0}], "priority": 3}, "why": null, "lifts": 2, "priority": 3, "held_items": 1}} },
+
+    { "note": "a read of a day, not the week: the guard reads the title and is false",
+      "event": "answer.read", "expect": {"variables": {"weeks": 1, "other_reads": 2}} },
 
     { "note": "a list at its bound of three",
-      "event": "text.given", "data": {"text": "{\"title\":\"Full\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": null, "lifts": 3}} },
+      "event": "text.given", "data": {"text": "{\"title\":\"Full\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": null, "lifts": 3, "priority": 2, "held_items": 3}} },
 
     { "note": "a list of four, past its bound: refused at the list, before any element is read",
-      "event": "text.given", "data": {"text": "{\"title\":\"Over\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3},{\"title\":\"d\",\"at\":4}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooMany", "path": "/items", "bound": 3}, "lifts": 4, "errors": 0}} },
+      "event": "text.given", "data": {"text": "{\"title\":\"Over\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3},{\"title\":\"d\",\"at\":4}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooMany", "path": "/items", "bound": 3}, "lifts": 4, "errors": 0, "priority": 2, "held_items": 3}} },
 
     { "note": "a list past its bound whose elements are no records: the count is held first",
       "event": "text.given", "data": {"text": "{\"title\":\"Over\",\"items\":[1,2,3,4],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooMany", "path": "/items", "bound": 3}, "lifts": 5, "errors": 0}} },
@@ -63,6 +72,9 @@
       "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"x\",\"title\":\"y\",\"at\":1}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 19, "errors": 0}} },
 
     { "note": "a well-formed text after the refusals: the record replaces the answer and no refusal remains",
-      "event": "text.given", "data": {"text": "{\"title\":\"Again\",\"items\":[{\"title\":\"z\",\"at\":23}],\"priority\":0}"}, "expect": {"variables": {"answer": {"title": "Again", "items": [{"title": "z", "at": 23}], "priority": 0}, "why": null, "lifts": 20, "errors": 0}} }
+      "event": "text.given", "data": {"text": "{\"title\":\"Again\",\"items\":[{\"title\":\"z\",\"at\":23}],\"priority\":0}"}, "expect": {"variables": {"answer": {"title": "Again", "items": [{"title": "z", "at": 23}], "priority": 0}, "why": null, "lifts": 20, "errors": 0, "priority": 0, "held_items": 1}} },
+
+    { "note": "a read after the last text: a record of priority 0, not the week",
+      "event": "answer.read", "expect": {"variables": {"weeks": 1, "other_reads": 3, "priority": 0, "held_items": 1}} }
   ]
 }

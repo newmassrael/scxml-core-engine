@@ -1807,7 +1807,7 @@ func TestALiftReadsATextIntoARecordThatHoldsAList(t *testing.T) {
 		t.Fatal(err)
 	}
 	variables := map[string]func() any{}
-	for _, id := range []string{"answer", "why", "lifts", "errors"} {
+	for _, id := range []string{"answer", "why", "lifts", "errors", "priority", "held_items", "weeks", "other_reads"} {
 		variables[id] = func() any {
 			saved, err := static_lift_list.StaticLiftListSaveAt(engine, savedAtMs)
 			return savedVariable(t, saved, err, id)

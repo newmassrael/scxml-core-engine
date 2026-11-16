@@ -12,6 +12,12 @@
   record, and `answer` is what it was. The statement raises nothing, so the assignment
   after it runs either way: `lifts` counts every lift, and `errors` stays 0.
 
+  The record's fields are read where `answer` is proven present, as a field of an
+  optional record of entries is: after each lift, its `priority` and the length of its
+  list are taken into variables of their own; and `answer.read` is guarded by a test of
+  its text and its number, so `weeks` counts the reads that found the week of priority
+  1 and `other_reads` every other, an absent answer among them.
+
   The item schema is imported beside the answer: the machine holds an item as its own
   record, which the answer's list holds. Expected values are derived from the document
   and the refusal table of docs/adr/0087, section 2.3, not observed from a backend.
@@ -29,11 +35,26 @@
     <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
     <data id="lifts" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="priority" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="held_items" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="weeks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="other_reads" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="lifting">
     <transition event="text.given" type="internal">
       <sce:lift text="_event.data.text" schema="Plan" location="answer" refusal="why"/>
       <assign location="lifts" expr="lifts + 1"/>
+      <if cond="answer !== null">
+        <assign location="priority" expr="answer.value.priority"/>
+        <assign location="held_items" expr="len(answer.value.items)"/>
+      </if>
+    </transition>
+    <transition event="answer.read" type="internal"
+                cond="answer !== null &amp;&amp; answer.value.title === 'Week' &amp;&amp; answer.value.priority === 1">
+      <assign location="weeks" expr="weeks + 1"/>
+    </transition>
+    <transition event="answer.read" type="internal">
+      <assign location="other_reads" expr="other_reads + 1"/>
     </transition>
     <transition event="error.execution" type="internal">
       <assign location="errors" expr="errors + 1"/>

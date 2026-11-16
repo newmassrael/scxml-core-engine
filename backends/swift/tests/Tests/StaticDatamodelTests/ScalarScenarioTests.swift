@@ -825,6 +825,10 @@ private func liftedList() -> Machine {
             "why": { policy.why.map(why) ?? .null },
             "lifts": { integer(policy.lifts) },
             "errors": { integer(policy.errors) },
+            "priority": { integer(policy.priority) },
+            "held_items": { integer(policy.heldItems) },
+            "weeks": { integer(policy.weeks) },
+            "other_reads": { integer(policy.otherReads) },
         ]
     )
 }
