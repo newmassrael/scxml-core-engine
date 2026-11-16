@@ -2829,3 +2829,23 @@ narrower than its type, so none is regenerated; a consumer regenerates the codec
 - The printed Python decode hands a field its number directly; `BoundedInt.from_wire` stays in the runtime for code
   that calls it, and no printed codec does.
 
+## A printed C11 codec is a source by a table of its elements, and encodes over any source (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. It moves the positional codecs
+whose elements are integers, flag sets and enums, each always there, of which the encode derives nothing, that take
+no flag input and whose encode refuses nothing (the codecs `sce_build::c11_codec_printed_file` answers `Some(true)`
+for). Every other C11 codec is unchanged.
+
+- Nothing a consumer wrote stops compiling or changes: `{codec}_t` and its members, `{codec}_decode`,
+  `{codec}_encode` and `{codec}_encode_to_buf` are as they were, and `{codec}_encode` writes the same bytes.
+- The header gains the codec's source interface. `{codec}_source_t` is a table of one function for each element
+  the value presents, `T (*element)(const void *ctx)`, in declaration order; `{codec}_encode_source(src, ctx, w)`
+  encodes whatever the table presents over `ctx`; `{codec}_value_source()` answers the table that presents a
+  `const {codec}_t *`, and `{codec}_encode(&v, w)` is `{codec}_encode_source({codec}_value_source(), &v, w)`.
+- A record of your own layout that holds a frame's elements no longer has to be copied into `{codec}_t` to be
+  encoded: write a reader for each element, put them in a `static const {codec}_source_t` (it costs no RAM), and
+  pass the record as `ctx`. The encode answers `SCE_FORGE_CODEC_BUFFER_OVERFLOW` where the writer has no room
+  left, and nothing else.
+- The header declares `{codec}_value_<element>` (the value's readers) and `{codec}_value_source`; a function or a
+  macro of yours by one of those names now collides with it.
+
