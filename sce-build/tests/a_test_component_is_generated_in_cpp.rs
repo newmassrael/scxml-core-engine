@@ -410,3 +410,41 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
     assert!(detail.contains("`union:Payment`: "), "{detail}");
     assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
 }
+
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list, a
+/// text that may be absent, numbers that may be absent) copies it into the
+/// machine's payload member by member, each made from the value the record's
+/// unit holds, which holds each in the runtime's types the machine does, so
+/// each is copied whole.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_cpp() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile/job_tester.scxml");
+    let code: String = generate(&path, Language::Cpp)
+        .unwrap_or_else(|e| panic!("job_tester generates on C++: {e:?}"))
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let read = at(
+        &code,
+        "const auto &sceValue = sceMessage.value.get<::SCE::Generated::EveryMatcher::Value>();",
+    );
+    let first = at(
+        &code,
+        "pendingJobStatusPayload_.elapsed_ms = sceValue.elapsed_ms;",
+    );
+    for copy in [
+        "pendingJobStatusPayload_.note = sceValue.note;",
+        "pendingJobStatusPayload_.codes = sceValue.codes;",
+        "pendingJobStatusPayload_.count = sceValue.count;",
+    ] {
+        assert!(code.contains(copy), "{copy}:\n{code}");
+    }
+    let tagged = at(
+        &code,
+        "pendingPayloadTag_ = JobTesterPayloadTag::JobStatus;",
+    );
+    assert!(read < first && first < tagged, "{code}");
+}

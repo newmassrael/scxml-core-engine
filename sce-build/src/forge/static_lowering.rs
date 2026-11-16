@@ -9648,6 +9648,12 @@ const CPP_PRESENT: &str = "scePresent";
 /// (`state_machine.jinja2`).
 const CPP_TEST_CONTEXT: &str = "this->testContext_";
 
+/// The name the statement taking a receive branch of a test component's C++
+/// machine binds the value of the message to, a reference to the record its
+/// unit declares (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const CPP_RECEIVED_VALUE: &str = "sceValue";
+
 /// `text` as a C++ string literal.
 fn cpp_text(text: &str) -> String {
     format!("\"{}\"", filters::escape_cpp(text.to_string()))
@@ -9684,6 +9690,34 @@ fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
 }
 
 impl CppTarget {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the block taking the receive branch on
+    /// `port` with `template`, which removes the head of the port, binds its
+    /// value as the template's unit holds it to [`CPP_RECEIVED_VALUE`], copies
+    /// `copies`, each a member of the payload by its id with its value, into
+    /// the member the payload channel holds its record's event in, and sets the
+    /// tag that says the channel holds it.
+    fn received_record(
+        &self,
+        machine: &str,
+        port: &str,
+        template: &TemplateRef,
+        copies: &[(String, String)],
+    ) -> String {
+        let unit = cpp_test_template_namespace(&template.unit);
+        let member = self.payload_accessor(&template.event);
+        let copies: String = copies
+            .iter()
+            .map(|(id, value)| format!("    {member}.{id} = {value};\n"))
+            .collect();
+        format!(
+            "{{\n    const ::SCE::Test::Message sceMessage = {CPP_TEST_CONTEXT}->receive({});\n    \
+             const auto &{CPP_RECEIVED_VALUE} = sceMessage.value.get<{unit}::Value>();\n\
+             {copies}    pendingPayloadTag_ = {machine}PayloadTag::{};\n}}",
+            cpp_text(port),
+            filters::to_event_variant(template.event.clone())
+        )
+    }
+
     /// `value`, a `std::vector` an imported algorithm or an adapter gave back,
     /// held in the `OwnedList` of the variable it is written to, whose type
     /// names the bound `capacity` (docs/adr/0086, section 7.4): past it the
@@ -11106,30 +11140,37 @@ impl StaticTarget for CppTarget {
                 {
                     return None;
                 }
-                let unit = cpp_test_template_namespace(&template.unit);
-                let member = self.payload_accessor(&template.event);
-                let copies: String = schema
+                let copies: Vec<(String, String)> = schema
                     .fields
                     .iter()
                     .map(|f| {
-                        format!(
-                            "    {member}.{} = sceValue.{};\n",
-                            f.id,
-                            crate::forge::generator::event_schema_field_ident(&f.id, Language::Cpp)
+                        (
+                            f.id.clone(),
+                            format!(
+                                "{CPP_RECEIVED_VALUE}.{}",
+                                crate::forge::generator::event_schema_field_ident(
+                                    &f.id,
+                                    Language::Cpp
+                                )
+                            ),
                         )
                     })
                     .collect();
-                format!(
-                    "{{\n    const ::SCE::Test::Message sceMessage = {CPP_TEST_CONTEXT}->receive({});\n    \
-                     const auto &sceValue = sceMessage.value.get<{unit}::Value>();\n\
-                     {copies}    pendingPayloadTag_ = {machine}PayloadTag::{};\n}}",
-                    cpp_text(port),
-                    filters::to_event_variant(template.event.clone())
-                )
+                self.received_record(machine, port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the payload
+            // made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from the value bound to
+            // [`CPP_RECEIVED_VALUE`].
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => self.received_record(machine, port, template, members),
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{CPP_TEST_CONTEXT}->receive({});", cpp_text(port))
@@ -11141,6 +11182,10 @@ impl StaticTarget for CppTarget {
                 format!("{CPP_TEST_CONTEXT}->doneTaken({});", cpp_text(ptc))
             }
         })
+    }
+    // The value `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(CPP_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
     // signed 64-bit count: one past it has no value there.

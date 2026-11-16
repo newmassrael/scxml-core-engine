@@ -14,9 +14,7 @@
 // backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
 // orders_suite and nested_suite are not replayed here: their mapped record holds
 // a union, which C++'s test profile matches no value of
-// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its tester's
-// receive branch reads a message whose record holds a list, of which the C++
-// machine makes no value (docs/SCE_TEST_PROFILE.md §12.6).
+// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS).
 
 #include <gtest/gtest.h>
 
@@ -27,6 +25,7 @@
 
 #include "boundary_suite.h"
 #include "integration/RuntimeSuiteExpectedLogs.h"
+#include "job_suite.h"
 #include "test/Runner.h"
 #include "test/Suite.h"
 
@@ -113,6 +112,15 @@ TEST(TheCorpus, TheBoundarySuiteReplaysToItsExpectedLogs) {
                      &SCE::Generated::BoundarySuite::moduleParameter, "",
                      "exchanges_signed_numbers pass\nanswers_another_job fail\nsets_no_verdict none\n"
                      "never_ends error\nsends_to_a_removed_ptc error\ntakes_before_its_exits pass\n"});
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of `every_matcher`
+/// accepts, at 1 ms, which the tester's branch reads as a composed message;
+/// the helper is told and passes, and the tester settles for the duration its
+/// start gives and passes at 501 ms.
+TEST(TheCorpus, TheJobSuiteReplaysToItsExpectedLogs) {
+    replays(Replayed{"job_suite", SCE::Generated::JobSuite::suite(), &SCE::Generated::JobSuite::moduleParameter,
+                     "job-timeout,job-retry", "completes_in_time pass\n"});
 }
 
 }  // namespace

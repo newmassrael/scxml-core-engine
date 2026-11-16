@@ -750,6 +750,102 @@ impl ComposedSpelling for CppComposed<'_> {
         )
     }
 
+    // A record's unit names its fields as the schema does
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `bool`, a text, and a list or an optional value of them, in
+    // the types the machine holds them in (the runtime's `OwnedText`,
+    // `OwnedList`, `std::optional`), which a copy copies whole.
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Cpp
+            )
+        ))
+    }
+    // A unit holds a byte string that is one entry of its record in a
+    // `std::vector<uint8_t>`, which holds no bound, and the machine in the
+    // `OwnedBytes` of the field's bound. A message holds a value of its type,
+    // its bytes within the bound, so the bound's `make` answers it; one past
+    // it, which only a host's own adapter could hand the run, is a defect,
+    // and `value()` throws on it.
+    fn unit_entry_bytes(&self, max: u32, held: &Held) -> String {
+        format!("{}::make({}).value()", cpp_bytes_type(max), held.text)
+    }
+    // A conditional over every variant the machine's enum declares, each the
+    // unit's variant of the same declared name, as a value of an enum crosses
+    // a call (`StaticTarget::enum_crossing`), in a lambda that reads the value
+    // once.
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        use crate::generator::Language;
+        let unit = crate::forge::generator::enum_qualified_type(document, Language::Cpp);
+        let mut arms: Vec<(String, String)> = machine
+            .variants
+            .iter()
+            .map(|(declared, ident)| {
+                (
+                    crate::forge::enum_naming::variant_ref(
+                        Language::Cpp,
+                        &unit,
+                        document,
+                        declared,
+                    ),
+                    format!("{}::{ident}", machine.ty),
+                )
+            })
+            .collect();
+        let (_, last) = arms.pop()?;
+        let chosen: String = arms
+            .into_iter()
+            .map(|(from, to)| format!("sceEnum == {from} ? {to} : "))
+            .collect();
+        Some(format!(
+            "[&](const {unit} &sceEnum) -> {} {{ return {chosen}{last}; }}({})",
+            machine.ty, held.text
+        ))
+    }
+    // A `std::visit` of the unit's variant of cases by a struct of one
+    // operator per case, as a union crosses a call (`cpp_union_crossing`), the
+    // one that holds a record binding it, each answering the machine's case
+    // of the same variant; `std::visit` asks for every alternative, so a case
+    // either side gains is a build error.
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        let unit =
+            crate::forge::generator::union_unit_type(document, crate::generator::Language::Cpp);
+        let ty = self.union_type(document);
+        let operators: String = arms
+            .iter()
+            .map(|arm| {
+                let alternative = format!("{unit}::{}", cpp_case_ident(&arm.variant));
+                if arm.holds_record {
+                    format!(
+                        "{ty} operator()(const {alternative} &sceCase) const {{ const auto \
+                         &{CPP_COPY_BINDING} = sceCase.{CPP_CASE_VALUE}; return {}; }} ",
+                        arm.value
+                    )
+                } else {
+                    format!(
+                        "{ty} operator()(const {alternative} &) const {{ return {}; }} ",
+                        arm.value
+                    )
+                }
+            })
+            .collect();
+        Some(format!(
+            "[&]() -> {ty} {{ struct sceArms {{ {operators}}}; return ::std::visit(sceArms{{}}, \
+             ({}).{CPP_UNION_CASES}); }}()",
+            held.text
+        ))
+    }
+    // The struct by position, its fields in the schema's order
+    // ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let values: Vec<&str> = fields.iter().map(|(_, value)| value.as_str()).collect();
+        Some(format!("{ty}{{{}}}", values.join(", ")))
+    }
+
     // A record that holds a composition carries its saved form in two
     // functions beside its struct, the names a record of entries' saved form
     // has (`<Type>ToSaved`, `<Type>FromSaved`, `StaticTarget::record_def`), so a
@@ -1956,5 +2052,69 @@ mod tests {
             Ok(None)
         );
         assert!(cpp_bound_check(&ty("union:Other"), None, "path", "one", 0, &shapes).is_err());
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, each field read by its id.
+    /// A list of records is widened element by element into the machine's
+    /// structs, built by position, an enum chosen by the declared name of the
+    /// unit's variant, a byte string that is one entry of its record made into
+    /// the `OwnedBytes` of its bound, and every other value, one runtime type in
+    /// the unit and the machine, copied whole.
+    #[test]
+    fn a_cpp_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &CPP,
+            &Held::reference("sceValue"),
+        )
+        .expect("every field is made");
+        let ids: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["items", "grid", "late"]);
+        for needle in [
+            "::SCE::Forge::widenedMap<MItemRecord>(sceValue.items, [&](const auto &sceCopied) \
+             -> MItemRecord { return MItemRecord{sceCopied.id, [&](const ",
+            " &sceEnum) -> MLevelEnum { return sceEnum == ",
+            " ? MLevelEnum::Low : MLevelEnum::High; }(sceCopied.level), sceCopied.due, \
+             ::SCE::Forge::OwnedBytes<4>::make(sceCopied.blob).value(), sceCopied.tags}; })",
+        ] {
+            assert!(fields[0].1.contains(needle), "{needle} in {}", fields[0].1);
+        }
+        assert_eq!(fields[1].1, "sceValue.grid");
+        assert_eq!(fields[2].1, "sceValue.late");
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a `std::visit` of the
+    /// unit's cases by one operator per case, the one that holds a record
+    /// binding it, each answering the machine's case of the same variant.
+    #[test]
+    fn a_cpp_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &CPP,
+            &Held::place("sceValue.shape"),
+        )
+        .expect("the union is made");
+        for needle in [
+            "[&]() -> MShapeUnion { struct sceArms { MShapeUnion operator()(const \
+             SCE::Generated::Shape::Shape::",
+            " &sceCase) const { const auto &sceCopied = sceCase.value; return MShapeUnion{",
+            "MRadiusRecord{sceCopied.radius}",
+            "return ::std::visit(sceArms{}, (sceValue.shape).cases); }()",
+        ] {
+            assert!(made.contains(needle), "{needle} in {made}");
+        }
     }
 }

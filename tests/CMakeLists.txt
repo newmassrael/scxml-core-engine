@@ -900,9 +900,9 @@ endforeach()
 # machines and its tables, beside the runtime's records, templates and asking_configuration
 # above, which it reuses. orders_suite and nested_suite are not generated here: their mapped
 # record holds a union, which C++'s test profile matches no value of
-# (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its tester's receive
-# branch reads a message whose record holds a list, of which the C++ machine makes no value
-# (docs/SCE_TEST_PROFILE.md §12.6).
+# (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is: its records and templates are
+# generated above, and its components, its tables and the job's completion of the kind
+# examples its port sends below.
 foreach(_BOUNDARY_DOCUMENT signed_reading signed_reading_sent signed_reading_within)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
@@ -922,6 +922,22 @@ foreach(_BOUNDARY_DOCUMENT signed_configuration unset_configuration stalled_conf
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/boundary/${_BOUNDARY_DOCUMENT}.scxml
+    )
+endforeach()
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/kind-examples/event-schema.scxml
+)
+foreach(_JOB_COMPONENT job_tester helper)
+    sce_add_state_machine(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/${_JOB_COMPONENT}.scxml
+    )
+endforeach()
+foreach(_JOB_DOCUMENT tester_and_helper completes_in_time job_suite)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/${_JOB_DOCUMENT}.scxml
     )
 endforeach()
 
