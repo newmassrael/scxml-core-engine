@@ -165,3 +165,121 @@ fn c11_writes_the_element_only_when_no_failure_was_recorded() {
     );
     holds(&code, RAISED);
 }
+
+// ── A list itself reached through an index (docs/adr/0099, "Still open
+//    (2026-11-16)" item 3): the `shapes.grouped` and `shapes.rowed` transitions,
+//    the list a group at an index holds and a row at an index of a list of rows.
+//    Each index is read by the lane's checked read in turn, the outer read nested
+//    in the inner one as written, so an index outside either list fails the copy.
+
+/// Pinned by `RustTarget::element_within`: the outer element is a reference, a
+/// list of lists read through it as it is and a field's list through a borrow.
+#[test]
+fn rust_reads_each_index_in_turn_through_the_outer_reference() {
+    holds(
+        &machine(Language::Rust),
+        &[
+            "self.picked = sce_forge_runtime::algorithm::at_ref(&sce_forge_runtime::algorithm::at_ref(\
+             &ev.groups, ev.at)?.shapes, ev.inner)?.clone();",
+            "self.picked = sce_forge_runtime::algorithm::at_ref(sce_forge_runtime::algorithm::at_ref(\
+             &ev.rows, ev.at)?, ev.inner)?.clone();",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `SwiftTarget::record_at`.
+#[test]
+fn swift_reads_each_index_in_turn_each_read_marked() {
+    holds(
+        &machine(Language::Swift),
+        &[
+            "(try Checked.at((try Checked.at(self.pendingShapesGroupedPayload.groups, \
+             self.pendingShapesGroupedPayload.at)).shapes, self.pendingShapesGroupedPayload.inner))",
+            "(try Checked.at((try Checked.at(self.pendingShapesRowedPayload.rows, \
+             self.pendingShapesRowedPayload.at)), self.pendingShapesRowedPayload.inner))",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `KotlinTarget::record_at`.
+#[test]
+fn kotlin_reads_each_index_in_turn_through_the_checked_read() {
+    holds(
+        &machine(Language::Kotlin),
+        &[
+            "com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(\
+             pendingShapesGroupedPayload!!.groups, (pendingShapesGroupedPayload!!.at).toLong()).shapes, \
+             (pendingShapesGroupedPayload!!.inner).toLong())",
+            "com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(\
+             pendingShapesRowedPayload!!.rows, (pendingShapesRowedPayload!!.at).toLong()), \
+             (pendingShapesRowedPayload!!.inner).toLong())",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `PythonTarget::record_at`.
+#[test]
+fn python_reads_each_index_in_turn_through_the_checked_read() {
+    holds(
+        &machine(Language::Python),
+        &[
+            "sce_algorithm.at(sce_algorithm.at(self._pending_shapes_grouped_payload.groups, \
+             self._pending_shapes_grouped_payload.at).shapes, self._pending_shapes_grouped_payload.inner)",
+            "sce_algorithm.at(sce_algorithm.at(self._pending_shapes_rowed_payload.rows, \
+             self._pending_shapes_rowed_payload.at), self._pending_shapes_rowed_payload.inner)",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `GoTarget::record_at`: a
+/// Go list is a slice, which a slice expression takes whether or not it is
+/// addressable, so the inner list is sliced out of the outer read as it stands.
+#[test]
+fn go_reads_each_index_in_turn_into_the_statements_failure() {
+    holds(
+        &machine(Language::Go),
+        &[
+            "scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesGroupedPayload.groups[:], \
+             int64(p.pendingShapesGroupedPayload.at)).shapes[:], int64(p.pendingShapesGroupedPayload.inner))",
+            "scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesRowedPayload.rows[:], \
+             int64(p.pendingShapesRowedPayload.at))[:], int64(p.pendingShapesRowedPayload.inner))",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `CppTarget::record_at`.
+#[test]
+fn cpp_reads_each_index_in_turn_into_the_statements_failure() {
+    holds(
+        &machine(Language::Cpp),
+        &[
+            "SCE::Forge::Checked::at(sce_failure_, SCE::Forge::Checked::at(sce_failure_, \
+             pendingShapesGroupedPayload_.groups, ",
+            "SCE::Forge::Checked::at(sce_failure_, SCE::Forge::Checked::at(sce_failure_, \
+             pendingShapesRowedPayload_.rows, ",
+            ").shapes, ",
+        ],
+    );
+}
+
+/// Pinned by `StaticTarget::element_within`'s nesting and `CTarget::record_at`: the
+/// inner read's range is the length of the list the outer read answers, which is
+/// the empty value of the element where the outer index failed.
+#[test]
+fn c11_reads_each_index_in_turn_into_the_statements_failure() {
+    holds(
+        &machine(Language::C11),
+        &[
+            "(sce_forge_checked_index_from_i(&sce_failure_, \
+             (int64_t)(sm->pending_payload.as.shapes_grouped.inner), \
+             ((sce_forge_checked_index_from_i(&sce_failure_, \
+             (int64_t)(sm->pending_payload.as.shapes_grouped.at), \
+             (sm->pending_payload.as.shapes_grouped.groups).len)",
+            "(sce_forge_checked_index_from_i(&sce_failure_, \
+             (int64_t)(sm->pending_payload.as.shapes_rowed.inner), \
+             ((sce_forge_checked_index_from_i(&sce_failure_, \
+             (int64_t)(sm->pending_payload.as.shapes_rowed.at), \
+             (sm->pending_payload.as.shapes_rowed.rows).len)",
+        ],
+    );
+}

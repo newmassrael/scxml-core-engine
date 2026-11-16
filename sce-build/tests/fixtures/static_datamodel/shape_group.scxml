@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A group of shapes (docs/adr/0099, "Still open (2026-11-16)" item 3): a record
+  whose field is a list of unions, which `event_shapes_grouped.scxml` holds a
+  list of, so a shape is read through an index of a list a field of an element
+  at an index holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="shape_group"
+       sce:event-name="shape.group">
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <datamodel>
+    <data id="shapes" sce:type="list&lt;union:Shape&gt;[3]" sce:direction="in"/>
+  </datamodel>
+</scxml>

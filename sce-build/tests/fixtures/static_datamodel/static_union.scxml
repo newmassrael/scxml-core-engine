@@ -12,7 +12,9 @@
   optional union whole, or the refusal of it kept beside it. A shape at an index
   of a list is taken whole into a union variable and then narrowed by its tag; an
   index outside the list writes nothing, ends the block and raises
-  error.execution (docs/adr/0099, section 5.3). A delivery outside its type is
+  error.execution (docs/adr/0099, section 5.3), and so is a shape at an index of
+  a list itself reached through an index, of a group's field or of a list of
+  rows. A delivery outside its type is
   refused whole and counted. Every out variable is what a host reads back, and
   scenarios/static_union.json replays it.
 
@@ -36,6 +38,9 @@
   <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
   <sce:import kind="event-schema" src="event_shape_said.scxml" as="Said"/>
   <sce:import kind="event-schema" src="event_shapes_picked.scxml" as="Picked"/>
+  <sce:import kind="event-schema" src="shape_group.scxml" as="Group"/>
+  <sce:import kind="event-schema" src="event_shapes_grouped.scxml" as="Grouped"/>
+  <sce:import kind="event-schema" src="event_shapes_rows.scxml" as="Rows"/>
   <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
   <datamodel>
     <!-- A union variable is built where it is declared, a case and each of its
@@ -120,6 +125,25 @@
     <transition event="shapes.picked" type="internal">
       <assign location="picked" expr="_event.data.many[_event.data.at]"/>
       <assign location="picked_maybe" expr="_event.data.many[_event.data.at]"/>
+      <assign location="picks" expr="picks + 1"/>
+      <if cond="picked.kind === Kind.rect">
+        <assign location="picked_width" expr="picked.width"/>
+      </if>
+    </transition>
+    <!-- A shape read through an index of a list itself reached through an index:
+         the list a field of a group at an index holds, and a row of a list of
+         rows. Each index is read in turn, the outer first, and either outside
+         its list writes nothing, ends the block and raises error.execution
+         (docs/adr/0099, "Still open (2026-11-16)" item 3). -->
+    <transition event="shapes.grouped" type="internal">
+      <assign location="picked" expr="_event.data.groups[_event.data.at].shapes[_event.data.inner]"/>
+      <assign location="picks" expr="picks + 1"/>
+      <if cond="picked.kind === Kind.rect">
+        <assign location="picked_width" expr="picked.width"/>
+      </if>
+    </transition>
+    <transition event="shapes.rowed" type="internal">
+      <assign location="picked" expr="_event.data.rows[_event.data.at][_event.data.inner]"/>
       <assign location="picks" expr="picks + 1"/>
       <if cond="picked.kind === Kind.rect">
         <assign location="picked_width" expr="picked.width"/>

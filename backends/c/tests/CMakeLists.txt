@@ -2969,12 +2969,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # A payload that holds a union, read by testing its tag, a union variable built where it
     # is declared, a text lifted into one, and a machine saved and restored with every union
     # read back by its tag (docs/adr/0092), so the staging carries the union, the enum of its
-    # tag and the record of each case beside the machine.
+    # tag and the record of each case beside the machine; and a shape taken whole from an index
+    # of a list, itself reached through an index or not (docs/adr/0099), so the staging carries
+    # the events of each and the record of a group of shapes too.
     sce_generate_static_integration_c_test(static_union
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_union.scxml"
         STAGE_ALSO enum_shape_kind.scxml event_shapes.scxml shape_radius.scxml shape_rect.scxml
                    shape_label.scxml shape_path.scxml union_shape.scxml event_shape_said.scxml
+                   event_shapes_picked.scxml shape_group.scxml event_shapes_grouped.scxml
+                   event_shapes_rows.scxml
     )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"

@@ -5824,21 +5824,54 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
     place_path(&parse_to_ast(text.trim()).ok()?)
 }
 
-/// The list place and the text of the index the expression `text` reads one
-/// element at, when the whole of `text` is that read: `("_event.data.many",
-/// "at + 1")` for `_event.data.many[at + 1]`, the list's place as
-/// [`place_path`] writes it. `None` for a text that does not parse, reads
-/// something after the element (`xs[i].kind`), or indexes no place. What an
-/// `<assign>` that takes an element whole reads the element by
-/// (docs/adr/0099, section 5.3).
-pub(crate) fn written_element(text: &str) -> Option<(String, String)> {
+/// One read of an element on the way down to the element an expression reads
+/// whole ([`written_elements`]): the text of its index, and the fields read
+/// after it (`.shapes`, or nothing), which reach the next list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ElementStep {
+    pub index: String,
+    pub fields: String,
+}
+
+/// The place the expression `text` starts at and each element it reads on the
+/// way down, when the whole of `text` is the read of an element: `("uss",
+/// [i, j])` for `uss[i][j]`, and `("_event.data.groups", [(g, ".shapes"), (s,
+/// "")])` for `_event.data.groups[g].shapes[s]`, the place a path of fields with
+/// no element, each step's index as the text writes it, and the last step's
+/// fields empty. `None` for a text that does not parse, reads something after
+/// its last element (`xs[i].kind`), or reads a part of no place (a call, a
+/// literal). What an `<assign>` that takes an element whole reads the element by,
+/// through each list on the way in turn (docs/adr/0099, section 5.3 and "Still
+/// open (2026-11-16)" item 3).
+pub(crate) fn written_elements(text: &str) -> Option<(String, Vec<ElementStep>)> {
+    fn walk(node: &TypedExpr, text: &str) -> Option<(String, Vec<ElementStep>)> {
+        match &node.kind {
+            ExprKind::Ident(name) => Some((name.clone(), Vec::new())),
+            ExprKind::Member { object, property } => {
+                let (mut root, mut steps) = walk(object, text)?;
+                match steps.last_mut() {
+                    Some(step) => step.fields = format!("{}.{property}", step.fields),
+                    None => root = format!("{root}.{property}"),
+                }
+                Some((root, steps))
+            }
+            ExprKind::Index { object, index } => {
+                let (root, mut steps) = walk(object, text)?;
+                steps.push(ElementStep {
+                    index: text.get(index.span.clone()?)?.trim().to_string(),
+                    fields: String::new(),
+                });
+                Some((root, steps))
+            }
+            _ => None,
+        }
+    }
     let text = text.trim();
     let ast = parse_to_ast(text).ok()?;
-    let ExprKind::Index { object, index } = &ast.kind else {
+    if !matches!(ast.kind, ExprKind::Index { .. }) {
         return None;
-    };
-    let index = text.get(index.span.clone()?)?.trim();
-    Some((place_path(object)?, index.to_string()))
+    }
+    walk(&ast, text)
 }
 
 /// The member of a C11 text buffer (`sce_static_string_<N>_t`, a text of at
@@ -12936,6 +12969,40 @@ mod string_literal_tests;
 mod tests {
     use super::*;
     use crate::forge::types::{FuncSig, InferredType, RecordShape};
+
+    /// An element read whole is read through each list on the way down
+    /// (docs/adr/0099, "Still open (2026-11-16)" item 3): the place a path of
+    /// fields starts at, each index as written, and the fields after each that
+    /// reach the next list; a text that reads past its last element, or reads
+    /// no place, reads no element whole.
+    #[test]
+    fn an_element_read_whole_is_read_through_each_list_on_the_way() {
+        let step = |index: &str, fields: &str| ElementStep {
+            index: index.to_string(),
+            fields: fields.to_string(),
+        };
+        assert_eq!(
+            written_elements("_event.data.many[_event.data.at]"),
+            Some((
+                "_event.data.many".to_string(),
+                vec![step("_event.data.at", "")]
+            ))
+        );
+        assert_eq!(
+            written_elements(" _event.data.groups[g + 1].shapes[s] "),
+            Some((
+                "_event.data.groups".to_string(),
+                vec![step("g + 1", ".shapes"), step("s", "")]
+            ))
+        );
+        assert_eq!(
+            written_elements("uss[i][j]"),
+            Some(("uss".to_string(), vec![step("i", ""), step("j", "")]))
+        );
+        assert_eq!(written_elements("us[i].kind"), None);
+        assert_eq!(written_elements("us"), None);
+        assert_eq!(written_elements("f(x)[0]"), None);
+    }
 
     // ── Helpers ─────────────────────────────────────────────────
 

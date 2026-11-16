@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Groups of shapes and the indices of the one to pick (docs/adr/0099, "Still
+  open (2026-11-16)" item 3): a list of up to two groups, each a list of up to
+  three shapes, an index into the groups and one into the group's shapes, either
+  of which may fall outside its list. `static_union.scxml` takes the shape at the
+  two indices whole into a union variable.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shapes_grouped"
+       sce:event-name="shapes.grouped">
+  <sce:import kind="event-schema" src="shape_group.scxml" as="Group"/>
+  <datamodel>
+    <data id="groups" sce:type="list&lt;record:Group&gt;[2]" sce:direction="in"/>
+    <data id="at" sce:type="uint8" sce:direction="in"/>
+    <data id="inner" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

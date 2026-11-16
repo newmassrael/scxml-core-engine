@@ -1952,6 +1952,24 @@ pub trait StaticTarget {
         self.record_at(list, index)
             .map(crate::forge::composed_lowering::Held::place)
     }
+    /// The element at `index` of the list the fields `fields` (`.shapes`, or
+    /// nothing for a list of lists) reach inside `outer`, itself an element read
+    /// through an index ([`Self::element_at`]) (docs/adr/0099, "Still open
+    /// (2026-11-16)" item 3): the checked read of each index in turn, the outer
+    /// first, so an index outside either list fails the read. The reads nest as
+    /// written, [`Self::element_at`] of the place `fields` names in the outer
+    /// element, on every target whose read of an element answers a value a
+    /// member is read of (Go's slices included, which a slice expression takes
+    /// whether or not they are addressable); a target whose read answers a
+    /// reference (Rust) spells its own.
+    fn element_within(
+        &self,
+        outer: &crate::forge::composed_lowering::Held,
+        fields: &str,
+        index: &str,
+    ) -> Option<crate::forge::composed_lowering::Held> {
+        self.element_at(&format!("{}{fields}", outer.text), index)
+    }
     /// [`Self::receiving_write`] of a value that is a record of the type `held`,
     /// for a target that names the type of the local the value is computed into.
     /// The other targets' locals are typed by what they infer, as they were.
@@ -4651,6 +4669,24 @@ impl StaticTarget for RustTarget {
     fn element_at(&self, list: &str, index: &str) -> Option<crate::forge::composed_lowering::Held> {
         Some(crate::forge::composed_lowering::Held::reference(format!(
             "sce_forge_runtime::algorithm::at_ref(&{list}, {index})?"
+        )))
+    }
+    // The outer element is a reference already, so a list of lists is read
+    // through it as it is, and a list a field of it holds through a borrow of
+    // the field.
+    fn element_within(
+        &self,
+        outer: &crate::forge::composed_lowering::Held,
+        fields: &str,
+        index: &str,
+    ) -> Option<crate::forge::composed_lowering::Held> {
+        let list = if fields.is_empty() {
+            outer.borrowed()
+        } else {
+            format!("&{}{fields}", outer.text)
+        };
+        Some(crate::forge::composed_lowering::Held::reference(format!(
+            "sce_forge_runtime::algorithm::at_ref({list}, {index})?"
         )))
     }
     // A field of the present record of an optional one, written through the
@@ -21372,11 +21408,11 @@ struct UnionCopy {
 /// The value a union variable takes when an `<assign>` puts a whole union into
 /// it (docs/adr/0092, section 6.1 item 5): `null` into one that may be absent,
 /// or a copy of the union a place holds (a variable, a payload field, a loop's
-/// item, the present value of an optional one, a list's element at an index) in
-/// the variable's own type, which the value's fits, as the judge proved. `None`
-/// for an `<assign>` whose location is no union variable. Refused by name for a
-/// target that spells no composed value, and for an element of a list that is
-/// itself reached through an index.
+/// item, the present value of an optional one, a list's element at an index,
+/// that list itself reached through an index or a field of an element at one)
+/// in the variable's own type, which the value's fits, as the judge proved.
+/// `None` for an `<assign>` whose location is no union variable. Refused by name
+/// for a target that spells no composed value.
 fn whole_union_copy(
     action: &Action,
     ctx: &crate::forge::types::TypeCtx<'_>,
@@ -21454,31 +21490,50 @@ fn whole_union_copy(
     // §3.4.1, `out-of-range`); the copy is held in a value of the variable's type
     // while it is computed, and written only if the read completed.
     let (held, held_while_read) = if path.contains(crate::forge::value_path::ELEMENT) {
-        let element = crate::forge::expr::written_element(&action.expr)
-            .filter(|(list, _)| !list.contains(crate::forge::value_path::ELEMENT));
-        let Some((list, index)) = element else {
-            return Err(refused(format!(
-                "a union read through an index of a list itself read through an index has \
-                 no {} lowering of a whole copy yet (docs/adr/0086, section 7.3)",
-                target.name()
-            )));
+        // Each list on the way is read at its index in turn, the outer first: a
+        // list a field of an element holds, or a list that is the element of a
+        // list (docs/adr/0099, "Still open (2026-11-16)" item 3).
+        let Some((root, steps)) = crate::forge::expr::written_elements(&action.expr) else {
+            return Err(refused(
+                "a union is taken whole from an element only where the whole of the value is \
+                 the element read"
+                    .into(),
+            ));
         };
-        let list = place_text(&list, ctx, renames, target, &*spelling).map_err(refused)?;
-        let index = rewrites
-            .owned(&index, ctx, renames, InferredType::Unknown)
-            .map_err(|r| {
+        let list = place_text(&root, ctx, renames, target, &*spelling).map_err(refused)?;
+        let mut walked = root;
+        let mut element: Option<composed::Held> = None;
+        let mut fields = "";
+        for step in &steps {
+            let index = rewrites
+                .owned(&step.index, ctx, renames, InferredType::Unknown)
+                .map_err(|r| {
+                    refused(format!(
+                        "`{}` has no {} lowering: {}",
+                        step.index,
+                        target.name(),
+                        r.error
+                    ))
+                })?;
+            let read = match &element {
+                None => target.element_at(&list, &index.text),
+                Some(outer) => {
+                    let spelled =
+                        record_fields_text(fields, &walked, ctx, target).map_err(refused)?;
+                    walked.push_str(fields);
+                    target.element_within(outer, &spelled, &index.text)
+                }
+            };
+            element = Some(read.ok_or_else(|| {
                 refused(format!(
-                    "`{index}` has no {} lowering: {}",
-                    target.name(),
-                    r.error
+                    "{} reads no element of a list of unions whole",
+                    target.name()
                 ))
-            })?;
-        let element = target.element_at(&list, &index.text).ok_or_else(|| {
-            refused(format!(
-                "{} reads no element of a list of unions whole",
-                target.name()
-            ))
-        })?;
+            })?);
+            walked.push_str(crate::forge::value_path::ELEMENT);
+            fields = step.fields.as_str();
+        }
+        let element = element.ok_or_else(|| refused("it reads no element".into()))?;
         let ty = composed::machine_type(
             &to.ty,
             to_within.as_deref(),
@@ -21569,6 +21624,37 @@ fn union_field_place(
         .union_member_write(&holder_text, union, &left, member.trim())
         .map_err(refused)?;
     Ok(Some((written, field)))
+}
+
+/// The fields `fields` (`.shapes.more`, or nothing) read after the place
+/// `holder` of an element, as the target spells a record's field: what an
+/// element's list is reached by inside the element (docs/adr/0099, "Still open
+/// (2026-11-16)" item 3). `Err` for a field of a union, whose member is read
+/// only where a test proves its case (docs/adr/0092, section 6.1), which an
+/// element at an index never is.
+fn record_fields_text(
+    fields: &str,
+    holder: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    target: &dyn StaticTarget,
+) -> Result<String, String> {
+    let mut walked = holder.to_string();
+    let mut text = String::new();
+    for field in fields.split('.').filter(|field| !field.is_empty()) {
+        let union = ctx.value_of(&walked).and_then(|place| {
+            crate::forge::value_path::union_of(ctx.value_scope, &place).map(|(union, _)| union)
+        });
+        if let Some(union) = union {
+            return Err(format!(
+                "`{field}` of `union:{}` read in an element at an index is a member of no \
+                 proven case: copy the element whole and test its tag first",
+                union.name
+            ));
+        }
+        text = format!("{text}.{}", target.record_field(field));
+        walked = format!("{walked}.{field}");
+    }
+    Ok(text)
 }
 
 /// The expression the place `path` is reached by, a path of fields with no

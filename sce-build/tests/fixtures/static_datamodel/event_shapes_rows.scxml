@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rows of shapes and the indices of the one to pick (docs/adr/0099, "Still open
+  (2026-11-16)" item 3): a list of up to two rows, each a list of up to three
+  shapes, which may be empty, an index into the rows and one into the row,
+  either of which may fall outside its list. `static_union.scxml` takes the shape
+  at the two indices whole into a union variable.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shapes_rows"
+       sce:event-name="shapes.rowed">
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <datamodel>
+    <data id="rows" sce:type="list&lt;list&lt;union:Shape&gt;[3]&gt;[2]" sce:direction="in"/>
+    <data id="at" sce:type="uint8" sce:direction="in"/>
+    <data id="inner" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
