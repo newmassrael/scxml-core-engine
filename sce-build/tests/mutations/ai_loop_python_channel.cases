@@ -19,7 +19,7 @@
 # every case would read as a collection error rather than as a verdict.
 
 mutation_pytest backends/python/tests integration/ai_loop/
-mutation_regen scripts/regen_ai_loop_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/scripting/lua_engine.py
 mutation_runtime_targets backends/python/runtime/sce_runtime/datamodel_read.py
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py

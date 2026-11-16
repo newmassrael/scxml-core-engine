@@ -16,8 +16,7 @@
 # It is not under `backends/kotlin/tests/` either: the module of its own it
 # lives in compiles it once, rather than in every compile of `:sce-kotlin-tests`
 # (backends/kotlin/method-size/build.gradle.kts says why). Its document carries
-# no script-engine language, so it has no other-language tree and takes no
-# `SCE_KOTLIN_GENERATED_ROOT`.
+# no script-engine language, so it has no other-language tree.
 #
 # Usage (from repo root):
 #   scripts/regen_jvm_method_size_kotlin.sh

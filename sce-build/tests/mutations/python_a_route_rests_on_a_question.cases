@@ -27,7 +27,7 @@
 # which is why the regeneration below is declared.
 
 mutation_pytest backends/python/tests integration/route_rests_on_a_question/
-mutation_regen scripts/regen_route_rests_on_a_question_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
 mutation_runtime_targets backends/python/runtime/sce_runtime/scheduler.py
 mutation_oracles backends/python/tests/integration/route_rests_on_a_question/test_route_rests_on_a_question_aot.py

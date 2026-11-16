@@ -462,36 +462,6 @@ fn generate_w3c_clean_and_list_refuse_the_flag_and_run_nothing() {
 
 #[test]
 fn a_command_the_flag_cannot_reach_refuses_it() {
-    // `generate-integration` runs one shell pipeline per stem, and those
-    // write through their own copies and formatter — a flag this process
-    // honours could only ever report "unchanged" for them.
-    let integration = Command::new(codegen())
-        .args([
-            "--error-format",
-            "json",
-            "generate-integration",
-            "-l",
-            "rust",
-            "--assert-unchanged",
-        ])
-        .output()
-        .expect("run sce-codegen");
-    assert_eq!(
-        integration.status.code(),
-        Some(20),
-        "{}",
-        stderr(&integration)
-    );
-    let rec = record(&integration);
-    assert_eq!(rec["code"], "cli/usage", "{rec}");
-    assert!(
-        rec["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("generate-integration"),
-        "{rec}"
-    );
-
     // A command that generates nothing has nothing to compare.
     let lookup = Command::new(codegen())
         .args([

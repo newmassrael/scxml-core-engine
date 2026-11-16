@@ -59,7 +59,7 @@ fn repo_root() -> PathBuf {
 /// `sce_generate_*` CMake function name and report it as an unflagged
 /// call site.
 ///
-/// `generate-conformance` / `generate-w3c` / `generate-integration` are
+/// `generate-conformance` / `generate-w3c` are
 /// different subcommands with their own root handling and are skipped:
 /// the token must end after `generate`.
 fn generate_windows(content: &str) -> Vec<String> {

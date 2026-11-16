@@ -42,88 +42,24 @@ CODEGEN="$(sce_gate_codegen)"
 sce_gate_step "generating the Python W3C and integration suites"
 "$CODEGEN" generate-w3c -l python >/dev/null \
     || sce_gate_fail "Python W3C generation"
-"$CODEGEN" generate-integration -l python >/dev/null \
-    || sce_gate_fail "Python integration generation"
-# `generate-integration` enumerates `integration_resources/`, and one committed
-# Python suite is not from there: `event_schema_native` compiles the
-# EventSchema fixtures under `sce-build/tests/fixtures/event_schema/`, so its
-# modules come from a per-stem script instead. Its TEST file is tracked while
-# its modules are gitignored, so a checkout that runs only the two commands
-# above has a test importing a module nothing produced. That is what CI hit —
-# `ModuleNotFoundError: statechart_bytes_sm` — while this gate passed on any
-# tree where the script had been run by hand at some point.
-"$SCE_REPO_ROOT/scripts/regen_event_schema_native_python.sh" >/dev/null \
-    || sce_gate_fail "Python event_schema_native generation"
-# §scxml-6.2.5, and here for the same reason: the host-served fixture lives
-# beside the build tests rather than under `integration_resources/`, and it
-# needs a per-stem `--host-processor` flag the fan-out has no way to pass.
-# Its test is tracked while its module is gitignored, so a checkout running
-# only the commands above has a test importing a module nothing produced.
-"$SCE_REPO_ROOT/scripts/regen_host_processor_python.sh" >/dev/null \
-    || sce_gate_fail "Python host_processor generation"
-# §scxml-G-7, and here for the same reason again: the `<sce:action>` fixture
-# lives beside the build tests, its test is tracked while its module is
-# gitignored, and `generate-integration` does not reach it.
-"$SCE_REPO_ROOT/scripts/regen_native_action_python.sh" >/dev/null \
-    || sce_gate_fail "Python native_action generation"
-# The AI supervision loop, and here for the same reason a fourth time: its input
-# is `examples/ai_loop/ai_loop.scxml`, a worked EXAMPLE rather than a stem under
-# `integration_resources/`, so the fan-out does not enumerate it and it needs a
-# per-stem `--host-processor` flag besides. Its test is tracked while its module
-# is gitignored, so a checkout running only the commands above has a test
-# importing a module nothing produced.
+# The integration machines and the `datamodel="sce-static"` machines (SCE
+# Accepted Subset §2.15) are two declared trees (ADR 0097): every document they
+# are generated from, every stem of `integration_resources/` and every
+# document beside the build tests, an example or `tests/integration/`, with
+# the host surfaces each declares, is in tools/codegen/trees/
+# python-integration.toml and python-static-datamodel.toml. Their tests are
+# tracked while their modules are gitignored, so a module neither tree wrote
+# would be a test importing a module nothing produced: what CI once hit as
+# `ModuleNotFoundError: statechart_bytes_sm`. `--replace` removes a module the
+# tree no longer writes, which a test could otherwise still import.
 #
-# `sce-build/tests/ai_loop_channel_parity.rs` holds this channel to the same 27
-# scenarios as the C++, Rust, Go and Kotlin ones, so a missing module here is
-# not a quiet gap: it is the one channel of five that could not answer.
-"$SCE_REPO_ROOT/scripts/regen_ai_loop_python.sh" >/dev/null \
-    || sce_gate_fail "Python ai_loop generation"
-
-# The transition-domain witness, for the same reason and one more: its document
-# is not under `integration_resources/` either — a stem there is a seven-channel
-# contract and the C11 engine has not been repaired for this clause — so
-# `generate-integration` never sees it. Its `_sm.py` is gitignored like every
-# module in this tree, which means without this line the tracked test imports a
-# module nothing produced and the gate reports a collection error rather than
-# an engine answer.
-"$SCE_REPO_ROOT/scripts/regen_parallel_region_root_external_domain_python.sh" >/dev/null \
-    || sce_gate_fail "Python transition-domain witness generation"
-
-# The child-deadline document, for the same reason: it sits beside its drivers
-# rather than under `integration_resources/` (a stem there is a seven-channel
-# contract, and C11 and the C++ Interpreter expose no next-deadline query), so
-# `generate-integration` never sees it, and its gitignored `_sm.py` would be a
-# module nothing produced.
-"$SCE_REPO_ROOT/scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh" >/dev/null \
-    || sce_gate_fail "Python child-deadline generation"
-
-# The external-event budget's document, for the same reason: it sits under
-# `tests/integration/` rather than `integration_resources/` until every engine
-# has a driver for it (a stem there is a seven-channel contract, and only the
-# Python runtime holds the budget so far: ARCHITECTURE.md "External-Event
-# Budget"), so `generate-integration` never sees it, and its gitignored `_sm.py`
-# would be a module nothing produced.
-"$SCE_REPO_ROOT/scripts/regen_external_chain_is_bounded_python.sh" >/dev/null \
-    || sce_gate_fail "Python external-event budget generation"
-
-# The route-rests-on-a-question document, for the reason the host-processor one
-# gives: only this runtime holds the contract (the host that plays a design to
-# its owner is the Python authoring driver), so it is not a stem under
-# `integration_resources/`, `generate-integration` never sees it, and its
-# gitignored `_sm.py` would be a module nothing produced.
-"$SCE_REPO_ROOT/scripts/regen_route_rests_on_a_question_python.sh" >/dev/null \
-    || sce_gate_fail "Python route-rests-on-a-question generation"
-
-# The `datamodel="sce-static"` machines (SCE Accepted Subset §2.15), for the
-# reason the others give a sixth time: they live under the build tests' fixtures
-# and `tests/integration/` rather than `integration_resources/`, so
-# `generate-integration` never sees them, and the scenario driver that replays
-# them is tracked while their gitignored `_sm.py` modules would be modules
-# nothing produced. The machines are not listed here or in the tree: its
-# manifest (tools/codegen/trees/python-static-datamodel.toml) asks the
-# generator which of the fixtures it lowers for Python.
-"$CODEGEN" materialize python-static-datamodel --into "$SCE_REPO_ROOT" --replace >/dev/null \
-    || sce_gate_fail "Python sce-static generation"
+# `sce-build/tests/ai_loop_channel_parity.rs` holds the AI loop channel to the
+# same 27 scenarios as the C++, Rust, Go and Kotlin ones, so a missing module
+# there is not a quiet gap: it is the one channel that could not answer.
+for python_tree in python-integration python-static-datamodel; do
+    "$CODEGEN" materialize "$python_tree" --into "$SCE_REPO_ROOT" --replace >/dev/null \
+        || sce_gate_fail "materializing the $python_tree tree"
+done
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"

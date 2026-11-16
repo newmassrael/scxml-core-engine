@@ -251,8 +251,8 @@ fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
 //
 // A cached generation (ADR 0097) is run from the checkout's root with
 // `SCE_WORKSPACE_ROOT=.`, so that its key names no checkout's location. The
-// batch commands (`generate-w3c`, `generate-integration`) must read that
-// value against the directory they run in: falling through to the checkout
+// batch command (`generate-w3c`) must read that
+// value against the directory it runs in: falling through to the checkout
 // that built the binary reads that checkout's registry, which is outside
 // the generation's checkout and outside its key.
 

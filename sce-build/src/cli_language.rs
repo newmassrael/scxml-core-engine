@@ -27,8 +27,8 @@
 // rather than restate it — the visualiser learned it by offering a Go
 // button the dispatcher rejected. This module is where a *route* does
 // the same, since the answer is per-route: what `generate` serves and
-// what `generate-integration` serves are different sets, and a single
-// global list cannot say so.
+// what `generate-w3c` serves are different sets, and a single global
+// list cannot say so.
 //
 // This table declares; the dispatchers in `sce_codegen` implement. That
 // leaves exactly one way for them to disagree, and
@@ -77,9 +77,6 @@ pub enum LanguageRoute {
     Orchestrate,
     /// `generate-w3c` — batch W3C statechart conformance suite.
     GenerateW3c,
-    /// `generate-integration` — batch integration fixtures for the
-    /// backends that keep a regenerated tree.
-    GenerateIntegration,
     /// `generate-conformance` — cross-language numerical harness.
     GenerateConformance,
     /// `list-fixtures` — `--language` is a filter over the listing
@@ -101,7 +98,6 @@ impl LanguageRoute {
         LanguageRoute::Check,
         LanguageRoute::Orchestrate,
         LanguageRoute::GenerateW3c,
-        LanguageRoute::GenerateIntegration,
         LanguageRoute::GenerateConformance,
         LanguageRoute::ListFixtures,
     ];
@@ -113,7 +109,6 @@ impl LanguageRoute {
             LanguageRoute::Check => "check",
             LanguageRoute::Orchestrate => "orchestrate",
             LanguageRoute::GenerateW3c => "generate-w3c",
-            LanguageRoute::GenerateIntegration => "generate-integration",
             LanguageRoute::GenerateConformance => "generate-conformance",
             LanguageRoute::ListFixtures => "list-fixtures",
         }
@@ -180,12 +175,6 @@ impl LanguageRoute {
                 });
                 SERVED.as_slice()
             }
-            // C++ and C11 integration fixtures emit at CMake build time
-            // through `sce_generate_static_integration_test`, so there is
-            // no committed tree for this subcommand to regenerate. The Rust
-            // and Go integration trees are declared trees (ADR 0097), written
-            // by `materialize rust-integration` and `materialize go-integration`.
-            LanguageRoute::GenerateIntegration => &[Language::Python, Language::Swift],
         }
     }
 
@@ -206,14 +195,6 @@ impl LanguageRoute {
             LanguageRoute::GenerateW3c => Some(format!(
                 "C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); \
                  single-document `generate -l c11` uses a different emitter and does work{}",
-                emitless_sentence(". ", " too"),
-            )),
-            LanguageRoute::GenerateIntegration => Some(format!(
-                "cpp and c11 are absent because their integration fixtures emit at CMake build \
-                 time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate. rust, go and kotlin are absent because their \
-                 integration trees are declared in tools/codegen/trees/<language>-integration.toml \
-                 and written by `sce-codegen materialize <language>-integration`{}",
                 emitless_sentence(". ", " too"),
             )),
             LanguageRoute::GenerateConformance => (self.languages().len() < Language::ALL.len())

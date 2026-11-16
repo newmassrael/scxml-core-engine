@@ -1251,7 +1251,7 @@ catches its removal.
 | Kotlin | n/a (AOT-only backend) | committed integration tree |
 | Go | n/a (AOT-only backend) | committed integration tree |
 | C++ | `tests/integration/DonedataLocalInvokeTest.cpp` (gtest against `runtime/StateMachine.h`) | `tests/integration/DonedataLocalInvokeAotTest.cpp` against build-time `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/donedata_local_invoke_sm.{h,inl}` (CMake `sce_generate_static_integration_test`) |
-| Python | `backends/python/bindings/tests/test_donedata_local_invoke.py` (pybind11 wrapping `ReadySCXMLEngine` over C++ Interpreter, commit `0589bb35`) | `backends/python/tests/integration/donedata_local_invoke/test_donedata_local_invoke_aot.py` against gitignored `*_sm.py` (regen via `scripts/regen_donedata_local_invoke_python.sh` / `sce-codegen generate-integration -l python`) |
+| Python | `backends/python/bindings/tests/test_donedata_local_invoke.py` (pybind11 wrapping `ReadySCXMLEngine` over C++ Interpreter, commit `0589bb35`) | `backends/python/tests/integration/donedata_local_invoke/test_donedata_local_invoke_aot.py` against gitignored `*_sm.py` (regen via `scripts/materialize.sh python-integration`) |
 | C11 | n/a (AOT-only backend) | `backends/c/tests/integration/test_donedata_local_invoke.c` against build-time `${CMAKE_CURRENT_BINARY_DIR}/backends/c/tests/integration_generated/donedata_local_invoke_sm.{h,c}` (CMake `sce_generate_static_integration_c_test`) |
 
 C++ and Python are the only backends with both engine paths in
@@ -1726,24 +1726,15 @@ When a future SCXML contract requires this layer:
    `resources/` because `compute_source_hash` recurses through the
    input root — nesting integration under `resources/` would fold
    the integration fixture into the W3C source-hash domain.
-2. Author the Python regen script following the
-   `scripts/regen_donedata_local_invoke_python.sh` pattern. It is a thin
-   wrapper around the canonical CLI surface (see step 3) that encodes the
-   TMP staging, `--input-root` override, and post-processing.
-   Rust, Go and Kotlin need none: their integration trees are declared in
-   `tools/codegen/trees/rust-integration.toml`,
-   `tools/codegen/trees/go-integration.toml` and
-   `tools/codegen/trees/kotlin-integration.toml`, which generate every
-   `integration_resources/<stem>/` dir with its children (and, for
-   Rust, the module index), and `scripts/materialize.sh <language>-integration`
-   writes each of them.
-3. Bulk regenerate via the uniform CLI:
-   `sce-codegen generate-integration -l python --stem <stem>`
-   (single fixture) or omit `--stem` to walk every
-   `integration_resources/<stem>/` dir. The
-   `scripts/regen_all_committed_trees.sh` master script bundles W3C
-   + integration + forge round-trip so a template touch lands one
-   coherent commit across every drift context.
+2. Write no script: the integration trees are declared (ADR 0097) in
+   `tools/codegen/trees/{rust,go,kotlin,python,swift}-integration.toml`,
+   which generate every `integration_resources/<stem>/` dir with its
+   children (and, for Rust, the module index). A stem that needs a host
+   declaration gets a generation of its own in each manifest.
+3. Regenerate with `scripts/materialize.sh <language>-integration`. The
+   `scripts/regen_all_committed_trees.sh` master script materializes
+   every declared tree so a template touch lands one coherent commit
+   across every drift context.
 4. Register the new sub-module in each backend's integration entry
    point: Rust `backends/rust/tests/src/integration/mod.rs`, Kotlin
    `backends/kotlin/tests/src/main/kotlin/com/sce/integration/package-info.kt`,
@@ -1773,7 +1764,8 @@ Q-locks decided). Key end-state guarantees once all phases land:
   `sce_generate_static_integration_test` CMake function (Q-2).
 - C++ / Python retain both Interpreter and AOT channels (Q-3, Q-4).
 - `sce-codegen generate-integration -l <lang> [--stem <stem>]`
-  subcommand parallel to `generate-w3c` (Q-6, LANDED).
+  subcommand parallel to `generate-w3c` (Q-6, LANDED; retired by ADR 0097,
+  which declares every integration tree in `tools/codegen/trees`).
 - `scripts/regen_all_committed_trees.sh` master regen script
   bundling W3C + integration + forge round-trip (Q-7, LANDED).
 - Every backend has ≥1 channel for the `donedata_local_invoke`

@@ -27,7 +27,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/a_child_may_send_many_events_in_one_tick/test_a_machine_whose_script_session_fails_does_not_start.py integration/script_session/test_a_script_session_failure_names_its_step.py
-mutation_regen scripts/regen_a_child_may_send_many_events_in_one_tick_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/script_session.py backends/python/runtime/sce_runtime/scripting/lua_engine.py tools/codegen/templates/python/invoke_methods.py.jinja2
 mutation_oracles backends/python/tests/integration/a_child_may_send_many_events_in_one_tick/test_a_machine_whose_script_session_fails_does_not_start.py backends/python/tests/integration/script_session/test_a_script_session_failure_names_its_step.py
 

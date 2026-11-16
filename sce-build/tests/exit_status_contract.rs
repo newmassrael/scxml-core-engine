@@ -870,17 +870,6 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
         ],
         None,
     );
-    add(
-        "cli/generate-integration-unknown-stem",
-        vec![
-            s("generate-integration"),
-            s("-l"),
-            s("rust"),
-            s("--stem"),
-            s("no_such_stem"),
-        ],
-        None,
-    );
 
     // ── stage families reached past the CLI boundary ──
     //

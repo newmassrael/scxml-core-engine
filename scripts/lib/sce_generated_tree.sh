@@ -180,12 +180,10 @@ sce_regen_steps() {
 # engine tree before it emits: the tree is a public header directory, so the
 # manifest reads it, and a step reads nothing another step writes.
 #
-# `backends/python/tests/integration` is the tree that is NOT here, for that
-# reason: four of its directories are written by scripts the w3c-python gate
-# runs and the umbrella does not (host_processor, native_action,
-# route_rests_on_a_question, static_datamodel). Its modules are gitignored, so
-# nothing committed is at stake; each of its regen scripts clears its own
-# directory before it copies.
+# `backends/python/tests/integration` is not here: its two trees are declared
+# and not committed (tools/codegen/trees/python-integration.toml,
+# python-static-datamodel.toml), so nothing committed is at stake, and
+# `materialize --replace` removes what either no longer writes.
 #
 # `backends/rust/runtime/generated` (step `runtime-rust`) is not here either,
 # though its step writes it whole: the generator is compiled from it, and a

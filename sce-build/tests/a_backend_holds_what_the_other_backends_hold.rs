@@ -300,31 +300,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "`generate-w3c` route",
         Why::NotYet("no C11 W3C statechart emitter exists yet; the C11 W3C lane runs hand-authored drivers through CMake"),
     ),
-    (
-        Language::Cpp,
-        "`generate-integration` route",
-        Why::Design("its integration fixtures emit at CMake build time, so there is no committed tree to regenerate"),
-    ),
-    (
-        Language::C11,
-        "`generate-integration` route",
-        Why::Design("its integration fixtures emit at CMake build time, so there is no committed tree to regenerate"),
-    ),
-    (
-        Language::Rust,
-        "`generate-integration` route",
-        Why::Design("its integration tree is declared (tools/codegen/trees/rust-integration.toml, ADR 0097) and written by `materialize rust-integration`"),
-    ),
-    (
-        Language::Go,
-        "`generate-integration` route",
-        Why::Design("its integration tree is declared (tools/codegen/trees/go-integration.toml, ADR 0097) and written by `materialize go-integration`"),
-    ),
-    (
-        Language::Kotlin,
-        "`generate-integration` route",
-        Why::Design("its integration tree is declared (tools/codegen/trees/kotlin-integration.toml, ADR 0097) and written by `materialize kotlin-integration`"),
-    ),
     // The script-engine seam (docs/SCE_LUA_TRANSLATION_SEAM.md).
     (
         Language::Rust,
@@ -511,8 +486,8 @@ const SWIFT_NO_EMITTER: &str =
      one, and refuses by name what it does not lower yet \
      (`generator::reject_swift_unsupported_features`); its W3C suite is written by `generate-w3c` \
      for the `simple` harness and held by the `w3c-swift` gate, its integration fixtures are \
-     written by `generate-integration` for the stems it lowers, and the whole statechart is built \
-     after them";
+     written by the `swift-integration` tree for the stems it lowers, and the whole statechart is \
+     built after them";
 
 /// Swift lowers a sce-static machine in part and refuses the rest by name
 /// (`generator::lowers_static_datamodel_in_part`).
