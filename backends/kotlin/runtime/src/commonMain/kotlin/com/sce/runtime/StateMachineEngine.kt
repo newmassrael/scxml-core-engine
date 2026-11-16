@@ -1197,6 +1197,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * sends to an actual HTTP POST client. Matches C++ HttpSendHelper pattern
      * where the engine delegates HTTP dispatch to a platform-specific client.
      *
+     * Returning is a delivery. Throwing [HttpSendFailure] says the request was
+     * not delivered, and the engine reports the send as one it was unable to
+     * dispatch ([performHttpSend]).
+     *
      * Volatile for visibility across threads (async mode safety).
      */
     @Volatile
@@ -1207,6 +1211,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Called by generated code when send type is BasicHTTPEventProcessor
      * and target is an HTTP URL. Delegates to [onHttpSend] callback.
+     *
+     * §scxml-6.2.4: a send the processor is unable to dispatch puts
+     * `error.communication`, carrying the send id, on the internal queue. That
+     * is a callback that throws [HttpSendFailure], saying the request was not
+     * delivered, and a machine given no callback at all, which has no way to
+     * dispatch it: neither is dropped unsaid.
      *
      * @param target HTTP target URL
      * @param eventName SCXML event name (becomes _scxmleventname param)
@@ -1221,7 +1231,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
         params: Map<String, List<String>>,
         sendId: String
     ) {
-        onHttpSend?.invoke(HttpSendRequest(target, eventName, content, params, sendId))
+        val transport = onHttpSend
+        if (transport == null) {
+            raiseUndeliveredHttpSend(sendId, "no BasicHTTP transport is registered (onHttpSend)")
+            return
+        }
+        try {
+            transport(HttpSendRequest(target, eventName, content, params, sendId))
+        } catch (failure: HttpSendFailure) {
+            raiseUndeliveredHttpSend(sendId, "the BasicHTTP request to $target was not delivered: ${failure.message}")
+        }
+    }
+
+    /**
+     * §scxml-6.2.4: report a BasicHTTP send this processor was unable to
+     * dispatch: `error.communication` carrying the send id, on the internal
+     * queue. A document that declares no `error.communication` resolves
+     * nothing, and nothing is raised.
+     */
+    private fun raiseUndeliveredHttpSend(sendId: String, reason: String) {
+        val communicationError = resolveEventByName("error.communication") ?: return
+        raisePlatformError(communicationError, reason, sendId)
     }
 
     /**

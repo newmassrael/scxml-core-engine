@@ -632,9 +632,25 @@ private final class ParentNeedingPolicy {}
     engine.step()
     #expect(policy.log.last == "content idle#0")
 
-    // Fire-and-forget: no callback, no effect.
+    // No callback: nothing can dispatch the send, and it is reported, not dropped
+    // (§scxml-6.2.4).
     engine.setHTTPSendCallback(nil)
-    engine.performHTTPSend(target: "http://localhost/x", eventName: "go", content: "", params: [:], sendID: "")
+    engine.performHTTPSend(target: "http://localhost/x", eventName: "go", content: "", params: [:], sendID: "h2")
+    engine.step()
+    #expect(engine.unhandledErrorEvents == 1)
+    #expect(engine.lastUnhandledError == .errorCommunication)
+}
+
+@Test func anHttpSendItsCallbackCouldNotDeliverIsErrorCommunication() throws {
+    let (engine, _, _) = makeEngine { _ in }
+    engine.setHTTPSendCallback { _ in
+        throw HttpSendFailure(reason: "connection refused")
+    }
+    try engine.initialize()
+    engine.performHTTPSend(target: "http://localhost/x", eventName: "go", content: "", params: [:], sendID: "h1")
+    engine.step()
+    #expect(engine.unhandledErrorEvents == 1)
+    #expect(engine.lastUnhandledError == .errorCommunication)
 }
 
 @Test func aDelayedHttpSendIsPostedWhenItsDelayIsOverAndAnEarlierCancelDropsIt() throws {

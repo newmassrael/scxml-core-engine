@@ -9900,6 +9900,46 @@
           "file": "sce-build/src/forge/static_lowering.rs",
           "symbol": "unlowered_http_send",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SetHTTPSendCallback",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "PerformHTTPSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "raiseUndeliveredHTTPSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raiseUndeliveredHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/http.rs",
+          "symbol": "HttpSendFailure",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseUndeliveredHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/UndeliveredSendReport.h",
+          "symbol": "errorEventForFailedSend",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15817,6 +15857,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/event_queue.rs",
           "symbol": "QueuedEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "HttpSendOutcome",
           "kind": "references"
         }
       ],

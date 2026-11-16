@@ -30,7 +30,7 @@ fn machine() -> (Engine<StaticSendHttpPolicy>, Posted) {
     let recorder = Arc::clone(&posted);
     engine.set_http_send_callback(move |request| {
         recorder.lock().unwrap().push(request);
-        None
+        Ok(None)
     });
     let Ok(()) = engine.initialize();
     (engine, posted)

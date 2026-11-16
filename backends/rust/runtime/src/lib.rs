@@ -561,7 +561,7 @@ pub use host_processor::{
     MESH_RPC_INVOKE_TYPE, RESERVED_TYPE_PREFIX,
 };
 #[cfg(feature = "http-send")]
-pub use http::{HttpSendRequest, HttpSendResponse};
+pub use http::{HttpSendFailure, HttpSendOutcome, HttpSendRequest, HttpSendResponse};
 /// docs/adr/0084: the bare-metal profile's inbox, which a deployment declares
 /// in a `static` and hands to [`Engine::attach_inbox`].
 #[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]

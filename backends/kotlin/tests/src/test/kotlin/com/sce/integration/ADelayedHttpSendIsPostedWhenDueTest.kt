@@ -12,8 +12,10 @@
 
 package com.sce.integration
 
+import com.sce.integration.a_delayed_http_send_is_posted_when_due.ADelayedHttpSendIsPostedWhenDueEvent
 import com.sce.integration.a_delayed_http_send_is_posted_when_due.ADelayedHttpSendIsPostedWhenDueState
 import com.sce.integration.a_delayed_http_send_is_posted_when_due.ADelayedHttpSendIsPostedWhenDueStateMachine
+import com.sce.runtime.HttpSendFailure
 import com.sce.runtime.ManualClock
 import com.sce.runtime.StateMachineEngine
 import com.sce.w3c.W3CTestBase
@@ -107,5 +109,43 @@ class ADelayedHttpSendIsPostedWhenDueTest {
         // on this side's finer reading.
         assertTrue(posted[3].second >= 95L, "`later` was POSTed after ${posted[3].second} ms, before its delay")
         assertEquals(ADelayedHttpSendIsPostedWhenDueState.Done, endedIn, "the run must end in `done`")
+    }
+
+    /// W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+    /// error.communication on the internal queue. The transport says the POST
+    /// of `now` did not reach its server; the document declares no transition
+    /// for the error, so it is the one unhandled error the engine counts.
+    @Test
+    fun aBasicHttpSendItsTransportCouldNotDeliverIsErrorCommunication() {
+        val sm = ADelayedHttpSendIsPostedWhenDueStateMachine(W3CTestBase.createEngine())
+        sm.onHttpSend = { request ->
+            if (request.eventName == "now") throw HttpSendFailure("connection refused")
+        }
+        sm.clock = ManualClock(0L)
+        sm.initialize()
+        try {
+            assertEquals(1, sm.unhandledErrorEvents(), "the undelivered POST of `now` must raise exactly one error")
+            assertEquals(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, sm.lastUnhandledError())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /// A machine given no BasicHTTP transport has no way to dispatch the send:
+    /// each of the three sends made at once is reported, none dropped unsaid.
+    @Test
+    fun aBasicHttpSendWithNoTransportIsErrorCommunication() {
+        val sm = ADelayedHttpSendIsPostedWhenDueStateMachine(W3CTestBase.createEngine())
+        sm.clock = ManualClock(0L)
+        sm.initialize()
+        try {
+            assertEquals(
+                3, sm.unhandledErrorEvents(),
+                "the three sends made at once with no transport must each raise an error"
+            )
+            assertEquals(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, sm.lastUnhandledError())
+        } finally {
+            sm.cleanup()
+        }
     }
 }

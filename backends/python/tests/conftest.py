@@ -173,8 +173,13 @@ def _make_http_callback():
     """W3C SCXML C.2 — build an HTTP dispatcher closure. POSTs the
     request as `application/x-www-form-urlencoded` with the event name
     in `_scxmleventname`, parses the JSON response, and returns an
-    `HttpSendResponse` so the engine raises the echoed event."""
-    from sce_runtime import HttpSendResponse
+    `HttpSendResponse` so the engine raises the echoed event. A POST that
+    does not reach the server, or that it refuses with a status outside 2xx
+    (urllib raises for both), raises `HttpSendFailure`, which the engine
+    reports as error.communication (W3C SCXML 6.2.4): it used to answer
+    `None`, a delivery with no reply, and the document then waited for an
+    answer that was never coming."""
+    from sce_runtime import HttpSendFailure, HttpSendResponse
 
     def dispatch(request) -> Optional["HttpSendResponse"]:
         body_parts = []
@@ -209,8 +214,10 @@ def _make_http_callback():
         try:
             with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
                 text = resp.read().decode("utf-8", errors="replace")
-        except Exception:
-            return None
+        except (OSError, ValueError) as exc:
+            # urllib's URLError and HTTPError are OSErrors, a socket timeout is
+            # one, and a target that is no URL is a ValueError.
+            raise HttpSendFailure(f"the POST to {request.target} was not delivered: {exc}") from exc
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:

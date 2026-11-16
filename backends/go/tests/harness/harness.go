@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	sce "github.com/newmassrael/sce-go-runtime"
 	scelua "github.com/newmassrael/sce-go-lua"
+	sce "github.com/newmassrael/sce-go-runtime"
 )
 
 // NewLuaEngine returns a fresh Lua script engine instance for tests.
@@ -105,11 +105,15 @@ func parseEndpointPort(raw, source string) int {
 // W3C test server (standalone_http_server.js on the port endpointPort reads).
 //
 // The callback sends a real HTTP POST, parses the JSON response, and returns
-// *HttpSendResponse so the engine injects the echoed event.
+// *HttpSendResponse so the engine injects the echoed event. A POST that does
+// not reach the server, or that the server refuses with a status outside 2xx,
+// is answered as an error, which the engine reports as error.communication
+// (W3C SCXML 6.2.4): a failed POST used to be answered nil, a delivery with no
+// reply, and the document then waited for an answer that was never coming.
 func SetupHTTPTest[S comparable, E comparable](engine *sce.Engine[S, E]) {
 	client := &http.Client{Timeout: 3 * time.Second}
 
-	engine.SetHTTPSendCallback(func(req sce.HttpSendRequest) *sce.HttpSendResponse {
+	engine.SetHTTPSendCallback(func(req sce.HttpSendRequest) (*sce.HttpSendResponse, error) {
 		// W3C SCXML C.2: Build form-encoded POST body
 		form := url.Values{}
 		if req.EventName != "" {
@@ -139,19 +143,23 @@ func SetupHTTPTest[S comparable, E comparable](engine *sce.Engine[S, E]) {
 		// W3C SCXML C.2: Send real HTTP POST to shared test server
 		httpReq, err := http.NewRequest("POST", req.Target, strings.NewReader(body))
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		httpReq.Header.Set("Content-Type", contentType)
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return nil, fmt.Errorf("the server answered HTTP %d", resp.StatusCode)
+		}
 
+		// Delivered from here on: a reply that cannot be read names no event.
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 
 		// W3C SCXML C.2: Parse JSON response for event name and data
@@ -160,7 +168,7 @@ func SetupHTTPTest[S comparable, E comparable](engine *sce.Engine[S, E]) {
 			Data  json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil {
-			return nil
+			return nil, nil
 		}
 
 		eventData := ""
@@ -177,7 +185,6 @@ func SetupHTTPTest[S comparable, E comparable](engine *sce.Engine[S, E]) {
 		return &sce.HttpSendResponse{
 			EventName: result.Event,
 			EventData: eventData,
-		}
+		}, nil
 	})
 }
-

@@ -30,9 +30,9 @@ func httpMachine(t *testing.T) (*static_send_http.StaticSendHttpPolicy, func(nam
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_send_http.StaticSendHttpState, static_send_http.StaticSendHttpEvent](&policy)
 	var posted []sce.HttpSendRequest
-	engine.SetHTTPSendCallback(func(request sce.HttpSendRequest) *sce.HttpSendResponse {
+	engine.SetHTTPSendCallback(func(request sce.HttpSendRequest) (*sce.HttpSendResponse, error) {
 		posted = append(posted, request)
-		return nil
+		return nil, nil
 	})
 	if err := engine.Initialize(); err != nil {
 		t.Fatal(err)

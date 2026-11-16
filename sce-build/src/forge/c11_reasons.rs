@@ -430,6 +430,10 @@ pub const REASONS: &[Reason] = &[
         text: "<send> over BasicHTTPEventProcessor has no target to post to",
     },
     Reason {
+        row: "send_http_not_delivered",
+        text: "<send> over BasicHTTPEventProcessor could not deliver its request to its target",
+    },
+    Reason {
         row: "send_target_unaddressable",
         text: "<send target='{0}'> is not a target this processor can address",
     },

@@ -29,7 +29,10 @@ struct HttpHarness {
     std::vector<SCE::Static::HttpSendRequest> posted;
 
     HttpHarness() {
-        sm.setHttpSendCallback([this](const SCE::Static::HttpSendRequest &request) { posted.push_back(request); });
+        sm.setHttpSendCallback([this](const SCE::Static::HttpSendRequest &request) {
+            posted.push_back(request);
+            return SCE::Static::HttpSendOutcome::Delivered();
+        });
         EXPECT_EQ(sm.initialize(), std::nullopt);
         sm.step();
     }

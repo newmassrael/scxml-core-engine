@@ -77,7 +77,7 @@ from .child_mesh import (
     MeshCall,
     MeshRaise,
 )
-from .http import HttpSendRequest, HttpSendResponse
+from .http import HttpSendFailure, HttpSendRequest, HttpSendResponse
 from .inbox import (
     EngineInbox,
     EngineInboxState,
@@ -468,9 +468,10 @@ class Engine(Generic[S, E]):
         # §scxml-C-2 — BasicHTTP Event I/O Processor dispatcher. The
         # engine never links against an HTTP library; callers register a
         # callback via `set_http_send_callback` that receives an
-        # `HttpSendRequest` and returns an optional `HttpSendResponse`.
-        # Used by `perform_http_send`; `None` means fire-and-forget for
-        # any HTTP send (matches Rust's "no callback configured" path).
+        # `HttpSendRequest` and returns an optional `HttpSendResponse`, or
+        # raises `HttpSendFailure`. Used by `perform_http_send`; with `None`
+        # no HTTP send can be dispatched, and each is reported as
+        # error.communication (matches Rust's "no callback configured" path).
         self._http_send_callback: Optional[
             Callable[[HttpSendRequest], Optional[HttpSendResponse]]
         ] = None
@@ -1477,9 +1478,12 @@ class Engine(Generic[S, E]):
         event name, content, namelist/`<param>` map, sendid) and
         returns the inbound response (`event_name` + `event_data`) the
         engine should inject back onto the external queue. Returning
-        `None` is the fire-and-forget path. Passing `None` here clears
-        the callback so subsequent sends become no-ops. Mirrors
-        `sce_rust_runtime::Engine::set_http_send_callback`."""
+        `None` is a delivery answered with no event. Raising
+        `HttpSendFailure` says the request was not delivered, and the
+        engine raises `error.communication` for the send (W3C SCXML
+        6.2.4). Passing `None` here clears the callback, and a send made
+        with none is reported the same way, since nothing can dispatch it.
+        Mirrors `sce_rust_runtime::Engine::set_http_send_callback`."""
         self._http_send_callback = callback
 
     def perform_http_send(
@@ -1492,12 +1496,18 @@ class Engine(Generic[S, E]):
     ) -> None:
         """W3C SCXML C.2 — dispatch a BasicHTTP send through the
         registered callback. Builds the `HttpSendRequest`, invokes the
-        callback (no-op when no callback is configured), and if the
-        response carries an `event_name` that resolves on the running
-        policy's enum, injects the event onto the external queue with
-        `event_data` bound as `_event.data` (W3C 5.10.3). Mirrors
-        `sce_rust_runtime::Engine::perform_http_send` semantics."""
+        callback, and if the response carries an `event_name` that resolves
+        on the running policy's enum, injects the event onto the external
+        queue with `event_data` bound as `_event.data` (W3C 5.10.3). Mirrors
+        `sce_rust_runtime::Engine::perform_http_send` semantics.
+
+        §scxml-6.2.4: a send the processor is unable to dispatch puts
+        `error.communication`, carrying the send id, on the internal queue.
+        That is a callback that raises `HttpSendFailure`, saying the request
+        was not delivered, and a machine given no callback at all, which has
+        no way to dispatch it: neither is dropped unsaid."""
         if self._http_send_callback is None:
+            self._raise_undelivered_http_send(send_id)
             return
         request = HttpSendRequest(
             target=target,
@@ -1506,7 +1516,11 @@ class Engine(Generic[S, E]):
             params=params,
             send_id=send_id,
         )
-        response = self._http_send_callback(request)
+        try:
+            response = self._http_send_callback(request)
+        except HttpSendFailure:
+            self._raise_undelivered_http_send(send_id)
+            return
         if response is None or not response.event_name:
             return
         self.send_external_by_name(
@@ -1514,6 +1528,18 @@ class Engine(Generic[S, E]):
             data=response.event_data,
             sendid=send_id,
         )
+
+    def _raise_undelivered_http_send(self, send_id: str) -> None:
+        """§scxml-6.2.4 — report a BasicHTTP send this processor was unable
+        to dispatch: `error.communication` carrying the send id, on the
+        internal queue. A document that declares no `error.communication`
+        resolves nothing, and nothing is raised."""
+        communication_error = self._policy.get_event_from_name("error.communication")
+        if communication_error is not None:
+            self.raise_internal(
+                communication_error,
+                EventMetadata(send_id=send_id, event_type="platform"),
+            )
 
     # ── Host-served Event I/O Processors (§scxml-6.2.5) ────────
 

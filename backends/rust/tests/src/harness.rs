@@ -173,34 +173,53 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
             (String::new(), "application/x-www-form-urlencoded")
         };
 
-        // W3C SCXML C.2: Send real HTTP POST to shared test server
+        // W3C SCXML C.2: Send real HTTP POST to shared test server. A POST
+        // that does not reach the server, or that it refuses with a status
+        // outside 2xx, is answered as not delivered, which the engine reports
+        // as error.communication (W3C SCXML 6.2.4): it used to be answered as
+        // a delivery with no reply, and the document then waited for an
+        // answer that was never coming.
         let response = client
             .post(&request.target)
             .header("Content-Type", content_type)
             .body(body)
             .send()
-            .ok()?;
-        let text = response.text().ok()?;
-
-        // W3C SCXML C.2: Parse JSON response for event name and data
-        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let event_name = json.get("event")?.as_str()?.to_string();
-        let event_data = json
-            .get("data")
-            .map(|d| {
-                if d.is_string() {
-                    d.as_str().unwrap_or("").to_string()
-                } else {
-                    d.to_string()
-                }
-            })
-            .unwrap_or_default();
-
-        Some(sce_rust_runtime::HttpSendResponse {
-            event_name,
-            event_data,
-        })
+            .map_err(|err| {
+                sce_rust_runtime::HttpSendFailure::new(format!(
+                    "the POST to {} was not delivered: {err}",
+                    request.target
+                ))
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(sce_rust_runtime::HttpSendFailure::new(format!(
+                "the server answered HTTP {status}"
+            )));
+        }
+        // Delivered from here on: a reply that cannot be read names no event.
+        Ok(response.text().ok().and_then(|text| echoed_event(&text)))
     });
+}
+
+/// W3C SCXML C.2: the event a reply of the W3C test server names, with its
+/// data, or `None` when the reply names none.
+fn echoed_event(text: &str) -> Option<sce_rust_runtime::HttpSendResponse> {
+    let json: serde_json::Value = serde_json::from_str(text).ok()?;
+    let event_name = json.get("event")?.as_str()?.to_string();
+    let event_data = json
+        .get("data")
+        .map(|d| {
+            if d.is_string() {
+                d.as_str().unwrap_or("").to_string()
+            } else {
+                d.to_string()
+            }
+        })
+        .unwrap_or_default();
+    Some(sce_rust_runtime::HttpSendResponse {
+        event_name,
+        event_data,
+    })
 }
 
 /// §scxml-C-2-3: the fixture path, PINNED to

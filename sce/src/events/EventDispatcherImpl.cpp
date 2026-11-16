@@ -6,6 +6,7 @@
 #include "common/SendHelper.h"
 #include "common/StringUtils.h"
 #include "events/EventRaiserService.h"
+#include "events/UndeliveredSendReport.h"
 #include "runtime/IEventRaiser.h"
 #include <sstream>
 #include <stdexcept>
@@ -35,9 +36,13 @@ public:
 
     std::future<SendResult> send(const EventDescriptor &event) override {
         auto delivered = inner_->send(event).get();
-        if (!delivered.isSuccess && delivered.errorType == SendResult::ErrorType::TARGET_NOT_FOUND) {
+        // A target found and not reached (a BasicHTTP POST that never reached
+        // its server) is reported as a missing one is, by the one reading of
+        // why a send failed (UndeliveredSendReport.h).
+        const char *report = delivered.isSuccess ? nullptr : errorEventForFailedSend(delivered.errorType);
+        if (report != nullptr) {
             if (auto sender = EventRaiserService::getInstance().getEventRaiser(event.sessionId)) {
-                sender->raiseEvent("error.communication", delivered.errorMessage, event.sendId,
+                sender->raiseEvent(report, delivered.errorMessage, event.sendId,
                                    false /* overload discriminator for sendId variant */);
             }
         }

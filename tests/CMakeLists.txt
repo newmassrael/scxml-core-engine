@@ -2376,6 +2376,7 @@ add_executable(integration_tests
 if(NOT EMSCRIPTEN)
     target_sources(integration_tests PRIVATE
         integration/EventSchedulingTest.cpp
+        integration/AnUndeliveredHttpSendIsErrorCommunicationTest.cpp
         integration/HttpEventTargetTest.cpp
         integration/SimpleMockHttpServer.cpp
         w3c/W3CHttpTestServer.cpp

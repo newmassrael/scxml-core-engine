@@ -53,3 +53,18 @@ public struct HttpSendResponse: Sendable {
         self.eventData = eventData
     }
 }
+
+/// Thrown by the HTTP send callback when the request was not delivered: the server
+/// could not be reached, or it refused the request with a status outside 2xx.
+///
+/// The engine answers it as a send the processor is unable to dispatch
+/// (§scxml-6.2.4): `error.communication`, carrying the send id, on the internal queue.
+/// The Swift twin of `HttpSendFailure` in the Rust, Python and Kotlin runtimes.
+public struct HttpSendFailure: Error, Sendable {
+    /// Why the request was not delivered, in the transport's words.
+    public var reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}

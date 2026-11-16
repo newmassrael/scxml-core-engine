@@ -1047,14 +1047,23 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
        (a `<param>`, a namelist item)
      * else `<content>` text      -> text/plain, the text as the body
      * else                       -> an empty form
-   Failure path: an unparseable URL, a socket error or an unparseable reply
-   is dropped, as the fixtures' `<send delay>` safety nets expect — cpp's
-   parallel callback returns a `SendResult::error(NETWORK_ERROR)` that no
-   C.2 fixture has a transition listening for. */
+   Failure path: a request that is not delivered (an unparseable URL, a
+   socket error, a timeout, or a status outside 2xx) is a send this processor
+   was unable to dispatch, and W3C SCXML 6.2.4 puts error.communication,
+   carrying the send id, on the internal queue for it, as every other engine
+   does. It used to be dropped, and the document then waited for an answer
+   that was never coming. A delivered request whose reply names no event, or
+   cannot be parsed, raises nothing. */
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_send_request_t *request) {
     sce_test_http_url_t _http_url;
     if (!sce_test_http_url_parse(request->target, &_http_url)) {
+{% if 'error.communication' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+            {{ reason("send_http_not_delivered") }},
+            request->send_id);
+{% endif %}
         return;
     }
     char _http_body[1024];
@@ -1091,7 +1100,15 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
        never deadlocks the test. */
     sce_test_http_response_t _http_resp;
     memset(&_http_resp, 0, sizeof(_http_resp));
-    if (!sce_test_http_post(&_http_url, _http_content_type, _http_body, _http_body_len, 5000, &_http_resp)) {
+    if (!sce_test_http_post(&_http_url, _http_content_type, _http_body, _http_body_len, 5000, &_http_resp) ||
+        _http_resp.status_code < 200 || _http_resp.status_code > 299) {
+        sce_test_http_response_free(&_http_resp);
+{% if 'error.communication' in model.events %}
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+            {{ reason("send_http_not_delivered") }},
+            request->send_id);
+{% endif %}
         return;
     }
     sce_test_http_json_response_t _http_json;

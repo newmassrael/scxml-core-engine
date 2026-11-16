@@ -256,6 +256,28 @@ int main(void) {
     atomic_store(&g_stop, true);
     (void)pthread_join(listener, NULL);
     (void)close(g_listen_fd);
+
+    // W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+    // error.communication on the internal queue. With the listener closed, the
+    // three POSTs made at once are refused; the document declares no
+    // transition for the error, so each is an unhandled error the machine
+    // counts, where it used to drop them unsaid.
+    sm_t refused;
+    REQUIRE_STARTED(a_delayed_http_send_is_posted_when_due_init_with_clock(&refused, sce_clock_manual(0u)),
+                    A_DELAYED_HTTP_SEND_IS_POSTED_WHEN_DUE_START_OK);
+    const uint32_t errors = a_delayed_http_send_is_posted_when_due_unhandled_error_events(&refused);
+    if (errors != 3u) {
+        fprintf(stderr, "FAIL: three refused POSTs raised %u unhandled error(s), want 3\n", (unsigned)errors);
+        g_ok = 0;
+    }
+    a_delayed_http_send_is_posted_when_due_event_t last;
+    if (!a_delayed_http_send_is_posted_when_due_last_unhandled_error(&refused, &last) ||
+        last != A_DELAYED_HTTP_SEND_IS_POSTED_WHEN_DUE_EVENT_ERROR_COMMUNICATION) {
+        fprintf(stderr, "FAIL: a refused POST must raise error.communication\n");
+        g_ok = 0;
+    }
+    a_delayed_http_send_is_posted_when_due_destroy(&refused);
+
     if (!g_ok) {
         return 1;
     }

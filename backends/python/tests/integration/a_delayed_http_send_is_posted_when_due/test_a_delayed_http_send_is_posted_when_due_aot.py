@@ -21,8 +21,41 @@ sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 
 import a_delayed_http_send_is_posted_when_due_sm as _sm  # noqa: E402 — path inserted above
+from sce_runtime import HttpSendFailure  # noqa: E402 — path inserted above
 
 _State = _sm.ADelayedHttpSendIsPostedWhenDueState
+_Event = _sm.ADelayedHttpSendIsPostedWhenDueEvent
+
+
+def test_a_basic_http_send_its_transport_could_not_deliver_is_error_communication() -> None:
+    """W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+    error.communication on the internal queue. The transport says the POST of
+    `now` did not reach its server; the document declares no transition for
+    the error, so it is the one unhandled error the engine counts."""
+    engine = _sm.create_engine()
+
+    def transport(request):
+        if request.event_name == "now":
+            raise HttpSendFailure("connection refused")
+        return None
+
+    engine.set_http_send_callback(transport)
+    engine.initialize()
+    assert engine.unhandled_error_events() == 1, (
+        "the undelivered POST of `now` must raise exactly one error"
+    )
+    assert engine.last_unhandled_error() == _Event.ERROR_COMMUNICATION
+
+
+def test_a_basic_http_send_with_no_transport_is_error_communication() -> None:
+    """A machine given no BasicHTTP transport has no way to dispatch the send:
+    each of the three sends made at once is reported, none dropped unsaid."""
+    engine = _sm.create_engine()
+    engine.initialize()
+    assert engine.unhandled_error_events() == 3, (
+        "the three sends made at once with no transport must each raise an error"
+    )
+    assert engine.last_unhandled_error() == _Event.ERROR_COMMUNICATION
 
 
 def test_a_delayed_http_send_is_posted_when_due() -> None:

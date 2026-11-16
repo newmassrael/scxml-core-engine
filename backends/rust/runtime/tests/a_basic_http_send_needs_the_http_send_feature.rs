@@ -183,7 +183,7 @@ mod with_the_processor {
             seen.lock()
                 .expect("the transport's record")
                 .push((request.target, request.send_id));
-            None
+            Ok(None)
         });
         engine.perform_http_send(
             TARGET.to_string(),

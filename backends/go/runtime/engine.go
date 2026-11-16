@@ -110,8 +110,9 @@ type Engine[S comparable, E comparable] struct {
 	transitionObserver func(TransitionTaken[S])
 
 	// onHTTPSend is the §scxml-C-2 HTTP send dispatch callback.
-	// Returns *HttpSendResponse when real HTTP is used; nil for fire-and-forget.
-	onHTTPSend func(HttpSendRequest) *HttpSendResponse
+	// Answers the event the receiver replied with (nil for none), or an error
+	// when the request was not delivered (SetHTTPSendCallback).
+	onHTTPSend func(HttpSendRequest) (*HttpSendResponse, error)
 
 	// hostProcessors holds what serves each §scxml-6.2.5 Event I/O Processor
 	// type the host declared to this build. Keyed by the `type` string, which
@@ -2078,31 +2079,40 @@ func (e *Engine[S, E]) SetCompletionCallback(callback func()) {
 
 // SetHTTPSendCallback registers an HTTP send dispatcher callback (§scxml-C-2).
 //
-// The callback returns *HttpSendResponse when real HTTP is used. The engine
-// injects the response event into the external queue. Return nil for
-// fire-and-forget sends.
-func (e *Engine[S, E]) SetHTTPSendCallback(callback func(HttpSendRequest) *HttpSendResponse) {
+// The callback answers what became of the POST. A non-nil error says the
+// request could not be delivered, and the engine reports the send as one it was
+// unable to dispatch (§scxml-6.2.4). Otherwise the request was delivered: a
+// non-nil *HttpSendResponse is the event the receiver answered with, which the
+// engine injects into the external queue, and nil is a delivery answered with
+// no event.
+func (e *Engine[S, E]) SetHTTPSendCallback(callback func(HttpSendRequest) (*HttpSendResponse, error)) {
 	e.onHTTPSend = callback
 }
 
 // PerformHTTPSend dispatches a BasicHTTP send through the registered callback
 // (§scxml-C-2).
 //
-// The callback is the sole dispatch mechanism. If it returns non-nil
-// HttpSendResponse, the engine injects the response event into the external
-// queue. The engine has no knowledge of HTTP transport — callers supply the
-// implementation via SetHTTPSendCallback.
+// The callback is the sole dispatch mechanism; the engine has no knowledge of
+// HTTP transport. §scxml-6.2.4: a send the processor is unable to dispatch puts
+// error.communication, carrying the send id, on the internal queue. That is a
+// callback that reports the request undelivered, and a machine given no
+// callback at all, which has no way to dispatch it: neither is dropped unsaid.
 func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params map[string][]string, sendID string) {
 	if e.onHTTPSend == nil {
+		e.raiseUndeliveredHTTPSend(sendID, "no BasicHTTP transport is registered (SetHTTPSendCallback)")
 		return
 	}
-	resp := e.onHTTPSend(HttpSendRequest{
+	resp, err := e.onHTTPSend(HttpSendRequest{
 		Target:    target,
 		EventName: eventName,
 		Content:   content,
 		Params:    params,
 		SendID:    sendID,
 	})
+	if err != nil {
+		e.raiseUndeliveredHTTPSend(sendID, "the BasicHTTP request to "+target+" was not delivered: "+err.Error())
+		return
+	}
 	if resp != nil {
 		// The BasicHTTP processor's rules give a response no reply address
 		// beyond its data, so it carries no origin (docs/adr/0090, section 2).
@@ -2111,6 +2121,18 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 		if meta, ok := e.arrivingEvent(resp.EventName, metadata); ok {
 			e.enqueueExternal(meta)
 		}
+	}
+}
+
+// raiseUndeliveredHTTPSend reports a BasicHTTP send this processor was unable
+// to dispatch: error.communication carrying the send id, on the internal queue
+// (§scxml-6.2.4). A document that declares no error.communication resolves
+// nothing, and nothing is raised.
+func (e *Engine[S, E]) raiseUndeliveredHTTPSend(sendID, reason string) {
+	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {
+		errEvt := NewPlatformError(communicationError, reason)
+		errEvt.Metadata.SendID = sendID
+		e.Raise(errEvt)
 	}
 }
 

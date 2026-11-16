@@ -97,6 +97,29 @@ struct HttpSendRequest {
     std::string sendId;
 };
 
+/// §scxml-C-2: what a BasicHTTP transport answers for one request: delivered,
+/// or not delivered with the reason. A request that was not delivered (the
+/// server could not be reached, or it refused the request with a status
+/// outside 2xx) is reported by the engine as a send it was unable to dispatch:
+/// `error.communication`, carrying the send id, on the internal queue
+/// (StaticExecutionEngine::performHttpSend). The C++ twin of the Rust
+/// runtime's `HttpSendOutcome`.
+struct HttpSendOutcome {
+    bool delivered = true;
+    std::string reason;
+
+    static HttpSendOutcome Delivered() {
+        return HttpSendOutcome{};
+    }
+
+    static HttpSendOutcome Undelivered(std::string why) {
+        HttpSendOutcome outcome;
+        outcome.delivered = false;
+        outcome.reason = std::move(why);
+        return outcome;
+    }
+};
+
 /// Mesh send callback signature: (target, eventName, data, sendId, invokeId)
 /// → accepted. Kept as raw fields so StaticExecutionEngine.h has zero
 /// mesh-layer includes — the generated TransportRouter's wireTo() lambda
@@ -1110,8 +1133,8 @@ private:
     // `truncatedEventChains()`. The Interpreter holds the same class, so the
     // number and the arithmetic are written once.
     Core::ExternalEventBudget<Event> externalEventBudget_;
-    std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
-    std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
+    std::function<void()> completionCallback_;                            // §scxml-6.4: Callback for done.invoke
+    std::function<HttpSendOutcome(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP transport
     // docs/adr/0089: told each transition the engine takes, by its row of the
     // emitted transition table; empty until a host sets one.
     TransitionObserver transitionObserver_;
@@ -4067,11 +4090,12 @@ public:
      *
      * Matches Kotlin StateMachineEngine.onHttpSend pattern.
      * Generated code calls performHttpSend() which delegates to this callback.
-     * The test harness or application provides the actual HTTP transport.
+     * The test harness or application provides the actual HTTP transport, and
+     * answers whether the request was delivered (HttpSendOutcome).
      *
      * @param callback Function receiving HttpSendRequest (nullptr to clear)
      */
-    void setHttpSendCallback(std::function<void(const HttpSendRequest &)> callback) {
+    void setHttpSendCallback(std::function<HttpSendOutcome(const HttpSendRequest &)> callback) {
         onHttpSend_ = std::move(callback);
     }
 
@@ -4080,12 +4104,34 @@ public:
      *
      * Called by AOT-generated code for BasicHTTPEventProcessor sends.
      * Delegates to onHttpSend_ callback set by test harness or application.
-     * Matches Kotlin StateMachineEngine.performHttpSend() pattern.
+     * Matches Kotlin StateMachineEngine.performHttpSend() pattern. A request
+     * the transport says it did not deliver, and one made with no transport
+     * registered, which nothing can dispatch, are reported, never dropped.
      */
     void performHttpSend(const std::string &target, const std::string &eventName, const std::string &content,
                          const std::map<std::string, std::vector<std::string>> &params, const std::string &sendId) {
-        if (onHttpSend_) {
-            onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
+        if (!onHttpSend_) {
+            raiseUndeliveredHttpSend(sendId, "no BasicHTTP transport is registered (setHttpSendCallback)");
+            return;
+        }
+        const HttpSendOutcome outcome = onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
+        if (!outcome.delivered) {
+            raiseUndeliveredHttpSend(sendId,
+                                     "the BasicHTTP request to " + target + " was not delivered: " + outcome.reason);
+        }
+    }
+
+    /**
+     * @brief Report a BasicHTTP send this processor was unable to dispatch
+     *
+     * A document that declares no `error.communication` resolves nothing, and
+     * nothing is raised.
+     */
+    void raiseUndeliveredHttpSend(const std::string &sendId, const std::string &reason) {
+        // §scxml-6.2.4: a send the processor is unable to dispatch puts
+        // error.communication, carrying the send id, on the internal queue.
+        if (auto communicationError = policy_.getEventFromName("error.communication")) {
+            raise(EventWithMetadata(*communicationError, reason, std::nullopt, sendId));
         }
     }
 

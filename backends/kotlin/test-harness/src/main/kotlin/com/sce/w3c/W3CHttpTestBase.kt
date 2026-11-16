@@ -9,6 +9,7 @@ package com.sce.w3c
 import com.sce.http.W3CHttpTestServer
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.HttpSendFailure
 import com.sce.runtime.InboxInput
 import com.sce.runtime.State
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -62,7 +63,12 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
                 val (body, contentType) = buildHttpPostBody(
                     request.eventName, request.content, request.params
                 )
-                try {
+                // A POST that does not reach the server, or that it refuses with
+                // a status outside 2xx, is reported as not delivered, and the
+                // engine raises error.communication for it (W3C SCXML 6.2.4).
+                // It used to be swallowed here, a delivery with no reply, and
+                // the document then waited for an answer that was never coming.
+                val response = try {
                     val httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(request.target))
                         .header("Content-Type", contentType)
@@ -73,8 +79,13 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
                     // W3CHttpTestServer delivers callback before HTTP response (line 131),
                     // so event ordering is preserved when multiple sends share an onentry block.
                     httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
-                } catch (_: Exception) {
-                    // Match C++ pattern: log and continue
+                } catch (failure: java.io.IOException) {
+                    throw HttpSendFailure("the POST to ${request.target} was not delivered: ${failure.message}")
+                } catch (failure: IllegalArgumentException) {
+                    throw HttpSendFailure("the target ${request.target} is no HTTP address: ${failure.message}")
+                }
+                if (response.statusCode() !in 200..299) {
+                    throw HttpSendFailure("the server answered HTTP ${response.statusCode()}")
                 }
             }
 

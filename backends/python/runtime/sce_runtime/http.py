@@ -44,7 +44,20 @@ class HttpSendResponse:
     resolves on the running policy's event enum, the engine raises
     that event onto the external queue with `event_data` bound as
     `_event.data` (W3C SCXML 5.10.1). Returning `None` from the
-    callback indicates fire-and-forget dispatch (no inbound event)."""
+    callback indicates a delivery answered with no inbound event."""
 
     event_name: str = ""
     event_data: str = ""
+
+
+class HttpSendFailure(Exception):
+    """W3C SCXML C.2 — raised by the `on_http_send` callback when the
+    request was not delivered: the server could not be reached, or it
+    refused the request with a status outside 2xx.
+
+    The engine answers it as W3C SCXML 6.2.4 answers a send the processor
+    is unable to dispatch: `error.communication`, carrying the send id, on
+    the internal queue. Any other exception the callback raises is not a
+    report of the transport and propagates as it is. Mirrors
+    `sce_rust_runtime::HttpSendFailure` and the error a Go callback
+    returns."""

@@ -32,6 +32,7 @@
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventRaiserService.h"
+#include "events/UndeliveredSendReport.h"
 #include "runtime/TypeRegistry.h"
 
 #include "events/IEventDispatcher.h"
@@ -1184,25 +1185,19 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                     SCE_LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
                     // §scxml-C-1: a send naming a session that does not exist
                     // or is inaccessible MUST put error.communication on the
-                    // sending session's internal queue. The dispatcher already
-                    // knows — it answers TARGET_NOT_FOUND — but until this the
-                    // knowledge stopped at the log, so a document could not
-                    // transition on a failure it is entitled to observe.
-                    //
-                    // Only that one error type maps here. The others describe
-                    // failures of a target that WAS found (a timeout, a
-                    // refused connection), and §scxml-5.10 gives those their
-                    // own treatment; widening this would make every transport
-                    // hiccup indistinguishable from a dead address.
-                    if (result.errorType == SendResult::ErrorType::TARGET_NOT_FOUND && eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.communication", result.errorMessage, sendId,
-                                                 false /* overload discriminator for sendId variant */);
-                    }
-                    // A Mesh peer with no router registered is the host's
-                    // configuration fault, not a dead address (SCE_MESH.md,
-                    // Errors): error.execution, as every other backend raises it.
-                    if (result.errorType == SendResult::ErrorType::NOT_CONFIGURED && eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", result.errorMessage, sendId,
+                    // sending session's internal queue, and a target that was
+                    // found and could not be reached (a refused connection, a
+                    // timeout) is a send the processor was unable to dispatch,
+                    // which is the same error. This used to map the missing
+                    // target alone, and a BasicHTTP POST that never reached its
+                    // server was dropped with nothing raised. A Mesh peer with
+                    // no router registered is the host's configuration fault
+                    // (SCE_MESH.md, Errors): error.execution, as every other
+                    // backend raises it. One reading of why a send failed for
+                    // this and the delayed delivery (UndeliveredSendReport.h).
+                    const char *report = errorEventForFailedSend(result.errorType);
+                    if (report != nullptr && eventRaiser_) {
+                        eventRaiser_->raiseEvent(report, result.errorMessage, sendId,
                                                  false /* overload discriminator for sendId variant */);
                     }
                 }

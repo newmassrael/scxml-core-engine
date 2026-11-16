@@ -52,7 +52,7 @@ from .host_invoke_request import (
     request_field,
     request_field_wire,
 )
-from .http import HttpSendRequest, HttpSendResponse
+from .http import HttpSendFailure, HttpSendRequest, HttpSendResponse
 from .inbox import (
     EngineInbox,
     InboxExternalEvent,
@@ -190,6 +190,7 @@ __all__ = [
     "HostInvokeResponse",
     "HostSendRequest",
     "HostSendResponse",
+    "HttpSendFailure",
     "HttpSendRequest",
     "HttpSendResponse",
     "IScriptEngine",

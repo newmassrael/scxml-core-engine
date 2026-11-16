@@ -13,6 +13,7 @@
 package a_delayed_http_send_is_posted_when_due
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -28,9 +29,9 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 
 	// The host stands in for the HTTP transport: it keeps what it was handed.
 	var posted []sce.HttpSendRequest
-	engine.SetHTTPSendCallback(func(request sce.HttpSendRequest) *sce.HttpSendResponse {
+	engine.SetHTTPSendCallback(func(request sce.HttpSendRequest) (*sce.HttpSendResponse, error) {
 		posted = append(posted, request)
-		return nil
+		return nil, nil
 	})
 	events := func() []string {
 		names := make([]string, 0, len(posted))
@@ -81,5 +82,58 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 	}
 	if got, want := events(), []string{"now", "zero", "zeroexpr", "later", "dynamic"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("at 300ms: POSTed %v, want %v", got, want)
+	}
+}
+
+// startedWith runs the fixture to the end of Initialize with transport as its
+// BasicHTTP transport, or with none when transport is nil.
+func startedWith(t *testing.T, transport func(sce.HttpSendRequest) (*sce.HttpSendResponse, error)) (*sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], ADelayedHttpSendIsPostedWhenDueEvent) {
+	t.Helper()
+	policy := NewADelayedHttpSendIsPostedWhenDuePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
+	communication, ok := policy.GetEventFromName("error.communication")
+	if !ok {
+		t.Fatal("the fixture's machine names no error.communication event")
+	}
+	engine := sce.NewEngine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent](&policy)
+	if transport != nil {
+		engine.SetHTTPSendCallback(transport)
+	}
+	engine.SetClock(sce.NewManualClock(0))
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	return engine, communication
+}
+
+// W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+// error.communication on the internal queue. The transport says the POST of
+// `now` did not reach its server; the document declares no transition for the
+// error, so it is the one unhandled error the engine counts.
+func TestABasicHTTPSendItsTransportCouldNotDeliverIsErrorCommunication(t *testing.T) {
+	engine, communication := startedWith(t, func(request sce.HttpSendRequest) (*sce.HttpSendResponse, error) {
+		if request.EventName == "now" {
+			return nil, errors.New("connection refused")
+		}
+		return nil, nil
+	})
+	if got := engine.UnhandledErrorEvents(); got != 1 {
+		t.Fatalf("the undelivered POST of `now` raised %d unhandled error(s), want 1", got)
+	}
+	if last, ok := engine.LastUnhandledError(); !ok || last != communication {
+		t.Errorf("the error raised for the undelivered POST is %v, want error.communication", last)
+	}
+}
+
+// A machine given no BasicHTTP transport has no way to dispatch the send: each
+// of the three sends made at once is reported, none is dropped unsaid.
+func TestABasicHTTPSendWithNoTransportIsErrorCommunication(t *testing.T) {
+	engine, communication := startedWith(t, nil)
+	if got := engine.UnhandledErrorEvents(); got != 3 {
+		t.Fatalf("the three sends made at once with no transport raised %d unhandled error(s), want 3", got)
+	}
+	if last, ok := engine.LastUnhandledError(); !ok || last != communication {
+		t.Errorf("the error raised for a send with no transport is %v, want error.communication", last)
 	}
 }

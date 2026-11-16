@@ -95,7 +95,7 @@ use crate::scheduler_storage::sealed::SchedulerOps;
 // refuses the send where it refuses any type it does not support, so the
 // engine's HTTP callback is only ever reached with the feature on.
 #[cfg(feature = "http-send")]
-use crate::http::{HttpSendRequest, HttpSendResponse};
+use crate::http::{HttpSendOutcome, HttpSendRequest};
 use crate::policy::StatePolicy;
 #[cfg(not(feature = "std"))]
 use crate::MAX_SCHEDULED_EVENTS;
@@ -1110,8 +1110,7 @@ pub struct Engine<P: StatePolicy> {
     /// Carries the same `+ Send` bound as `completion_callback` so the engine
     /// stays host-movable; see that field for the rationale.
     #[cfg(feature = "http-send")]
-    pub(crate) on_http_send:
-        Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
+    pub(crate) on_http_send: Option<crate::http::HttpSendTransport>,
     /// §scxml-6.2: Delayed event scheduler.
     ///
     /// The queue is supplied by the policy via [`StatePolicy::Scheduler`]: a
@@ -3953,10 +3952,14 @@ impl<P: StatePolicy> Engine<P> {
 
     /// §scxml-C-2: Register an HTTP send dispatcher callback.
     ///
-    /// The callback receives an [`HttpSendRequest`] and returns an optional
-    /// [`HttpSendResponse`]. When `Some`, the engine injects the response event
-    /// into the external queue — enabling real HTTP round-trips against the
-    /// shared W3C test server (`standalone_http_server.js`).
+    /// The callback receives an [`HttpSendRequest`] and answers what became of
+    /// it ([`HttpSendOutcome`](crate::HttpSendOutcome)): `Ok(Some(response))`
+    /// is a delivery the receiver answered with an event, which the engine
+    /// injects into the external queue — enabling real HTTP round-trips against
+    /// the shared W3C test server (`standalone_http_server.js`); `Ok(None)` is a
+    /// delivery answered with no event; `Err(`[`HttpSendFailure`](crate::HttpSendFailure)`)`
+    /// says the request was not delivered, and the engine reports the send as
+    /// one it was unable to dispatch ([`perform_http_send`](Self::perform_http_send)).
     ///
     /// Present with the `http-send` feature, which is the BasicHTTP processor
     /// (docs/adr/0053); a build without it has no processor to hand a
@@ -3966,7 +3969,7 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(feature = "http-send")]
     pub fn set_http_send_callback<F>(&mut self, callback: F)
     where
-        F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send + 'static,
+        F: FnMut(HttpSendRequest) -> HttpSendOutcome + Send + 'static,
     {
         self.on_http_send = Some(Box::new(callback));
     }
@@ -3974,9 +3977,15 @@ impl<P: StatePolicy> Engine<P> {
     /// §scxml-C-2: Dispatch a BasicHTTP send through the registered callback.
     ///
     /// The callback is the sole dispatch mechanism. If it returns
-    /// `Some(HttpSendResponse)`, the engine injects the response event into the
-    /// external queue. The engine has no knowledge of HTTP transport — callers
-    /// supply the implementation via `set_http_send_callback`.
+    /// `Ok(Some(HttpSendResponse))`, the engine injects the response event into
+    /// the external queue. The engine has no knowledge of HTTP transport —
+    /// callers supply the implementation via `set_http_send_callback`.
+    ///
+    /// §scxml-6.2.4: a send the processor is unable to dispatch puts
+    /// `error.communication`, carrying the send id, on the internal queue. That
+    /// is a callback that answers `Err`, saying the request was not delivered,
+    /// and a machine given no callback at all, which has no way to dispatch it:
+    /// neither is dropped unsaid.
     ///
     /// Present in every `std` build, because a generated machine names it
     /// whatever features its build has; the processor itself is the
@@ -4017,9 +4026,17 @@ impl<P: StatePolicy> Engine<P> {
     /// queue the event its answer names (§scxml-C-2).
     #[cfg(feature = "http-send")]
     fn post_through_http_callback(&mut self, request: HttpSendRequest) {
-        if let Some(cb) = self.on_http_send.as_mut() {
-            let response = cb(request);
-            if let Some(resp) = response {
+        let Some(cb) = self.on_http_send.as_mut() else {
+            self.raise_undelivered_http_send(
+                &request.send_id,
+                "no BasicHTTP transport is registered (set_http_send_callback)",
+            );
+            return;
+        };
+        let send_id = request.send_id.clone();
+        let target = request.target.clone();
+        match cb(request) {
+            Ok(Some(resp)) => {
                 // The BasicHTTP processor's rules give a response no reply
                 // address beyond its data, so it carries no origin
                 // (docs/adr/0090, section 2).
@@ -4029,6 +4046,27 @@ impl<P: StatePolicy> Engine<P> {
                     self.enqueue_external(meta);
                 }
             }
+            Ok(None) => {}
+            Err(failure) => {
+                let message = format!(
+                    "the BasicHTTP request to {target} was not delivered: {}",
+                    failure.reason
+                );
+                self.raise_undelivered_http_send(&send_id, &message);
+            }
+        }
+    }
+
+    /// §scxml-6.2.4: report a BasicHTTP send this processor was unable to
+    /// dispatch: `error.communication` carrying the send id, on the internal
+    /// queue. A document that declares no `error.communication` resolves
+    /// nothing, and nothing is raised.
+    #[cfg(feature = "http-send")]
+    fn raise_undelivered_http_send(&mut self, send_id: &str, reason: &str) {
+        if let Some(communication_error) = P::get_event_from_name("error.communication") {
+            let mut err = EventWithMetadata::platform_error(communication_error, reason);
+            err.metadata.send_id = crate::sce_string_from_str(send_id);
+            self.raise(err);
         }
     }
 

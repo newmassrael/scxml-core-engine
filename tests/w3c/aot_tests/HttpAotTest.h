@@ -148,17 +148,25 @@ public:
             httpReq.body = body;
             httpReq.contentType = contentType;
 
+            // A POST that does not reach the listener, or that it refuses
+            // with a status outside 2xx, is answered as not delivered, which
+            // the engine reports as error.communication (W3C SCXML 6.2.4). It
+            // used to be logged and answered as a delivery, and the document
+            // then waited for an answer that was never coming.
             auto future = httpClient.sendRequest(httpReq);
             try {
                 const auto response = future.get();
                 if (!response.success) {
                     SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed (status {})", TestNum, response.statusCode);
+                    return SCE::Static::HttpSendOutcome::Undelivered("the listener answered HTTP " +
+                                                                     std::to_string(response.statusCode));
                 }
 #ifdef __EMSCRIPTEN__
-                // The host's listener answers with the event it made.
-                if (response.success && !response.body.empty() && response.body.front() == '{') {
-                    const auto answer = nlohmann::json::parse(response.body);
-                    if (answer.contains("event")) {
+                // The host's listener answers with the event it made. A reply
+                // that is not JSON names no event; the POST was delivered.
+                if (!response.body.empty() && response.body.front() == '{') {
+                    const auto answer = nlohmann::json::parse(response.body, nullptr, /*allow_exceptions=*/false);
+                    if (!answer.is_discarded() && answer.contains("event")) {
                         deliver(answer["event"].template get<std::string>(),
                                 answer.contains("data") ? answer["data"].dump() : std::string());
                     }
@@ -168,7 +176,9 @@ public:
 #endif
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed: {}", TestNum, e.what());
+                return SCE::Static::HttpSendOutcome::Undelivered(e.what());
             }
+            return SCE::Static::HttpSendOutcome::Delivered();
         });
 
         // docs/adr/0096: a machine whose script session cannot be established

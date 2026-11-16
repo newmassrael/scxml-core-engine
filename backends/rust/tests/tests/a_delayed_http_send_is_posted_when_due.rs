@@ -13,7 +13,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use sce_rust_runtime::{HttpSendRequest, SceClock};
+use sce_rust_runtime::{HttpSendFailure, HttpSendRequest, SceClock, StatePolicy};
 use sce_rust_tests::integration::a_delayed_http_send_is_posted_when_due::{
     ADelayedHttpSendIsPostedWhenDuePolicy as Policy, ADelayedHttpSendIsPostedWhenDueState as State,
 };
@@ -39,7 +39,7 @@ fn a_delayed_http_send_is_posted_when_due() {
     let recorder = Arc::clone(&posted);
     e.set_http_send_callback(move |request| {
         recorder.lock().unwrap().push(request);
-        None
+        Ok(None)
     });
     e.set_clock(SceClock::Manual(0));
     e.initialize()
@@ -92,4 +92,60 @@ fn a_delayed_http_send_is_posted_when_due() {
         events(&posted),
         ["now", "zero", "zeroexpr", "later", "dynamic"]
     );
+}
+
+/// The fixture's machine, started with a manual clock, and its
+/// `error.communication` event. `transport` runs before `initialize`.
+fn started(
+    transport: impl FnOnce(&mut sce_rust_runtime::Engine<Policy>),
+) -> (
+    sce_rust_runtime::Engine<Policy>,
+    <Policy as StatePolicy>::Event,
+) {
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
+    transport(&mut e);
+    e.set_clock(SceClock::Manual(0));
+    e.initialize()
+        .expect("the machine's script session is established");
+    let communication = Policy::get_event_from_name("error.communication")
+        .expect("the fixture's machine names an error.communication event");
+    (e, communication)
+}
+
+/// W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+/// error.communication on the internal queue. The transport says the POST of
+/// `now` did not reach its server; the document declares no transition for the
+/// error, so it is the one unhandled error the engine counts.
+#[test]
+fn a_basic_http_send_its_transport_could_not_deliver_is_error_communication() {
+    let (e, communication) = started(|e| {
+        e.set_http_send_callback(|request: HttpSendRequest| {
+            if request.event_name == "now" {
+                Err(HttpSendFailure::new("connection refused"))
+            } else {
+                Ok(None)
+            }
+        });
+    });
+    assert_eq!(
+        e.unhandled_error_events(),
+        1,
+        "the undelivered POST of `now` must raise exactly one error"
+    );
+    assert_eq!(e.last_unhandled_error(), Some(communication));
+}
+
+/// A machine given no BasicHTTP transport has no way to dispatch the send: each
+/// of the three sends made at once is reported, none is dropped unsaid.
+#[test]
+fn a_basic_http_send_with_no_transport_is_error_communication() {
+    let (e, communication) = started(|_| {});
+    assert_eq!(
+        e.unhandled_error_events(),
+        3,
+        "the three sends made at once with no transport must each raise an error"
+    );
+    assert_eq!(e.last_unhandled_error(), Some(communication));
 }

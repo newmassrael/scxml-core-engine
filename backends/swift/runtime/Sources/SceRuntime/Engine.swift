@@ -198,7 +198,7 @@ public final class Engine<Policy: StatePolicy> {
 
     /// The §scxml-C-2 HTTP send dispatch callback. Returns the response when real
     /// HTTP is used; nil for fire-and-forget.
-    private var onHTTPSend: ((HttpSendRequest) -> HttpSendResponse?)?
+    private var onHTTPSend: ((HttpSendRequest) throws -> HttpSendResponse?)?
 
     /// The host-run `<invoke>` bookkeeping (§scxml-6.4.1): the invokers a host
     /// registered, the starts still running and the token counter. A stored property
@@ -1777,8 +1777,10 @@ public final class Engine<Policy: StatePolicy> {
     /// Registers an HTTP send dispatcher callback (§scxml-C-2).
     ///
     /// The callback returns the response when real HTTP is used. The engine injects the
-    /// response event into the external queue. Return nil for fire-and-forget sends.
-    public func setHTTPSendCallback(_ callback: ((HttpSendRequest) -> HttpSendResponse?)?) {
+    /// response event into the external queue. Returning nil is a delivery answered with
+    /// no event. Throwing `HttpSendFailure` says the request was not delivered, and the
+    /// engine reports the send as one it was unable to dispatch (`performHTTPSend`).
+    public func setHTTPSendCallback(_ callback: ((HttpSendRequest) throws -> HttpSendResponse?)?) {
         onHTTPSend = callback
     }
 
@@ -1788,6 +1790,11 @@ public final class Engine<Policy: StatePolicy> {
     /// engine injects the response event into the external queue. The engine has no
     /// knowledge of HTTP transport: callers supply the implementation via
     /// `setHTTPSendCallback`.
+    ///
+    /// A send the processor is unable to dispatch puts `error.communication`, carrying
+    /// the send id, on the internal queue: a callback that throws `HttpSendFailure`,
+    /// and a machine given no callback at all, which has no way to dispatch it. Neither
+    /// is dropped unsaid.
     public func performHTTPSend(
         target: String,
         eventName: String,
@@ -1796,11 +1803,26 @@ public final class Engine<Policy: StatePolicy> {
         sendID: String
     ) {
         guard let onHTTPSend else {
+            raiseUndeliveredHTTPSend(
+                sendID: sendID, reason: "no BasicHTTP transport is registered (setHTTPSendCallback)")
             return
         }
-        let response = onHTTPSend(
-            HttpSendRequest(target: target, eventName: eventName, content: content, params: params, sendID: sendID)
-        )
+        let response: HttpSendResponse?
+        do {
+            response = try onHTTPSend(
+                HttpSendRequest(target: target, eventName: eventName, content: content, params: params, sendID: sendID)
+            )
+        } catch {
+            // Whatever the transport throws, the request did not go: this function is
+            // called from a send site that cannot rethrow, so an error of the transport's
+            // own type is read as `HttpSendFailure` is.
+            let why = (error as? HttpSendFailure)?.reason ?? String(describing: error)
+            raiseUndeliveredHTTPSend(
+                sendID: sendID,
+                reason: "the BasicHTTP request to \(target) was not delivered: \(why)"
+            )
+            return
+        }
         if let response {
             // §scxml-C-2-1 fixes the event's name and data and gives it no reply address,
             // so the BasicHTTP processor writes no origin (docs/adr/0090, section 2).
@@ -1809,6 +1831,17 @@ public final class Engine<Policy: StatePolicy> {
             if let arriving = arrivingEvent(name: response.eventName, metadata: metadata) {
                 enqueueExternal(arriving)
             }
+        }
+    }
+
+    /// Reports a BasicHTTP send this processor was unable to dispatch: `error.communication`
+    /// carrying the send id, on the internal queue (§scxml-6.2.4). A document that declares
+    /// no `error.communication` resolves nothing, and nothing is raised.
+    private func raiseUndeliveredHTTPSend(sendID: String, reason: String) {
+        if let communicationError = policy.getEventFromName("error.communication") {
+            var failure = EventWithMetadata.platformError(communicationError, message: reason)
+            failure.metadata.sendID = sendID
+            raise(failure)
         }
     }
 

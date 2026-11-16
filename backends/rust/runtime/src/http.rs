@@ -34,9 +34,10 @@ pub struct HttpSendRequest {
 
 /// §scxml-C-2: HTTP send response returned by the `on_http_send` callback.
 ///
-/// When the callback returns `Some(HttpSendResponse)`, the engine injects the
-/// response event into the external queue. This enables real HTTP round-trips
-/// against the shared W3C HTTP test server (`standalone_http_server.js`).
+/// When the callback returns `Ok(Some(HttpSendResponse))`, the engine injects
+/// the response event into the external queue. This enables real HTTP
+/// round-trips against the shared W3C HTTP test server
+/// (`standalone_http_server.js`).
 #[derive(Debug, Clone, Default)]
 pub struct HttpSendResponse {
     /// Event name extracted from the HTTP response (e.g., `event1`, `HTTP.POST`).
@@ -44,3 +45,34 @@ pub struct HttpSendResponse {
     /// Event data from the response (§scxml-5.10.1: `_event.data`).
     pub event_data: String,
 }
+
+/// §scxml-C-2: the `on_http_send` callback's report that the request was not
+/// delivered: the server could not be reached, or it refused the request with
+/// a status outside 2xx.
+///
+/// The engine answers it as §scxml-6.2.4 answers a send the processor is unable
+/// to dispatch: `error.communication`, carrying the send id, on the internal
+/// queue. [`reason`](Self::reason) is the error's `_event.data`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HttpSendFailure {
+    /// Why the request was not delivered, in the transport's words.
+    pub reason: String,
+}
+
+impl HttpSendFailure {
+    /// A failure that says why in `reason`.
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+}
+
+/// What the `on_http_send` callback answers for one request: delivered, with
+/// the event the receiver replied with or none (`Ok`), or not delivered
+/// (`Err`).
+pub type HttpSendOutcome = Result<Option<HttpSendResponse>, HttpSendFailure>;
+
+/// The host's BasicHTTP transport as the engine holds it. `+ Send` so the
+/// engine stays host-movable (see `Engine::completion_callback`).
+pub(crate) type HttpSendTransport = Box<dyn FnMut(HttpSendRequest) -> HttpSendOutcome + Send>;

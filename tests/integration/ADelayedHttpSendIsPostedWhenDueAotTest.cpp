@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -43,7 +44,10 @@ TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ADelayedHttpSendIsPostedWhenDue) {
     }
     // The host stands in for the HTTP transport: it keeps what it was handed.
     std::vector<SCE::Static::HttpSendRequest> posted;
-    sm.setHttpSendCallback([&posted](const SCE::Static::HttpSendRequest &request) { posted.push_back(request); });
+    sm.setHttpSendCallback([&posted](const SCE::Static::HttpSendRequest &request) {
+        posted.push_back(request);
+        return SCE::Static::HttpSendOutcome::Delivered();
+    });
     EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // A zero wait, written or evaluated, is no deferral: the POST is made
@@ -70,6 +74,47 @@ TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ADelayedHttpSendIsPostedWhenDue) {
     sm.advanceTimeMs(100);
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "the run must end in `done`";
     EXPECT_EQ(events(posted), (std::vector<std::string>{"now", "zero", "zeroexpr", "later", "dynamic"}));
+}
+
+namespace {
+
+/// The fixture's machine on a manual clock, with its script engine when it
+/// needs one; the caller installs a transport, or none, and initializes it.
+void prepare(SM &sm) {
+    sm.setClock(std::make_shared<SCE::ManualClock>(0));
+    if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+        sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                 [](::SCE::IScriptEngine *) {}));
+    }
+}
+
+}  // namespace
+
+// W3C SCXML 6.2.4: a send the processor is unable to dispatch puts
+// error.communication on the internal queue. The transport says the POST of
+// `now` did not reach its server; the document declares no transition for the
+// error, so it is the one unhandled error the engine counts.
+TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ABasicHttpSendItsTransportCouldNotDeliverIsErrorCommunication) {
+    SM sm;
+    prepare(sm);
+    sm.setHttpSendCallback([](const SCE::Static::HttpSendRequest &request) {
+        return request.eventName == "now" ? SCE::Static::HttpSendOutcome::Undelivered("connection refused")
+                                          : SCE::Static::HttpSendOutcome::Delivered();
+    });
+    EXPECT_EQ(sm.initialize(), std::nullopt);
+    EXPECT_EQ(sm.unhandledErrorEvents(), 1u) << "the undelivered POST of `now` must raise exactly one error";
+    EXPECT_EQ(sm.lastUnhandledError(), std::optional<SM::Event>(SM::Event::Error_communication));
+}
+
+// A machine given no BasicHTTP transport has no way to dispatch the send: each
+// of the three sends made at once is reported, none is dropped unsaid.
+TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ABasicHttpSendWithNoTransportIsErrorCommunication) {
+    SM sm;
+    prepare(sm);
+    EXPECT_EQ(sm.initialize(), std::nullopt);
+    EXPECT_EQ(sm.unhandledErrorEvents(), 3u)
+        << "the three sends made at once with no transport must each raise an error";
+    EXPECT_EQ(sm.lastUnhandledError(), std::optional<SM::Event>(SM::Event::Error_communication));
 }
 
 }  // namespace SCE::Tests
