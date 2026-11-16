@@ -7750,6 +7750,15 @@ fn validate_and_enrich_imports(
                     )?
                     .flatten();
                 }
+                // docs/adr/0081 step 4: whether the C11 backend prints the
+                // import from its plan, so a printed parent presents a body of
+                // it as its table and context and writes it through its
+                // `encode_source`. Read as the import is generated, its own
+                // imports resolved.
+                if matches!(language, generator::Language::C11) {
+                    ctx.c11_printed =
+                        c11_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.
                 let mut source_visited: HashSet<PathBuf> = HashSet::new();
