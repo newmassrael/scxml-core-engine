@@ -50,12 +50,24 @@ fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
 
-/// Every sidecar git tracks, as repo-relative paths.
+/// Every sidecar git tracks, as repo-relative paths, then every sidecar of
+/// the Rust W3C tree, which the checkout does not commit (docs/adr/0097), as
+/// absolute paths where `sce-codegen materialize rust-w3c` wrote them.
 fn tracked_sidecars() -> Vec<PathBuf> {
-    common::repository::paths_git_tracks(&["*sce_sourcemap.json"])
+    let mut sidecars: Vec<PathBuf> = common::repository::paths_git_tracks(&["*sce_sourcemap.json"])
         .into_iter()
         .map(PathBuf::from)
-        .collect()
+        .collect();
+    let rust_w3c = common::materialized::file(
+        env!("CARGO_BIN_EXE_sce-codegen"),
+        "rust-w3c",
+        "backends/rust/tests/src/generated",
+    );
+    sidecars.extend(common::materialized::files_named(
+        &rust_w3c,
+        "sce_sourcemap.json",
+    ));
+    sidecars
 }
 
 /// Source extensions whose marker form is a comment and therefore

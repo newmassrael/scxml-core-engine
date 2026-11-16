@@ -99,11 +99,13 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
     let registry = stage_registry(staging.path());
     let root = repo_root();
 
-    // The repository's own copy of one of the two fixtures. If any
+    // Where the repository's layout puts one of the two fixtures. If any
     // backend path still derived from the project root, this run would
-    // rewrite it.
+    // write it there. The checkout does not commit the tree (ADR 0097), so
+    // the file is absent unless the tree was materialized into the checkout,
+    // and either way the run must leave it as it found it.
     let in_repo = root.join("backends/rust/tests/src/generated/test144/test144_sm.rs");
-    let before = std::fs::read(&in_repo).expect("the committed tree holds test144");
+    let before = std::fs::read(&in_repo).ok();
 
     let output = Command::new(sce_codegen_bin())
         .arg("generate-w3c")
@@ -165,7 +167,7 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
          the registered fixtures are emitted",
     );
 
-    let after = std::fs::read(&in_repo).expect("read the committed tree again");
+    let after = std::fs::read(&in_repo).ok();
     assert_eq!(
         before,
         after,
