@@ -1110,7 +1110,19 @@ A feature that asks a model is tested in two layers, which answer two different 
      `harness_offer.scxml` holds `list<uint32>[8]`, the outcome class table gains `tooMany`, `tooFew` and `tooDeep`
      at depths 2 and 3 in place of its `deferred` entries, and the exhaustive runs require them reached;
    - the templates over a composed schema (section 7.1) and reads of a composed record variable's fields in a
-     guard or an assignment, each held by a test on the lanes that hold the variable.
+     guard or an assignment, each held by a test on the lanes that hold the variable. The reads landed
+     2026-11-16: `static_lift_list` reads `answer.value.title`, `answer.value.priority` and
+     `len(answer.value.items)` where `answer` is proven present, in a transition's guard and in an assignment,
+     and its scenario replays them on the seven lanes and the Interpreter
+     (`a_guard_reads_a_field_of_a_composed_record_variable_on_every_lane`). Every lane but C11 read them as it
+     reads a field of an optional record of entries already, the place typed by the walk of the record's type
+     (`TypeCtx::value_of`); C11 holds a text of the machine's own record in the buffer of its bound, which the
+     renames spell for a record of entries only, so a text below a variable of a record that holds a
+     composition is read through its buffer as one below a union variable is (`held_by_a_composed_value`).
+     `static_union`'s `held`, a record that holds a union field, is lifted, refused at the union's tag inside the
+     record (`/shape/kind`), narrowed by `held.value.shape.kind`, saved and restored, on every lane
+     (`a_record_variable_that_holds_a_union_is_narrowed_on_every_lane`). The C11 replay of `static_union` reads
+     each variable out of the machine's saved text, as `static_lift_list`'s does.
 
 ### Decided while landing item 8
 

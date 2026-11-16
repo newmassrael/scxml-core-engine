@@ -324,7 +324,14 @@ reads a field of a composed record variable in a guard, and the non-optional rec
      JSON value, with the value that text holds it as, which is the one spelling of a composed value every lane
      shares and the one the Go and C++ replays already read.
 
-   What is left of item 1: `static_union`'s record variable whose record holds a union, narrowed after the lift writes
+   `static_union`'s record variable whose record holds a union landed 2026-11-16 (`held`: lifted, refused at the
+   union's tag inside the record, narrowed by its tag where the record is proven present, saved and restored, on
+   the seven lanes and the Interpreter), with the reads of a composed record variable's fields in a guard and an
+   assignment it rests on (ADR 0087 "Landing order" item 8, its last bullet). What is left of item 1 is the
+   non-optional record variable of decision 1 of that item.
+
+   Superseded by the paragraph above, kept as it was written: what was left of item 1 was `static_union`'s record
+   variable whose record holds a union, narrowed after the lift writes
    it, which reads a field of a composed record variable in a guard (ADR 0087 "Landing order" item 8, its last
    bullet, which no lane lowers yet), the non-optional record variable of decision 1 of that item, and the
    Interpreter's row (`ComposedLowering::ECMASCRIPT`), which holds no `records` yet. A record that holds a union
