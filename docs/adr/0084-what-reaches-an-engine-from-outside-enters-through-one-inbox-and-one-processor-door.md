@@ -31,8 +31,14 @@
   gates and the `verify` action start takes a port the kernel assigns and hands it on through `SCE_W3C_HTTP_PORT`; the
   content readings are one reading per data model, and an event's origin is ADR 0090's pair. Kotlin's coroutine mode
   now runs the synchronous loop's steps, recorded in D2 (the bullet on the end of a run, as amended on this date).
-  What stays on a fixed default is an out-of-process listener whose port two processes must agree before either
-  starts: the C11 ctest fixture binds the port the tree was configured with (`-DSCE_W3C_HTTP_PORT`).
+  The W3C BasicHTTP endpoint then lost its default port altogether: an out-of-process listener (the C11 ctest
+  fixture's, the gates', the `verify` action's, the WASM host's) binds port 0 unless told one and hands the port its
+  `[READY] port=<n>` line names to its consumers, through `SCE_W3C_HTTP_PORT` or, where ctest fixed their
+  environment first, through the port file `SCE_W3C_HTTP_PORT_FILE` names (`tests/w3c/basic_http_test_endpoint.h`);
+  a consumer told neither refuses. And a BasicHTTP send the transport could not deliver is now error.communication on
+  every engine (D4, as amended on this date). One fixed port is left in a fixture rather than a harness: the
+  documents of `a_delayed_http_send_is_posted_when_due` name `127.0.0.1:18081`, which the C11 channel's listener
+  binds.
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -305,6 +311,22 @@ posts.
   computed by the Interpreter's own evaluation of the element. A request the Interpreter builds and one the generated
   engine builds for the same element are compared in a shared fixture, as the reserved-type and deadline-value rules
   already are.
+- Amended 2026-11-16: the BasicHTTP processor's transport is a host door of its own, and it answers whether the
+  request was delivered. §scxml-6.2.4: "If it is unable to dispatch the message, the Processor MUST place the error
+  error.communication on the internal event queue." A request the transport says it did not deliver (the server
+  could not be reached, or refused it with a status outside 2xx) and one made with no transport registered, which
+  nothing can dispatch, raise `error.communication` carrying the send id, on every engine. Every engine used to drop
+  both unsaid: the harnesses answered a failed POST as a delivery with no reply, and the document waited for an answer
+  that was never coming. A delivered request whose reply names no event raises nothing. How each language says it:
+  - Rust: the callback returns `HttpSendOutcome`, `Result<Option<HttpSendResponse>, HttpSendFailure>`;
+  - Go: the callback returns `(*HttpSendResponse, error)`;
+  - Python and Kotlin: the callback raises or throws `HttpSendFailure`, and any other exception propagates;
+  - Swift: the callback throws, and whatever it throws means not delivered, since the send site cannot rethrow;
+  - the generated C++ engine: the callback returns `HttpSendOutcome` (`Delivered()` or `Undelivered(reason)`);
+  - C11: the machine posts through the platform's `sce/http_client.h`, and a request it could not post, or one
+    answered outside 2xx, is the failure;
+  - the Interpreter: `HttpEventTarget`'s `NETWORK_ERROR` and `TIMEOUT` join the missing target as error.communication,
+    read for a send made at once and for a delayed one by one function (`sce/src/events/UndeliveredSendReport.h`).
 
 ### D5. The bookkeeping of a running host invocation is written once, in the shared layer
 
