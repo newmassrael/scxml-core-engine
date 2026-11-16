@@ -67,6 +67,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_lift"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_lift_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
@@ -1770,6 +1771,83 @@ func TestALiftReadsATextIntoARecordOrKeepsItsRefusal(t *testing.T) {
 	}))
 }
 
+// savedVariable is the variable `id` of `saved`, a state the machine was just
+// saved as (`err` what saving it answered), as the JSON a scenario states: the
+// variable's saved form, which is the one spelling of a composed value every lane
+// shares.
+func savedVariable(t *testing.T, saved *sce.SavedState, err error, id string) any {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("the machine saves: %v", err)
+	}
+	value, err := saved.Variable(id)
+	if err != nil {
+		t.Fatalf("the saved state holds `%s`: %v", id, err)
+	}
+	var read any
+	if err := json.Unmarshal([]byte(sce.WriteJSON(value)), &read); err != nil {
+		t.Fatalf("the saved `%s` is no JSON: %v", id, err)
+	}
+	return read
+}
+
+// A text read into a record that holds a list of records, or its refusal kept, at
+// every depth of the record: the list's counts, a field of an item, and a container
+// opened past the deepest the record holds (docs/adr/0087, "Landing order" item 8).
+// The machine's record is its own struct, which no host reader answers, so each
+// variable is read from the saved state: the record is written by its type too.
+func TestALiftReadsATextIntoARecordThatHoldsAList(t *testing.T) {
+	type state = static_lift_list.StaticLiftListState
+	type event = static_lift_list.StaticLiftListEvent
+	policy := static_lift_list.NewStaticLiftListPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	engine := sce.NewEngine[state, event](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	variables := map[string]func() any{}
+	for _, id := range []string{"answer", "why", "lifts", "errors"} {
+		variables[id] = func() any {
+			saved, err := static_lift_list.StaticLiftListSaveAt(engine, savedAtMs)
+			return savedVariable(t, saved, err, id)
+		}
+	}
+	replay(t, "static_lift_list", machine{
+		send: func(name, data string) {
+			engine.RaiseExternalByName(name, data)
+			settleComposed(&policy, engine.Step, engine.Tick)
+		},
+		resolves: func(name string) bool {
+			_, ok := engine.ResolveEventByName(name)
+			return ok
+		},
+		advance: engine.AdvanceTimeMs,
+		state: func() string {
+			var atomic []string
+			for _, active := range engine.GetActiveStates() {
+				if !policy.IsCompoundState(active) {
+					atomic = append(atomic, active.String())
+				}
+			}
+			if len(atomic) != 1 {
+				return fmt.Sprintf("<%d active atomic states>", len(atomic))
+			}
+			return atomic[0]
+		},
+		configuration: func() []string {
+			var ids []string
+			for _, active := range engine.GetActiveStates() {
+				ids = append(ids, active.String())
+			}
+			return ids
+		},
+		ended:     func() bool { return engine.IsInFinalState() },
+		donedata:  func() string { return engine.DonedataAtFinal() },
+		variables: variables,
+	})
+}
+
 // staticUnion drives the machine that holds a union (docs/adr/0092), reading
 // each variable back as a saved state holds it: a union as its tag beside the
 // fields of its case, and every other value as its type's saved form, which is
@@ -1801,18 +1879,7 @@ func staticUnion(t *testing.T) machine {
 	} {
 		variables[id] = func() any {
 			saved, err := static_union.StaticUnionSaveAt(engine, savedAtMs)
-			if err != nil {
-				t.Fatalf("the machine saves: %v", err)
-			}
-			value, err := saved.Variable(id)
-			if err != nil {
-				t.Fatalf("the saved state holds `%s`: %v", id, err)
-			}
-			var read any
-			if err := json.Unmarshal([]byte(sce.WriteJSON(value)), &read); err != nil {
-				t.Fatalf("the saved `%s` is no JSON: %v", id, err)
-			}
-			return read
+			return savedVariable(t, saved, err, id)
 		}
 	}
 	return machine{

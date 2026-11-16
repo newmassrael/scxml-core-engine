@@ -334,6 +334,7 @@ impl ComposedLowering {
 
             Language::Go => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
 
