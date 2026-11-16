@@ -1103,7 +1103,9 @@ A feature that asks a model is tested in two layers, which answer two different 
      2026-11-16 (slices 3 to 7): each lane's composed walk, spelled for a union, already read such a record whole
      and saved it by its type, so each row flipped and each driver replays the scenario; the C11 replay reads each
      variable out of the machine's saved text (docs/adr/0099, "Landed of the open items");
-   - the Interpreter's lowering (`ComposedLowering::ECMASCRIPT`), whose refusal by name stands until then;
+   - the Interpreter's lowering (`ComposedLowering::ECMASCRIPT`). Landed 2026-11-16: its lift read a value whole
+     by the walk already and its record is the plain object of its fields, which it saves no state of, so its row
+     holds `records` and `static_lift_list` left `NOT_YET_LOWERED` (docs/adr/0099, "Landed of the open items");
    - once every lane holds `records`: the answer schema of `static_host_model` and of the harness gains a list,
      `harness_offer.scxml` holds `list<uint32>[8]`, the outcome class table gains `tooMany`, `tooFew` and `tooDeep`
      at depths 2 and 3 in place of its `deferred` entries, and the exhaustive runs require them reached;

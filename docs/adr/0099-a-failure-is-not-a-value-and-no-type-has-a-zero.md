@@ -303,8 +303,9 @@ ADR's:
 
 ### Landed of the open items (2026-11-16)
 
-Item 1, every generated lane's slice of ADR 0087 "Landing order" item 8, and item 3 have landed; item 2 and the
-rest of item 1 stand as written above.
+Item 1, every generated lane's slice of ADR 0087 "Landing order" item 8 and the Interpreter's, item 2 and item 3
+have landed; the rest of item 1 stands as written above: `static_union`'s record variable holding a union, which
+reads a field of a composed record variable in a guard, and the non-optional record variable.
 
 1. **Each generated lane holds a variable of a record that holds a composition.** The rows of Go, Python, C++, C11
    and Swift in `ComposedLowering::of` hold `records`, beside Rust's and Kotlin's, and each lane replays
@@ -328,7 +329,10 @@ rest of item 1 stand as written above.
    bullet, which no lane lowers yet), the non-optional record variable of decision 1 of that item, and the
    Interpreter's row (`ComposedLowering::ECMASCRIPT`), which holds no `records` yet. A record that holds a union
    field is lifted and saved by the walk above on every generated lane already; the fixture that holds one waits on
-   the field read, so its variable is narrowed as step 4 asks.
+   the field read, so its variable is narrowed as step 4 asks. The Interpreter's row holds `records` since
+   2026-11-16: its lift already read a value whole by the walk (`Lifted::Whole`), its record is the plain object of
+   its fields, and it saves no state, so the row flipped and `static_lift_list` left `NOT_YET_LOWERED`, its scenario
+   found by the Interpreter's scan of the scenarios.
 3. **A union is taken whole through an index of a list itself reached through an index**, on every generated lane.
    The text is read as the place it starts at and each element on the way, with the fields after each that reach the
    next list (`expr::written_elements`), and each index is read by the lane's checked read in turn, the outer first
@@ -344,6 +348,29 @@ rest of item 1 stand as written above.
      (`RustTarget::element_within`).
    - **A field of a union on the way is refused by name**: it is a member of no proven case, since an element at an
      index is no narrowing subject (section 5.2); the repair is to copy the element whole and test its tag.
+2. **An algorithm holds a list of unions, and the conformance algorithm over one reads at an index** (item 2, landed
+   2026-11-16). `algorithm_view` admits `list<union:U>` as a parameter, a buffer local and a return on every lane,
+   held in the containers a list of records is (`ListSpelling`, the element the type the union's unit declares).
+   `sce:std/time/resolve_date_at` copies the expression at a position whole and hands it to `resolve_date`; the
+   manifest writes the argument as `{"list_of": {"union": "<union fixture>"}}`, and its reference cases, a model's in
+   `gen_cases.py` beside seven hand cases, fail `out-of-range` past the list. Decided while landing it:
+   - **The element at an index is bound before it is read, in an algorithm as in a statechart** (section 5.2). A union
+     local takes `init="xs[i]"`, a statement of its own (`AlgorithmStmt::UnionCopied`, beside `UnionVar` as
+     `RecordFromCall` is beside `RecordVar`), held by the judge to an element of a list of its own union by the
+     document's identity; and an `<sce:foreach>` item over a list of unions is a union the narrowing tests, as a
+     parameter is (`algorithm_unions`). `xs[i].kind` and `xs[i].f` are refused inside any expression, naming the two
+     bindings. Making the element a narrowing subject was rejected above ("Make `us[i]` a narrowing subject").
+   - **The copy is in a `may-fail` body only.** The element is read by the lane's checked read of an index, whose
+     `out-of-range` only a body that may fail hands on; an unchecked read in a body that may not fail would trap.
+   - **Each lane's checked read takes the element as it is.** Rust reads a union by reference and clones it out
+     (`at_ref(..)?.clone()`, a union being no `Copy` type); C11's filler beside a recorded failure is the struct's own
+     zero, `(__typeof__(read)){0}`, the tag its first member (section 2.2); Kotlin reads a buffer of unions by the
+     `List` overload, not a slot reader; C++, Go, Python, Swift and the Interpreter read it by the read every element
+     takes.
+   - **A union is appended by the name that holds it**, of the list's own union document, as a record is appended by
+     name; Rust hands a clone, as a union handed to a call is.
+   - **A list of unions is an argument of the conformance manifest only.** No fixture answers one: no fragment compares
+     two values of a union, which no backend compares alike (docs/adr/0086, section 6.1).
 
 ## Consequences
 
