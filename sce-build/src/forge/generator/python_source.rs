@@ -23,12 +23,12 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, InputSource};
+use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Against, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId, Guard,
-    HandedFrom, InputCheck, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence,
-    PresenceFlag, Value, Write,
+    Absent, Against, Automaton, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId,
+    Guard, HandedFrom, InputCheck, Law, Measure, Measured, Narrow, Number, NumberInto, Offset,
+    Presence, PresenceFlag, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,7 +51,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// beside its content where its content is, a flag set exactly where the one
 /// field it gates is there, or a flag a body says; whose every flag input the
 /// value says is said by the field gated on it alone or by a body it is handed
-/// on to or by the arm of its variant; whose variant's arms are codecs it
+/// on to or by the arm of its variant or by the start of a list held to a law;
+/// whose lists may be held to the law their entries say their inputs by;
+/// whose variant's arms are codecs it
 /// prints, no two named ones of one class; and whose encode refuses only what
 /// it raises itself, before the first
 /// byte: a gate it cannot derive, an input a body or the entries of a list say
@@ -110,23 +112,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // function of the module a parent calls, `input_<name>`, and by the encode
     // where a gate or a check reads it; one it does not say is a parameter of
     // the encode. It is said by the field gated on it alone, by the group
-    // gated on it, by the body, always there, it is handed on to, or by the
-    // arm of the variant the value holds, through that body's or arm's codec's
-    // own function, which a codec the Python backend prints has.
-    for said in &plan.said {
-        let by = match &plan.roles.inputs[&said.input.name] {
-            InputSource::Gate { .. }
-            | InputSource::Forward { .. }
-            | InputSource::Group
-            | InputSource::EveryArm { .. }
-            | InputSource::SomeArms { .. } => continue,
-            InputSource::List { .. } => "the start of a list held to a law",
-        };
-        forms.push(format!(
-            "input '{}': a flag input {by} says",
-            said.input.name
-        ));
-    }
+    // gated on it, by the body, always there, it is handed on to, by the arm
+    // of the variant the value holds, through that body's or arm's codec's
+    // own function, which a codec the Python backend prints has, or by the
+    // start of the list held to it (docs/adr/0065 §6 R8), which the value
+    // presents alone ([`grouped_law_forms`] names a group's).
     for element in &plan.elements {
         forms.extend(value_forms(imports, &element.field.id, &element.value));
     }
@@ -134,8 +124,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // its one arm's members, or the `Union` of a dataclass for each of its
     // arms, held optionally where the gates allow no arm; its gates are flags
     // of the codec's own or flag inputs, derived from the arm the value holds.
-    // Its members are held as an element alone is, and two lists of one count
-    // (R5) as one `Aligned` of the two.
+    // Its members are held as an element alone is, two lists of one count
+    // (R5) as one `Aligned` of the two, and a list held to a law as a
+    // `Lawful` of it, as one alone is ([`grouped_law_forms`]).
     for group in plan.groups() {
         let label = super::rust_source::gates_label(group);
         if group.chain().is_some() {
@@ -147,15 +138,27 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 .iter()
                 .find(|f| f.id == id)
                 .expect("a group's member is a field of the codec");
-            forms.extend(value_forms(imports, id, &plan.value(member)));
+            let value = plan.value(member);
+            forms.extend(value_forms(imports, id, &value));
+            if matches!(&value, Value::List { law, .. } if !law.is_none()) {
+                forms.extend(grouped_law_forms(plan, group, id));
+            }
         }
     }
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
-            // A number into a field, or into a flag of a carrier.
-            (_, Derive::Number(number)) => {
-                forms.extend(number_form(&derived.element, number));
-            }
+            // A number into a field, or into a flag of a carrier: a length, a
+            // count or an encoded length of the elements it measures, the
+            // input a body or the arm the value holds says, read through its
+            // codec's own function, or the start of a list held to a law
+            // (docs/adr/0065 §6 R8), each of which that is there says the
+            // same number or the value is refused. A field holds it where it
+            // may fit, refused where it may not; where nothing it measures is
+            // there the field holds zero, what the value states, or what the
+            // arm of a group that holds it on the side without its content
+            // does (R4b); a flag folds it into its carrier, as a presence flag
+            // is folded.
+            (_, Derive::Number(_)) => {}
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
                 forms.extend(presence_form(&derived.element, presence));
             }
@@ -211,14 +214,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 forms.extend(unread_form(plan, &numbers, field));
                 // A walk of each entry in turn, which sets on each entry but
                 // the last the flag the chain ends on and hands each entry
-                // what the one before it was; a chain that holds a bare
-                // entry's place or is held to a law is not printed yet.
-                if list
-                    .as_ref()
-                    .is_some_and(|walk| walk.slots.is_some() || walk.lawful)
-                {
+                // what the one before it was; a list held to a law is walked
+                // through its `Lawful`, which reads as its entries. A chain
+                // that holds a bare entry's place is not printed yet.
+                if list.as_ref().is_some_and(|walk| walk.slots.is_some()) {
                     forms.push(format!(
-                        "field '{}': a chain that holds a bare entry's place or is held to a law",
+                        "field '{}': a chain that holds a bare entry's place",
                         field.id
                     ));
                 }
@@ -260,7 +261,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
 /// What of `id`, an element of the abstract type `value` the value presents
 /// alone or a group of it holds, the printer does not print: it prints an
 /// integer, a flag set, an enum, a byte string, a text, and a body or a list
-/// of a codec the Python backend prints, held to no law.
+/// of a codec the Python backend prints, a list held to the law its entries
+/// say their inputs by as a `Lawful` of it (docs/adr/0065 §6 R8). A float and
+/// a bool have no lowering, as in C++.
 fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<String> {
     let mut forms = Vec::new();
     match value {
@@ -280,48 +283,52 @@ fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<St
         }
         // A list is walked, each entry written by its codec's own
         // `encode_source`, which a codec the Python backend prints has, handed
-        // as a body is.
-        Value::List { codec, law, .. } => {
+        // as a body is; its law reads each entry through that codec's own
+        // `input_<name>`.
+        Value::List { codec, .. } => {
             if printed_import(imports, codec).is_none() {
                 forms.push(format!(
                     "field '{id}': a list of `{codec}`, which the Python backend does not print"
                 ));
-            }
-            if !law.is_none() {
-                forms.push(format!("field '{id}': a list held to a law"));
             }
         }
     }
     forms
 }
 
-/// What of the derived number of `element` the printer does not print: it
-/// prints a length, a count or an encoded length of the elements it measures,
-/// or the input a body says,
-/// each of which that is there says the same number or the value is refused,
-/// into a field that holds nothing else, refused where it may not fit; where
-/// nothing it measures is there the field holds zero, gated beside its
-/// content.
-fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
+/// What of `id`, a list `group` holds whose entries say the inputs it hands
+/// them, the printer does not print (docs/adr/0065 §6 R8).
+///
+/// Each arm that holds such a list holds it as the value holds one alone, a
+/// `Lawful` of its law: a flag of the codec's own bound to every entry is
+/// derived from the start of the list the arm the value holds keeps, and is
+/// the bits the value presents where it holds another arm or none; an input a
+/// chain supplies from the entry before starts fixed. As in C++, the printer
+/// does not hold to a law a list that shares its count with another (R5),
+/// which an arm holds as one `Aligned` of the two lists, nor a list whose law
+/// is over an input of the codec's own, which the value says by the list's
+/// start ([`said_input`]) and which a parent reads off the value's own
+/// element.
+fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<String> {
     let mut forms = Vec::new();
-    for measure in &number.measures {
-        match &measure.of {
-            // The input a body or the arm the value holds says, read through
-            // its codec's own function.
-            Measured::Bytes { .. }
-            | Measured::Entries { .. }
-            | Measured::Encoded { .. }
-            | Measured::Says { .. }
-            | Measured::ArmSays { .. } => {}
-            Measured::Start { .. } => {
-                forms.push(format!("element '{element}': a flag a list's start says"));
-            }
+    if group
+        .aligned
+        .as_ref()
+        .is_some_and(|(first, second)| first == id || second == id)
+    {
+        forms.push(format!(
+            "field '{id}': a list held to the law its entries say their inputs by, sharing \
+             its count with another list a gate decides"
+        ));
+    }
+    for law in super::rust_source::list_laws(&plan.roles, id) {
+        if let InputValue::Input { name } = &law.against {
+            forms.push(format!(
+                "field '{id}': a list on one side of a gate, held to the law its entries say \
+                 the codec's own input `{name}` by"
+            ));
         }
     }
-    // A number into a field holds, where nothing it measures is there, zero,
-    // what the value states, or what the arm of a group that holds it on the
-    // side without its content does (docs/adr/0065 §6 R4b); one into a flag is
-    // folded into its carrier, as a presence flag is.
     forms
 }
 
@@ -677,6 +684,12 @@ pub(super) fn render(
     imports: &[ImportContext],
     struct_name: &str,
 ) -> PythonSource {
+    let codec = Printed {
+        plan,
+        l,
+        imports,
+        struct_name,
+    };
     let mut gathered = Gathered::default();
     let mut hold = String::new();
     let mut declared = BTreeMap::new();
@@ -708,16 +721,21 @@ pub(super) fn render(
             );
             continue;
         }
-        let held = held_as(
-            &mut gathered,
-            l,
-            imports,
-            struct_name,
-            element.field,
-            &element.value,
-            gated,
-        );
+        let held = held_as(&mut gathered, &codec, element.field, &element.value, gated);
         presented.insert(id.clone(), held.presented);
+        // A list held to a law is made of the start the frame gave and the
+        // entries the decode read, where it read it.
+        if let Some(lawful) = decoded_lawful(plan, l, struct_name, id) {
+            let made = if gated {
+                format!(
+                    "None if {} is None else {lawful}",
+                    l.codec_field_decode_local(id)
+                )
+            } else {
+                lawful
+            };
+            decoded.insert(id.clone(), made);
+        }
         if let Some(line) = held.hold {
             hold.push_str(&hold_line(&hold, &l.codec_field_id(id), &line));
         }
@@ -731,15 +749,7 @@ pub(super) fn render(
     let mut groups = Vec::new();
     let mut union = false;
     for group in plan.groups() {
-        let (field, presents) = group_part(
-            &mut gathered,
-            plan,
-            l,
-            imports,
-            struct_name,
-            group,
-            &mut union,
-        );
+        let (field, presents) = group_part(&mut gathered, &codec, group, &mut union);
         presented.insert(field.name.clone(), presents);
         groups.push(field);
     }
@@ -823,6 +833,8 @@ struct Gathered {
     modules: BTreeSet<String>,
     /// Whether a default is made by `field(default_factory=..)`.
     factory: bool,
+    /// The kinds of entry whose classes are among `classes`, each once.
+    keys: BTreeSet<String>,
 }
 
 impl Gathered {
@@ -846,6 +858,15 @@ impl Gathered {
     }
 }
 
+/// The codec a module is printed for: its plan, the language, its imports,
+/// and the class of its value.
+struct Printed<'p, 'm> {
+    plan: &'p EncodePlan<'m>,
+    l: &'p LangCtx,
+    imports: &'p [ImportContext],
+    struct_name: &'p str,
+}
+
 /// How a class of the module holds one element where it is there.
 struct Held {
     /// The type a source presents it as.
@@ -863,17 +884,17 @@ struct Held {
 /// How a class holds `field`, of the abstract type `value`, `Optional` where
 /// `gated`: a body as any source of its codec, held as its codec's value, made
 /// by default by its class; a byte string, a text or a list as the class of
-/// its bound, which `__setattr__` makes wherever it is set; anything else as
-/// its declared type. The classes and modules it names go into `gathered`.
+/// its bound, which `__setattr__` makes wherever it is set, and a list held to
+/// a law as the `Lawful` of it ([`law_part`]); anything else as its declared
+/// type. The classes and modules it names go into `gathered`.
 fn held_as(
     gathered: &mut Gathered,
-    l: &LangCtx,
-    imports: &[ImportContext],
-    struct_name: &str,
+    codec: &Printed<'_, '_>,
     field: &CodecField,
     value: &Value<'_>,
     gated: bool,
 ) -> Held {
+    let (l, imports, struct_name) = (codec.l, codec.imports, codec.struct_name);
     let optional = |ty: &str| {
         if gated {
             format!("Optional[{ty}]")
@@ -976,6 +997,45 @@ fn held_as(
     } else {
         format!("{class}({fewest})")
     };
+    // A list held to the law its entries say their inputs by is held as the
+    // `Lawful` of it, its entries in the class of their bound: made of the
+    // start and the entries wherever it is set, and by default from the start
+    // its first entry says.
+    if let (
+        Value::List {
+            codec: entries,
+            law,
+            ..
+        },
+        Some(entry),
+    ) = (value, &entry)
+    {
+        if !law.is_none() {
+            let lawful = law_part(gathered, codec, id, entries, law, &class);
+            let made = format!("{lawful}(value.start, value.entries)");
+            gathered.factory |= !gated;
+            return Held {
+                presented: optional(&lawful),
+                ty: optional(&lawful),
+                default: if gated {
+                    "None".to_string()
+                } else if bound.least == 0 {
+                    format!("field(default_factory={lawful}.of)")
+                } else {
+                    format!(
+                        "field(default_factory=lambda: {lawful}.of({entry}() for _ in range({})))",
+                        bound.least
+                    )
+                },
+                hold: Some(if gated {
+                    format!("None if value is None else {made}")
+                } else {
+                    made
+                }),
+                class: Some(lawful),
+            };
+        }
+    }
     Held {
         presented: optional(&class),
         ty: optional(&class),
@@ -983,6 +1043,171 @@ fn held_as(
         hold: Some(made),
         class: Some(class),
     }
+}
+
+/// The class of the list `id` of the codec whose value's class is
+/// `struct_name`, held to the law its entries say their inputs by
+/// (docs/adr/0065 §6 R8).
+fn lawful_class(struct_name: &str, id: &str) -> String {
+    format!(
+        "{struct_name}{}Lawful",
+        filters::to_pascal_case(id.to_string())
+    )
+}
+
+/// `items` as a Python tuple's literal.
+fn tuple_literal(items: &[String]) -> String {
+    match items {
+        [] => "()".to_string(),
+        [one] => format!("({one},)"),
+        many => format!("({})", many.join(", ")),
+    }
+}
+
+/// The law of the list `id` of `codec`, whose entries are values of the codec
+/// imported as `entries` held in the class `list` of their bound, and the
+/// class that holds the list to it, into `gathered` (docs/adr/0065 §6 R8): the
+/// runtime's automaton for each input the list hands its entries, reading it
+/// off an entry through the entry codec's own `input_<name>`, a `Uniform` of a
+/// flag bound to every entry and an `AfterKey` of an input the chain supplies
+/// from the entry before, named as every printer names the law; and the
+/// `Lawful` of it, which a value holds the list as. Answers the class.
+fn law_part(
+    gathered: &mut Gathered,
+    codec: &Printed<'_, '_>,
+    id: &str,
+    entries: &str,
+    law: &Law,
+    list: &str,
+) -> String {
+    let struct_name = codec.struct_name;
+    let import = printed_import(codec.imports, entries)
+        .expect("`unlowered` prints a list of a printed codec only");
+    let (module, _) = body_module(import);
+    let mut automata = Vec::new();
+    for input in &law.inputs {
+        let says = format!("{module}.input_{}", input_name(&input.input));
+        automata.push(match input.automaton {
+            Automaton::Uniform => {
+                gathered.runtime("law", "Uniform");
+                format!("Uniform({says})")
+            }
+            Automaton::AfterKey { id: kind } => {
+                gathered.runtime("law", "AfterKey");
+                let key = key_class(gathered, codec, id, kind);
+                format!("AfterKey({says}, {key}.matches)")
+            }
+        });
+    }
+    gathered.runtime("law", "Lawful");
+    let name = super::rust_source::law_type(&codec.plan.roles, struct_name, id)
+        .expect("a list held to a law has its law's name");
+    let lawful = lawful_class(struct_name, id);
+    gathered.classes.push_str(&format!(
+        "{name} = {}\n\
+         \"\"\"The law the entries of ``{id}`` of :class:`{struct_name}` follow in the inputs\n\
+         they say, an automaton for each, which the list holds them to (docs/adr/0065 §6 R8).\"\"\"\n\
+         \n\n\
+         class {lawful}(Lawful):\n\
+         \x20   \"\"\"The ``{id}`` element of :class:`{struct_name}`, its entries held to their\n\
+         \x20   law from the start the value gives (docs/adr/0065 §6 R8).\"\"\"\n\
+         \n\
+         \x20   ENTRIES = {list}\n\
+         \x20   LAW = {name}\n\n\n",
+        tuple_literal(&automata)
+    ));
+    lawful
+}
+
+/// The class of the kind `key` of entry of the chain `chain` of `codec` a gate
+/// or a law asks for (docs/adr/0065 §6 R6, R8), into `gathered` once, named
+/// as every printer names it: `matches`, whether an entry, any source of the
+/// entry codec, is of the kind by the identifier the chain's `entry-id`
+/// names. Answers the class.
+fn key_class(gathered: &mut Gathered, codec: &Printed<'_, '_>, chain: &str, key: u64) -> String {
+    let (plan, l, struct_name) = (codec.plan, codec.l, codec.struct_name);
+    let name = super::rust_source::key_type(struct_name, chain, key);
+    if !gathered.keys.insert(name.clone()) {
+        return name;
+    }
+    let field = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == chain)
+        .expect("a kind is asked of a chain of the codec");
+    let import = printed_import(codec.imports, held_alias(plan, field))
+        .expect("`unlowered` prints a chain of a printed codec only");
+    let (module, entry) = body_module(import);
+    gathered.classes.push_str(&format!(
+        "class {name}:\n\
+         \x20   \"\"\"The kind of entry of ``{chain}`` of :class:`{struct_name}` a gate or a\n\
+         \x20   law asks for: an entry whose identifier is 0x{key:X} (docs/adr/0065 §6 R6).\"\"\"\n\
+         \n\
+         \x20   @staticmethod\n\
+         \x20   def matches(entry: {module}.{entry}Source) -> bool:\n\
+         \x20       \"\"\"Whether ``entry`` is of the kind.\"\"\"\n\
+         \x20       return {} == 0x{key:X}\n\n\n",
+        entry_identifier(plan, l, chain, "entry")
+    ));
+    name
+}
+
+/// The start of the law of the list `list` of `plan` for the input `input` its
+/// entries say, read off `held`, the list as a `Lawful` (docs/adr/0065 §6 R8):
+/// the start itself where the law has one input, or its place among the
+/// starts of several.
+fn law_start(plan: &EncodePlan<'_>, list: &str, input: &str, held: &str) -> String {
+    let laws = super::rust_source::list_laws(&plan.roles, list);
+    if laws.len() == 1 {
+        return format!("{held}.start");
+    }
+    let at = laws
+        .iter()
+        .position(|law| law.binder.input == input)
+        .expect("the list holds the input by its law");
+    format!("{held}.start[{at}]")
+}
+
+/// The expression the decode makes the list `id` of `plan` of, held to its
+/// law, from the local it read it into (docs/adr/0065 §6 R8): the `Lawful` of
+/// the start the frame gave, for each input the list hands its entries the
+/// carrier's bit or the input the decode is handed, `None` for one a chain
+/// supplies from the entry before, whose start is fixed; and the entries.
+/// `None` where the list has no law.
+fn decoded_lawful(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    struct_name: &str,
+    id: &str,
+) -> Option<String> {
+    let laws = super::rust_source::list_laws(&plan.roles, id);
+    if laws.is_empty() {
+        return None;
+    }
+    let starts: Vec<String> = laws
+        .iter()
+        .map(|law| match &law.against {
+            InputValue::Carrier { carrier, flag } => {
+                let (_, _, bit) = flag_masks(plan, carrier, flag);
+                format!(
+                    "((({} >> {bit}) & 1) != 0)",
+                    l.codec_field_decode_local(carrier)
+                )
+            }
+            InputValue::Input { name } => format!("({} != 0)", input_name(name)),
+            InputValue::PreviousEntry { .. } => "None".to_string(),
+        })
+        .collect();
+    let start = match starts.as_slice() {
+        [one] => one.clone(),
+        all => format!("({})", all.join(", ")),
+    };
+    Some(format!(
+        "{}({start}, {})",
+        lawful_class(struct_name, id),
+        l.codec_field_decode_local(id)
+    ))
 }
 
 /// The branch of a `__setattr__` whose branches so far are `so_far` that makes
@@ -1043,13 +1268,11 @@ fn arm_classes(struct_name: &str, group: &GateGroup) -> Vec<String> {
 /// read each member into.
 fn group_part(
     gathered: &mut Gathered,
-    plan: &EncodePlan<'_>,
-    l: &LangCtx,
-    imports: &[ImportContext],
-    struct_name: &str,
+    codec: &Printed<'_, '_>,
     group: &GateGroup,
     union: &mut bool,
 ) -> (GroupField, String) {
+    let (plan, l, struct_name) = (codec.plan, codec.l, codec.struct_name);
     let name = super::rust_source::group_accessor(group);
     let base = super::rust_source::group_type(struct_name, group);
     let classes = arm_classes(struct_name, group);
@@ -1062,15 +1285,7 @@ fn group_part(
             .iter()
             .find(|f| f.id == id)
             .expect("a group's member is a field of the codec");
-        let held = held_as(
-            gathered,
-            l,
-            imports,
-            struct_name,
-            field,
-            &plan.value(field),
-            false,
-        );
+        let held = held_as(gathered, codec, field, &plan.value(field), false);
         helds.insert(id, held);
     }
     let mut made = Vec::new();
@@ -1129,7 +1344,11 @@ fn group_part(
             if let Some(line) = &held.hold {
                 hold.push_str(&hold_line(&hold, &member, line));
             }
-            args.push(format!("{member}={}", l.codec_field_decode_local(id)));
+            // A list held to a law is held to it from the start the frame
+            // gave before the arm is made.
+            let read = decoded_lawful(plan, l, struct_name, id)
+                .unwrap_or_else(|| l.codec_field_decode_local(id));
+            args.push(format!("{member}={read}"));
         }
         let hold = setattr(&hold);
         gathered.classes.push_str(&format!(
@@ -1568,14 +1787,28 @@ fn encode_source(
     // reads it through `input_<name>`; one no gate reads is left to the parent
     // that asks for it.
     for said in plan.said.iter().filter(|said| said.read) {
-        if plan.roles.says_input_partly(&said.input.name) {
-            unreachable!("`{}`: {}", said.input.name, FORWARD_READ_BY_NO_GATE);
-        }
-        out.push_str(&format!(
-            "    {} = {}\n",
-            input_name(&said.input.name),
-            said_input(plan, l, imports, struct_name, &said.input.name)
-        ));
+        let name = &said.input.name;
+        let value = match &plan.roles.inputs[name] {
+            // A list a gate leaves out says nothing of the input, and its gate
+            // reads it clear, as every printer reads it (docs/adr/0065 §6 R8).
+            InputSource::List {
+                list,
+                input,
+                partly: true,
+                ..
+            } => {
+                let held = format!("src.{}", l.codec_field_id(list));
+                format!(
+                    "(0 if {held} is None else int({}))",
+                    law_start(plan, list, input, &held)
+                )
+            }
+            _ if plan.roles.says_input_partly(name) => {
+                unreachable!("`{name}`: {}", FORWARD_READ_BY_NO_GATE)
+            }
+            _ => said_input(plan, l, imports, struct_name, name),
+        };
+        out.push_str(&format!("    {} = {value}\n", input_name(name)));
     }
     // The `encode_source` of the module that writes the body `field`, or each
     // entry of the list `field`.
@@ -2148,8 +2381,22 @@ fn said_input(
                 )
             })
         }
-        InputSource::List { .. } => {
-            unreachable!("`unlowered` prints no other way a value says an input")
+        // The start of the list held to a law that every entry says the input
+        // by (docs/adr/0065 §6 R8), `None` where a gate leaves the list out:
+        // it then says nothing of it.
+        InputSource::List {
+            list,
+            input: entry_input,
+            partly,
+            ..
+        } => {
+            let held = format!("src.{}", l.codec_field_id(list));
+            let start = format!("int({})", law_start(plan, list, entry_input, &held));
+            if *partly {
+                format!("(None if {held} is None else {start})")
+            } else {
+                start
+            }
         }
     }
 }
@@ -2235,11 +2482,13 @@ fn input_check(
     format!("_h = {handed}\n{statements}")
 }
 
-/// Why the encode never reads an input a value may say nothing of: the roles
-/// forward an input only where no gate of the codec names it and one bind alone
-/// hands it on (`codec_roles::said_inputs`), and the body that forwards it is
-/// derived from it rather than checked against it, so neither a gate nor a
-/// check reads it (`Said::read`); only a parent asks for it.
+/// Why the encode never reads an input a value may say nothing of, but the
+/// start of a list a gate leaves out, which it reads clear: the roles forward
+/// an input only where no gate of the codec names it and one bind alone hands
+/// it on (`codec_roles::said_inputs`), and the body that forwards it, or the
+/// arm that may not read it, is derived from it rather than checked against
+/// it, so neither a gate nor a check reads it (`Said::read`); only a parent
+/// asks for it.
 const FORWARD_READ_BY_NO_GATE: &str = "no gate or check of the codec reads an input a body \
      forwards (codec_roles::said_inputs), so only a parent asks for it";
 
@@ -2349,8 +2598,14 @@ fn plain_measure(
                     .then(|| format!("isinstance({ARM}, ({},))", classes.join(", "))),
             };
         }
-        Measured::Start { .. } => {
-            unreachable!("`unlowered` prints no flag a list's start says")
+        // The start of the list held to a law that every entry says the input
+        // as (docs/adr/0065 §6 R8), 0 or 1; where a gate leaves the list
+        // out, or the arm the value holds does not hold it, the flag keeps
+        // the bits the value presents.
+        Measured::Start { list, input } => {
+            let content = element_read(plan, l, &list.id);
+            let size = format!("int({})", law_start(plan, &list.id, input, &content));
+            (content, size)
         }
     };
     MeasureText {

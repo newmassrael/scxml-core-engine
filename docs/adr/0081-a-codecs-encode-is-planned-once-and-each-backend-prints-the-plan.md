@@ -1109,6 +1109,24 @@ old encode, the old encode and its templates are removed in the same landing.
    past zero (R7) starts with that many entries made by default, a factory so no two values share one. A chain that
    holds a bare entry's place (R6a), is held to a law (R8), or whose entries say the input they are handed from the
    entry before waits for its landing.
+
+   *The fourteenth Python landing, 2026-11-16:* a list held to the law its entries say their inputs by (docs/adr/0065
+   §6 R8). The value holds it as a `{Codec}{List}Lawful`, a subclass of the runtime's `Lawful`
+   (`sce_forge_runtime/law.py`): the start the value gives and the entries in the class of their bound, made only by
+   a constructor that runs the law over them and raises `PresentIfMismatch` where an entry says otherwise, with no
+   way to change either after, as `Lawful` is in Rust and C++. The law is `{Codec}{List}Law`, named as every printer
+   names it, a tuple of the runtime's automata, one for each input: `Uniform` of a flag or an input bound to every
+   entry, `AfterKey` of an input the chain supplies from the entry before, each reading the input off an entry
+   through the entry codec's own `input_<name>`, and the kind `AfterKey` waits for a class `{Codec}{Chain}{Kind}Key`
+   whose `matches` reads the chain's `entry-id`. The start is a `bool` of one input, `None` where the entry before
+   decides it, a tuple of each one's for several. A `Lawful` reads as its entries, so the walk and the count read it
+   as they read a list. A flag bound to every entry is derived from the start (`Measured::Start`), and an input the
+   start says is the module's `input_<name>`, `None` where a gate leaves the list out, read clear by a gate. The
+   decode holds the list it read to the law from the carrier's bit or the input it is handed, and makes the value
+   inside the `try:` that answers a refused frame with `None`, so a frame whose entries break the law decodes to
+   nothing. As in C++, a list on one side of a gate held to a law over the codec's own input, or sharing its count
+   with another (R5), stays unlowered. The case printer states the list as its `Lawful` of the start and the entries
+   the source states.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

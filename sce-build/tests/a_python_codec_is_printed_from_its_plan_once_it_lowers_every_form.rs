@@ -729,6 +729,38 @@ fn a_chain_sets_the_flag_its_entries_end_on() {
     );
 }
 
+/// A list whose entries say the input the codec hands every one of them is
+/// held to that law as a `Lawful` of it (docs/adr/0065 §6 R8): the law is the
+/// runtime's automaton reading each entry through the entry codec's own
+/// `input_<name>`, the flag the list hands its entries is derived from the
+/// list's start, and the decode holds the list it read to the law from the
+/// flag the frame gave.
+///
+/// Turns red where `python_source::value_forms` names a list held to a law
+/// unlowered again, `law_part` stops defining the law or its `Lawful`,
+/// `plain_measure` stops reading a flag off the list's start, or
+/// `decoded_lawful` stops making the decoded list a `Lawful`.
+#[test]
+fn a_list_held_to_a_law_is_a_lawful_whose_start_derives_its_bound_flag() {
+    let name = "codec_repeat_flag_carrier";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.law import Lawful, Uniform\n",
+            "CodecRepeatFlagCarrierEntriesLaw = \
+             (Uniform(sce_codec_chain_flag_entry.input_wide),)\n",
+            "class CodecRepeatFlagCarrierEntriesLawful(Lawful):\n",
+            "    ENTRIES = CodecRepeatFlagCarrierEntriesList\n    \
+             LAW = CodecRepeatFlagCarrierEntriesLaw\n",
+            "_c_head = (_c_head & ~0x1) | ((int(src.entries.start)) << 0)\n",
+            "entries=CodecRepeatFlagCarrierEntriesLawful(",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a CBOR map names its form, and so does a group of
 /// a chain's memberships.

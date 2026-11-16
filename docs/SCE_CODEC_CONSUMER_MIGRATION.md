@@ -2062,3 +2062,18 @@ chains that end on their entries' flag or hand each entry what the one before it
   `override_<carrier>_<flag>` for each, `None` by default. A caller that is no chain leaves them out.
 - A chain of at least one entry starts with one entry made by default.
 
+## A printed Python codec holds a list to the law its entries say their inputs by (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that hold a list whose entries say an input the list hands them (docs/adr/0065 §6 R8): a flag of the codec bound
+to every entry, an input of its own, or whether the entry before is of a kind.
+
+- Such a list is a `{Codec}{List}Lawful`, a subclass of the runtime's `Lawful` (`sce_forge_runtime/law.py`), made
+  of the start and the entries: replace `Msg(entries=[a, b])` with `Msg(entries=MsgEntriesLawful(1, [a, b]))`,
+  or `MsgEntriesLawful.of([a, b])` to start from what the first entry says. Its constructor raises
+  `PresentIfMismatch` where an entry says otherwise; it reads as its entries (`len`, iteration), and
+  `msg.entries.entries` is the list in the class of its bound.
+- The flag bound to every entry is derived from the list's start: the value's own bit there is not written.
+- An input the list's start says is read off the value by the module's `input_<name>`, not handed to the encode.
+- A decode whose entries break the law answers `None`, as a frame a field refuses does.
+

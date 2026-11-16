@@ -15,8 +15,8 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, enum_variant, gates_label, group_accessor, group_choice,
-    integer_value, source_members, variant_choice, CodecPath as RustCodecPath, HeldCodecs,
-    CALLER_TAG_LABEL, VARIANT_MEMBER,
+    integer_value, law_start_bits, lawful_parts, source_members, variant_choice,
+    CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -201,7 +201,8 @@ fn value_literal(
             }
             "None".to_string()
         } else {
-            member_literal(&element.value, path, json, held).map_err(|e| format!("`{id}`: {e}"))?
+            member_literal(id, &element.value, path, json, held)
+                .map_err(|e| format!("`{id}`: {e}"))?
         };
         args.push(format!("{}={value}", l.codec_field_id(id)));
     }
@@ -228,7 +229,7 @@ fn value_literal(
                         .get(id)
                         .filter(|json| !json.is_null())
                         .ok_or_else(|| format!("`{label}`: the arm holds `{id}`"))?;
-                    member_literal(&plan.value(field), path, json, held)
+                    member_literal(id, &plan.value(field), path, json, held)
                         .map_err(|e| format!("`{label}`: `{id}`: {e}"))
                 };
                 let mut members = Vec::new();
@@ -283,11 +284,13 @@ fn value_literal(
     Ok(format!("{}({})", path.class(), args.join(", ")))
 }
 
-/// One value of the abstract type `value` of the codec at `path`, as a Python
-/// expression the dataclass's constructor takes: a number as a literal, a byte
-/// string as `bytes`, a text as a string literal, and a value of an enum as the
-/// variant of the type the codec's module imports it as.
+/// One value of `id`, of the abstract type `value`, of the codec at `path`, as
+/// a Python expression the dataclass's constructor takes: a number as a
+/// literal, a byte string as `bytes`, a text as a string literal, a value of an
+/// enum as the variant of the type the codec's module imports it as, and a
+/// list as its entries, held to its law where it has one.
 fn member_literal(
+    id: &str,
     value: &Value<'_>,
     path: &CodecPath,
     json: &serde_json::Value,
@@ -334,25 +337,57 @@ fn member_literal(
                 .ok_or_else(|| "text is a JSON string".to_string())?;
             serde_json::to_string(text).map_err(|e| e.to_string())
         }
-        Value::Scalar(_) => Err("a float or a bool is not spelled as a Python literal yet".into()),
+        Value::Scalar(_) => Err("a float or a bool has no Python lowering".into()),
         // Each entry its codec's dataclass, reached as a body's is, in a list
         // the value holds within its bound where it is made.
         Value::List { codec, law, .. } if law.is_none() => {
-            let entries = json
-                .as_array()
-                .ok_or_else(|| "a list is an array of its entries".to_string())?;
-            let mut items = Vec::new();
-            for entry in entries {
-                items.push(held.read(codec, &mut |plan, held_path, held| {
-                    value_literal(plan, &held_codec(path, held_path), entry, held)
-                })?);
-            }
-            Ok(format!("[{}]", items.join(", ")))
+            Ok(format!("[{}]", entry_literals(*codec, path, json, held)?))
         }
-        Value::List { .. } => Err(
-            "a list held to a law is not spelled as a Python literal yet: the Python printer \
-             prints no codec that holds one"
-                .into(),
-        ),
+        // A list held to a law, `{"start": {input: 0|1}, "entries": [..]}`, as
+        // the `Lawful` of it the codec's module defines, made of the start and
+        // the entries: the start of one input, or a tuple of each one's, a
+        // `bool` the value gives or `None` where the entry before decides it
+        // (docs/adr/0065 §6 R8).
+        Value::List { codec, law, .. } => {
+            let (start, entries) = lawful_parts(json)?;
+            let starts: Vec<String> = law_start_bits(law, start)?
+                .into_iter()
+                .map(|bit| match bit {
+                    Some(true) => "True".to_string(),
+                    Some(false) => "False".to_string(),
+                    None => "None".to_string(),
+                })
+                .collect();
+            let start = match starts.as_slice() {
+                [one] => one.clone(),
+                all => format!("({})", all.join(", ")),
+            };
+            Ok(format!(
+                "{}.{}({start}, [{}])",
+                path.module,
+                super::lawful_class(&path.type_name, id),
+                entry_literals(*codec, path, entries, held)?
+            ))
+        }
     }
+}
+
+/// The entries `json` states, each a value of the codec imported as `codec`,
+/// its dataclass reached as a body's is, joined for a list's literal.
+fn entry_literals(
+    codec: &str,
+    path: &CodecPath,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let entries = json
+        .as_array()
+        .ok_or_else(|| "a list is an array of its entries".to_string())?;
+    let mut items = Vec::new();
+    for entry in entries {
+        items.push(held.read(codec, &mut |plan, held_path, held| {
+            value_literal(plan, &held_codec(path, held_path), entry, held)
+        })?);
+    }
+    Ok(items.join(", "))
 }

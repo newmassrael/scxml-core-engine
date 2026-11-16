@@ -271,6 +271,9 @@ class {{ struct_name }}:
         {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{# A refinement a printed codec holds a list in (a law, docs/adr/0065 §6 R8)
+   raises the refusal of the entries that break it while the value is made,
+   as a field's own refusal raises (docs/adr/0099, amendment of 2026-11-16). #}
         return cls(
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
