@@ -7,7 +7,7 @@
 // Fixture: integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

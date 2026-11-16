@@ -14,7 +14,7 @@
 // Fixture: integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml
 // (canonical, shared with the other channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

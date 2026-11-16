@@ -8,7 +8,7 @@
 // Fixture: integration_resources/a_mesh_request_reaches_the_router/a_mesh_request_reaches_the_router.scxml
 // (canonical, shared with the other channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceForgeRuntime

@@ -12,7 +12,7 @@
 // Fixture: integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

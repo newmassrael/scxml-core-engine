@@ -7,7 +7,7 @@
 // Fixture: integration_resources/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

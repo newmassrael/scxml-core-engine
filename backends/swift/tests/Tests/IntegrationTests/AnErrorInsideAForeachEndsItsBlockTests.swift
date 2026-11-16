@@ -7,7 +7,7 @@
 // Fixture: integration_resources/an_error_inside_a_foreach_ends_its_block/an_error_inside_a_foreach_ends_its_block.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

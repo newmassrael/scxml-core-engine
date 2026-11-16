@@ -19,7 +19,7 @@
 // has a script session of its own to fail. A start that ran would initialize `ticks`, enter `s0`
 // and start the child, establishing the child's session; a child that ran would send `tick`.
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 @testable import IntegrationMachines
 import SceLua

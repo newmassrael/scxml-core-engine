@@ -12,7 +12,7 @@
 // Fixture: integration_resources/a_peer_named_at_run_time_reaches_the_router/
 // a_peer_named_at_run_time_reaches_the_router.scxml (canonical, shared with the other channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua
