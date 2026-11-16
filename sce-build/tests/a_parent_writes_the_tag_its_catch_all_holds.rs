@@ -302,18 +302,23 @@ fn the_go_parent_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// The Kotlin parent's `when` names the catch-all, which makes it exhaustive
-/// over the sealed variant, and reads the tag through the `when`'s own binding
-/// of the body; its entries are parted by `;`.
+/// The Kotlin parent, printed from its plan, reads the arm the body holds
+/// through the body's source in a `when` that names the catch-all, which makes
+/// it exhaustive over the sealed variant, and reads the tag the catch-all
+/// holds through the `when`'s own binding of the arm, as a `ULong` masked to
+/// K's bits.
 #[test]
 fn the_kotlin_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Kotlin);
     assert_holds(
         &code,
-        "        val _derivedHeader: UByte = ((when (val _held = this.key.body) { \
-         is CaChildVariant.CaLocal -> 0x00; \
-         is CaChildVariant.CaWide -> 0x20; \
-         is CaChildVariant.Default -> ((_held.tag.toInt() and 0x3) shl 5) })).toUByte()\n",
+        "            var _p_header_k: ULong = 0x0uL\n\
+         \x20           when (val _v = _e_key.body) {\n\
+         \x20               is CaChildVariant.CaLocal -> _p_header_k = _p_header_k or 0x0uL\n\
+         \x20               is CaChildVariant.CaWide -> _p_header_k = _p_header_k or 0x1uL\n\
+         \x20               is CaChildVariant.Default -> \
+         _p_header_k = _p_header_k or (_v.tag.wide and 0x3uL)\n\
+         \x20           }\n",
         "the Kotlin parent does not derive K from the catch-all's tag",
     );
 }
@@ -373,14 +378,15 @@ fn the_go_parent_writes_k_from_the_body_alone() {
     );
 }
 
-/// The Kotlin parent clears K in the stored header before it adds the derived
-/// bits.
+/// The Kotlin parent clears K in the header the source presents before it
+/// adds the derived bits, and writes the header as it folded it.
 #[test]
 fn the_kotlin_parent_writes_k_from_the_body_alone() {
     let code = parent_code(false, Language::Kotlin);
     assert_holds(
         &code,
-        "w.writeU8(((this.header and 0x9Fu.toUByte()) or _derivedHeader).toByte())",
+        "            _u_header = (_u_header and 0x60u.inv()) or \
+         ((_p_header_k and 0x3uL).toUInt() shl 5)\n",
         "the Kotlin parent writes the stored K bits with the derived ones",
     );
 }
@@ -710,7 +716,7 @@ fun rewrite(frame: ByteArray, stale: Int): CaParent? {
 
 fun main() {
     val held = rewrite(byteArrayOf(0x5d, 0x07), 0x3d)?.key?.body as? CaChildVariant.Default
-    if (held == null || held.tag.toInt() != 2 || held.body.payload.toInt() != 0x07) {
+    if (held == null || held.tag.tag.toInt() != 2 || held.body.payload.toInt() != 0x07) {
         fail("tag 2 must reach the catch-all, which keeps it")
     }
     val wide = rewrite(byteArrayOf(0x3d, 0x12, 0x34), 0x5d)?.key?.body as? CaChildVariant.CaWide
