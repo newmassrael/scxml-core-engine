@@ -1440,8 +1440,12 @@ template, a component and a configuration that reach a union are generated on al
    one held in another type crosses by the declared name of its variant through a function too. The walk hands
    the backend the unit's side of the part (`UnitPart`: its type, scope and whether it is a field of one entry
    of its record), which C11 names the unit's type by through `schema_unit_type::unit_type`, the walk the
-   unit's header is written by. What stays refused by name is a list of byte strings and a list or an optional
-   value that holds a list and names no record, enum or union, whose unit's struct is not the machine's.
+   unit's header is written by. A list or a value that may be absent that names no record, enum or union but
+   that the unit holds in a composite struct the machine's is not (a list of byte strings, of lists or of
+   values that may be absent; a value that may be absent inside a composition) is made the same way, the
+   backend answering `ComposedSpelling::unit_made_by_parts` for it, so C11 refuses no part a unit holds; a
+   field of one entry that may be absent, of a number or a text, is the machine's own optional and copied
+   whole, and one of a byte string no unit holds.
 
 ## Consequences
 

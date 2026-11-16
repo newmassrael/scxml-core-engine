@@ -2160,9 +2160,11 @@ one set of bytes.
    the unit's (`<machine type>_from_<unit type>`), declared before the statement that takes the branch
    (`ComposedSpelling::take_functions`), a union's one arm per case binding a pointer to the unit's record
    of its case (`composed_lowering::c11_union_crossing`, the function an adapter maps a union across a call
-   by). It refuses by name a message that holds a list of byte strings, or a list of lists or an optional
-   list that names no record, enum or union, whose unit's struct is not the machine's, rather than make
-   half of it. Kotlin's runtime library of §12.2
+   by). A list of byte strings, of lists or of values that may be absent, and a value that may be absent
+   inside a composition, which the unit holds in a composite struct of its own the machine's is not, are
+   made by such a function too, element by element (`ComposedSpelling::unit_made_by_parts`), so every
+   message a unit holds is made whole; only a field of one entry that may be absent, of a number or a
+   text, is the machine's own optional and copied whole. Kotlin's runtime library of §12.2
    (`com.sce.runtime.test`) is the Rust one ported type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
