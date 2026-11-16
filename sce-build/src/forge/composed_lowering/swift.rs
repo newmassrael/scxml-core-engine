@@ -1180,10 +1180,12 @@ mod tests {
 
     /// The Swift row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
-    /// composed value sent (docs/adr/0086, sections 5 and 6), and a union held
-    /// (docs/adr/0092, section 7).
+    /// composed value sent (docs/adr/0086, sections 5 and 6), a union held
+    /// (docs/adr/0092, section 7), and a variable of a record that holds a
+    /// composition, which a lift writes whole and a saved state keeps by its
+    /// type (docs/adr/0087, "Landing order" item 8).
     #[test]
-    fn the_swift_row_lowers_every_composed_position_and_holds_a_union() {
+    fn the_swift_row_lowers_every_composed_position() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Swift),
@@ -1192,7 +1194,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: true,
-                records: false,
+                records: true,
                 sends: true,
             }
         );

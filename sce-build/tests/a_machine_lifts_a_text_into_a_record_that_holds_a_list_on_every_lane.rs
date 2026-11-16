@@ -155,3 +155,35 @@ fn a_cpp_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
         "a record that holds a list is not read field by field:\n{code}"
     );
 }
+
+/// Pinned by the Swift row of `ComposedLowering::of`, `SwiftTarget::lift`'s
+/// `Lifted::Whole` arm, and `SwiftComposed::read_list`, `SwiftComposed::record_def` and
+/// `SwiftComposed::saved_record_ext` (`sce-build/src/forge/composed_lowering/swift.rs`):
+/// the variable is the machine's own struct, built whole by its memberwise initializer
+/// (docs/adr/0099, section 4), over `?`; the lift reads it whole through `liftValue`,
+/// the list held to both its counts; and the struct's extension writes it by
+/// `toSaved` and reads it back by `fromSaved`, the list held to its lower count.
+#[test]
+fn a_swift_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
+    let code = machine(Language::Swift, "_sm.swift");
+    holds(
+        &code,
+        &[
+            "public struct StaticLiftListPlanRecord: Equatable, Sendable {\n",
+            "StaticLiftListPlanRecord?",
+            "liftValue(",
+            "try sceValue.list(least: 1, bound: 3, ",
+            "extension StaticLiftListPlanRecord {\n",
+            "public static func fromSaved(_ value: JSONValue, _ what: String) throws -> \
+             StaticLiftListPlanRecord {",
+            "try SavedValues.list(try SavedValues.field(value, what, \"items\"), \
+             \"\\(what).items\", least: 1, capacity: 3) { sceSaved0, sceWhat0 in try \
+             StaticLiftListItemRecord.fromSaved(sceSaved0, sceWhat0) }",
+            "SavedValues.optional(answer) { $0.toSaved() }",
+        ],
+    );
+    assert!(
+        !code.contains("liftRecord("),
+        "a record that holds a list is not read field by field:\n{code}"
+    );
+}

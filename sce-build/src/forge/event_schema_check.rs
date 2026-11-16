@@ -357,6 +357,7 @@ impl ComposedLowering {
 
             Language::Swift => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
         }

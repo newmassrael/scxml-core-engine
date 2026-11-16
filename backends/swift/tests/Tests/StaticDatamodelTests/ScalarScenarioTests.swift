@@ -794,6 +794,41 @@ private func liftedText() -> Machine {
     )
 }
 
+// A record that holds a list of records, as a scenario writes it: each field by its id, the list's
+// items in their order (docs/adr/0087, "Landing order" item 8).
+private func liftedList() -> Machine {
+    let policy = StaticLiftListPolicy()
+    let item = { (i: StaticLiftListItemRecord) -> JSONValue in
+        .object([
+            (key: "title", value: .text(i.title)),
+            (key: "at", value: integer(i.at)),
+        ])
+    }
+    let answer = { (a: StaticLiftListPlanRecord) -> JSONValue in
+        .object([
+            (key: "title", value: .text(a.title)),
+            (key: "items", value: .array(a.items.map(item))),
+            (key: "priority", value: integer(a.priority)),
+        ])
+    }
+    let why = { (w: StaticLiftListLiftRefusalRecord) -> JSONValue in
+        .object([
+            (key: "code", value: .text(w.code.declaredName)),
+            (key: "path", value: .text(w.path)),
+            (key: "bound", value: optionalInteger(w.bound)),
+        ])
+    }
+    return drive(
+        policy,
+        variables: [
+            "answer": { policy.answer.map(answer) ?? .null },
+            "why": { policy.why.map(why) ?? .null },
+            "lifts": { integer(policy.lifts) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 // A union as a scenario writes it (docs/adr/0092, section 2.1): an object of the fields of its case
 // beside its tag, under `kind`, as the declared name of the case.
 private func unionShape(_ shape: StaticUnionUnionShapeUnion) -> JSONValue {
@@ -1472,6 +1507,13 @@ private func recordBytes() -> Machine {
 // (docs/adr/0087, section 9.1).
 @Test func aLiftReadsATextIntoARecordOrKeepsItsRefusal() {
     replay("static_lift", liftedText())
+}
+
+// A text is read into a record that holds a list of records, or its refusal kept, at every depth of
+// the record: the list's counts, a field of an item, and a container opened past the deepest the
+// record holds (docs/adr/0087, "Landing order" item 8).
+@Test func aLiftReadsATextIntoARecordThatHoldsAList() {
+    replay("static_lift_list", liftedList())
 }
 
 // A schema that grew is read with the defaults of the fields a later revision added
