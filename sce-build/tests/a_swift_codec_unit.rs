@@ -761,7 +761,7 @@ fn bits_a_swift_codec_cannot_lay_out_are_refused_by_name() {
         (
             r#"<sce:field id="n" sce:type="uint16" sce:byte="0" sce:bit-size="12"/>
                <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
-            "12 bits where its type UInt16 holds 16",
+            "12 bits that are not whole bytes, in a frame whose layout depends on what it holds",
         ),
         (
             r#"<sce:field id="past" sce:type="uint16" sce:byte="0" sce:bit-offset="4" sce:bit-size="8" sce:endian="native"/>"#,
@@ -1354,4 +1354,97 @@ fn a_cbor_open_enum_entry_takes_every_number_its_carrier_holds() {
         code.contains("Cbor.writeUint(UInt64(EnumUdsNrc.toUnderlying(value)), to: &frame)"),
         "{code}"
     );
+}
+
+#[test]
+fn a_field_of_an_enum_is_carried_as_the_number_its_variants_declare() {
+    let code = swift_of("tests/forge/resources/codec_enum_fields.scxml")
+        .expect("a codec of enum fields at fixed places is written");
+    for (expected, why) in [
+        (
+            "public var state: EnumSessionState = EnumSessionState.defaultSession",
+            "a value starts at the first variant its enum declares, not at the carrier's zero",
+        ),
+        (
+            "public var code: EnumUdsNrc = EnumUdsNrc.generalReject",
+            "an open enum starts at its first declared variant as well",
+        ),
+        (
+            "state: try declaredEnumValue(EnumSessionState.fromUnderlying(cursor.peekInteger(UInt8.self, at: 0, .big))),",
+            "a closed enum refuses a number none of its variants declares",
+        ),
+        (
+            "code: try EnumUdsNrc.fromUnderlying(cursor.peekInteger(UInt8.self, at: 1, .big)),",
+            "an open enum holds every number its carrier does",
+        ),
+        (
+            "storeInteger(EnumSessionState.toUnderlying(self.state), into: &frame, at: 0, .big)",
+            "an encode writes the number the variant declares",
+        ),
+        (
+            "storeInteger(EnumUdsNrc.toUnderlying(self.code), into: &frame, at: 1, .big)",
+            "an open enum's value is written as its number",
+        ),
+        (
+            "public static let frameLength = 3",
+            "an enum field takes the bytes of its carrier",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn a_gated_field_of_an_enum_is_read_and_written_in_turn_where_its_flag_is_set() {
+    let code = swift_of("tests/forge/resources/codec_enum_gated.scxml")
+        .expect("a codec with a gated enum field is written");
+    for (expected, why) in [
+        (
+            "public var state: EnumSessionState? = nil",
+            "a gated enum field is optional",
+        ),
+        (
+            "frame.code = try EnumUdsNrc.fromUnderlying(reader.readInteger(UInt8.self, .big))",
+            "a frame read field by field reads the carrier from the cursor",
+        ),
+        (
+            "if (frame.flags & 0x1) != 0 {\n            frame.state = try declaredEnumValue(EnumSessionState.fromUnderlying(reader.readInteger(UInt8.self, .big)))\n        }",
+            "the gated field is read where its flag is set, and refused for an undeclared number",
+        ),
+        (
+            "appendInteger(EnumUdsNrc.toUnderlying(self.code), to: &frame, .big)",
+            "an encode appends the number",
+        ),
+        (
+            "if let state = self.state {\n            appendInteger(EnumSessionState.toUnderlying(state), to: &frame, .big)\n        }",
+            "a gated enum field is appended where it is held",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn a_field_of_fewer_whole_bytes_than_its_type_is_read_and_written_as_those_bytes_in_turn() {
+    let code = swift_of_datamodel(
+        r#"<sce:field id="n" sce:type="uint32" sce:byte="0" sce:bit-size="24"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="3" sce:bit-size="tail" sce:max-size="8"/>"#,
+    )
+    .expect("whole bytes fewer than the type's are written in a frame read field by field");
+    for (expected, why) in [
+        (
+            "frame.n = try reader.readInteger(UInt32.self, bytes: 3, .big)",
+            "the decode reads the three bytes the field has and no fourth",
+        ),
+        (
+            "appendInteger(self.n, bytes: 3, to: &frame, .big)",
+            "the encode appends the three bytes and cuts what is above them",
+        ),
+        (
+            "public static let frameLength = 3",
+            "the fewest bytes count the field's own three",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
 }

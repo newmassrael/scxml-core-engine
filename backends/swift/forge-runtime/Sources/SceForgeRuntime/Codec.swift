@@ -34,6 +34,10 @@ public enum CodecError: Error, Equatable, Sendable {
     /// The bytes a text field holds are not well-formed UTF-8: a decode refuses the frame and
     /// consumes nothing.
     case invalidUtf8
+    /// A field typed by a closed enum holds a number none of the enum's variants declares: the
+    /// number is not a value of that type, so a decode refuses the frame and consumes nothing. An
+    /// open enum holds every number its carrier does and never answers this.
+    case undeclaredEnumValue
     /// An encode was handed a field that is present where the flag input that gates it says it is not,
     /// or absent where the input says it is: the value and the input contradict each other, so no
     /// frame is written.
@@ -116,6 +120,18 @@ public struct SceCursor: Sendable {
     ) throws(CodecError) -> T {
         let value = try peekInteger(type, at: 0, order)
         position += T.bitWidth / 8
+        return value
+    }
+
+    /// The integer of type `T` the next `count` bytes make in `order`, which the cursor moves past:
+    /// a field of whole bytes fewer than its type has, in a frame read field by field (docs/adr/0095
+    /// §1). Fewer bytes than `T` has leave its high bits zero, so the value is the unsigned number of
+    /// those bytes, as `peekInteger(_:bytes:at:_:)` reads it.
+    public mutating func readInteger<T: FixedWidthInteger>(
+        _ type: T.Type, bytes count: Int, _ order: SceByteOrder
+    ) throws(CodecError) -> T {
+        let value = try peekInteger(type, bytes: count, at: 0, order)
+        position += count
         return value
     }
 
@@ -247,11 +263,33 @@ public func storeInteger<T: FixedWidthInteger>(
 public func appendInteger<T: FixedWidthInteger>(
     _ value: T, to buffer: inout [UInt8], _ order: SceByteOrder
 ) {
-    let width = T.bitWidth / 8
-    for index in 0..<width {
-        let shift = order == .big ? (width - 1 - index) * 8 : index * 8
+    appendInteger(value, bytes: T.bitWidth / 8, to: &buffer, order)
+}
+
+/// Appends the low `count` bytes of `value` to `buffer` in `order`: the counterpart of
+/// `SceCursor.readInteger(_:bytes:_:)`, for a field of whole bytes fewer than its type has in a
+/// frame written field by field (docs/adr/0095 §1). The bytes above them are not written, so a
+/// value wider than the field is cut to it, as a field of bits is.
+public func appendInteger<T: FixedWidthInteger>(
+    _ value: T, bytes count: Int, to buffer: inout [UInt8], _ order: SceByteOrder
+) {
+    precondition(
+        count >= 1 && count <= T.bitWidth / 8,
+        "a field of \(count) bytes is not written from an integer of \(T.bitWidth / 8)")
+    for index in 0..<count {
+        let shift = order == .big ? (count - 1 - index) * 8 : index * 8
         buffer.append(UInt8(truncatingIfNeeded: value >> T(shift)))
     }
+}
+
+/// The value a closed enum's `fromUnderlying` found for a number a frame holds, or
+/// `undeclaredEnumValue` where it found none: a number no variant declares is not a value of the
+/// type, so the frame that holds it does not decode (docs/adr/0099: a refusal is not a value).
+public func declaredEnumValue<T>(_ value: T?) throws(CodecError) -> T {
+    guard let value else {
+        throw .undeclaredEnumValue
+    }
+    return value
 }
 
 /// Appends `value` to `buffer` as a variable-length unsigned integer: the counterpart of

@@ -271,6 +271,32 @@ import Testing
     #expect(out == [0x0A, 0x0B, 0x0C, 0x0D, 0x02, 0x01, 0xFE])
 }
 
+@Test func aFieldOfFewerBytesThanItsTypeIsWrittenAndReadAsThoseBytesAlone() throws {
+    var out: [UInt8] = []
+    appendInteger(UInt32(0xAA12_3456), bytes: 3, to: &out, .big)
+    appendInteger(UInt32(0xAA12_3456), bytes: 3, to: &out, .little)
+    appendInteger(UInt16(0x01FF), bytes: 1, to: &out, .big)
+    #expect(out == [0x12, 0x34, 0x56, 0x56, 0x34, 0x12, 0xFF], "the bytes above the field are cut")
+
+    var cursor = SceCursor(out)
+    #expect(try cursor.readInteger(UInt32.self, bytes: 3, .big) == 0x12_3456)
+    #expect(cursor.remaining == 4, "the read moved past its three bytes and no further")
+    #expect(try cursor.readInteger(UInt32.self, bytes: 3, .little) == 0x12_3456)
+    #expect(try cursor.readInteger(UInt16.self, bytes: 1, .big) == 0xFF)
+    #expect(cursor.remaining == 0)
+    #expect(throws: CodecError.needMoreBytes) { try cursor.readInteger(UInt16.self, bytes: 1, .big) }
+    #expect(cursor.remaining == 0, "a refused read has consumed nothing")
+}
+
+@Test func aNumberNoVariantDeclaresIsRefusedAndADeclaredOneIsItsValue() throws {
+    enum Kind: UInt8 {
+        case one = 1
+        case sixtyFour = 64
+    }
+    #expect(try declaredEnumValue(Kind(rawValue: 64)) == .sixtyFour)
+    #expect(throws: CodecError.undeclaredEnumValue) { try declaredEnumValue(Kind(rawValue: 2)) }
+}
+
 @Test func aTextIsTheUtf8BytesTheCursorReadsAndMovesPast() throws {
     // "a", "é" (two bytes) and a four-byte scalar.
     let bytes: [UInt8] = [0x61, 0xC3, 0xA9, 0xF0, 0x9F, 0x98, 0x80, 0x7F]

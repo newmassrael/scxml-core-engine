@@ -32,6 +32,107 @@ fn integer(sce_type: &SceType) -> Option<(&'static str, u32)> {
     })
 }
 
+/// How a field that holds a number is carried on the wire: the integer its bytes are read and
+/// written as, and, for a field typed by an imported enum, the enum that number is converted to and
+/// from (`sce:underlying-type` is the carrier the enum's document declares).
+struct Carrier {
+    /// The Swift integer type of the bytes.
+    integer: &'static str,
+    /// Its width in bits.
+    width: u32,
+    /// The enum the field holds; `None` for a field of an integer type.
+    enumeration: Option<EnumCarried>,
+}
+
+/// The imported enum a field holds, as the field converts its value: the conversion to the carrier,
+/// spelled by the shared context ([`LangCtx::codec_carrier_expr`]), the one from it
+/// ([`LangCtx::enum_from_underlying`]), and whether the set is open, whose conversion from the
+/// carrier is total.
+struct EnumCarried {
+    /// The field's type, an `enum:<alias>`.
+    sce_type: SceType,
+    /// The name of the enum's conversion from its carrier, written before an argument list.
+    from_underlying: String,
+    /// Whether the enum is open (`sce:strict-variants="false"`).
+    open: bool,
+}
+
+impl Carrier {
+    /// The integer the value `value` of the field is written as.
+    fn to_wire(&self, l: &LangCtx, value: &str) -> String {
+        match &self.enumeration {
+            Some(e) => l.codec_carrier_expr(&e.sce_type, value),
+            None => value.to_string(),
+        }
+    }
+
+    /// The value of the field that the integer `wire` stands for, as a decode reads it, with the
+    /// one `try` that covers every call in it: the integer itself, or the enum's value of it, which
+    /// a closed enum refuses with `undeclaredEnumValue` for a number none of its variants declares
+    /// (the runtime's `declaredEnumValue`), as the other backends refuse it.
+    fn from_wire(&self, wire: &str) -> String {
+        match &self.enumeration {
+            None => format!("try {wire}"),
+            Some(e) if e.open => format!("try {}({wire})", e.from_underlying),
+            Some(e) => format!("try declaredEnumValue({}({wire}))", e.from_underlying),
+        }
+    }
+}
+
+/// The carrier of each field of `m` that holds a number, by the field's id: an integer field's own
+/// type, and an enum field's carrier as its import resolved it. An enum whose import resolved no
+/// integer carrier is refused by name, as it is on every backend.
+fn carriers(
+    l: &LangCtx,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<std::collections::HashMap<String, Carrier>, ForgeError> {
+    let mut out = std::collections::HashMap::new();
+    for f in m
+        .fields
+        .iter()
+        .filter(|f| matches!(f.bit_size, BitSize::Fixed { .. } | BitSize::Vle { .. }))
+    {
+        let carrier = match &f.sce_type {
+            SceType::Enum(r) => {
+                let resolved = crate::forge::cbor_codec::enum_carrier(imports, &r.alias)
+                    .as_ref()
+                    .and_then(integer);
+                let Some((integer, width)) = resolved else {
+                    return Err(ForgeError::from(GenerateError::unsupported(refusal(
+                        m,
+                        &format!(
+                            "field '{}': an enum '{}' whose import resolves no integer carrier",
+                            f.id, r.alias
+                        ),
+                    ))));
+                };
+                Carrier {
+                    integer,
+                    width,
+                    enumeration: Some(EnumCarried {
+                        sce_type: f.sce_type.clone(),
+                        from_underlying: l.enum_from_underlying(&r.alias),
+                        open: l.enum_is_open(&r.alias),
+                    }),
+                }
+            }
+            other => {
+                let Some((integer, width)) = integer(other) else {
+                    continue;
+                };
+                Carrier {
+                    integer,
+                    width,
+                    enumeration: None,
+                }
+            }
+        };
+        out.insert(f.id.clone(), carrier);
+    }
+    Ok(out)
+}
+
 /// What of the codec `m` the Swift backend does not lower yet, described for a refusal by name
 /// (`generate/unsupported-feature`) before [`render`] writes a field; `None` for a codec it does.
 ///
@@ -212,21 +313,34 @@ fn field_unlowered(
     if f.is_variable_length() || f.length_field.is_some() {
         return what("a variable-length field");
     }
-    let Some((swift_type, width)) = integer(&f.sce_type) else {
+    // A number is an integer of a native width, or a value of an imported enum, which the wire
+    // carries as the integer its document declares (`sce:underlying-type`) and which the render
+    // resolves through the import ([`Carrier`]).
+    let integer_type = integer(&f.sce_type);
+    if integer_type.is_none() && !matches!(f.sce_type, SceType::Enum(_)) {
         return what(&format!("a `{}` field", f.sce_type.as_attr()));
-    };
+    }
     let Some(span) = BitSpan::of(f, m.default_endian) else {
         return what("a bit size that is not fixed");
     };
-    // A field that is not the whole of its integer is bits of the word its bytes make
-    // (docs/adr/0095 §1), laid at a byte of the frame, which a frame that is read field by
-    // field has no fixed place for. Its value is an unsigned number of its bits, which a signed
-    // type would need a sign for.
-    if !whole_of_its_type(&span, width) {
-        if is_sequential(m) && f.bit_offset.is_some() {
+    // A frame read field by field gives each field bytes of its own, read in the order of the
+    // document: a field of whole bytes is read as the number they make, however many of its
+    // type's bytes they are, and a field of bits has no byte of its own to be read from
+    // (docs/adr/0095 §3).
+    if is_sequential(m) && !span.whole() {
+        if f.bit_offset.is_some() {
             return what("a bit offset in a frame whose layout depends on what it holds");
         }
-        if is_sequential(m) || !f.sce_type.is_unsigned() {
+        return what(&format!(
+            "{} bits that are not whole bytes, in a frame whose layout depends on what it holds",
+            span.bits
+        ));
+    }
+    // A field that is not the whole of its integer is an unsigned number of its bits
+    // (docs/adr/0095 §1), which a signed type would need a sign for. An enum's value is the one
+    // its variants declare for that number, whatever its carrier's sign.
+    if let Some((swift_type, width)) = integer_type {
+        if !whole_of_its_type(&span, width) && !f.sce_type.is_unsigned() {
             return what(&format!(
                 "{} bits where its type {swift_type} holds {width}",
                 span.bits
@@ -585,15 +699,15 @@ fn bits_of_word(span: &BitSpan, swift_type: &str) -> String {
 /// The statement that ors the piece `piece` of the field `f` into byte `at` of the frame
 /// (docs/adr/0095 §2): the value moved down to the piece's first bit and masked, narrowed to a
 /// byte where the field is wider than one, and moved up to where the piece lands in the byte.
-fn piece_write(f: &CodecField, at: u32, piece: Piece) -> String {
-    let value = format!("self.{}", f.id);
+fn piece_write(l: &LangCtx, f: &CodecField, carrier: &Carrier, at: u32, piece: Piece) -> String {
+    let value = carrier.to_wire(l, &format!("self.{}", f.id));
     let down = if piece.from == 0 {
         value
     } else {
         format!("({value} >> {})", piece.from)
     };
     let masked = format!("{down} & 0x{:X}", piece.mask);
-    let byte = if matches!(f.sce_type, SceType::Uint8) {
+    let byte = if carrier.integer == "UInt8" {
         format!("({masked})")
     } else {
         format!("UInt8(truncatingIfNeeded: {masked})")
@@ -610,28 +724,38 @@ fn piece_write(f: &CodecField, at: u32, piece: Piece) -> String {
 ///
 /// A carrier an embedded variant fills (`parent_tag_derived`) is a field of a codec that embeds
 /// another, which is read field by field and never written here.
-fn fixed_writes(m: &CodecModel) -> Vec<String> {
+fn fixed_writes(
+    l: &LangCtx,
+    m: &CodecModel,
+    carriers: &std::collections::HashMap<String, Carrier>,
+) -> Vec<String> {
+    let carrier_of = |f: &CodecField| {
+        carriers
+            .get(&f.id)
+            .expect("every field of a frame laid out by byte holds a number")
+    };
     let mut lines = Vec::new();
     for slot in crate::forge::bit_layout::slots(&m.fields, m.default_endian) {
         match slot {
             Slot::Whole(f) => {
                 let span = BitSpan::of(f, m.default_endian).expect("a fixed field");
-                let width = integer(&f.sce_type).map_or(0, |(_, width)| width);
-                if whole_of_its_type(&span, width) {
+                let carrier = carrier_of(f);
+                if whole_of_its_type(&span, carrier.width) {
                     let order = order_of(span.endian);
                     lines.push(format!(
-                        "storeInteger(self.{}, into: &frame, at: {}, .{order})",
-                        f.id, span.byte
+                        "storeInteger({}, into: &frame, at: {}, .{order})",
+                        carrier.to_wire(l, &format!("self.{}", f.id)),
+                        span.byte
                     ));
                 } else {
                     for at in span.byte..span.end() {
-                        lines.extend(span.piece(at).map(|p| piece_write(f, at, p)));
+                        lines.extend(span.piece(at).map(|p| piece_write(l, f, carrier, at, p)));
                     }
                 }
             }
             Slot::Byte { at, pieces } => {
                 for (f, piece) in pieces {
-                    lines.push(piece_write(f, at, piece));
+                    lines.push(piece_write(l, f, carrier_of(f), at, piece));
                 }
             }
         }
@@ -1013,6 +1137,8 @@ pub(super) fn render(
     }
     let l = LangCtx::new(crate::generator::Language::Swift, imports);
     let sequential = is_sequential(m);
+    // The integer each number of the frame is carried as, an enum's as its import declares it.
+    let carriers = carriers(&l, m, imports)?;
     // The bits of an entry's value that are its identifier, for each chain that leaves flags out of it.
     let masks = chain_identifier_masks(m, imports);
     // The carriers whose flags an embedded variant's arm fills at encode (ADR 0058).
@@ -1305,48 +1431,105 @@ pub(super) fn render(
                     },
                 });
             }
-            let (swift_type, width) =
-                integer(&f.sce_type).expect("a field this renderer is given is an integer");
-            // Where the field's bits lie in a frame laid out by byte (docs/adr/0095 §1).
-            let span = BitSpan::of(f, m.default_endian).filter(|_| !sequential);
+            let carrier = carriers
+                .get(&f.id)
+                .expect("a field this renderer is given holds a number");
+            // The field's type: its integer, or the enum the integer stands for.
+            let swift_type = l.type_name(&f.sce_type).into_owned();
+            // Where the field's bits lie: in a frame laid out by byte the word it is read from
+            // (docs/adr/0095 §1), and in a frame read field by field the bytes of its own, which
+            // are whole and may be fewer than its carrier has.
+            let span = BitSpan::of(f, m.default_endian);
+            let positional = span.filter(|_| !sequential);
+            let order = order_of(f.effective_endian(m.default_endian));
             if present.is_some() {
                 // On the wire only on a condition: it adds nothing to the fewest bytes.
             } else if f.is_vle() {
                 frame_length += 1;
-            } else if let Some(span) = &span {
+            } else if let Some(span) = &positional {
                 // The frame runs to the end of the last field's bytes.
                 frame_length = frame_length.max(span.end());
             } else {
-                frame_length += width / 8;
+                frame_length += span.map_or(carrier.width / 8, |s| s.bytes);
             }
-            let order = order_of(f.effective_endian(m.default_endian));
-            // The carrier's value before anything is read into it: the bits the document's
-            // `<sce:flag value=>` declarations set, and zero where it declares none.
-            let default = match flag_default_carrier_value(f) {
+            // The bytes a field of a frame read field by field has, where they are fewer than its
+            // carrier's: read and written as the number those bytes make.
+            let narrow_bytes = span
+                .filter(|s| !f.is_vle() && 8 * s.bytes != carrier.width)
+                .map(|s| s.bytes);
+            // The decode of the field from the cursor at its place in a frame read field by field.
+            let read = carrier.from_wire(&if f.is_vle() {
+                format!("reader.readVle({}.self)", carrier.integer)
+            } else if let Some(bytes) = narrow_bytes {
+                format!(
+                    "reader.readInteger({}.self, bytes: {bytes}, .{order})",
+                    carrier.integer
+                )
+            } else {
+                format!("reader.readInteger({}.self, .{order})", carrier.integer)
+            });
+            // The statement that appends `value`, the field's value or what a gated one holds, to a
+            // frame written field by field: the carrier of a value the field holds, with the bits a
+            // parent derives in a byte of it where an embedded variant fills flags of it (ADR 0058).
+            let derived = parent_tag_derived(&derivations, &f.id);
+            let append = |value: &str| {
+                let held = carrier.to_wire(&l, value);
+                if f.is_vle() {
+                    return format!("appendVle({held}, to: &frame)");
+                }
+                let wire = match (&derived["keep"], &derived["terms"]) {
+                    (serde_json::Value::String(keep), serde_json::Value::String(terms)) => {
+                        format!("({held} & {keep}) | {terms}")
+                    }
+                    _ => held,
+                };
+                if let Some(bytes) = narrow_bytes {
+                    format!("appendInteger({wire}, bytes: {bytes}, to: &frame, .{order})")
+                } else {
+                    format!("appendInteger({wire}, to: &frame, .{order})")
+                }
+            };
+            // The decode of the field at its byte in a frame laid out by byte: the whole of its
+            // carrier, or the bits of the word its bytes make.
+            let word = positional.map(|s| {
+                if whole_of_its_type(&s, carrier.width) {
+                    format!(
+                        "cursor.peekInteger({}.self, at: {}, .{order})",
+                        carrier.integer, f.byte_offset
+                    )
+                } else {
+                    bits_of_word(&s, carrier.integer)
+                }
+            });
+            // The value before anything is read into it: for an enum the first variant its document
+            // declares, and for an integer the bits the document's `<sce:flag value=>` declarations
+            // set, zero where it declares none.
+            let default = match (&f.sce_type, flag_default_carrier_value(f)) {
                 _ if present.is_some() => "nil".to_string(),
-                0 => "0".to_string(),
-                bits => format!("0x{bits:X}"),
+                (SceType::Enum(r), _) => l.enum_default_expr(&r.alias),
+                (_, 0) => "0".to_string(),
+                (_, bits) => format!("0x{bits:X}"),
             };
             serde_json::json!({
                 "id": f.id,
                 "swift_type": format!("{swift_type}{optional}"),
-                "value_type": swift_type,
                 "present": present,
                 "offset": f.byte_offset,
                 "order": order,
                 "default": default,
                 "vle": f.is_vle(),
                 "flags": f.flags.iter().map(flag_context).collect::<Vec<_>>(),
-                "derived": parent_tag_derived(&derivations, &f.id),
-                // Where its bits lie in the word its bytes make, and the decode that reads them,
-                // for a field that is bits of a word: `null` for a field that is the whole of its
-                // integer.
-                "bits": span.filter(|s| !whole_of_its_type(s, width)).map(|s| {
+                "read": read,
+                "append": append(&format!("self.{}", f.id)),
+                "append_held": append(&f.id),
+                "peek": word.as_deref().map(|word| carrier.from_wire(word)),
+                // Where its bits lie in the word its bytes make, for a field that is bits of a
+                // word: `null` for a field that is the whole of its carrier.
+                "bits": positional.filter(|s| !whole_of_its_type(s, carrier.width)).map(|s| {
                     serde_json::json!({
                         "shift": s.shift,
                         "size": s.bits,
                         "bytes": s.bytes,
-                        "decode": bits_of_word(&s, swift_type),
                     })
                 }),
             })
@@ -1367,7 +1550,7 @@ pub(super) fn render(
     let writes = if sequential {
         Vec::new()
     } else {
-        fixed_writes(m)
+        fixed_writes(&l, m, &carriers)
     };
     ctx.insert("fixed_writes".into(), writes.into());
     ctx.insert(

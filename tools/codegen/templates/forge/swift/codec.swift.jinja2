@@ -238,10 +238,8 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
 {{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
-{% elif f.vle %}
-{{ pad }}        frame.{{ f.id }} = try reader.readVle({{ f.value_type }}.self)
 {% else %}
-{{ pad }}        frame.{{ f.id }} = try reader.readInteger({{ f.value_type }}.self, .{{ f.order }})
+{{ pad }}        frame.{{ f.id }} = {{ f.read }}
 {% endif %}
 {% if f.present %}
         }
@@ -258,11 +256,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
         _ = try cursor.peekSlice(frameLength)
         let frame = {{ struct_name }}(
 {% for f in fields %}
-{% if f.bits %}
-            {{ f.id }}: try {{ f.bits.decode }}{{ "," if not loop.last }}
-{% else %}
-            {{ f.id }}: try cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }}){{ "," if not loop.last }}
-{% endif %}
+            {{ f.id }}: {{ f.peek }}{{ "," if not loop.last }}
 {% endfor %}
         )
         try cursor.advance(frameLength)
@@ -327,12 +321,10 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            try entry.encode(into: &piece{{ f.list.encode_args }})
 {{ pad }}            frame += piece.bytes
 {{ pad }}        }
-{% elif f.vle %}
-{{ pad }}        appendVle({{ src }}, to: &frame)
-{% elif f.derived %}
-{{ pad }}        appendInteger(({{ src }} & {{ f.derived.keep }}) | {{ f.derived.terms }}, to: &frame, .{{ f.order }})
+{% elif f.present %}
+{{ pad }}        {{ f.append_held }}
 {% else %}
-{{ pad }}        appendInteger({{ src }}, to: &frame, .{{ f.order }})
+{{ pad }}        {{ f.append }}
 {% endif %}
 {% if f.present %}
         }
