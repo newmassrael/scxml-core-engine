@@ -2186,6 +2186,14 @@ A name left over is refused in one of two readings:
   `conut` beside a `<data id="count">` carries `count` as its
   `fix: replace_one_of`. There may be none, in which case the record
   carries no `fix` (§3 of `SCE_ERROR_CONTRACT.md`).
+- **`expression/inline-kind-not-a-value`**, when it is the `id` of an
+  inline kind the document declares (`cond="canEnterProgramming"`
+  beside `<data id="canEnterProgramming" sce:kind="condition">`). The
+  name is declared, but an inline kind is an artifact the host imports
+  and calls, not a value of the datamodel (SCE_FORGE.md §3.4, "Kind
+  Reference Resolution"), so the record names it as that and carries no
+  `fix`. Until 2026-11-16 it was `expression/unknown-identifier`, which
+  told the author to declare a name that already was.
 
 Two positions are deliberately exempt. `typeof x` on an undeclared name
 is ECMA-262 11.4.3's one non-throwing read — it is how a document asks
@@ -10089,7 +10097,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (538 codes)
+## Appendix — `DiagnosticCode` index (539 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10437,6 +10445,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-construct` | Expression |
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
+| `expression/inline-kind-not-a-value` | Expression |
 | `expression/unknown-enum-variant` | Expression |
 | `expression/unknown-member` | Expression |
 | `expression/member-of-non-record` | Expression |

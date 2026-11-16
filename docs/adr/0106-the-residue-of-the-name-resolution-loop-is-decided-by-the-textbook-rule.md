@@ -78,9 +78,11 @@ writes, on all six backends, held by one shared scenario.
 
 Decided: keep the explicit host binding SCE_FORGE.md already states (section 4.4 and "Kind Reference Resolution",
 corrected in `c8d25c2f92`); do not bind a guard's name to an inline kind by matching its inputs to the statechart's
-data by name, which would make the meaning of a guard depend on a coincidence of names. Left: the refusal of
-`cond="canEnterProgramming"` should say that the name is an inline kind's artifact and how the host binds it,
-rather than that the name is not declared.
+data by name, which would make the meaning of a guard depend on a coincidence of names.
+
+Implemented (2026-11-16): the statechart's identifier resolver knows the inline kinds a document declares
+(`DocumentScope::inline_kind`), and a read of one's id is `expression/inline-kind-not-a-value`, naming the kind,
+with no fix, where it was `expression/unknown-identifier` telling the author to declare a name that already was.
 
 ### #184 — the `code:` vocabulary is removed from the C++ parser
 

@@ -812,6 +812,7 @@ references against a real document and drift silently.
 | `expression/argument-count-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/empty` | `expression` | no | SCE Forge §3.4 |
 | `expression/go-ternary-unsupported` | `expression` | no | SCE Forge §3.4 |
+| `expression/inline-kind-not-a-value` | `expression` | no | SCE Forge §3.4 |
 | `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
 | `expression/lex` | `expression` | no | SCE Forge §3.4 |
 | `expression/literal-not-callable` | `expression` | no | W3C SCXML §B.2 |

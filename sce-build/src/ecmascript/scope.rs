@@ -43,7 +43,7 @@
 //! document-wide set would let one function's parameter silence a typo in
 //! another.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Expr, ExprKind, Stmt};
 use crate::model::{Action, Invoke, SCXMLModel, State};
@@ -109,6 +109,11 @@ pub enum ScopeStage {
 #[derive(Debug, Clone, Default)]
 pub struct DocumentScope {
     declared: BTreeSet<String>,
+    /// The ids of the inline kinds the document declares, each with its
+    /// `sce:kind`. Not declared names: an inline kind gives no variable
+    /// ([`crate::model::SCXMLModel::inline_kinds`]), and a read of one is
+    /// refused as what it is rather than as a name nothing declares.
+    inline_kinds: BTreeMap<String, &'static str>,
 }
 
 impl DocumentScope {
@@ -132,6 +137,11 @@ impl DocumentScope {
         for var in &model.variables {
             scope.declare(&var.id);
         }
+        for inline in &model.inline_kinds {
+            scope
+                .inline_kinds
+                .insert(inline.id.clone(), inline.forge.document.kind().as_attr());
+        }
         if stage >= ScopeStage::LoadTime {
             for script in &model.global_scripts {
                 scope.declare_chunk(&script.content);
@@ -152,6 +162,7 @@ impl DocumentScope {
                 .iter()
                 .map(|n| (*n).to_string())
                 .collect(),
+            inline_kinds: BTreeMap::new(),
         }
     }
 
@@ -195,6 +206,12 @@ impl DocumentScope {
 
     pub fn declares(&self, name: &str) -> bool {
         self.declared.contains(name)
+    }
+
+    /// The `sce:kind` of the inline kind the document declares under `id`
+    /// `name`, when it declares one.
+    pub fn inline_kind(&self, name: &str) -> Option<&'static str> {
+        self.inline_kinds.get(name).copied()
     }
 
     /// The declared names close enough to `name` to be what the author

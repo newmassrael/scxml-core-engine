@@ -210,6 +210,7 @@
         "expression/unsupported-construct",
         "expression/unsupported-builtin",
         "expression/unknown-identifier",
+        "expression/inline-kind-not-a-value",
         "expression/unknown-enum-variant",
         "expression/unknown-member",
         "expression/member-of-non-record",

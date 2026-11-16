@@ -5864,6 +5864,26 @@ pub enum ExprError {
         candidates: Vec<String>,
     },
 
+    /// A name read for its value that is the `id` of an inline kind the
+    /// document declares — `cond="canEnterProgramming"` beside
+    /// `<data id="canEnterProgramming" sce:kind="condition">`.
+    ///
+    /// Separate from [`ExprError::UnknownIdentifier`] because the name IS
+    /// declared, and the repair is not a spelling: an inline kind is an
+    /// artifact the host imports and calls, not a value of the datamodel
+    /// (SCE_FORGE.md section 3.4, "Kind Reference Resolution";
+    /// docs/adr/0106, item #102). Told as "not declared", it sent the author
+    /// to declare a name that already was.
+    #[error(
+        "{name} is the id of an inline {kind}, which is an artifact the host binds and calls, \
+         not a value of this document's datamodel"
+    )]
+    InlineKindIsNoValue {
+        name: String,
+        /// The inline kind's `sce:kind`, as written.
+        kind: &'static str,
+    },
+
     /// `<alias>.<name>` where `<alias>` is an imported enum that declares no
     /// variant `<name>` — `Mode.RUN` against an enum declaring `RUN_BATCH`.
     ///

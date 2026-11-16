@@ -110,6 +110,13 @@ impl<'a> Frames<'a> {
         if self.bound(name) || self.scope.declares(name) {
             return Ok(());
         }
+        if let Some(kind) = self.scope.inline_kind(name) {
+            return Err(ExprError::InlineKindIsNoValue {
+                name: name.to_string(),
+                kind,
+            }
+            .at(Some(at.clone())));
+        }
         let refusal =
             builtins::unsupported_global(name).unwrap_or_else(|| ExprError::UnknownIdentifier {
                 name: name.to_string(),
@@ -352,5 +359,71 @@ fn hoist(stmts: &[Stmt], out: &mut BTreeSet<String>) {
             }
             Stmt::Expr(_) | Stmt::Return(_) | Stmt::Break | Stmt::Continue | Stmt::Empty => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A statechart with a variable and an inline condition beside it.
+    const DOOR: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="door" datamodel="ecmascript" initial="closed">
+  <datamodel>
+    <data id="ready" expr="true"/>
+    <data id="canEnterProgramming" sce:kind="condition">
+      <datamodel>
+        <data id="ignition" sce:type="bool" sce:direction="in"/>
+        <data id="result" sce:type="bool" sce:direction="out" expr="ignition === true"/>
+      </datamodel>
+    </data>
+  </datamodel>
+  <state id="closed"/>
+</scxml>"#;
+
+    /// What resolving `source` against the door's scope refuses, if anything.
+    fn refused(source: &str) -> Option<ExprError> {
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(DOOR, "door")
+            .expect("the door parses");
+        assert_eq!(
+            model.inline_kinds.len(),
+            1,
+            "the door declares one inline kind"
+        );
+        let scope = DocumentScope::from_model(&model);
+        let expr = super::super::parser::parse_expression(source).expect("the source parses");
+        expression(&expr, &scope).err().map(|refusal| refusal.error)
+    }
+
+    /// The inline kind's id is refused as the artifact it is, not as a
+    /// name nothing declares.
+    #[test]
+    fn an_inline_kinds_id_is_no_value() {
+        match refused("canEnterProgramming") {
+            Some(ExprError::InlineKindIsNoValue { name, kind }) => {
+                assert_eq!((name.as_str(), kind), ("canEnterProgramming", "condition"));
+            }
+            other => panic!("expected InlineKindIsNoValue, got {other:?}"),
+        }
+        assert!(
+            matches!(
+                refused("canEnterProgramming()"),
+                Some(ExprError::InlineKindIsNoValue { .. })
+            ),
+            "a call reads the name too"
+        );
+    }
+
+    /// The controls: a declared variable resolves, and a name nothing
+    /// declares is still an unknown identifier.
+    #[test]
+    fn a_variable_resolves_and_an_unknown_name_is_unknown() {
+        assert!(refused("ready").is_none());
+        assert!(matches!(
+            refused("conut"),
+            Some(ExprError::UnknownIdentifier { .. })
+        ));
     }
 }

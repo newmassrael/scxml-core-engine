@@ -1449,6 +1449,12 @@ pub enum DiagnosticCode {
     // misses among them and there may be none.
     #[serde(rename = "expression/unknown-identifier")]
     ExpressionUnknownIdentifier,
+    // A name read for its value that is the id of an inline kind the
+    // document declares. Distinct from `unknown-identifier`: the name is
+    // declared, and the repair is the host's binding of the kind's
+    // artifact, not a spelling.
+    #[serde(rename = "expression/inline-kind-not-a-value")]
+    ExpressionInlineKindNotAValue,
     // `<alias>.<name>` on an imported enum that declares no such variant —
     // `Mode.RUN` where the enum declares `RUN_BATCH`. Distinct from
     // `unknown-identifier` because the repair comes from the IMPORTED
@@ -4140,6 +4146,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedConstruct,
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
+        ExpressionInlineKindNotAValue,
         ExpressionUnknownEnumVariant,
         ExpressionUnknownMember,
         ExpressionMemberOfNonRecord,
@@ -4878,6 +4885,9 @@ impl DiagnosticCode {
             // (`reject_unknown_names`), whose expressions inherit the rule
             // as the ECMAScript subset they are.
             ExpressionUnknownIdentifier => Some("W3C SCXML §B.2"),
+            // What an inline kind's id is to an expression is SCE's rule,
+            // written beside its expression language.
+            ExpressionInlineKindNotAValue => Some("SCE Forge §3.4"),
             // Not B.2: an enum alias is SCE's, not ECMAScript's. What an
             // `enum:<alias>` is and which member references it admits is
             // written in the accepted subset's typed-field section.
@@ -5847,6 +5857,7 @@ impl DiagnosticCode {
             | ExpressionUnsupportedConstruct
             | ExpressionUnsupportedBuiltin
             | ExpressionUnknownIdentifier
+            | ExpressionInlineKindNotAValue
             | ExpressionUnknownEnumVariant
             | ExpressionUnknownMember
             | ExpressionMemberOfNonRecord
@@ -6398,6 +6409,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
+            ExpressionInlineKindNotAValue => "expression/inline-kind-not-a-value",
             ExpressionUnknownEnumVariant => "expression/unknown-enum-variant",
             ExpressionUnknownMember => "expression/unknown-member",
             ExpressionMemberOfNonRecord => "expression/member-of-non-record",
@@ -11739,6 +11751,16 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             // same way are one diagnostic identity.
             key_fragments: vec![name.clone()],
         },
+        // The name as written is `actual`; the repair is the host's
+        // binding of the kind's artifact, which no edit here names.
+        ExprError::InlineKindIsNoValue { name, kind } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionInlineKindNotAValue,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), (*kind).to_string()],
+        },
         // The closed set is the fix, exactly as for
         // `default-covers-unknown-variant`: the producer knows every legal
         // member and not which one was meant. The near misses shape only
@@ -16193,6 +16215,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1f905d2454137dec","code":"expression/unknown-identifier","stage":"expression","spec":"W3C SCXML §B.2","message":"wholesaleDistributor is not declared by this document","actual":"wholesaleDistributor"}"#,
+            ),
+            (
+                // A name the document declares, as an inline kind's id:
+                // not a spelling, so no fix.
+                "forge/expression-inline-kind-not-a-value",
+                ExprError::InlineKindIsNoValue {
+                    name: "canEnterProgramming".into(),
+                    kind: "condition",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c088409d1a770452","code":"expression/inline-kind-not-a-value","stage":"expression","spec":"SCE Forge §3.4","message":"canEnterProgramming is the id of an inline condition, which is an artifact the host binds and calls, not a value of this document's datamodel","actual":"canEnterProgramming"}"#,
             ),
             (
                 // A member the imported enum does not declare. `fix` offers
@@ -20801,6 +20834,9 @@ mod tests {
             // One move, to the one element a reader asked for the name
             // under: deterministic, and `expected` stays absent.
             | ValidationMisplacedElement
+            // The repair is the host's binding, which no edit of the
+            // expression names: no fix, and no `expected`.
+            | ExpressionInlineKindNotAValue
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
@@ -21934,6 +21970,7 @@ mod tests {
                 | ExpressionUnsupportedStringEscape
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
+                | ExpressionInlineKindNotAValue
                 | ExpressionUnknownEnumVariant
                 | ExpressionUnknownMember
                 | ExpressionMemberOfNonRecord
@@ -22276,9 +22313,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            538,
+            539,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 538 distinct variants to match the DiagnosticCode \
+             expected 539 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23017,6 +23054,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Forge-only: an enum alias exists in a forge kind's scope and
             // in no statechart guard, so no statechart scenario can raise it.
             | ExpressionUnknownEnumVariant
+            // Raised by the statechart's resolver; no scenario has run it.
+            | ExpressionInlineKindNotAValue
             // Forge-only: a closed record is a forge kind's import or
             // collection item; a statechart guard's scope is the host's.
             | ExpressionUnknownMember
