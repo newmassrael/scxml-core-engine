@@ -55,16 +55,18 @@ PORT="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
 sce_gate_step "endpoint owner declares port $PORT"
 
 # ── The mirrors that ship, pinned to the owner ─────────────────────
-# `sce-build` embeds these three files and writes them into the standalone
+# `sce-build` embeds these two files and writes them into the standalone
 # suites it emits, where no repository sits above them. They therefore CANNOT
 # read the owner — an earlier cut had the Rust one `include_str!` the header and
 # the emitted suite failed to compile. A copy is structurally forced here, so
 # the rule is not "may spell it" but "must spell the SAME thing": each declares
 # the default inline and this refuses a tree where any of them has drifted.
+# The Python conftest was a third until its listener, which runs in the process
+# of the machines it serves, took a port the kernel assigns: its path is pinned
+# below with the Kotlin harness's, and it spells no port.
 MIRRORS=(
     "backends/rust/tests/src/harness.rs:DEFAULT_ENDPOINT_PORT"
     "backends/go/tests/harness/harness.go:defaultEndpointPort"
-    "backends/python/tests/conftest.py:_DEFAULT_HTTP_PORT"
 )
 
 for entry in "${MIRRORS[@]}"; do
@@ -83,18 +85,20 @@ for entry in "${MIRRORS[@]}"; do
     sce_gate_step "mirror pinned: $file ($symbol = $value)"
 done
 
-# ── The path the Kotlin harness answers on, pinned to the owner ────
+# ── The path the in-process listeners answer on, pinned to the owner ──
 # The Kotlin harness binds an ephemeral port (parallel test classes would
-# collide on a fixed one), so the port is not its to spell and is not pinned
-# above. The PATH is still spelled in three places there, and nothing compared
-# them to the owner's: a path edited in the owner left a Kotlin listener
-# answering on the old one while the document asked for the new.
+# collide on a fixed one), and so does the Python conftest unless
+# SCE_W3C_HTTP_PORT names one, so the port is not theirs to spell and is not
+# pinned above. The PATH is still spelled there, and nothing compared the
+# Kotlin spellings to the owner's: a path edited in the owner left a Kotlin
+# listener answering on the old one while the document asked for the new.
 ENDPOINT_PATH="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
     || sce_gate_fail "$OWNER no longer declares a readable test path"
 PATH_MIRRORS=(
     "backends/kotlin/tests/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt|private val path: String = \""
     "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|W3CHttpTestServer(port = 0, path = \""
     "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|http://localhost:\$actualPort"
+    "backends/python/tests/conftest.py|_HTTP_PATH = \""
 )
 
 for entry in "${PATH_MIRRORS[@]}"; do
@@ -154,11 +158,10 @@ ALLOWED=(
     # HttpEventBridge request-shaping tests, on `/scxml` rather than the
     # fixture path -- a different listener entirely.
     "tests/events/HttpEventBridgeTest.cpp"
-    # The three shipped mirrors. Not an exemption: the loop above has already
+    # The two shipped mirrors. Not an exemption: the loop above has already
     # checked each against the owner and failed the gate if any had drifted.
     "backends/rust/tests/src/harness.rs"
     "backends/go/tests/harness/harness.go"
-    "backends/python/tests/conftest.py"
 )
 
 is_allowed() {

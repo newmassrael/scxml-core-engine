@@ -12212,7 +12212,8 @@ impl W3cBackend for PythonBackend {
         //
         // §scxml-C-2 — documents that use BasicHTTP transport take
         // the `setup_http` fixture from backends/python/tests/conftest.py,
-        // which spawns the W3C echo server (port 8080) and registers
+        // which spawns the W3C echo server (on a port the kernel assigns,
+        // unless SCE_W3C_HTTP_PORT names one) and registers
         // the HTTP dispatch callback on the engine. Non-HTTP fixtures
         // omit the parameter so the server only starts when actually
         // needed.

@@ -42,11 +42,13 @@
  * be told a port. When SCE_W3C_HTTP_PORT is unset it binds one the kernel
  * assigns (sce_w3c_http_in_process_port answers 0), and the location the
  * machine is handed is read from that listener after it binds
- * (W3CHttpTestServer::accessUri), never recomputed from the environment. Such a
- * run cannot collide with another tree, or with another account's process on
- * the host: measured 2026-11-05, an account holding 8080 made the C++ runner's
- * every BasicHTTP test fail to start. When the variable IS set, that port is
- * bound exactly, as before.
+ * (W3CHttpTestServer::accessUri), never recomputed from the environment. The
+ * Kotlin harness's W3CHttpTestServer and the Python conftest's listener are
+ * such listeners too, and bind the same way. Such a run cannot collide with
+ * another tree, or with another account's process on the host: measured
+ * 2026-11-05, an account holding 8080 made the C++ runner's every BasicHTTP
+ * test fail to start. When the variable IS set, that port is bound exactly, as
+ * before.
  *
  * A listener in ANOTHER PROCESS cannot hand a kernel-assigned port to the
  * machine: the Node server (standalone_http_server.js) that the C11 AOT

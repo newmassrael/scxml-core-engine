@@ -16,8 +16,9 @@
 # environment, so the package is reached through PYTHONPATH instead — the same
 # import either way, and `backends/python/tests/conftest.py` already shims
 # sys.path for its own harness. And no fixture server is started here: that
-# conftest spawns its own `http.server` on 8080 for the BasicHTTP fixtures, so
-# starting a second listener would take the port from it.
+# conftest spawns its own `http.server` for the BasicHTTP fixtures, in the
+# pytest process, on a port the kernel assigns unless SCE_W3C_HTTP_PORT names
+# one. It needs no port free before it starts, so this gate asks for none.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -35,8 +36,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 sce_gate_python
 sce_gate_python_requires_lupa "the Python AOT suite"
 sce_gate_python_requires "the Python AOT suite" pytest
-
-sce_gate_requires_free_http_port
 
 CODEGEN="$(sce_gate_codegen)"
 

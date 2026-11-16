@@ -7,11 +7,15 @@ Spawns a Python `http.server.HTTPServer` with the same echo semantics as
 (test201 / test509-534 / test567 / test577) can round-trip their
 `<send target="...">` against a real socket without requiring Node.js.
 
-WHERE it listens is owned by `tests/w3c/basic_http_test_endpoint.h`, the header
-the C11 runners include and the C++ harness wraps, so this listener binds the
-address the generated machines publish as their 'location'. The default below
-is a PINNED MIRROR of that header rather than a second opinion: this file ships
-inside the standalone suites sce-build emits, so it cannot read the header, and
+WHERE it listens follows `tests/w3c/basic_http_test_endpoint.h`, the header
+the C11 runners include and the C++ harness wraps. This listener runs in the
+process of the machines it serves, so it is one the header says has no reason
+to be told a port: unless SCE_W3C_HTTP_PORT names one, it binds a port the
+kernel assigns, and the location each machine is handed is read from the
+listener once it has bound. A fixed port made this suite fail to start on a
+host where another program held it. The path below is a PINNED MIRROR of that
+header rather than a second opinion: this file ships inside the standalone
+suites sce-build emits, so it cannot read the header, and
 `scripts/gates/http-endpoint-ssot.sh` refuses a tree where the two disagree.
 Tests that don't need HTTP simply don't take the fixture and pay no startup
 cost.
@@ -35,7 +39,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "runtime"))
 
-# §scxml-C-2-3: the fixture endpoint's default, PINNED to
+# §scxml-C-2-3: the fixture endpoint's path, PINNED to
 # `tests/w3c/basic_http_test_endpoint.h`.
 #
 # Spelled here rather than read from there because sce-build embeds THIS FILE
@@ -43,23 +47,25 @@ sys.path.insert(0, str(_HERE.parent / "runtime"))
 # above it — a conftest that reached back for the header would work in-tree and
 # fail wherever it ships. `scripts/gates/http-endpoint-ssot.sh` reads both
 # values and refuses a tree where they disagree, so the forced copy cannot rot.
-#
-# SCE_W3C_HTTP_PORT overrides it, which is how a second checkout runs the
-# BasicHTTP suites while the first holds the port.
-_DEFAULT_HTTP_PORT = 8080
 _HTTP_PATH = "/test"
+_HTTP_HOST = "localhost"
 
 
-def _resolve_http_port() -> int:
+def _requested_http_port() -> int:
+    """The port this listener is told to bind: the one SCE_W3C_HTTP_PORT
+    names, bound exactly, or 0 for one the kernel assigns.
+
+    A malformed value is refused rather than replaced: a run that quietly
+    bound another port than the one it was told would report the collision
+    it was told to avoid as a test failure."""
     raw = os.environ.get("SCE_W3C_HTTP_PORT", "")
     if raw:
         if not raw.isdigit() or not 1 <= int(raw) <= 65535:
             raise RuntimeError(f'SCE_W3C_HTTP_PORT="{raw}" is not a TCP port')
         return int(raw)
-    return _DEFAULT_HTTP_PORT
+    return 0
 
 
-_HTTP_PORT = _resolve_http_port()
 _HTTP_TIMEOUT_SECONDS = 3.0
 
 
@@ -144,13 +150,19 @@ class _W3CEchoHandler(BaseHTTPRequestHandler):
 @pytest.fixture(scope="session")
 def w3c_http_server() -> str:
     """W3C SCXML C.2 — start the echo server for the test session and
-    return its URL. Lazy: only tests that take this fixture spawn the
-    server, so non-HTTP fixtures pay no socket / thread cost."""
-    server = HTTPServer(("127.0.0.1", _HTTP_PORT), _W3CEchoHandler)
+    return the location it answers at, with the port it bound. Lazy: only
+    tests that take this fixture spawn the server, so non-HTTP fixtures pay
+    no socket / thread cost.
+
+    A port that cannot be bound fails the fixture, and with it every test
+    that takes it, with the bind's own error: no HTTP test is left out of
+    the run."""
+    server = HTTPServer(("127.0.0.1", _requested_http_port()), _W3CEchoHandler)
+    bound_port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{_HTTP_PORT}{_HTTP_PATH}"
+        yield f"http://{_HTTP_HOST}:{bound_port}{_HTTP_PATH}"
     finally:
         server.shutdown()
         server.server_close()
@@ -225,8 +237,10 @@ def setup_http(w3c_http_server) -> "callable":
     def _register(engine) -> None:
         engine.set_http_send_callback(_make_http_callback())
         # §scxml-C-2-3: the fixture owns the listener, so it declares the
-        # access URI the machine publishes in `_ioprocessors`. The converted
-        # W3C documents address their BasicHTTP sends through that entry.
-        engine.basic_http_access_uri = f"http://localhost:{_HTTP_PORT}{_HTTP_PATH}"
+        # access URI the machine publishes in `_ioprocessors`: the location
+        # the listener answers at, read after it bound its port. The
+        # converted W3C documents address their BasicHTTP sends through
+        # that entry.
+        engine.basic_http_access_uri = w3c_http_server
 
     return _register
