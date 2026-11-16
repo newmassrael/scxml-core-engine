@@ -69,13 +69,20 @@ pub(crate) struct SourceCase {
     /// Each element by its id, with a Python expression over `decoded` and
     /// `value` that holds when the two present the same.
     pub checks: Vec<(String, String)>,
+    /// The arguments the decode is handed after its cursor: each flag input,
+    /// in the order the codec declares them.
+    pub inputs: Vec<String>,
+    /// The arguments the encode is handed after its sink: the flag inputs the
+    /// value does not say.
+    pub encode_inputs: Vec<String>,
 }
 
-/// The byte case of `source`, a value of the codec `plan` at `path`. A codec
-/// whose case hands it flag inputs (`inputs`) or a caller's tag (`tag`), or
-/// that holds a group or a variant, is one the Python printer does not print,
-/// and its case is refused by name; so is a source that states an element the
-/// value does not present or leaves out one it does.
+/// The byte case of `source`, a value of the codec `plan` at `path`, handed
+/// the flag inputs `inputs` states. A codec whose value says an input, whose
+/// case hands it a caller's tag (`tag`), or that holds a group or a variant, is
+/// one the Python printer does not print, and its case is refused by name; so
+/// is a source that states an element the value does not present or leaves out
+/// one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -84,10 +91,20 @@ pub(crate) fn source_case(
     tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
-    if !case_inputs(plan, inputs)?.is_empty() {
-        return Err("a Python case hands no flag input yet: the Python printer \
-                    prints no codec that takes one"
-            .to_string());
+    // Each input as the decode is handed it, in the order the codec declares
+    // them, and those the value does not say as the encode is handed them.
+    let mut decode_inputs = Vec::new();
+    let mut encode_inputs = Vec::new();
+    for (input, value, given) in case_inputs(plan, inputs)? {
+        if !given {
+            return Err(format!(
+                "a Python case states no input the value says yet (`{}`): the Python \
+                 printer prints no codec whose value says one",
+                input.name
+            ));
+        }
+        decode_inputs.push(value.to_string());
+        encode_inputs.push(value.to_string());
     }
     if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
         return Err("a Python case states no variant yet: the Python printer \
@@ -113,7 +130,12 @@ pub(crate) fn source_case(
             )
         })
         .collect();
-    Ok(SourceCase { literal, checks })
+    Ok(SourceCase {
+        literal,
+        checks,
+        inputs: decode_inputs,
+        encode_inputs,
+    })
 }
 
 /// The value of the codec `plan` at `path` that `source` states, made by its

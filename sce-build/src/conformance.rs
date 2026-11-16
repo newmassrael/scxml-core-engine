@@ -4066,16 +4066,14 @@ fn fold_case_rows(
                                 &mut held,
                             )
                             .map_err(|e| format!("{at}: {e}"))?;
-                            // The Python printer prints no codec that takes a
-                            // flag input or a caller's tag, so a decode and an
-                            // encode are handed nothing after the cursor or
-                            // the sink, and the value needs no binding.
+                            // The value is one expression, so it needs no
+                            // binding.
                             PrintedCase {
                                 bindings: Vec::new(),
                                 literal: case.literal,
                                 checks: case.checks,
-                                inputs: Vec::new(),
-                                encode_inputs: Vec::new(),
+                                inputs: case.inputs,
+                                encode_inputs: case.encode_inputs,
                                 note: note.to_string(),
                             }
                         }

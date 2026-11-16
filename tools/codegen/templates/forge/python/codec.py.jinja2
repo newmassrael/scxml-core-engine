@@ -363,7 +363,9 @@ class {{ struct_name }}:
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with.{% endif %}"""
 {% if python_source %}
-        encode_source(self, w)
+{# A printed codec's value says none of its flag inputs, so the encode is
+   handed every one, as the decode is. #}
+        encode_source(self, w{{ params_first_arg_with_comma }})
 {% else %}
 {% if has_parent_flags %}
         # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.

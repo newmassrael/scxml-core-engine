@@ -1990,3 +1990,11 @@ codecs whose length or count is held in a flag of a carrier (`sce:length-field="
 - The encode writes that flag from what it measures, whatever bits the value holds there; setting it through the
   flag's setter no longer changes the frame.
 
+## A printed Python codec takes the flag inputs its value does not say (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that declare `<sce:flag-inputs>` none of which the value says.
+
+- `encode`, `encode_to_bytes` and the module's `encode_source(src, w, ...)` take each input after the sink, as
+  `decode` takes it after the cursor. A call of `encode` is unchanged.
+

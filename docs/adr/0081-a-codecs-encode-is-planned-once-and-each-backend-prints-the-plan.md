@@ -1030,6 +1030,14 @@ old encode, the old encode and its templates are removed in the same landing.
    there, and leaves the value's bits where the number is free and none is; where the grammar does not bound the
    number within the flag's bits, a number past them is refused (`LengthOutOfRange`). The value keeps the carrier
    whole, as every printer presents a flag set.
+
+   *The eighth Python landing, 2026-11-16:* the flag inputs a value does not say. `encode_source` takes each after
+   the sink, in the order the codec declares them, as the decode takes them after the cursor, and the value's
+   `encode` hands on what it is handed. A gate tests such an input as it tests a flag, a check among them. A body or
+   the entries of a list are handed each input their codec takes and does not say: the bits of a carrier as the
+   encode writes it, or an input of the codec's own passed on; the encodes that measure a body's frame run once the
+   carriers are folded, so a body is handed the bits the frame carries. The case printer hands a case's `inputs` to
+   the decode and the encode. An input the value says, which a parent reads off the value, waits for its landing.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

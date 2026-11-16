@@ -89,7 +89,7 @@
         from sce_forge_runtime.codec import BytearraySink as _BytearraySink, SceCursor as _SceCursor
         value = {{ s.literal }}
         _encoded = bytearray()
-        {{ f.name }}.encode_source(value, _BytearraySink(_encoded))
+        {{ f.name }}.encode_source(value, _BytearraySink(_encoded){% for i in s.encode_inputs %}, {{ i }}{% endfor %})
         _expected = bytes([{{ s.encoded | join(", ") }}])
         self.assertEqual(
             bytes(_encoded),
@@ -99,7 +99,7 @@
         _cursor = _SceCursor(_expected)
 {# A refused decode raises the `CodecError` that names why, which fails the
    test with that kind (docs/adr/0099, amendment of 2026-11-16). #}
-        decoded = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(_cursor)
+        decoded = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(_cursor{% for i in s.inputs %}, {{ i }}{% endfor %})
         self.assertEqual(
             _cursor.remaining(),
             0,

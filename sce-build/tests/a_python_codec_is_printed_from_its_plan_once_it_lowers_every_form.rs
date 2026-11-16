@@ -414,6 +414,37 @@ fn a_length_held_in_a_flag_is_folded_into_its_carrier() {
     );
 }
 
+/// A flag input the value does not say is a parameter of the encode after the
+/// sink, which a gate tests as it tests a flag, and which the value's `encode`
+/// hands on; an input the value says is not printed yet.
+///
+/// Turns red where `python_source::encode_source` drops `plan.given` from its
+/// parameters or `gate_test` stops spelling a `Clause::Input`, or where
+/// `positional_forms` stops naming an input the value says.
+#[test]
+fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
+    assert!(unlowered("codec_chain_handed_entry").is_empty());
+    let text = resource_module("codec_chain_handed_entry");
+    holds(
+        "codec_chain_handed_entry",
+        &text,
+        &[
+            "\ndef encode_source(src: CodecChainHandedEntrySource, w: SceSink, \
+             after_marker: int) -> None:\n",
+            "    if (after_marker != 0 or ((src.header >> 6) & 1) != 0) != \
+             (src.value is not None):\n        raise PresentIfMismatch(\"value\")\n",
+            "        encode_source(self, w, after_marker)\n",
+        ],
+    );
+    let forms = unlowered("codec_zenoh_init_body");
+    assert!(
+        forms
+            .iter()
+            .any(|f| f.contains("a flag input the value says")),
+        "codec_zenoh_init_body says S and A by the fields gated on them: {forms:?}"
+    );
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// so does a group that holds a length the value states beside its content.
@@ -510,6 +541,7 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_encoded_length_checked",
         "codec_length_stated",
         "codec_length_ref_dotted_basic",
+        "codec_chain_handed_entry",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
