@@ -1998,3 +1998,16 @@ codecs that declare `<sce:flag-inputs>` none of which the value says.
 - `encode`, `encode_to_bytes` and the module's `encode_source(src, w, ...)` take each input after the sink, as
   `decode` takes it after the cursor. A call of `encode` is unchanged.
 
+## A printed Python codec reads the flag inputs its value says (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose value says an input by the field gated on it alone, or by a body it hands the input on to, the Zenoh
+undeclarations among them.
+
+- `encode`, `encode_to_bytes` and `encode_source` no longer take an input the value says: drop it from each call.
+  `decode` still takes every input.
+- The module's `input_<name>(value)` answers what the value says, 0 or 1 (`None` where it can say nothing of it). A
+  parent that holds such a codec writes the flag it binds from it; a template parent hands it nothing.
+- An encode that holds a body or a list whose entries say an input it also hands them raises `PresentIfMismatch`
+  where they disagree, before the first byte.
+

@@ -67,7 +67,9 @@ pub(crate) struct SourceCase {
     /// The value, made by its dataclass's constructor.
     pub literal: String,
     /// Each element by its id, with a Python expression over `decoded` and
-    /// `value` that holds when the two present the same.
+    /// `value` that holds when the two present the same; and each flag input
+    /// the value says, with one that holds when it says the input the case is
+    /// handed.
     pub checks: Vec<(String, String)>,
     /// The arguments the decode is handed after its cursor: each flag input,
     /// in the order the codec declares them.
@@ -78,11 +80,12 @@ pub(crate) struct SourceCase {
 }
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
-/// the flag inputs `inputs` states. A codec whose value says an input, whose
-/// case hands it a caller's tag (`tag`), or that holds a group or a variant, is
-/// one the Python printer does not print, and its case is refused by name; so
-/// is a source that states an element the value does not present or leaves out
-/// one it does.
+/// the flag inputs `inputs` states: each to the decode, one the value does not
+/// say to the encode too, and the value held to saying each other one. A codec
+/// whose case hands it a caller's tag (`tag`), or that holds a group or a
+/// variant, is one the Python printer does not print, and its case is refused
+/// by name; so is a source that states an element the value does not present
+/// or leaves out one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -92,19 +95,30 @@ pub(crate) fn source_case(
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
     // Each input as the decode is handed it, in the order the codec declares
-    // them, and those the value does not say as the encode is handed them.
+    // them, and those the value does not say as the encode is handed them; the
+    // value is held to saying each other one through the input's own function
+    // (`input_<name>`, docs/adr/0065 §6 R4a), which answers `None` where the
+    // value says nothing of it.
     let mut decode_inputs = Vec::new();
     let mut encode_inputs = Vec::new();
+    let mut said = Vec::new();
     for (input, value, given) in case_inputs(plan, inputs)? {
-        if !given {
-            return Err(format!(
-                "a Python case states no input the value says yet (`{}`): the Python \
-                 printer prints no codec whose value says one",
-                input.name
-            ));
-        }
         decode_inputs.push(value.to_string());
-        encode_inputs.push(value.to_string());
+        if given {
+            encode_inputs.push(value.to_string());
+            continue;
+        }
+        let says = format!(
+            "{}.input_{}({VALUE})",
+            path.module,
+            filters::to_snake_case(input.name.clone())
+        );
+        let holds = if plan.roles.says_input_partly(&input.name) {
+            format!("{says} in (None, {value})")
+        } else {
+            format!("{says} == {value}")
+        };
+        said.push((format!("flag input {}", input.name), holds));
     }
     if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
         return Err("a Python case states no variant yet: the Python printer \
@@ -119,7 +133,7 @@ pub(crate) fn source_case(
     let literal = value_literal(plan, path, source, held)?;
     let l = LangCtx::new(crate::generator::Language::Python, &[]);
     // A body is its codec's dataclass, compared whole as a dataclass is.
-    let checks = plan
+    let mut checks: Vec<(String, String)> = plan
         .elements
         .iter()
         .map(|element| {
@@ -130,6 +144,7 @@ pub(crate) fn source_case(
             )
         })
         .collect();
+    checks.extend(said);
     Ok(SourceCase {
         literal,
         checks,

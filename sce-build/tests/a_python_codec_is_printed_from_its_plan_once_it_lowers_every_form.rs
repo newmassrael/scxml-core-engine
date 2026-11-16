@@ -416,11 +416,10 @@ fn a_length_held_in_a_flag_is_folded_into_its_carrier() {
 
 /// A flag input the value does not say is a parameter of the encode after the
 /// sink, which a gate tests as it tests a flag, and which the value's `encode`
-/// hands on; an input the value says is not printed yet.
+/// hands on.
 ///
 /// Turns red where `python_source::encode_source` drops `plan.given` from its
-/// parameters or `gate_test` stops spelling a `Clause::Input`, or where
-/// `positional_forms` stops naming an input the value says.
+/// parameters or `gate_test` stops spelling a `Clause::Input`.
 #[test]
 fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
     assert!(unlowered("codec_chain_handed_entry").is_empty());
@@ -436,12 +435,62 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
             "        encode_source(self, w, after_marker)\n",
         ],
     );
+}
+
+/// A flag input the value says by the field gated on it alone is no parameter
+/// of the encode or of the value's `encode`, and a function of the module,
+/// `input_<name>`, reads it off any source; the decode still takes it. A
+/// parent the template writes hands the printed codec's encode no such input,
+/// and its decode every input.
+///
+/// Turns red where `python_source::positional_forms` names an input a gate
+/// says unlowered, `input_functions` stops printing `input_<name>` or
+/// `said_input` reads the gate's field other than by its presence, where
+/// `render_codec` hands the value's `encode` an input its value says, or where
+/// `embed_flag_bind_thread_args_supplying` hands a printed Python codec's
+/// encode an input it says.
+#[test]
+fn a_flag_input_the_value_says_is_read_off_the_value_and_not_handed() {
+    assert!(unlowered("codec_zenoh_undecl_token").is_empty());
+    let text = resource_module("codec_zenoh_undecl_token");
+    holds(
+        "codec_zenoh_undecl_token",
+        &text,
+        &[
+            "\ndef encode_source(src: CodecZenohUndeclTokenSource, w: SceSink) -> None:\n",
+            "\ndef input_z(src: CodecZenohUndeclTokenSource) -> int:\n",
+            "    return (1 if src.ext_keyexpr is not None else 0)\n",
+            "    def decode(cls, cursor: SceCursor, z: int) -> \
+             Optional[CodecZenohUndeclToken]:\n",
+            "    def encode(self, w: SceSink) -> None:\n",
+            "        encode_source(self, w)\n",
+            "    def encode_to_bytes(self) -> bytes:\n",
+        ],
+    );
+    let parent = resource_module("codec_zenoh_declaration");
+    holds(
+        "codec_zenoh_declaration",
+        &parent,
+        &[
+            "CodecZenohUndeclToken.decode(cursor, ((f_header >> 7) & 0x1))\n",
+            "self.body.codec_zenoh_undecl_token.encode(w)\n",
+        ],
+    );
+}
+
+/// An input a group, the arms of a variant or the start of a list says is
+/// named unlowered until its form is printed.
+///
+/// Turns red where `python_source::positional_forms` stops naming an input a
+/// group says.
+#[test]
+fn an_input_a_group_says_is_not_printed_yet() {
     let forms = unlowered("codec_zenoh_init_body");
     assert!(
         forms
             .iter()
-            .any(|f| f.contains("a flag input the value says")),
-        "codec_zenoh_init_body says S and A by the fields gated on them: {forms:?}"
+            .any(|f| f.contains("a flag input a group says")),
+        "codec_zenoh_init_body says S by the group gated on it: {forms:?}"
     );
 }
 
@@ -542,6 +591,7 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_length_stated",
         "codec_length_ref_dotted_basic",
         "codec_chain_handed_entry",
+        "codec_zenoh_undecl_token",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

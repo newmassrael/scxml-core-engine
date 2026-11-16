@@ -1038,6 +1038,19 @@ old encode, the old encode and its templates are removed in the same landing.
    encode writes it, or an input of the codec's own passed on; the encodes that measure a body's frame run once the
    carriers are folded, so a body is handed the bits the frame carries. The case printer hands a case's `inputs` to
    the decode and the encode. An input the value says, which a parent reads off the value, waits for its landing.
+
+   *The ninth Python landing, 2026-11-16:* the flag inputs a value says (docs/adr/0065 §6 R4a), by the field gated on
+   one alone or by the body always there it is handed on to. Each is read off any source by a function of the
+   codec's module, `input_<name>(src)`, set exactly where the field is there or what the body's own `input_<name>`
+   answers (`None` where that body can say nothing of it, R4e); the encode and the value's `encode` are not handed
+   it, and the decode is handed every input. A gate or a check that reads such an input reads it off the source
+   first, under the name a given input has. A flag of a carrier bound to an input a body says is that body's
+   `input_<name>`, folded as any derived flag is. An input a body or the entries of a list say beside what the codec
+   hands them from a carrier or an input of its own is held to it before the first byte (`PresentIfMismatch`); the
+   checks of a codec's own now precede the encode of a body whose length it measures, as they do in C++. A parent
+   the template writes hands a printed codec's encode no input the codec says (`ImportContext::python_printed`). The
+   case printer holds the value to saying each input the case hands it that the value says. An input a group, the
+   arms of a variant or the start of a list says waits for that form.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
