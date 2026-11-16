@@ -346,6 +346,7 @@ impl ComposedLowering {
 
             Language::Cpp => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
 

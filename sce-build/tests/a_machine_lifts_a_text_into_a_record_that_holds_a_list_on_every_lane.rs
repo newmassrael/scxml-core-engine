@@ -125,3 +125,33 @@ fn a_python_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
         "a record that holds a list is not read field by field:\n{code}"
     );
 }
+
+/// Pinned by the C++ row of `ComposedLowering::of`, `CppTarget::lift`'s `Lifted::Whole`
+/// arm, and `CppComposed::read_list` and `CppComposed::saved_record_ext`
+/// (`sce-build/src/forge/composed_lowering/cpp.rs`): the variable is the machine's own
+/// struct in `std::optional`, the lift reads it whole through `liftValue`, the list held
+/// to both its counts, and a saved state writes it by `<Type>ToSaved` and reads it back
+/// by `<Type>FromSaved`, the list held to its lower count.
+#[test]
+fn a_cpp_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
+    let code = machine(Language::Cpp, "_sm.h");
+    holds(
+        &code,
+        &[
+            "struct StaticLiftListPlanRecord {\n",
+            "std::optional<StaticLiftListPlanRecord>",
+            "::SCE::Common::EventPayloadFields::liftValue(",
+            "sceValue.readListWithin(1u, 3u, sceInto, ",
+            "inline ::SCE::Saved::JsonValue StaticLiftListPlanRecordToSaved(const \
+             StaticLiftListPlanRecord &value) {",
+            "inline StaticLiftListPlanRecord StaticLiftListPlanRecordFromSaved(const \
+             ::SCE::Saved::JsonValue &value, const std::string &what) {",
+            "::SCE::Saved::savedReadOwnedListWithin<3>(sceSaved0, sceWhat0, 1u, \
+             StaticLiftListItemRecordFromSaved)",
+        ],
+    );
+    assert!(
+        !code.contains("EventPayloadFields::liftRecord("),
+        "a record that holds a list is not read field by field:\n{code}"
+    );
+}

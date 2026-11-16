@@ -632,10 +632,6 @@ sce_add_static_scenario_suite(
     TARGET static_datamodel_generated_cpp_test
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
-    # A statechart that holds a variable of a record that holds a list, which a
-    # lift writes whole, is refused by C++ by name until C++'s slice of
-    # docs/adr/0087 Landing order item 8; its scenario is replayed on Rust.
-    NOT_YET_LOWERED static_lift_list
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
