@@ -36,7 +36,11 @@ type variables struct {
 
 // A field gated by `sce:present-if` is read into a statechart's variable whole,
 // and written back from one: present with its value when the carrier's flag is
-// set, absent when it is not.
+// set, absent when it is not. The codec is printed from its plan
+// (docs/adr/0081): the value is read through its methods and made by its
+// constructor, and the encode derives the flag from whether the field is
+// there, so a value made with the flag clear and the field present writes the
+// flag set.
 func TestAGatedFieldIsTheTypeAStatechartVariableHolds(t *testing.T) {
 	frames := []struct {
 		name  string
@@ -52,14 +56,20 @@ func TestAGatedFieldIsTheTypeAStatechartVariableHolds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: decode: %v", f.name, err)
 		}
-		held := variables{seq: decoded.Seq}
+		held := variables{seq: decoded.Seq()}
 		if !held.seq.Equal(f.value) {
 			t.Errorf("%s: the variable holds %v, want %v", f.name, held.seq, f.value)
 		}
 
-		written := codec_present_if_basic.CodecPresentIfBasic{Flags: decoded.Flags, Seq: held.seq}
+		written := codec_present_if_basic.MakeCodecPresentIfBasic(decoded.Flags(), held.seq)
 		if got := written.EncodeToBytes(); !bytes.Equal(got, f.wire) {
 			t.Errorf("%s: written from the variable as % x, want % x", f.name, got, f.wire)
+		}
+		// The flag the field's presence says is derived, not read off the
+		// value: a carrier that presents it clear writes it as the field says.
+		derived := codec_present_if_basic.MakeCodecPresentIfBasic(0, held.seq)
+		if got := derived.EncodeToBytes(); !bytes.Equal(got, f.wire) {
+			t.Errorf("%s: written with a clear carrier as % x, want % x", f.name, got, f.wire)
 		}
 	}
 }

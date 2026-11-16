@@ -264,6 +264,13 @@ fn a_codec_with_no_value_that_may_be_absent_imports_no_optional_package() {
 /// A positional field gated by `sce:present-if` is the optional type for every
 /// layout the gate admits, handed over with `optional.Some` where the gate holds
 /// and read through `Proven()` only under the test that proves it present.
+///
+/// A codec the Go printer prints (docs/adr/0081 step 4) holds a gated element
+/// in an unexported field of the optional type of what it presents, a byte
+/// string or a text its bounded value, made of what the decode read by
+/// `codec.MakeOptionalBytes` or `MakeOptionalText`; its encode writes the
+/// element where the source presents it, and holds no length the encode
+/// derives.
 #[test]
 fn a_gated_field_is_the_one_optional_type_in_every_layout() {
     // (document, the declarations its gated fields make, a line its decode
@@ -271,33 +278,33 @@ fn a_gated_field_is_the_one_optional_type_in_every_layout() {
     let cases: &[(&str, &[&str], &str, &str)] = &[
         (
             "codec_present_if_basic",
-            &["Seq optional.Of[uint16]"],
+            &["seq optional.Of[uint16]"],
             "Seq = optional.Some(_v)",
-            "_v := s.Seq.Proven()",
+            "\tif src.Seq().IsPresent() {\n",
         ),
         (
             "codec_present_if_vle",
-            &["OptionalId optional.Of[uint64]"],
+            &["optionalId optional.Of[uint64]"],
             "OptionalId = optional.Some(_v)",
-            "_v := s.OptionalId.Proven()",
+            "\tif src.OptionalId().IsPresent() {\n",
         ),
         (
             "codec_present_if_tail",
-            &["Payload optional.Of[[]byte]"],
+            &["payload optional.Of[codec.Bytes[CodecPresentIfTailPayloadBound]]"],
             "Payload = optional.Some(append([]byte(nil), raw...))",
-            "w.WriteBytes(s.Payload.Proven())",
+            "w.WriteBytes(src.Payload().Proven().Bytes())",
         ),
         (
             "codec_present_if_length_ref",
-            &["Payload optional.Of[[]byte]"],
+            &["payload optional.Of[codec.Bytes[CodecPresentIfLengthRefPayloadBound]]"],
             "Payload = optional.Some(append([]byte(nil), raw...))",
-            "w.WriteBytes(s.Payload.Proven())",
+            "w.WriteBytes(src.Payload().Proven().Bytes())",
         ),
         (
             "codec_present_if_string",
-            &["TextLen optional.Of[uint8]", "Text optional.Of[string]"],
+            &["text optional.Of[codec.Text[CodecPresentIfStringTextBound]]"],
             "Text = optional.Some(string(raw))",
-            "w.WriteBytes([]byte(s.Text.Proven()))",
+            "w.WriteBytes([]byte(src.Text().Proven().String()))",
         ),
         (
             "codec_repeat_present_if_basic",

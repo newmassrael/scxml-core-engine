@@ -391,7 +391,7 @@ func (s *{{ struct_name }}) Tag() byte {
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) error {
 {% if go_source %}
-	return EncodeSource(s, w)
+	return EncodeSource(s, w{{ params_first_arg_with_comma }})
 {% else %}
 {% if has_parent_tag_derivation %}
 	// RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded

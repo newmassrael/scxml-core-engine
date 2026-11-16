@@ -281,6 +281,67 @@ fn a_procedure_makes_a_printed_codec_again_and_a_validator_reads_it_by_method() 
     );
 }
 
+/// An element a gate decides is presented as the optional type of what it
+/// holds, and the flag its presence says is derived and folded into its
+/// carrier in place of the bit the value presents; a gate the encode cannot
+/// derive the presence from holds the element it gates, tested on the carrier
+/// as the encode writes it, and refuses a value it disagrees with before the
+/// first byte.
+///
+/// Turns red where `go_source::render` presents a gated element as what it
+/// holds rather than its optional type, where the encode reads the carrier's
+/// bit off the source instead of folding the presence in, where the gate
+/// check reads `src.Flags()` instead of the folded carrier, or where
+/// `refusal` stops returning the runtime's sentinel.
+#[test]
+fn a_gated_element_derives_its_flag_and_a_checked_gate_refuses_a_disagreement() {
+    assert!(unlowered("codec_present_if_checked").is_empty());
+    let text = resource_go("codec_present_if_checked");
+    holds(
+        "codec_present_if_checked",
+        &text,
+        &[
+            "\tSeq() optional.Of[uint16]\n",
+            "\tTrailer() optional.Of[uint8]\n",
+            "func MakeCodecPresentIfChecked(flags uint8, seq optional.Of[uint16], trailer optional.Of[uint8]) CodecPresentIfChecked {\n",
+            "\t_cFlags := src.Flags()\n\t_cFlags &^= 0x1\n\tif src.Seq().IsPresent() {\n\t\t_cFlags |= 0x1\n\t}\n",
+            "\tif (((_cFlags >> 0) & 1) != 0 || ((_cFlags >> 1) & 1) != 0) != src.Trailer().IsPresent() {\n\t\treturn codec.ErrPresentIfMismatch\n\t}\n",
+            "\tif src.Trailer().IsPresent() {\n",
+            "func (s *CodecPresentIfChecked) EncodeToBytes() ([]byte, error) {\n",
+        ],
+    );
+    holds_none(
+        "codec_present_if_checked",
+        &text,
+        &["s.Flags", "src.Flags() >>"],
+    );
+}
+
+/// A length two byte strings share is derived from the first, the second
+/// held to say the same, and refused where it does not fit its field.
+///
+/// Turns red where `derive_number` stops comparing every measure always there
+/// with the first, or stops checking a length its field may not hold.
+#[test]
+fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
+    assert!(unlowered("codec_length_shared").is_empty());
+    let text = resource_go("codec_length_shared");
+    holds(
+        "codec_length_shared",
+        &text,
+        &[
+            "\tif src.Beta().Len() != src.Alpha().Len() {\n\t\treturn codec.ErrInconsistentSource\n\t}\n",
+            "\tif src.Alpha().Len() > 0xFF {\n\t\treturn codec.ErrLengthOutOfRange\n\t}\n",
+            "\t_dSpanLen := uint8(src.Alpha().Len())\n",
+        ],
+    );
+    holds_none(
+        "codec_length_shared",
+        &text,
+        &["SpanLen() uint8", "\tspanLen uint8\n"],
+    );
+}
+
 /// A procedure over `codec_length_ref` that assigns `location` from `expr`,
 /// its input `blob` a byte string of at most 32 bytes and `n` an integer.
 fn length_ref_procedure(location: &str, expr: &str) -> String {
@@ -423,13 +484,13 @@ fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures()
 /// encode whole: its fields stay exported, and it has no source, constructor
 /// or encode over a source.
 ///
-/// Turns red where `go_source::positional_forms` stops naming a gated
-/// element, a variant or a CBOR map, or where `render_codec` prints a codec
-/// it names a form of.
+/// Turns red where `go_source::positional_forms` stops naming a chain, a
+/// variant or a CBOR map, or where `render_codec` prints a codec it names a
+/// form of.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_present_if_basic", "an element a gate decides"),
+        ("codec_chain_has_marker", "a list of"),
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
@@ -513,6 +574,11 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "broadcast_log_conformance_record",
         "queue_conformance_event",
         "broadcast_log_conformance_event",
+        "codec_present_if_basic",
+        "codec_present_if_checked",
+        "codec_present_if_string",
+        "codec_present_if_tail",
+        "codec_length_shared",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
