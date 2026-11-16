@@ -128,7 +128,9 @@ fn assert_holds(code: &str, wanted: &str, what: &str) {
 // ── Kotlin ──────────────────────────────────────────────────────────────
 
 /// The Kotlin getter is a `when` over the sealed variant, which names the
-/// catch-all and reads the tag it holds through the `when`'s own binding.
+/// catch-all and reads the tag it holds through the `when`'s own binding, out
+/// of the class of the tags no arm names (docs/adr/0065 §6 R3) the printed
+/// codec holds it in.
 #[test]
 fn the_kotlin_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
     let text = code("tg_open", Language::Kotlin);
@@ -137,7 +139,7 @@ fn the_kotlin_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
         "        get() = when (val _b = this.body) {",
         "            is TgOpenVariant.TgSmall -> 1.toUByte()",
         "            is TgOpenVariant.TgLarge -> 2.toUByte()",
-        "            is TgOpenVariant.Default -> _b.tag",
+        "            is TgOpenVariant.Default -> _b.tag.tag",
         "        }",
     ]
     .join("\n");
