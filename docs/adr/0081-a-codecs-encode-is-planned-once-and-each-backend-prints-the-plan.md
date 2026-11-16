@@ -1098,6 +1098,17 @@ old encode, the old encode and its templates are removed in the same landing.
    header and needs nothing of the parent. The case printer states the arm as the arm's codec's value, or the
    default arm's class of the tag and the body, hands a caller's tag to the decode after the inputs, and holds the
    value and its decode to answering it.
+
+   *The thirteenth Python landing, 2026-11-16:* the walk of a chain that ends on its entries' flag or hands each
+   entry what the one before it was. Each one-bit flag a value presents of a fixed carrier is one a parent may set
+   (`EncodePlan::overridable`): the encode takes it as a keyword after the inputs, `override_<carrier>_<flag>`,
+   `None` by default, and folds it into the carrier last, so what the parent says is what the wire holds, as the C++
+   encode takes its `Overrides`. The walk sets the flag its entries end on, 1 on every entry but the last, and keeps
+   for each input an entry takes from the one before (`HandedFrom` none) whether the entry it wrote last was of the
+   kind the input waits for, read off the entry by the chain's `entry-id`, 0 before the first. A chain of a least
+   past zero (R7) starts with that many entries made by default, a factory so no two values share one. A chain that
+   holds a bare entry's place (R6a), is held to a law (R8), or whose entries say the input they are handed from the
+   entry before waits for its landing.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

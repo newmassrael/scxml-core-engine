@@ -2051,3 +2051,14 @@ codecs that hold a variant whose arms Python prints: a tag field, a tag flag, a 
   it holds in a flag set are not written.
 - A variant whose caller hands its tag keeps `msg.tag()`; the module's `tag(src)` answers it of any source.
 
+## A printed Python chain sets the flag its entries end on (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+chains that end on their entries' flag or hand each entry what the one before it was, and by their entries.
+
+- The flag a chain's entries end on is written by the chain: a value's own bit there is not written. Set the entries
+  as you mean them; the chain marks every entry but the last.
+- `encode_source` of a codec with a one-bit flag in a fixed carrier takes, after its inputs, a keyword
+  `override_<carrier>_<flag>` for each, `None` by default. A caller that is no chain leaves them out.
+- A chain of at least one entry starts with one entry made by default.
+

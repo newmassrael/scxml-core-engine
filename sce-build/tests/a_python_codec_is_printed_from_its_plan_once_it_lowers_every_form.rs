@@ -429,8 +429,9 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
         &text,
         &[
             "\ndef encode_source(src: CodecChainHandedEntrySource, w: SceSink, \
-             after_marker: int) -> None:\n",
-            "    if (after_marker != 0 or ((src.header >> 6) & 1) != 0) != \
+             after_marker: int, *, override_header_wide: Optional[int] = None, \
+             override_header_z: Optional[int] = None) -> None:\n",
+            "    if (after_marker != 0 or ((_c_header >> 6) & 1) != 0) != \
              (src.value is not None):\n        raise PresentIfMismatch(\"value\")\n",
             "        encode_source(self, w, after_marker)\n",
         ],
@@ -670,6 +671,60 @@ fn a_variant_is_the_arm_the_value_holds_and_the_default_arm_keeps_its_tag() {
             "class CodecVariantDefaultMarkerVariant:",
             "body.kind = ",
             "\ndef tag(",
+        ],
+    );
+}
+
+/// A chain that ends on its entries' flag sets it on every entry but the last,
+/// in place of the one the entry presents: the entry's encode takes each
+/// one-bit flag a parent may set as a keyword, folded last into its carrier.
+///
+/// Turns red where `python_source::positional_forms` names a chain that ends
+/// on its entries' flag unlowered again, `encode_source` stops folding an
+/// override into its carrier, or the walk stops setting the flag from how
+/// many entries are left.
+#[test]
+fn a_chain_sets_the_flag_its_entries_end_on() {
+    let entry = "codec_chain_depth_entry";
+    assert!(unlowered(entry).is_empty(), "{:?}", unlowered(entry));
+    let text = resource_module(entry);
+    holds(
+        entry,
+        &text,
+        &[
+            "\ndef encode_source(src: CodecChainDepthEntrySource, w: SceSink, *, \
+             override_header_z: Optional[int] = None) -> None:\n",
+            "    if override_header_z is not None:\n        \
+             _c_header = (_c_header & ~0x80) | ((override_header_z & 0x1) << 7)\n",
+        ],
+    );
+    let chain = "codec_chain_depth_plain";
+    assert!(unlowered(chain).is_empty(), "{:?}", unlowered(chain));
+    let text = resource_module(chain);
+    holds(
+        chain,
+        &text,
+        &["    _left_extensions = len(src.extensions)\n    \
+           for _entry in src.extensions:\n        \
+           _left_extensions -= 1\n        \
+           sce_codec_chain_depth_entry.encode_source(_entry, w, \
+           override_header_z=1 if _left_extensions != 0 else 0)\n"],
+    );
+    // A chain that hands each entry whether the one before it was of a kind
+    // keeps that as it writes, 0 before the first entry.
+    let handed = "codec_chain_handed";
+    assert!(unlowered(handed).is_empty(), "{:?}", unlowered(handed));
+    let text = resource_module(handed);
+    holds(
+        handed,
+        &text,
+        &[
+            "    _prev_after_marker = 0\n    _left_entries = len(src.entries)\n    \
+           for _entry in src.entries:\n        \
+           _left_entries -= 1\n        \
+           sce_codec_chain_handed_entry.encode_source(_entry, w, _prev_after_marker, \
+           override_header_z=1 if _left_entries != 0 else 0)\n        \
+           _prev_after_marker = 1 if ((_entry.header >> 0) & 0xF) == 0x4 else 0\n",
         ],
     );
 }
