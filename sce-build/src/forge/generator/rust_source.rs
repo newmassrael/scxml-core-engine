@@ -2670,7 +2670,7 @@ impl<'a> Plan<'a> {
                 lines.push("{".to_string());
                 lines.push("    let mut _prev: bool = false;".to_string());
                 let read = self.read_src(chain);
-                let entries = if chain.present_if.is_some() {
+                let entries = if self.read_optional(chain) {
                     format!("{read}.into_iter().flatten()")
                 } else {
                     read
@@ -2685,7 +2685,7 @@ impl<'a> Plan<'a> {
             CheckSite::List { list } => {
                 let read = self.read_src(list);
                 let differs = says_otherwise("&_e", "_h");
-                if list.present_if.is_some() {
+                if self.read_optional(list) {
                     format!("{read}.is_some_and(|mut _l| _l.any(|_e| {differs}))")
                 } else {
                     format!("{read}.any(|_e| {differs})")
@@ -2948,6 +2948,16 @@ impl<'a> Plan<'a> {
         } else {
             format!("src.{}()", self.accessor(field))
         }
+    }
+
+    /// Whether the encode reads `field` as an `Option` ([`Self::read_src`]):
+    /// a gate decides it, or a group holds it, whose binding is `None` on an
+    /// arm that does not hold it, whether or not the field is gated itself. A
+    /// list always there that shares its count with a list a gate decides is
+    /// such a member (docs/adr/0065 §6 R5): every arm holds it, and it is
+    /// still read off the arm the value holds.
+    fn read_optional(&self, field: &CodecField) -> bool {
+        field.present_if.is_some() || self.encode.roles.group_of(&field.id).is_some()
     }
 
     /// The local a group's element is bound to in the encode.
@@ -4986,6 +4996,10 @@ impl<'a> Plan<'a> {
             }
             // A list hands every entry the flag, which its law holds them to:
             // the flag is the list's start, empty or not (docs/adr/0065 §6 R8).
+            // A list a group holds is read off the arm the value holds, as an
+            // `Option` even where every arm holds it (R5); the flag is then
+            // derived whatever the arm, as the plan has it, and the measure is
+            // there exactly where a gate of the list's own leaves it in.
             Measured::Start { list, input } => {
                 let read = self.read_src(list);
                 let start = |l: &str| {
@@ -4994,14 +5008,14 @@ impl<'a> Plan<'a> {
                         law_start(&self.encode.roles, &list.id, input, l)
                     )
                 };
-                if list.present_if.is_some() {
+                if self.read_optional(list) {
                     lines.push(format!(
                         "let {number}: usize = {read}.map_or(0, |_l| {});",
                         start("_l")
                     ));
                     Measure {
                         number,
-                        present: Some(format!("{read}.is_some()")),
+                        present: self.presence_test(list),
                     }
                 } else {
                     lines.push(format!("let {number}: usize = {};", start(&read)));
@@ -5136,9 +5150,7 @@ impl<'a> Plan<'a> {
             let read = self.read_src(field);
             // A group's element is read from the arm the value holds, where it
             // may be absent whether or not it is itself gated (`read_src`).
-            let optional =
-                field.present_if.is_some() || self.encode.roles.group_of(&field.id).is_some();
-            let count = if optional {
+            let count = if self.read_optional(field) {
                 format!("{read}.map_or(0, |_l| _l.len())")
             } else {
                 format!("{read}.len()")

@@ -12275,17 +12275,24 @@ const RUST_BUILT_DECODE_KEYS: [(&str, &str); 6] = [
 /// builds it in the local `local` of the type `ty` instead.
 ///
 /// A decode that builds a gated element in place starts from none, and one that
-/// fills an ungated list in place (its `refill`, docs/adr/0065 §6 R7, or a
-/// borrow of it) from the list's default; one that assigns it on every path
-/// declares it unassigned. The statement is the one an element outside a group
-/// is decoded by, which assigns its field on every path; the local it assigns
-/// here is declared first, as that field was.
+/// fills an ungated list in place from the list's default: its `refill`
+/// (docs/adr/0065 §6 R7), the `refill_from` of a list held to its law (R8),
+/// which the call then gives the start the frame says, or a borrow of it. One
+/// that assigns it on every path declares it unassigned. The statement is the
+/// one an element outside a group is decoded by, which assigns its field on
+/// every path; the local it assigns here is declared first, as that field was.
 fn decode_into_local(stmt: &str, place: &str, local: &str, ty: &str) -> String {
     let built = replace_place(stmt, place, local);
+    let fills_in_place = [
+        format!("{place}.refill("),
+        format!("{place}.refill_from("),
+        format!("&mut {place}"),
+    ]
+    .iter()
+    .any(|call| stmt.contains(call.as_str()));
     if stmt.contains(&format!("{place}.insert(")) {
         format!("let mut {local}: {ty} = None;\n        {built}")
-    } else if stmt.contains(&format!("{place}.refill(")) || stmt.contains(&format!("&mut {place}"))
-    {
+    } else if fills_in_place {
         format!("let mut {local}: {ty} = Default::default();\n        {built}")
     } else {
         format!("#[allow(clippy::needless_late_init)]\n        let {local}: {ty};\n        {built}")
@@ -12531,6 +12538,10 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                 ));
             }
             // The first of two lists of one count, where the arm holds the pair.
+            // One held to its law is filled from its start (`refill_from`),
+            // which the pair's door does not take either, so such a group is
+            // decoded by value, each list into a local of its own
+            // ([`decode_into_local`]).
             let paired: Vec<&ArmOfGroup<'_>> = arms
                 .iter()
                 .filter(|a| holds(a, f) && second_in(a.0, f).is_some())
@@ -47435,6 +47446,36 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    /// A list a group holds is decoded into a local before the group is made
+    /// of it, starting from what its statement fills: a gated one from none,
+    /// one filled in place from the list's default, through `refill` or, held
+    /// to its law, through `refill_from` (docs/adr/0065 §6 R8), and one the
+    /// statement assigns from nothing.
+    #[test]
+    fn a_list_a_group_holds_is_decoded_into_a_local_it_fills() {
+        let place = "_out.links";
+        let filled = |stmt: &str| decode_into_local(stmt, place, "links", "Ty");
+        assert_eq!(
+            filled("_out.links.refill_from((head & 0x1) != 0, |_vec| { Ok(()) })?;"),
+            "let mut links: Ty = Default::default();\n        \
+             links.refill_from((head & 0x1) != 0, |_vec| { Ok(()) })?;"
+        );
+        assert_eq!(
+            filled("_out.links.refill(|_vec| { Ok(()) })?;"),
+            "let mut links: Ty = Default::default();\n        \
+             links.refill(|_vec| { Ok(()) })?;"
+        );
+        assert_eq!(
+            filled("_out.links.insert(Default::default()).refill_from(true, |_vec| Ok(()))?;"),
+            "let mut links: Ty = None;\n        \
+             links.insert(Default::default()).refill_from(true, |_vec| Ok(()))?;"
+        );
+        assert_eq!(
+            filled("_out.links = span;"),
+            "#[allow(clippy::needless_late_init)]\n        let links: Ty;\n        links = span;"
+        );
+    }
 
     /// A C or C++ unit holds a text constant as its bytes, each one character
     /// constant: a printable one as itself, a quote and a backslash escaped,

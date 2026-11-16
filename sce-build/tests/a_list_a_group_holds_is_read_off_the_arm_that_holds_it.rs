@@ -74,3 +74,22 @@ fn an_input_a_list_a_group_holds_says_is_read_off_the_arm() {
         "{name} reads a list a group holds through an accessor of its own:\n{code}"
     );
 }
+
+/// A list always there held to its law, which shares its count with a list a
+/// gate decides (docs/adr/0065 §6 R5, R8), is a member of the group in every
+/// arm. The encode binds it off the arm the value holds as an `Option`, so the
+/// flag its start derives is read through it; the decode fills it from its
+/// start (`refill_from`) into a local of its own, from the list's default,
+/// before the group is made of it.
+#[test]
+fn a_list_always_there_held_to_its_law_is_read_off_every_arm() {
+    let name = "codec_repeat_flag_aligned_always";
+    let code = rust_of(name);
+    assert_contains(
+        name,
+        &code,
+        "= _m_links.clone().map_or(0, |_l| usize::from(_l.start()));",
+    );
+    assert_contains(name, &code, "let mut links: ");
+    assert_contains(name, &code, "note_capacity(links.refill_from(");
+}
