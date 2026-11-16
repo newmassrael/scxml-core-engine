@@ -46,8 +46,6 @@ fn repo_root() -> PathBuf {
 
 /// Trees holding committed backend output.
 const COMMITTED_TREES: &[&str] = &[
-    "backends/rust/tests/src/generated",
-    "backends/rust/tests/src/integration",
     "backends/kotlin/w3c/src/main/kotlin/com/sce/generated",
     "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
     "backends/go/tests/generated",
@@ -84,14 +82,23 @@ fn tracked_paths() -> std::collections::BTreeSet<String> {
 /// nothing would satisfy every per-file assertion vacuously.
 const MIN_SIDECARS: usize = 400;
 
-/// Sidecars git tracks under [`COMMITTED_TREES`].
+/// Trees the checkout does not commit whose sidecars this gate reads as
+/// their actions write them (docs/adr/0097): each tree, and the root under
+/// it the sidecars lie in.
+const MATERIALIZED_TREES: &[(&str, &str)] = &[("rust-w3c", "backends/rust/tests/src/generated")];
+
+/// The sidecars of the trees: those git tracks under [`COMMITTED_TREES`],
+/// then those of [`MATERIALIZED_TREES`] as `sce-codegen materialize` writes
+/// them.
 ///
-/// Tracked, not merely present: the same trees accumulate untracked
-/// build output, and a sidecar that is not committed is not a
-/// committed artifact this gate has anything to say about.
-fn committed_sidecars() -> Vec<PathBuf> {
+/// Tracked, not merely present: the committed trees accumulate untracked
+/// build output, and a sidecar that is not committed is not a committed
+/// artifact this gate has anything to say about. A tree that is not
+/// committed is read where the generator under test writes it, and nowhere
+/// else.
+fn sidecars_of_the_trees() -> Vec<PathBuf> {
     let root = repo_root();
-    tracked_paths()
+    let mut sidecars: Vec<PathBuf> = tracked_paths()
         .iter()
         .filter(|rel| rel.ends_with("/sce_sourcemap.json"))
         .filter(|rel| {
@@ -100,7 +107,15 @@ fn committed_sidecars() -> Vec<PathBuf> {
                 .any(|tree| rel.starts_with(&format!("{tree}/")))
         })
         .map(|rel| root.join(rel))
-        .collect()
+        .collect();
+    for (tree, under) in MATERIALIZED_TREES {
+        let dir = common::materialized::file(env!("CARGO_BIN_EXE_sce-codegen"), tree, under);
+        sidecars.extend(common::materialized::files_named(
+            &dir,
+            "sce_sourcemap.json",
+        ));
+    }
+    sidecars
 }
 
 /// Basename → path for every tracked SCXML under [`SCXML_ROOTS`].
@@ -177,7 +192,7 @@ fn scxml_index_is_unambiguous() {
 fn every_sourcemap_path_names_a_document_an_author_wrote() {
     const SYNTH_INFIX: &str = "__sce_synth_invoke__";
     let idx = scxml_index();
-    let sidecars = committed_sidecars();
+    let sidecars = sidecars_of_the_trees();
     assert!(
         sidecars.len() >= 100,
         "only {} committed sidecar(s) reached this gate",
@@ -286,7 +301,7 @@ fn normalise(symbols: &serde_json::Value) -> BTreeMap<String, serde_json::Value>
 /// each sidecar six times to say the same thing.
 #[test]
 fn committed_sourcemaps_match_regeneration() {
-    let sidecars = committed_sidecars();
+    let sidecars = sidecars_of_the_trees();
     assert!(
         sidecars.len() >= MIN_SIDECARS,
         "found only {} committed sidecars; expected at least {MIN_SIDECARS}. \
@@ -426,8 +441,10 @@ fn committed_sourcemaps_match_regeneration() {
 
     assert!(
         stale.is_empty(),
-        "{} of {compared} committed sourcemaps disagree with the generator. \
-         Re-run `scripts/regen_all_committed_trees.sh` and commit the result.\n  {}",
+        "{} of {compared} sourcemaps of the trees disagree with the generator. A \
+         committed tree is refreshed by `scripts/regen_all_committed_trees.sh`; a \
+         materialized one disagreeing means a tree action and `generate` write \
+         different sidecars for one document.\n  {}",
         stale.len(),
         stale
             .iter()
@@ -536,7 +553,7 @@ fn has_markable_sites(map: &serde_json::Value, marker_text: &[String]) -> bool {
 /// comparison rather than a magic number.
 #[test]
 fn committed_markers_distinguish_the_states_they_sit_in() {
-    let sidecars = committed_sidecars();
+    let sidecars = sidecars_of_the_trees();
     assert!(
         sidecars.len() >= MIN_SIDECARS,
         "found only {} committed sidecars; expected at least {MIN_SIDECARS}",
@@ -653,7 +670,7 @@ fn sourcemap_schema_violations(instance: &serde_json::Value) -> Vec<String> {
 /// to a fresh emission, so validating them validates that emission.
 #[test]
 fn committed_sourcemaps_validate_against_the_wire_schema() {
-    let sidecars = committed_sidecars();
+    let sidecars = sidecars_of_the_trees();
     assert!(
         sidecars.len() >= MIN_SIDECARS,
         "found only {} committed sidecars; expected at least \
@@ -698,7 +715,7 @@ fn assert_one_change_is_rejected(
     why: &str,
     mutate: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
 ) {
-    let sidecars = committed_sidecars();
+    let sidecars = sidecars_of_the_trees();
     let first = sidecars.first().expect("at least one committed sidecar");
     let mut doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(first).expect("read sidecar"))

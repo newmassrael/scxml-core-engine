@@ -13,8 +13,8 @@
 //!
 //! What the generated tables do when they run is held by
 //! `backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs`, which
-//! compiles them from the same fixtures (regen:
-//! `scripts/materialize.sh rust-static-datamodel`) and runs the suite through
+//! compiles them from the same fixtures (the tree `rust-static-datamodel`,
+//! which its crate's build script writes) and runs the suite through
 //! `sce_rust_runtime::test::run_suite`.
 
 use std::path::{Path, PathBuf};

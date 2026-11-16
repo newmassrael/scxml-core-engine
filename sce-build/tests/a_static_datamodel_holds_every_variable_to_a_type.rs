@@ -14,6 +14,8 @@
 // backend's templates lower it, generation refuses it for that backend
 // rather than handing forge-language expressions to a script engine.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -6125,26 +6127,40 @@ const INTERPRETER: &str = "interpreter";
 /// since the Interpreter's slice of that item, which emptied it a third time.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
-/// Where each backend's static datamodel tree commits a machine: the file that
-/// exists only if it did.
-const COMMITTED_MACHINES: &[(&str, &str)] = &[
+/// Where each backend's static datamodel tree places a machine: the file that
+/// exists only if it did. A tree the checkout commits is read in the
+/// checkout; one it does not (the Rust tree, a build output of its crate,
+/// docs/adr/0097) is read where `sce-codegen materialize` writes it.
+const PLACED_MACHINES: &[(&str, Placed, &str)] = &[
     (
         "rust",
+        Placed::Materialized("rust-static-datamodel"),
         "backends/rust/tests/src/integration/static_datamodel/{m}_sm.rs",
     ),
     (
         "kotlin",
+        Placed::Committed,
         "backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/{m}/{m}Sm.kt",
     ),
     (
         "go",
+        Placed::Committed,
         "backends/go/tests/integration/static_datamodel/{m}/{m}_sm.go",
     ),
     (
         "swift",
+        Placed::Committed,
         "backends/swift/tests/Sources/StaticDatamodelMachines/{m}_sm.swift",
     ),
 ];
+
+/// Where a backend's static datamodel tree is read.
+enum Placed {
+    /// In the checkout, which commits it.
+    Committed,
+    /// In the materialization of the named tree.
+    Materialized(&'static str),
+}
 
 /// The Go mutation casefile declares the machines `go-static-datamodel`
 /// commits as targets, because a mutated template reaches the tests only through
@@ -6415,16 +6431,22 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             "{machine}: no backend lowers it, so no scenario runs it, and NOT_YET_LOWERED \
              does not say why for {unlisted:?}"
         );
-        // A backend that lowers the machine commits it where its driver builds
-        // it from; one that refuses it has nothing to commit.
-        for (lang, committed) in COMMITTED_MACHINES {
+        // A backend that lowers the machine places it where its driver builds
+        // it from; one that refuses it has nothing to place.
+        for (lang, placed, at) in PLACED_MACHINES {
             if !lowering.contains(lang) {
                 continue;
             }
-            let path = root.join(committed.replace("{m}", machine));
+            let relative = at.replace("{m}", machine);
+            let path = match placed {
+                Placed::Committed => root.join(&relative),
+                Placed::Materialized(tree) => {
+                    common::materialized::file(env!("CARGO_BIN_EXE_sce-codegen"), tree, &relative)
+                }
+            };
             assert!(
                 path.exists(),
-                "{machine}: its {lang} tree has not committed {}",
+                "{machine}: its {lang} tree has not placed {}",
                 path.display()
             );
         }

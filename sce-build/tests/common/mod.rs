@@ -35,6 +35,7 @@ pub mod integration_channels;
 pub mod kotlin;
 pub mod lane_corpus;
 pub mod ledger;
+pub mod materialized;
 pub mod name_oracle;
 pub mod native_oracle;
 pub mod profile_suite;
