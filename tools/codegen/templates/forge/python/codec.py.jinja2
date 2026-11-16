@@ -15,7 +15,7 @@
 {% endif %}
 {% if field.length_ref_end is defined %}
         if _frame_len < {{ field.length_ref_end }}:
-            return None
+            raise NeedMoreBytes()
 {% endif %}
 {% if field.is_enum and field.enum_is_open %}
         {{ field.local }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
@@ -136,14 +136,16 @@ class {{ struct_name }}:
 {% endif %}
 
     @classmethod
-    def decode(cls, cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Optional[{{ struct_name }}]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> {{ struct_name }}:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
 {% if has_parent_flags %}
         # RFC §synth-5-B: ``parent_flags`` is the parent codec's flags
         # carrier value, threaded by the variant arm dispatcher. Body
@@ -166,40 +168,28 @@ class {{ struct_name }}:
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         # mode additionally peeks the cursor's next byte for variant tag
         # without advancing — arm body decoder reads it as own header.
-        try:
 {% for field in fields %}
 {% if field.is_repeat %}
-            {{ field.repeat_decode_stmt }}
+        {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
-            {{ field.tlv_chain_decode_stmt }}
+        {{ field.tlv_chain_decode_stmt }}
 {% elif field.is_embed %}
-            {{ field.embed_decode_stmt }}
+        {{ field.embed_decode_stmt }}
 {% else %}
-            {{ field.present_if_decode_stmt }}
+        {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
 {% if variant.has_peek_byte %}
-            {{ variant.peek_byte_decode_stmt }}
+        {{ variant.peek_byte_decode_stmt }}
 {% endif %}
-        except NeedMoreBytes:
-            return None
 {% else %}
 {% if fields %}
         # Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-        # A field's refusal (a bound, an undeclared enum value) is a
-        # `CodecError`, which `decode` answers with `None` as the streaming
-        # path does.
-        try:
-            raw = cursor.peek_slice({{ min_bytes }})
+        raw = cursor.peek_slice({{ min_bytes }})
 {% for field in fields %}
-{{ decode_field(field) | indent(4, true) }}
+{{ decode_field(field) }}
 {% endfor %}
-        except CodecError:
-            return None
-        try:
-            cursor.advance({{ min_bytes }})
-        except NeedMoreBytes:
-            return None
+        cursor.advance({{ min_bytes }})
 {% endif %}
 {% endif %}
         # Dispatch on the tag field; each arm decodes its body codec
@@ -210,22 +200,17 @@ class {{ struct_name }}:
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
             body.kind = "{{ arm.variant_name }}"
-            _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
-            if _arm is None:
-                return None
-            body.{{ arm.c_union_field }} = _arm
+            body.{{ arm.c_union_field }} = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
 {% endfor %}
         else:
 {% if variant.default_arm %}
             body.kind = "{{ variant.default_arm.variant_name }}"
             body.default_tag = {{ variant.tag_store_expr }}
-            _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
-            if _arm is None:
-                return None
-            body.{{ variant.default_arm.c_union_field }} = _arm
+            body.{{ variant.default_arm.c_union_field }} = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
 {% else %}
-            # codec/variant-arm-unreachable rejected this case at parse time.
-            return None
+            # codec/variant-arm-unreachable proves every tag names an arm, so
+            # no frame reaches here.
+            raise AssertionError("codec/variant-arm-unreachable admitted a tag no arm names")
 {% endif %}
         return cls(
 {% for field in fields if not field.derived %}
@@ -242,70 +227,51 @@ class {{ struct_name }}:
         # (runtime width), string fields (UTF-8 decode), and a fixed field
         # after a variable-length payload (offset depends on the payload
         # length). Each field reads its own bytes and advances past what it
-        # consumed, all inside one outer `try:`. The `except` catches the
-        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
-        # field's `VleWidthOverflow` both unwind to a single `return None`
-        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
-        # subclass, so this is behaviour-identical for them).
-        try:
+        # consumed; a refusal raises the `CodecError` that names it.
 {% for field in fields %}
 {% if field.is_repeat %}
-            {{ field.repeat_decode_stmt }}
+        {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
-            {{ field.tlv_chain_decode_stmt }}
+        {{ field.tlv_chain_decode_stmt }}
 {% elif field.is_embed %}
-            {{ field.embed_decode_stmt }}
+        {{ field.embed_decode_stmt }}
 {% else %}
-            {{ field.present_if_decode_stmt }}
+        {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
-        except CodecError:
-            return None
         return cls(
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
 {% elif has_variable_fields %}
-        try:
-            _frame_len = cursor.remaining()
+        _frame_len = cursor.remaining()
 {% if min_bytes > 0 %}
-            if _frame_len < {{ min_bytes }}:
-                return None
+        if _frame_len < {{ min_bytes }}:
+            raise NeedMoreBytes()
 {% endif %}
-            raw = cursor.peek_slice(_frame_len)
+        raw = cursor.peek_slice(_frame_len)
 {% for field in fields %}
-{{ decode_field(field) | indent(4, true) }}
+{{ decode_field(field) }}
 {% endfor %}
-        except CodecError:
-            return None
         value = cls(
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
-        try:
-            cursor.advance(_frame_len)
-        except NeedMoreBytes:
-            return None
+        cursor.advance(_frame_len)
         return value
 {% else %}
-        try:
-            raw = cursor.peek_slice({{ min_bytes }})
+        raw = cursor.peek_slice({{ min_bytes }})
 {% for field in fields %}
-{{ decode_field(field) | indent(4, true) }}
+{{ decode_field(field) }}
 {% endfor %}
-        except CodecError:
-            return None
         value = cls(
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
-        try:
-            cursor.advance({{ min_bytes }})
-        except NeedMoreBytes:
-            return None
+        cursor.advance({{ min_bytes }})
         return value
 {% endif %}
 

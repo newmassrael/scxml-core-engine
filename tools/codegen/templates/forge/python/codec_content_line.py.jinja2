@@ -145,16 +145,17 @@ class {{ struct_name }}:
 {% endfor %}
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[{{ struct_name }}]:
+    def decode(cls, cursor: SceCursor) -> {{ struct_name }}:
         """Decode one component from ``cursor``. On success the cursor
-        advances past its ``END:`` line; ``None`` on any refusal, with the
+        advances past its ``END:`` line; a refusal raises the ``CodecError``
+        that names it (docs/adr/0099, amendment of 2026-11-16), with the
         cursor left where it was."""
         mark = cursor.mark()
         try:
             return cls._decode_at(cursor)
         except CodecError:
             cursor.reset(mark)
-            return None
+            raise
 
     @classmethod
     def _decode_at(cls, c: SceCursor) -> {{ struct_name }}:

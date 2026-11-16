@@ -5,7 +5,8 @@
    dataclass uses snake_case field names, so every SCXML-source-case
    (camelCase) name in fixtures.json is converted via `to_snake_case`.
    `encode_to_bytes()` returns `bytes`; `decode(cursor)` is a classmethod taking
-   an `sce_forge_runtime.codec.SceCursor` and returning `Optional[...]`. #}
+   an `sce_forge_runtime.codec.SceCursor` and returning the value, which raises
+   the `CodecError` subclass that names a refusal. #}
 {% if not f.oracle_eligible %}
         # Compile-only probe: oracle_eligible=false because the fixture's
         # field shape isn't expressible in the current StructField /
@@ -60,10 +61,6 @@
             from sce_forge_runtime.codec import SceCursor as _SceCursor
             cursor = _SceCursor(expected_bytes)
             round_tripped = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(cursor)
-            self.assertIsNotNone(
-                round_tripped,
-                f"{{ f.name }} case {i} decode returned None",
-            )
             if decode_only:
                 self.assertEqual(
                     cursor.remaining(),
@@ -100,36 +97,36 @@
             "{{ f.name }} source {{ loop.index0 }}: {{ s.note }}",
         )
         _cursor = _SceCursor(_expected)
+{# A refused decode raises the `CodecError` that names why, which fails the
+   test with that kind (docs/adr/0099, amendment of 2026-11-16). #}
         decoded = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(_cursor)
-        self.assertIsNotNone(
-            decoded,
-            "{{ f.name }} source {{ loop.index0 }}: decode refused: {{ s.note }}",
+        self.assertEqual(
+            _cursor.remaining(),
+            0,
+            "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread",
         )
-        if decoded is not None:
-            self.assertEqual(
-                _cursor.remaining(),
-                0,
-                "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread",
-            )
 {% for c in s.checks %}
-            self.assertTrue(
-                {{ c.holds }},
-                "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
-            )
+        self.assertTrue(
+            {{ c.holds }},
+            "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
+        )
 {% endfor %}
 {% endfor %}
 
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
-   shape. The generated Python `decode` funnels every `CodecError` through
-   one `except` into `None`, so the failure is raised by name inside the
-   codec but is not observable by name outside it; the assertion is that
-   the decode refused. #}
+   shape. The generated Python `decode` raises the `CodecError` subclass that
+   names the refusal (docs/adr/0099, amendment of 2026-11-16), and `r.symbol`
+   is that class's name, so the vector asserts the kind and not only that the
+   decode refused. #}
 {% for r in f.rejects %}
-        from sce_forge_runtime.codec import SceCursor as _SceCursor
-        self.assertIsNone(
+        from sce_forge_runtime.codec import CodecError as _CodecError, SceCursor as _SceCursor
+        with self.assertRaises(_CodecError, msg="{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}") as _refused:
             {{ f.name }}.{{ f.name | to_pascal_case }}.decode(
                 _SceCursor(bytes([{{ r.encoded | join(", ") }}]))
-            ),
-            "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}",
+            )
+        self.assertEqual(
+            type(_refused.exception).__name__,
+            "{{ r.symbol }}",
+            "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
         )
 {% endfor %}

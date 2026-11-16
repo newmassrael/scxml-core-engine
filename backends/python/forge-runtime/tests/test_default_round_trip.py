@@ -129,11 +129,8 @@ class TestDefaultRoundTrip(unittest.TestCase):
         )
 
         cursor = SceCursor(wire)
+        # A refusal raises the `CodecError` that names it, failing the test.
         decoded = Outer.decode(cursor)
-        self.assertIsNotNone(
-            decoded,
-            "freshly-constructed codec must decode without returning None",
-        )
         self.assertEqual(
             cursor.remaining(),
             0,

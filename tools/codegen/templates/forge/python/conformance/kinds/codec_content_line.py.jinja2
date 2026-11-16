@@ -6,9 +6,10 @@
    content-line component adds: an entry can be absent (`None`) or a list, a
    case marked `decode_only` is an input the codec reads and does not write, and
    a refused decode leaves the cursor where it found it. The generated decode
-   funnels every `CodecError` into `None`, so a reject asserts refusal; the rule
-   that refused is the runtime's, which its own tests pin. The rejects are read
-   from the reference like the cases are.
+   raises the `CodecError` that names the refusal (docs/adr/0099, amendment of
+   2026-11-16), so a reject asserts its kind by the class's name, `r.symbol`.
+   The cases are read from the reference; the rejects are folded into the
+   fixture, as the generic codec fragment's are.
 
    A vector states an entry that is an enum (docs/adr/0015) as its carrier
    number; the codec holds the enum's own type, so a value written into the
@@ -26,7 +27,7 @@
 {{ expr }}
 {%- endif -%}
 {%- endmacro %}
-        from sce_forge_runtime.codec import SceCursor as _SceCursor
+        from sce_forge_runtime.codec import CodecError as _CodecError, SceCursor as _SceCursor
         for i, case in enumerate(spec["cases"]):
             decoded = case["decoded"]
             expected_bytes = bytes(case["encoded"])
@@ -39,10 +40,6 @@
 
             cursor = _SceCursor(expected_bytes)
             round_tripped = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(cursor)
-            self.assertIsNotNone(
-                round_tripped,
-                f"{{ f.name }} case {i} decode returned None",
-            )
 {% for field in f.fields %}
 {% if field.members %}
             # A list of line records (docs/adr/0014), as the vector writes each:
@@ -92,15 +89,19 @@
                 f"{{ f.name }} case {i} encode",
             )
 
-        for i, reject in enumerate(spec["rejects"]):
-            reject_bytes = bytes(reject["encoded"])
-            reject_cursor = _SceCursor(reject_bytes)
-            self.assertIsNone(
-                {{ f.name }}.{{ f.name | to_pascal_case }}.decode(reject_cursor),
-                f"{{ f.name }} reject {i}: {reject['why']}",
-            )
-            self.assertEqual(
-                reject_cursor.remaining(),
-                len(reject_bytes),
-                f"{{ f.name }} reject {i}: the cursor moved",
-            )
+{% for r in f.rejects %}
+        reject_bytes = bytes([{{ r.encoded | join(", ") }}])
+        reject_cursor = _SceCursor(reject_bytes)
+        with self.assertRaises(_CodecError, msg="{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}") as _refused:
+            {{ f.name }}.{{ f.name | to_pascal_case }}.decode(reject_cursor)
+        self.assertEqual(
+            type(_refused.exception).__name__,
+            "{{ r.symbol }}",
+            "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
+        )
+        self.assertEqual(
+            reject_cursor.remaining(),
+            len(reject_bytes),
+            "{{ f.name }} reject {{ loop.index0 }}: the cursor moved",
+        )
+{% endfor %}

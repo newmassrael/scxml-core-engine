@@ -223,7 +223,6 @@ def read(log: {{ pascal }}, reader: runtime.Reader) -> {{ pascal }}Read:
     tag = entry[1 + {{ context.tag_word }}] & 0xFF
 {% endif %}
     packed = b"".join(word.to_bytes(8, "little") for word in entry[{{ context.payload_start }}:])
+    # A refusal of the element's codec raises the `CodecError` that names it.
     element = {{ element_pascal }}.decode(runtime_codec.SceCursor(packed[:stored]){% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
-    if element is None:
-        raise runtime_codec.CodecError(f"the entry {found.seq} is {stored} bytes that its element's codec does not decode")
     return {{ pascal }}Item(found.seq, element{% if context.flags %}, flags{% endif %})
