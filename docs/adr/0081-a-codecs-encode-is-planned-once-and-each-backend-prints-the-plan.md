@@ -1004,6 +1004,17 @@ old encode, the old encode and its templates are removed in the same landing.
    list holds and walks it, each entry written by its codec's module's `encode_source`. A chain that sets its
    entries' flag, hands an entry what the one before it was, holds a bare entry's place or is held to a law (R6, R7,
    R8) stays unlowered.
+
+   *The fifth Python landing, 2026-11-16:* an encode that refuses. Each refusal the totality analysis names is one
+   the printed encode raises (`assert_all_written`), as the runtime's exception class of its name: a gate the encode
+   cannot derive, held to the field it gates on the carrier as the encode writes it (`PresentIfMismatch`); a number
+   several elements measure, every one there saying the first's (`InconsistentSource`, which the Python runtime
+   gains); a number past its field (`LengthOutOfRange`). The checks run before the first byte. Where a codec it holds
+   can refuse, the encode writes its frame whole into a buffer first and hands the buffer to the caller's sink once it
+   is written, the Python form of the count over a sink that keeps nothing (§1), since the runtime has no counting
+   sink and one pass both measures and writes. `EncodeFailure::symbol` names each refusal for Python, so the harness
+   runs the refused cases of a printed codec, holding the encode to raising that class and leaving the sink empty. An
+   input a held codec says, checked against what the codec is handed, waits for the flag inputs.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

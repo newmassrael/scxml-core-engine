@@ -15310,8 +15310,7 @@ fn render_codec(
     }
     // A printed C++ encode refuses what its plan's totality names; it runs no
     // prologue of the template's.
-    // A printed Python encode, likewise; the printer prints only a plan that
-    // refuses nothing.
+    // A printed Python encode, likewise.
     let encode_can_refuse = if cpp_printed.is_some() {
         cpp_printed_refuses
     } else if let Some((plan, _)) = &python_printed {
@@ -15325,22 +15324,37 @@ fn render_codec(
     );
     ctx.insert("encode_can_refuse".into(), encode_can_refuse.into());
     // What the encode raises by name, for a backend that imports each error: a
-    // printed Python encode raises none of the template's refusals.
+    // printed Python encode raises what its plan's totality names and none of
+    // the template's refusals, which a bound class holds instead.
     {
         use crate::forge::codec_failure::CodecFailure;
-        let template_encode = python_printed.is_none();
-        ctx.insert(
-            "encode_refuses_mismatch".into(),
-            (template_encode && refuses_mismatch).into(),
-        );
-        for (key, failure) in [
-            ("encode_refuses_length", CodecFailure::LengthOutOfRange),
-            ("encode_refuses_count", CodecFailure::TooManyElements),
-        ] {
-            ctx.insert(
-                key.into(),
-                (template_encode && bound_failures.contains(&failure)).into(),
-            );
+        use crate::forge::codec_totality::RefusalKind;
+        match &python_printed {
+            Some((plan, _)) => {
+                let raises =
+                    |kind: RefusalKind| plan.totality.refusals().iter().any(|r| r.kind == kind);
+                for (key, kind) in [
+                    ("encode_refuses_mismatch", RefusalKind::PresentIfMismatch),
+                    ("encode_refuses_length", RefusalKind::LengthOutOfRange),
+                    (
+                        "encode_refuses_inconsistent",
+                        RefusalKind::InconsistentSource,
+                    ),
+                ] {
+                    ctx.insert(key.into(), raises(kind).into());
+                }
+                ctx.insert("encode_refuses_count".into(), false.into());
+            }
+            None => {
+                ctx.insert("encode_refuses_mismatch".into(), refuses_mismatch.into());
+                ctx.insert("encode_refuses_inconsistent".into(), false.into());
+                for (key, failure) in [
+                    ("encode_refuses_length", CodecFailure::LengthOutOfRange),
+                    ("encode_refuses_count", CodecFailure::TooManyElements),
+                ] {
+                    ctx.insert(key.into(), bound_failures.contains(&failure).into());
+                }
+            }
         }
     }
 

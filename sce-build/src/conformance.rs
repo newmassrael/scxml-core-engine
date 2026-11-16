@@ -5502,6 +5502,16 @@ mod tests {
             "::SCE::Forge::CodecError::PresentIfMismatch"
         );
 
+        // The Python printer prints it too, and its harness names the
+        // runtime's exception class.
+        let (folded, value) =
+            fold(&printed, &mismatch, Language::Python).expect("Python states it");
+        assert!(folded);
+        assert_eq!(
+            value["refused"][0]["symbol"],
+            "sce_forge_runtime.codec.PresentIfMismatch"
+        );
+
         let (folded, value) = fold(&checked, &mismatch, Language::Kotlin).expect("Kotlin: none");
         assert!(!folded && value.get("refused").is_none());
 

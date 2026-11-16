@@ -113,6 +113,27 @@
 {% endfor %}
 {% endfor %}
 
+{# Refused cases (docs/adr/0081 §5): each `source` is a value of the codec's
+   interface its encode refuses, made as a source is, and the encode raises
+   exactly the refusal the case names, the runtime's exception class, before it
+   writes a byte, so the sink is left empty. #}
+{% for r in f.refused %}
+        import sce_forge_runtime.codec
+        from sce_forge_runtime.codec import BytearraySink as _BytearraySink
+        value = {{ r.literal }}
+        _encoded = bytearray()
+        with self.assertRaises(
+            {{ r.symbol }},
+            msg="{{ f.name }} refused {{ loop.index0 }}: the encode answers {{ r.error }}: {{ r.note }}",
+        ):
+            {{ f.name }}.encode_source(value, _BytearraySink(_encoded){% for i in r.encode_inputs %}, {{ i }}{% endfor %})
+        self.assertEqual(
+            len(_encoded),
+            0,
+            "{{ f.name }} refused {{ loop.index0 }}: the encode wrote bytes before it refused",
+        )
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. The generated Python `decode` raises the `CodecError` subclass that
    names the refusal (docs/adr/0099, amendment of 2026-11-16), and `r.symbol`

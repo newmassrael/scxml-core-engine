@@ -290,6 +290,75 @@ fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
     );
 }
 
+/// A gate the encode cannot derive the presence from is a check: the value is
+/// held to it before the first byte, tested on the carrier as the encode writes
+/// it, and refused with the runtime's `PresentIfMismatch`.
+///
+/// Turns red where `python_source::encode_source` drops the loop over
+/// `plan.gate_checks`, tests the gate on the value's carrier rather than the
+/// one the encode writes, or `positional_forms` names a checked gate unlowered.
+#[test]
+fn a_gate_the_encode_cannot_derive_is_held_to_the_field_it_gates() {
+    assert!(unlowered("codec_present_if_checked").is_empty());
+    let text = resource_module("codec_present_if_checked");
+    holds(
+        "codec_present_if_checked",
+        &text,
+        &[
+            "PresentIfMismatch, SceCursor",
+            "    _c_flags = (_c_flags & ~0x1) | (0x1 if src.seq is not None else 0)\n",
+            "    if (((_c_flags >> 0) & 1) != 0 or ((_c_flags >> 1) & 1) != 0) != \
+             (src.trailer is not None):\n        raise PresentIfMismatch(\"trailer\")\n",
+        ],
+    );
+}
+
+/// Two byte strings that share one length each measure it, and a value whose
+/// two differ is refused as an inconsistent source before the first byte.
+///
+/// Turns red where `python_source::derive_number` stops comparing every
+/// measure always there with the first, or takes the number from the second.
+#[test]
+fn a_length_two_byte_strings_share_refuses_two_that_differ() {
+    assert!(unlowered("codec_length_shared").is_empty());
+    let text = resource_module("codec_length_shared");
+    holds(
+        "codec_length_shared",
+        &text,
+        &[
+            "InconsistentSource, ",
+            "    if len(src.beta) != len(src.alpha):\n        \
+             raise InconsistentSource(\"span_len\")\n",
+            "    _d_span_len = len(src.alpha)\n",
+        ],
+    );
+}
+
+/// The encoded length of a body that can refuse is refused where it does not
+/// fit its field, and a frame that holds a codec that can refuse is written
+/// whole first and handed to the caller's sink only once it is, so a refusal
+/// leaves that sink as it was.
+///
+/// Turns red where `python_source::derive_number` drops the `Narrow::Checked`
+/// test, or `encode_source` writes straight into the caller's sink for a plan
+/// with a `RefusalKind::Child` refusal.
+#[test]
+fn a_frame_that_holds_a_codec_that_can_refuse_is_written_whole_first() {
+    assert!(unlowered("codec_encoded_length_checked").is_empty());
+    let text = resource_module("codec_encoded_length_checked");
+    holds(
+        "codec_encoded_length_checked",
+        &text,
+        &[
+            "    _b_inner = bytearray()\n    \
+             sce_codec_length_shared.encode_source(src.inner, BytearraySink(_b_inner))\n",
+            "    if len(_b_inner) > 0xFFFF:\n        raise LengthOutOfRange(\"inner_size\")\n",
+            "    _w = w\n    _frame = bytearray()\n    w = BytearraySink(_frame)\n",
+            "    _w.write_bytes(_frame)\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// a length the value states where its gated content is absent names one.
@@ -381,6 +450,9 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_length_ref",
         "codec_scout_zid_body",
         "codec_simple_frame",
+        "codec_present_if_checked",
+        "codec_length_shared",
+        "codec_encoded_length_checked",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

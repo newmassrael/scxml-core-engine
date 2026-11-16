@@ -1960,3 +1960,15 @@ values below 64 are `error.execution` codes and the rest `error.communication` c
 - The vocabulary gains `capacityExceeded`, raised as `error.execution` where C11 refuses whole what a store it bounds
   cannot hold (an event's data past its slot, a scheduled queue full, a child with no stack room to start).
 
+## A printed Python codec raises the refusals its plan names (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose encode can refuse a value: a gate the encode cannot derive (`PresentIfMismatch`), two byte strings of
+one shared length that differ (`InconsistentSource`, new in `sce_forge_runtime.codec`), and a derived length past its
+field (`LengthOutOfRange`).
+
+- `encode`, `encode_to_bytes` and the module's `encode_source` raise the refusal before they write a byte to the
+  sink; catch `CodecError` where a value may be one no frame carries.
+- A codec that holds a codec whose encode can refuse writes its frame whole before it hands it to your sink, so a
+  refusal leaves the sink as it was.
+

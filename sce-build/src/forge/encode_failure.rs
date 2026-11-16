@@ -94,13 +94,16 @@ impl EncodeFailure {
                 EncodeFailure::PresentIfMismatch => "::SCE::Forge::CodecError::PresentIfMismatch",
                 EncodeFailure::InconsistentSource => "::SCE::Forge::CodecError::InconsistentSource",
             }),
+            // The runtime's exception class, which the harness names through
+            // the module it imports whole.
+            Language::Python => Some(match self {
+                EncodeFailure::LengthOutOfRange => "sce_forge_runtime.codec.LengthOutOfRange",
+                EncodeFailure::PresentIfMismatch => "sce_forge_runtime.codec.PresentIfMismatch",
+                EncodeFailure::InconsistentSource => "sce_forge_runtime.codec.InconsistentSource",
+            }),
             // These harnesses run no source of a printed encode (docs/adr/0081
             // §5), so none of them states a refused case.
-            Language::Kotlin
-            | Language::Go
-            | Language::Python
-            | Language::C11
-            | Language::Swift => None,
+            Language::Kotlin | Language::Go | Language::C11 | Language::Swift => None,
         }
     }
 }
@@ -142,23 +145,28 @@ mod tests {
                     );
                 }
             }
+            // A Python refusal is the runtime's exception class of that name.
+            let symbol = f
+                .symbol(Language::Python)
+                .expect("Python names every refusal");
+            assert!(
+                symbol.ends_with(&format!("codec.{variant}")),
+                "Python {f:?}: `{symbol}` does not name `{variant}`"
+            );
         }
     }
 
-    /// Rust and C++ name every refusal, the inconsistent source among them
-    /// (`CodecError::InconsistentSource` of each runtime), and no other
+    /// Rust, C++ and Python name every refusal, the inconsistent source among
+    /// them (`CodecError::InconsistentSource` of the Rust and C++ runtimes, the
+    /// exception `InconsistentSource` of the Python one), and no other
     /// backend's harness states a refused case.
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
             assert!(f.symbol(Language::Rust).is_some(), "{f:?}");
             assert!(f.symbol(Language::Cpp).is_some(), "{f:?}");
-            for lang in [
-                Language::C11,
-                Language::Go,
-                Language::Kotlin,
-                Language::Python,
-            ] {
+            assert!(f.symbol(Language::Python).is_some(), "{f:?}");
+            for lang in [Language::C11, Language::Go, Language::Kotlin] {
                 assert!(f.symbol(lang).is_none(), "{lang:?} {f:?}");
             }
         }
