@@ -671,6 +671,49 @@ fn a_chain_that_ends_with_its_scope_is_walked_as_a_list() {
     );
 }
 
+/// A one-bit flag a value presents is one a parent may set in place of the
+/// value's: the codec declares its overrides, folds a flag set there into its
+/// carrier last, and its plain encode sets none. A chain closed by an entry
+/// flag sets that flag on each entry but the last, and holds one entry or
+/// more.
+///
+/// Turns red where `positional_forms` names an overridable flag or a chain
+/// that sets its entries' flag, where `encode_source` stops folding an
+/// override, where the chain's walk stops setting the flag from the entry's
+/// place, or where the list's maker admits an empty chain closed by a flag.
+#[test]
+fn a_chain_closed_by_an_entry_flag_sets_it_on_each_entry_but_the_last() {
+    assert!(unlowered("codec_chain_depth_entry").is_empty());
+    let entry = resource_header("codec_chain_depth_entry");
+    holds(
+        "codec_chain_depth_entry",
+        &entry,
+        &[
+            "typedef struct {\n    /* The `Z` flag of `header`, where a parent sets it. */\n    \
+             sce_optional_bool_t header_z;\n} codec_chain_depth_entry_overrides_t;\n",
+            "    if (overrides.header_z.present) {\n        \
+             _f_header = (_f_header & ~0x80ull) | ((uint64_t)overrides.header_z.value << 7);\n    \
+             }\n",
+            "    return codec_chain_depth_entry_encode_source_overriding(src, ctx, w, \
+             codec_chain_depth_entry_overrides_none());\n",
+        ],
+    );
+    assert!(unlowered("codec_chain_depth_plain").is_empty());
+    let chain = resource_header("codec_chain_depth_plain");
+    holds(
+        "codec_chain_depth_plain",
+        &chain,
+        &[
+            "    if (count < 1u) {\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n",
+            "            codec_chain_depth_entry_overrides_t _o = \
+             codec_chain_depth_entry_overrides_none();\n            \
+             _o.header_z = sce_optional_bool_some(_i + 1u < _e_extensions.count);\n            \
+             SCE_FORGE_TRY_WRITE(codec_chain_depth_entry_encode_source_overriding(\
+             _e_extensions.entry, _at, w, _o));\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// neither has an encode over a source.
@@ -776,6 +819,9 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_nested_body",
         "codec_nested_parent",
         "codec_origin_envelope",
+        "codec_chain_depth_entry",
+        "codec_chain_depth_plain",
+        "codec_chain_depth_gated",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
