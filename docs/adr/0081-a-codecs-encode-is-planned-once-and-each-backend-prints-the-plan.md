@@ -900,6 +900,49 @@ old encode, the old encode and its templates are removed in the same landing.
    a codec that embeds it printed whole. Kotlin, Go, Python and C11 compile the codec as they compile every codec
    whose cases are `sources` alone, and Swift where its generator writes it; the codec joins
    `entries_that_take_a_flag_compile_on_every_backend`.
+
+   *Amendment of 2026-11-16: Python before Go.* The order of the four after C++ is not structural, since each
+   printer reads the same plan. Go, Kotlin, Python and C11 all took every derived element from the value, which is
+   the defect this step closes, so the first of them to land is the one whose printer moves the derived elements
+   while moving least else. A Python value already presents its elements in the idiom §2 gives its interface:
+   attributes, which a `typing.Protocol` names, so a printed Python codec changes no read of an element it presents.
+   A Go interface is a set of methods, and a Go value presents its elements as exported fields of the same names, so
+   the first Go landing moves every read of every Go codec it prints, as the first C++ landing did; it lands next,
+   by itself. Kotlin and C11 follow.
+
+   *The first Python landing, 2026-11-16:* the positional codecs whose elements are integers, flag sets, enums and
+   byte strings, each always there, whose every derived element is the length of one byte string always there, held
+   in a field of its own that the length fits, its `sce:length-arith` never taking it below zero, and whose encode
+   refuses nothing (`python_source::unlowered` names the first form any other codec uses; such a codec keeps the
+   template's encode whole, §6). Each is printed from its plan (`sce-build/src/forge/generator/python_source.rs`):
+   - the source, a `typing.Protocol` `{Codec}Source` with a read-only property for each element the value presents;
+     the dataclass is one, and so is any object with those attributes;
+   - the refinement of a byte string, a class `{Codec}{Element}Bytes` that names its bound, a subclass of the
+     runtime's `BoundedBytes` (`sce_forge_runtime/bounded.py`), a `bytes` made only by a constructor that checks
+     the bound (§2: a class whose constructor checks). A `bytes` cannot change after it is made, so a value of the
+     class holds its bound for as long as it lives. The dataclass holds the element in it, and its `__setattr__`
+     makes the class of whatever bytes it is handed, where the value is made and wherever the element is set
+     after, so the dataclass, which Python lets a caller assign to, holds its bound too. The decision was between
+     this and a frozen dataclass checked in `__post_init__`, which the payload classes of ADR 0086 are; a codec's
+     value is assigned to in place (its flag setters, a procedure's `<assign>`), so a frozen one would move every
+     such site, and a `__post_init__` alone would leave an assignment unchecked;
+   - the encode over any source, `encode_source(src, w)`, a function of the codec's module, which is the codec's
+     namespace as a C++ codec's namespace is, and not a method of the value's class, whose attributes an author's
+     field names would share; it derives each length as
+     the length of the bytes the source presents, less or more its arithmetic, and writes the plan's program: the
+     fixed bytes by the same byte expressions the template's encode wrote (`encode_whole_field_read_as`,
+     `encode_byte_read_by`, which now read each value as the caller spells it), a VLE by the runtime's writer, a
+     byte string whole. Its `encode` is `encode_source(self, w)`, and it refuses no value: the bound the
+     template's encode refused is the class's (§4). The value holds no derived length (§3): the dataclass declares
+     none, the decode reads it to cut the bytes and makes the value without it.
+
+   The harness runs each printed codec's `cases`, made and compared without the elements the encode derives, as the
+   C++ harness did until its thirty-seventh landing: the fixture's `printed` (renamed from `cpp_printed`, as it now
+   says whether the harness language prints the codec, C++ or Python) says so. Writing a case's `source` as a value
+   of the Python source, which §5 asks of a printer, waits for the Python case printer, which reads the notation as
+   `rust_source::source_case` does. `a_python_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a
+   printed codec's module, that every codec of the resources is printed exactly where the printer lowers every form
+   of it, and that the others keep the template's encode.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
