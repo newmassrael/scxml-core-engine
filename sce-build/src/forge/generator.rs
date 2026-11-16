@@ -14379,6 +14379,7 @@ fn render_codec(
                             decode_arg: &repeat_thread.decode_arg,
                             law_start: law_start.as_deref(),
                             c11_over,
+                            derived: &c11_derived_numbers,
                             lang,
                         })
                         .into(),
@@ -18929,6 +18930,9 @@ struct RepeatDecode<'a> {
     /// Whether the C11 decode is a store after a parse
     /// ([`c11_may_exceed_capacity`]).
     c11_over: bool,
+    /// The numbers a C11 value holds no member of, read off their locals
+    /// (docs/adr/0081 §3): a count the list is read by among them.
+    derived: &'a c11_source::Derived,
     lang: crate::generator::Language,
 }
 
@@ -18952,6 +18956,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         decode_arg,
         law_start,
         c11_over,
+        derived,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -18988,6 +18993,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             decode_arg,
             law_start,
             c11_over,
+            derived,
             lang,
         });
     }
@@ -19151,17 +19157,13 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
         // don't shadow across siblings (mirrors the present-if pattern
         // for C11). A count past the bound is TOO_MANY_ELEMENTS
         // (docs/adr/0077 §4), checked in the count's own type before the
-        // first entry is read.
+        // first entry is read. A count the encode derives is read off the
+        // local the decode read it into, as the value holds no member of it
+        // (docs/adr/0081 §3).
         (Language::C11, CountRef::LengthField(len_field)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.clone());
-            let guard = repeat_count_guard(
-                field,
-                fields,
-                &format!("out->{len_snake}"),
-                lang,
-                "        ",
-            );
+            let count = carried_length(len_field, fields, false, lang, derived);
+            let guard = repeat_count_guard(field, fields, &count, lang, "        ");
             let data = format!("out->{id_snake}");
             let len = format!("out->{id_snake}_len");
             let entries = c11_list_loop(C11ListLoop {
@@ -19176,7 +19178,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             });
             format!(
                 "{{\n        \
-                     {guard}size_t _n = (size_t)out->{len_snake};\n        \
+                     {guard}size_t _n = (size_t){count};\n        \
                      {entries}\n    \
                  }}"
             )
@@ -20416,6 +20418,8 @@ struct RepeatDecodeGated<'a> {
     law_start: Option<&'a str>,
     // Whether the C11 decode is a store after a parse (docs/adr/0077 §7).
     c11_over: bool,
+    // The numbers a C11 value holds no member of (docs/adr/0081 §3).
+    derived: &'a c11_source::Derived,
     lang: crate::generator::Language,
 }
 
@@ -20464,6 +20468,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         decode_arg,
         law_start,
         c11_over,
+        derived,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -20475,8 +20480,9 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     // nullable / pointer that must be unwrapped in the True arm) or
     // unconditional (a plain local always decoded before the repeat —
     // `validate_codec_repeat_present_if_co_gating` accepts both). Select the
-    // count-read form accordingly; C11 and Python read the count plainly in
-    // both cases (struct member / bare local) so their arms are unchanged.
+    // count-read form accordingly; Python reads the count plainly in both
+    // cases (a bare local), and C11 as `carried_length` reads a length, which
+    // asks the field list whether the member holds an optional value.
     let count_is_gated = match count_ref {
         CountRef::LengthField(len_field) => sibling_field_gated(fields, len_field.as_str()),
         CountRef::UntilEof => false,
@@ -20675,12 +20681,13 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         // decode body in `if (test) { ... }` so wire bytes are consumed only
         // when the gate is on, and the list is present there, empty or not.
         // The count is read through the value it holds where its own field is
-        // gated, and the absent value is every byte zero.
+        // gated, or off the local the decode read it into where the encode
+        // derives it (docs/adr/0081 §3), and the absent value is every byte
+        // zero.
         (Language::C11, CountRef::LengthField(len_field)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let count = c11_length_sibling_member(len_field, fields);
-            let guard =
-                repeat_count_guard(field, fields, &format!("out->{count}"), lang, "        ");
+            let count = carried_length(len_field, fields, count_is_gated, lang, derived);
+            let guard = repeat_count_guard(field, fields, &count, lang, "        ");
             let data = format!("out->{id_snake}.value.data");
             let len = format!("out->{id_snake}.value.len");
             let entries = c11_list_loop(C11ListLoop {
@@ -20695,7 +20702,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             });
             format!(
                 "if ({test}) {{\n        \
-                     {guard}size_t _n = (size_t)out->{count};\n        \
+                     {guard}size_t _n = (size_t){count};\n        \
                      memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                      {entries}\n        \
                      out->{id_snake}.present = true;\n    \
