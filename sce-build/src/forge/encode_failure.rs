@@ -74,8 +74,8 @@ impl EncodeFailure {
     /// The expression a harness compares an encode's refusal with on a backend
     /// whose encode of a source answers the runtime's typed error, or `None`
     /// where the backend has no name for this refusal: no harness of it can
-    /// state the case, and a fold that meets one says so by name. Rust and C++
-    /// name every refusal.
+    /// state the case, and a fold that meets one says so by name. Rust, C++,
+    /// Python and Swift name every refusal.
     pub fn symbol(self, lang: Language) -> Option<&'static str> {
         match lang {
             Language::Rust => Some(match self {
@@ -101,9 +101,16 @@ impl EncodeFailure {
                 EncodeFailure::PresentIfMismatch => "sce_forge_runtime.codec.PresentIfMismatch",
                 EncodeFailure::InconsistentSource => "sce_forge_runtime.codec.InconsistentSource",
             }),
+            // The case of the runtime's typed `CodecError` a printed encode
+            // throws (docs/adr/0099), which `#expect(throws:)` compares with.
+            Language::Swift => Some(match self {
+                EncodeFailure::LengthOutOfRange => "CodecError.lengthOutOfRange",
+                EncodeFailure::PresentIfMismatch => "CodecError.presentIfMismatch",
+                EncodeFailure::InconsistentSource => "CodecError.inconsistentSource",
+            }),
             // These harnesses run no source of a printed encode (docs/adr/0081
             // §5), so none of them states a refused case.
-            Language::Kotlin | Language::Go | Language::C11 | Language::Swift => None,
+            Language::Kotlin | Language::Go | Language::C11 => None,
         }
     }
 }
@@ -153,19 +160,32 @@ mod tests {
                 symbol.ends_with(&format!("codec.{variant}")),
                 "Python {f:?}: `{symbol}` does not name `{variant}`"
             );
+            // Swift spells a case in lower camel case.
+            let mut chars = variant.chars();
+            let case: String = chars
+                .next()
+                .map(|first| first.to_lowercase().chain(chars).collect())
+                .unwrap_or_default();
+            assert_eq!(
+                f.symbol(Language::Swift),
+                Some(format!("CodecError.{case}").as_str()),
+                "{f:?}"
+            );
         }
     }
 
-    /// Rust, C++ and Python name every refusal, the inconsistent source among
-    /// them (`CodecError::InconsistentSource` of the Rust and C++ runtimes, the
-    /// exception `InconsistentSource` of the Python one), and no other
-    /// backend's harness states a refused case.
+    /// Rust, C++, Python and Swift name every refusal, the inconsistent source
+    /// among them (`CodecError::InconsistentSource` of the Rust and C++
+    /// runtimes, the exception `InconsistentSource` of the Python one, the
+    /// case `inconsistentSource` of the Swift one), and no other backend's
+    /// harness states a refused case.
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
             assert!(f.symbol(Language::Rust).is_some(), "{f:?}");
             assert!(f.symbol(Language::Cpp).is_some(), "{f:?}");
             assert!(f.symbol(Language::Python).is_some(), "{f:?}");
+            assert!(f.symbol(Language::Swift).is_some(), "{f:?}");
             for lang in [Language::C11, Language::Go, Language::Kotlin] {
                 assert!(f.symbol(lang).is_none(), "{lang:?} {f:?}");
             }

@@ -56,10 +56,21 @@ pub(crate) fn source_case(
         ));
     }
     let object = source_members(plan, source)?;
-    // A printed codec takes no flag input and its variant, which it has none of, no tag: the
-    // readers refuse a case that hands either.
-    if !case_inputs(plan, inputs)?.is_empty() {
-        return Err("a case hands flag inputs to a codec that takes none".to_string());
+    // The decode is handed every flag input, in the order the codec declares them, by its label;
+    // the encode the ones the value does not say. A printed codec's variant, which it has none of,
+    // takes no tag.
+    let mut decode_inputs = Vec::new();
+    let mut encode_inputs = Vec::new();
+    for (input, value, given) in case_inputs(plan, inputs)? {
+        let argument = format!("{}: {value}", input.name);
+        if !given {
+            return Err(format!(
+                "the Swift printer does not print the flag input `{}`, which the value says",
+                input.name
+            ));
+        }
+        decode_inputs.push(argument.clone());
+        encode_inputs.push(argument);
     }
     if case_tag(plan, source, tag)?.is_some() {
         return Err("a case hands a tag to a codec whose variant takes none".to_string());
@@ -71,8 +82,12 @@ pub(crate) fn source_case(
         let value = object
             .get(id)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
-        let spelled =
-            number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?;
+        // An element a gate leaves out is `nil`, and a decode presents it so.
+        let spelled = if value.is_null() && element.presence.optional() {
+            "nil".to_string()
+        } else {
+            number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?
+        };
         arguments.push(format!("{id}: {spelled}"));
         checks.push((id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}")));
     }
@@ -80,8 +95,8 @@ pub(crate) fn source_case(
         bindings: Vec::new(),
         literal: format!("{type_name}({})", arguments.join(", ")),
         checks,
-        inputs: Vec::new(),
-        encode_inputs: Vec::new(),
+        inputs: decode_inputs,
+        encode_inputs,
     })
 }
 

@@ -54,6 +54,10 @@ public enum CodecError: Error, Equatable, Sendable {
     /// or absent where the input says it is: the value and the input contradict each other, so no
     /// frame is written.
     case presentIfMismatch
+    /// Two things a value says of one number disagree: two fields that each say one flag of a
+    /// carrier, one present and the other absent, or two byte strings that share one length and
+    /// differ in it. No frame says both, so no frame is written (docs/adr/0065 §2).
+    case inconsistentSource
     /// The input is not a map a CBOR codec reads: not a definite-length map, an indefinite length or
     /// a reserved head, a key given twice, or an entry of the wrong major type
     /// (`Cbor`, SCE_FORGE.md §4.6.1).

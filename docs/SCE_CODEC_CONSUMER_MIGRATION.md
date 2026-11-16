@@ -2182,4 +2182,14 @@ Landing: the commit that adds this section, and each later one that names a form
 - A one-bit flag of a printed codec that a parent may set in place of the value's own (the flag a chain's entries end
   on) is a member of `{Codec}.Overrides`, `nil` by default, and `encodeSource` takes `overrides:` last, defaulting to
   none set.
+- A number written in turn (a fixed field after a variable-length one, a variable-length integer) is printed: the
+  frame is appended to field by field, as the template's encode appended it. The bytes do not change.
+- A number a gate decides is printed: the source presents it as an optional, and the flag that gates it is derived
+  from its presence. A value whose own bit says otherwise than the field's presence was written with that bit by the
+  template; it is now written with the bit the field's presence says, which is the frame its decode reads back. A
+  flag input the value does not say is a labelled `UInt8` parameter of `encodeSource` and `encode(into:)` after the
+  sink, as it is of `decode`, unchanged at a call site. A gate the encode cannot derive is a check: a value that
+  contradicts it throws `CodecError.presentIfMismatch` before the first byte, and fields that each say one flag and
+  disagree throw the new `CodecError.inconsistentSource`; a consumer that switches over `CodecError` exhaustively
+  adds that case.
 

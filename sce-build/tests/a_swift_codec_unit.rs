@@ -246,6 +246,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_flags_basic.scxml",
         "tests/forge/resources/codec_optional_field_attributes.scxml",
         "tests/forge/resources/codec_vle_zint_u64.scxml",
+        "tests/forge/resources/codec_present_if_basic.scxml",
+        "tests/forge/resources/codec_present_if_checked.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -259,16 +261,10 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
             "{printed} has one encode: {code}"
         );
     }
-    for (template, why) in [
-        (
-            "tests/forge/resources/codec_present_if_basic.scxml",
-            "an element a gate decides",
-        ),
-        (
-            "tests/forge/resources/codec_length_ref.scxml",
-            "a length the encode derives",
-        ),
-    ] {
+    for (template, why) in [(
+        "tests/forge/resources/codec_length_ref.scxml",
+        "a length the encode derives",
+    )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
             !code.contains("encodeSource"),
@@ -896,13 +892,64 @@ fn a_field_that_is_on_the_wire_on_a_flag_is_optional_and_read_only_when_the_flag
     );
     assert!(
         code.contains(
-            "if let seq = self.seq {\n            appendInteger(seq, to: &frame, .big)\n        }"
+            "if let held = source.seq {\n            appendInteger(held, to: &frame, .big)\n        }"
         ),
-        "an encode writes the field when it is given: {code}"
+        "an encode writes the field where the value holds it: {code}"
     );
+    assert!(
+        code.contains("var seq: UInt16? { get }"),
+        "a source presents the field as an optional: {code}"
+    );
+    // The flag that gates it is derived from its presence (docs/adr/0058 §1): the carrier is
+    // written with the bit set exactly where the value holds the field, whatever the value's own
+    // bit says.
+    for (expected, why) in [
+        (
+            "var flags_folded = source.flags",
+            "the carrier as the value presents it",
+        ),
+        (
+            "flags_folded = (flags_folded & ~0x1) | ((source.seq != nil) ? 0x1 : 0)",
+            "the flag is the field's presence",
+        ),
+        (
+            "appendInteger(flags_folded, to: &frame, .big)",
+            "the carrier is written with the flag folded in",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
     assert!(
         code.contains("public static let frameLength = 1"),
         "a field that may be absent adds nothing to the fewest bytes: {code}"
+    );
+}
+
+#[test]
+fn a_gate_the_encode_cannot_derive_is_a_check_before_the_first_byte() {
+    // `trailer` is on the wire where `has_seq || wants_trailer`: `has_seq` is derived from `seq`,
+    // and the disjunction is no flag of the trailer's own, so the value is held to it (docs/adr/0065
+    // §6 R4c, §2).
+    let code = swift_of("tests/forge/resources/codec_present_if_checked.scxml")
+        .expect("a codec whose encode refuses a value is written");
+    let check = "if (((flags_folded >> 0) & 1) != 0 || ((flags_folded >> 1) & 1) != 0) != \
+                 (source.trailer != nil) { throw CodecError.presentIfMismatch }";
+    let check_at = code
+        .find(check)
+        .unwrap_or_else(|| panic!("the trailer is held to its gate: {check} in {code}"));
+    let fold_at = code
+        .find("flags_folded = (flags_folded & ~0x1) | ((source.seq != nil) ? 0x1 : 0)")
+        .unwrap_or_else(|| panic!("has_seq is derived from seq: {code}"));
+    let frame_at = code
+        .find("var frame: [UInt8] = []")
+        .unwrap_or_else(|| panic!("the frame grows field by field: {code}"));
+    assert!(
+        fold_at < check_at && check_at < frame_at,
+        "the gate reads the derived flag, and the check comes before the first byte: {code}"
+    );
+    assert!(
+        code.contains("A value the encoding cannot carry is refused before the first"),
+        "the encode says that it refuses: {code}"
     );
 }
 

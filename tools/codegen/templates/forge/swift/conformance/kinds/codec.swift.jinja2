@@ -82,6 +82,24 @@
     }
 {% endfor %}
 
+{# Refused cases (docs/adr/0081 §5): a value of the codec's interface whose encode the page says
+   refuses it (docs/adr/0065 §2), made as a `sources` value is, and `symbol` the case of the
+   runtime's typed `CodecError` the encode throws. The encode refuses before its first byte, so the
+   sink is left empty. Independent of `oracle_eligible`, as the sources are. #}
+{% for r in f.refused %}
+    do {
+{% for b in r.bindings %}
+        {{ b }}
+{% endfor %}
+        let value = {{ r.literal }}
+        var sink = BytesSink()
+        #expect(throws: {{ r.symbol }}, "{{ f.name }} refused {{ loop.index0 }}: the encode did not answer {{ r.error }}: {{ r.note }}") {
+            try {{ f.name | to_pascal_case }}.encodeSource(value, into: &sink{% for v in r.encode_inputs %}, {{ v }}{% endfor %})
+        }
+        #expect(sink.bytes.isEmpty, "{{ f.name }} refused {{ loop.index0 }}: the encode wrote bytes before it refused")
+    }
+{% endfor %}
+
 {# Decode-rejection vectors (RFC synth-5-B): wire this codec MUST refuse, each paired with the failure
    it must refuse with. Independent of `oracle_eligible`, since a vector carries no field values. The
    decode throws the runtime's typed `CodecError` (docs/adr/0099: a refusal is not a value), so the

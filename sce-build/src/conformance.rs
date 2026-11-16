@@ -4007,7 +4007,8 @@ struct PrintedCase {
 impl PrintedCase {
     /// The case as `printer`'s harness inlines it, its note `note`: the C++
     /// fragment hands the note and each label to a `printf` as a string
-    /// literal's text, and the others inline them as they are.
+    /// literal's text, the Swift one writes the note into a string literal of
+    /// its own, and the others inline them as they are.
     fn noted(self, printer: CasePrinter, note: &str) -> Self {
         match printer {
             CasePrinter::Cpp => PrintedCase {
@@ -4019,7 +4020,11 @@ impl PrintedCase {
                 note: crate::filters::escape_cpp(note.to_string()),
                 ..self
             },
-            CasePrinter::Rust | CasePrinter::Python | CasePrinter::Swift => PrintedCase {
+            CasePrinter::Swift => PrintedCase {
+                note: crate::filters::escape_swift(note.to_string()),
+                ..self
+            },
+            CasePrinter::Rust | CasePrinter::Python => PrintedCase {
                 note: note.to_string(),
                 ..self
             },
@@ -5808,8 +5813,47 @@ mod tests {
             first["checks"][2]["holds"],
             serde_json::json!("decoded.payload == value.payload")
         );
-        // An element a gate decides is a form the printer does not lower yet.
-        let template = fixture("codec_present_if_basic");
+        // An element a gate decides is `nil` where the source states it absent.
+        let gated = fixture("codec_present_if_basic");
+        let mut value = serde_json::to_value(gated).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            gated,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a gated number");
+        assert!(folded, "the sources of a printed codec are folded");
+        assert_eq!(
+            value["sources"][0]["literal"],
+            serde_json::json!("CodecPresentIfBasic(flags: 0, seq: nil)")
+        );
+        // A value the encode refuses reaches the harness with the case of the runtime's typed
+        // error it throws.
+        let checked = fixture("codec_present_if_checked");
+        let mut value = serde_json::to_value(checked).expect("a fixture serializes");
+        let folded = fold_refused_cases(
+            &mut value,
+            &reference,
+            checked,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a codec that refuses a value");
+        assert!(folded, "the refused cases of a printed codec are folded");
+        assert_eq!(
+            value["refused"][0]["literal"],
+            serde_json::json!("CodecPresentIfChecked(flags: 0, seq: nil, trailer: 5)")
+        );
+        assert_eq!(
+            value["refused"][0]["symbol"],
+            serde_json::json!("CodecError.presentIfMismatch")
+        );
+        // A length the encode derives is a form the printer does not lower yet.
+        let template = fixture("codec_length_ref");
         let mut value = serde_json::to_value(template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
