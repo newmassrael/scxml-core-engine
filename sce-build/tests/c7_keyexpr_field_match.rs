@@ -483,7 +483,7 @@ fn go_cross_doc_algorithm_compiles() {
     fs::create_dir_all(&out_dir).expect("create out dir");
     fs::write(
         out_dir.join("go.mod"),
-        format!("module {GO_PREFIX}\n\ngo 1.22\n"),
+        format!("module {GO_PREFIX}\n\ngo 1.23\n"),
     )
     .expect("write go.mod");
     // Go packages live one-per-directory matching their import path
@@ -918,7 +918,7 @@ fn go_field_match_multi_file_compiles() {
         out_dir.join("go.mod"),
         format!(
             "module {GO_PREFIX}\n\n\
-             go 1.22\n\n\
+             go 1.23\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             runtime_go.to_string_lossy(),

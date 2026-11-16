@@ -1759,7 +1759,7 @@ fn the_go_machine_and_the_go_function_agree_on_every_pair() {
         std::fs::write(
             project.join("go.mod"),
             format!(
-                "module example.com/tfequivalence\n\ngo 1.22\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
+                "module example.com/tfequivalence\n\ngo 1.23\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
                  require github.com/newmassrael/sce-forge-runtime v0.0.0 // indirect\n\n\
                  replace github.com/newmassrael/sce-go-runtime => {}\n\n\
                  replace github.com/newmassrael/sce-forge-runtime => {}\n",

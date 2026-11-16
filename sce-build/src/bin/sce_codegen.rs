@@ -11305,7 +11305,7 @@ impl GoBackend {
              \n\
              module {module}\n\
              \n\
-             go 1.22\n\
+             go 1.23\n\
              \n\
              require (\n\
              \tgithub.com/newmassrael/sce-go-lua v0.0.0\n\

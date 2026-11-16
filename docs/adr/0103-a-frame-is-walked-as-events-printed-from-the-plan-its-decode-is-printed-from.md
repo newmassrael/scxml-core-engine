@@ -87,7 +87,9 @@ reading of the grammar"), present again between SCE and its consumer.
   through `ListWalk` and a marker type `{Codec}{Field}Walk`. The walk of a frame here is a third, distinct thing, and
   its generated names avoid the `Walk` suffix (§6).
 - **The Go modules declare `go 1.22`.** The `iter` package and range over a function arrive in Go 1.23, so a Go walk
-  is spelled as the function type `iter.Seq` names, not as `iter.Seq` itself (§6).
+  is spelled as the function type `iter.Seq` names, not as `iter.Seq` itself (§6). The Go printer's list landing
+  (docs/adr/0081 step 4) has since raised every Go module to `go 1.23`, as its `codec.List` is read through an
+  `iter.Seq`; the walk's spelling is the same type and stands.
 
 ## The textbook structure
 

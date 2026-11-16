@@ -3,4 +3,4 @@
 
 module github.com/newmassrael/sce-forge-runtime
 
-go 1.22
+go 1.23

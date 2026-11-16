@@ -3,7 +3,7 @@
 
 module github.com/newmassrael/sce-go-host-features
 
-go 1.22
+go 1.23
 
 require github.com/newmassrael/sce-go-runtime v0.0.0
 
