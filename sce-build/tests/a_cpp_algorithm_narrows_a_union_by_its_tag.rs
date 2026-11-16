@@ -128,3 +128,24 @@ fn a_cpp_algorithm_returns_a_union_it_was_given_or_built() {
     // Its last statement returns, so the body needs nothing after it.
     assert!(!text.contains("::std::abort()"), "{text}");
 }
+
+/// A list of unions (docs/adr/0099, "Still open" item 2) is a span of the
+/// union's struct: an element a union local copies is read by the runtime's
+/// checked read, which records `out-of-range` and answers the struct's own
+/// value-initialization for an index outside it (docs/adr/0099, section 2.2),
+/// a loop copies each element, and the list the body builds is a vector each
+/// item is pushed to.
+#[test]
+fn a_cpp_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("SCE::Forge::Span<const {SHAPE}> shapes"));
+    holds(
+        &at,
+        &format!("const {SHAPE} picked = SCE::Forge::Checked::at(sce_failure_, shapes, at);"),
+    );
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, &format!("for ({SHAPE} shape : shapes) {{"));
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("std::vector<{SHAPE}> kept;"));
+    holds(&kept, "kept.push_back(shape);");
+}
