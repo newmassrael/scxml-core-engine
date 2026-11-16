@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/engine/error_reason.scxml: why an engine raised `error.execution` or
+  `error.communication` (docs/adr/0106, #111). The declared name is the
+  `reason` of the event's `_event.data` (SCE_MESH.md section 10.7.1), every
+  engine reads it through the generated enum's declared-name accessor, and the
+  catalogue of section 16.7 is the communication half of this list: one
+  vocabulary, spelled one way, on every engine and in the Mesh.
+
+  The numbers say which event a reason is raised as: 1 to 63 `error.execution`,
+  64 to 127 `error.communication`.
+
+  error.execution:
+  - `expressionFailed`: an expression did not evaluate (an `expr`, a
+    `contentexpr`, a `srcexpr`, a `sendidexpr`, a `<param>`'s, a `<log>`'s, a
+    `<data>`'s, a `<donedata>`'s);
+  - `locationInvalid`: a location is not one the data model can write or read,
+    or names nothing (`<assign location>`, a `<param location>`, an
+    `idlocation`, a `namelist` entry);
+  - `assignmentFailed`: the data model refused the value an `<assign>` gave;
+  - `scriptFailed`: a `<script>` raised;
+  - `dataInitFailed`: a `<data>`'s content, `src` or value did not initialise;
+  - `foreachInvalid`: a `<foreach>`'s array is not one, or its item or index is
+    not a variable it can set;
+  - `sendTypeUnsupported`: a `<send type>` names a processor this platform does
+    not support;
+  - `sendTargetInvalid`: a `<send>` target is not one its processor can address;
+  - `sendDelayInvalid`: a `<send>` delay is not a CSS2 time;
+  - `paramUnfit`: a `<param>`'s value does not fit the field or request field it
+    is handed to;
+  - `processorUnregistered`: the host declared a processor or invoker and never
+    registered it;
+  - `invokeTypeUnsupported`: an `<invoke type>` this platform does not support;
+  - `invokeSrcNotFound`: an `<invoke>` target resolves to nothing the document
+    or the deployment declares (SCE_MESH.md section 9.5);
+  - `invokeChildInitFailed`: the invoked child failed before its first stable
+    configuration;
+  - `reservedParamConflict`: a `<param>` shadows a `_mesh_*` reserved name;
+  - `sessionTransportUnavailable`: a remote `<invoke type="scxml">` names a
+    declared machine to which the deployment attaches no transport;
+  - `payloadRefused`: an event's data is not a value of its declared payload.
+
+  A host that declines to start an `<invoke>` raises `error.execution` with
+  the data it refused with, in its own shape: the host owns that record, as a
+  peer owns the status of its reply, so no code here stands for it.
+
+  error.communication:
+  - `targetUnreachable`: a `<send>` names a session, an invocation or a parent
+    this processor cannot reach, or no target at all;
+  - `httpTargetInvalid`: a BasicHTTP `<send>` has no http(s) target to post to;
+  - the rest are SCE_MESH.md section 16.7, row by row.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="error_reason" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="expressionFailed" value="1"/>
+      <sce:variant name="locationInvalid" value="2"/>
+      <sce:variant name="assignmentFailed" value="3"/>
+      <sce:variant name="scriptFailed" value="4"/>
+      <sce:variant name="dataInitFailed" value="5"/>
+      <sce:variant name="foreachInvalid" value="6"/>
+      <sce:variant name="sendTypeUnsupported" value="7"/>
+      <sce:variant name="sendTargetInvalid" value="8"/>
+      <sce:variant name="sendDelayInvalid" value="9"/>
+      <sce:variant name="paramUnfit" value="10"/>
+      <sce:variant name="processorUnregistered" value="11"/>
+      <sce:variant name="invokeTypeUnsupported" value="12"/>
+      <sce:variant name="invokeSrcNotFound" value="13"/>
+      <sce:variant name="invokeChildInitFailed" value="14"/>
+      <sce:variant name="reservedParamConflict" value="15"/>
+      <sce:variant name="sessionTransportUnavailable" value="16"/>
+      <sce:variant name="payloadRefused" value="17"/>
+      <sce:variant name="targetUnreachable" value="64"/>
+      <sce:variant name="httpTargetInvalid" value="65"/>
+      <sce:variant name="transportUnavailable" value="66"/>
+      <sce:variant name="sendFailed" value="67"/>
+      <sce:variant name="deliveryExhausted" value="68"/>
+      <sce:variant name="envelopeCorrupt" value="69"/>
+      <sce:variant name="invokeChildLost" value="70"/>
+      <sce:variant name="parallelBarrierTimeout" value="71"/>
+      <sce:variant name="dedupWindowOverflow" value="72"/>
+      <sce:variant name="peerPartitioned" value="73"/>
+      <sce:variant name="backpressureDrop" value="74"/>
+      <sce:variant name="unauthorized" value="75"/>
+      <sce:variant name="missingSequence" value="76"/>
+      <sce:variant name="orderingGap" value="77"/>
+      <sce:variant name="regionPartitioned" value="78"/>
+      <sce:variant name="rpcReplyFromUndeclaredPeer" value="79"/>
+      <sce:variant name="outboundStaleDrop" value="80"/>
+      <sce:variant name="notificationDeadlineMissed" value="81"/>
+      <sce:variant name="restored" value="82"/>
+      <sce:variant name="causalViewMismatch" value="83"/>
+    </data>
+  </datamodel>
+</scxml>

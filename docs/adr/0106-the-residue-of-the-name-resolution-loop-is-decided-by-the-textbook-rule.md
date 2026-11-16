@@ -226,6 +226,41 @@ move.
 Decided: the reason an `error.*` event carries is a record (`code`, `message`), not a sentence with a code inside
 it, on every engine. Left to the engine owners.
 
+Decided (2026-11-16), the shape and the vocabulary. The record is `_event.data` itself, in the shape SCE_MESH.md
+section 10.7.1 already pins for the Mesh: `{"errorName": "execution" | "communication", "reason": <code>,
+"detail": <message>}`. The code is `reason` and the message is `detail`. A nested `reason: {code, message}` was
+weighed and refused: the Mesh raises the same two events, and a document guarding on `_event.data.reason ==
+'transportUnavailable'` would then need two guards for one event, or every Mesh document and runtime would move to
+the nested form for nothing a consumer gains. One shape for an `error.*` event, whoever raised it.
+
+One vocabulary: `sce:std/engine/error_reason.scxml`, an enum whose declared names are the codes, generated into
+each runtime the way `sce:std/mesh/rpc_status.scxml` is (a tree of `tools/codegen/trees/`) and written through the
+generated declared-name accessor, never a literal beside it. Its execution half is the engine's (an expression, a
+location, an assignment, a script, a `<data>`, a `<foreach>`, a `<send>`'s type, target, delay or `<param>`, an
+unregistered processor, a refused payload) with the Mesh's section 10.7.1 list; its communication
+half is the engine's unreachable target and http target with the section 16.7 catalogue, row by row. The value
+range says which event a code is raised as (1 to 63 `error.execution`, 64 to 127 `error.communication`), so
+`errorName` is derived from the code and a site cannot pair a code with the other event. The codes are spelled in
+lowerCamelCase, the stdlib's spelling (`rpc_status` reads `deadlineExceeded`): the Mesh's upper-case spellings
+(`INVOKE_SRC_NOT_FOUND`, `TRANSPORT_UNAVAILABLE`) become the declared names (`invokeSrcNotFound`,
+`transportUnavailable`), so `errorName: "invoke"` (the `rpc_status` names) and the other two are one spelling. The
+schema is pre-release; the rename is a non-additive change made once, with every runtime that raises them.
+
+One `error.execution` is not the engine's record: a host that declines to start an `<invoke>` raises it with the
+data it refused with (`{"reason": "NOT_HERE"}` in the host-invoker fixture), because the host owns the shape of its
+refusal as a peer owns the status of its reply; wrapping it would hide the host's reason under a code of the
+engine's.
+
+A `detail` is the sentence the site wrote before (`<assign> to 'x' failed`), unchanged. That sentence used to be the
+whole `_event.data`, and the Rust Lua binding read a text beginning with `<` as an XML document, so a document
+answering `error.execution` was handed a DOM of the sentence.
+
+Implemented (2026-11-16): the vocabulary document, its Rust tree (`runtime-rust`), and the Rust engine
+(`EventWithMetadata::platform_error(event, reason, detail)`; every raise site of the runtime, the Rust templates and
+the generator's own emitted raises takes its code). Left, each its own commit: the Kotlin, Python, Go, C++ (AOT and
+interpreter), C11 and Swift engines, each with a tree of the document into its runtime; the Mesh runtimes' move to the
+generated enum and its spellings; the scenarios and expected logs that read a reason.
+
 ## Consequences
 
 The implemented items land with the commits that cite this ADR's items. The items left above are open debt with a
