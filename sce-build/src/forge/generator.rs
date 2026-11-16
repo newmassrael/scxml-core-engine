@@ -42911,15 +42911,14 @@ fn lower_algorithm_stmt(
                     // section 5.2). A Rust union is no `Copy` type, so its loop
                     // borrows each element, which every read of a union takes
                     // through `&self`.
-                    InferredType::List(elem) | InferredType::ListBuffer(elem)
-                        if elem.union_alias().is_some() =>
-                    {
-                        let alias = elem.union_alias().unwrap_or_default();
-                        item_is_borrowed = true;
-                        Some(algorithm_union_type(l, imports, alias)?)
-                    }
                     InferredType::List(elem) | InferredType::ListBuffer(elem) => {
-                        Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned())
+                        match elem.union_alias() {
+                            Some(alias) => {
+                                item_is_borrowed = true;
+                                Some(algorithm_union_type(l, imports, alias)?)
+                            }
+                            None => Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned()),
+                        }
                     }
                     _ => None,
                 };
