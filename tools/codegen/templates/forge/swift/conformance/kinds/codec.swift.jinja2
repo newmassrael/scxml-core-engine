@@ -53,3 +53,18 @@
         #expect(cursor.remaining == 0, "{{ f.name }} case \(index) decode consumed the frame and nothing else")
     }
 {% endif %}
+
+{# Decode-rejection vectors (RFC synth-5-B): wire this codec MUST refuse, each paired with the failure
+   it must refuse with. Independent of `oracle_eligible`, since a vector carries no field values. The
+   decode throws the runtime's typed `CodecError` (docs/adr/0099: a refusal is not a value), so the
+   vector holds it to the very case `r.symbol` names, and a refused decode to having consumed
+   nothing. #}
+{% for r in f.rejects %}
+    do {
+        var rejectCursor = SceCursor([{{ r.encoded | join(", ") }}])
+        #expect(throws: {{ r.symbol }}, "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}") {
+            try {{ f.name | to_pascal_case }}.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == {{ r.encoded | length }}, "{{ f.name }} reject {{ loop.index0 }}: the refused decode moved the cursor")
+    }
+{% endfor %}

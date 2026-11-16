@@ -343,6 +343,28 @@ impl CodecFailure {
             && matches!(self, CodecFailure::NeedMoreBytes)
     }
 
+    /// The case of the Swift runtime's `CodecError` a decode throws for this
+    /// failure (`backends/swift/forge-runtime/Sources/SceForgeRuntime/Codec.swift`),
+    /// which a caller compares the thrown error with.
+    fn swift_symbol(self) -> &'static str {
+        match self {
+            CodecFailure::NeedMoreBytes => "CodecError.needMoreBytes",
+            CodecFailure::LengthOutOfRange => "CodecError.lengthOutOfRange",
+            CodecFailure::TooManyElements => "CodecError.tooManyElements",
+            CodecFailure::VleWidthOverflow => "CodecError.vleWidthOverflow",
+            CodecFailure::CborMalformed => "CodecError.cborMalformed",
+            CodecFailure::CborRequiredKeyMissing => "CodecError.cborRequiredKeyMissing",
+            CodecFailure::CborWrongLength => "CodecError.cborWrongLength",
+            CodecFailure::CborOutOfRange => "CodecError.cborOutOfRange",
+            CodecFailure::LineMalformed => "CodecError.lineMalformed",
+            CodecFailure::LineRequiredMissing => "CodecError.lineRequiredMissing",
+            CodecFailure::LineTooMany => "CodecError.lineTooMany",
+            CodecFailure::LineTooLong => "CodecError.lineTooLong",
+            CodecFailure::LineBadEscape => "CodecError.lineBadEscape",
+            CodecFailure::LineBadValue => "CodecError.lineBadValue",
+        }
+    }
+
     /// The symbol a *caller* can compare a refused decode against, or `None`
     /// on backends where the failure is not observable by name.
     pub fn observable_symbol(self, lang: Language) -> Option<&'static str> {
@@ -422,10 +444,11 @@ impl CodecFailure {
             (Language::C11, CodecFailure::LineTooLong) => Some("SCE_FORGE_CODEC_LINE_TOO_LONG"),
             (Language::C11, CodecFailure::LineBadEscape) => Some("SCE_FORGE_CODEC_LINE_BAD_ESCAPE"),
             (Language::C11, CodecFailure::LineBadValue) => Some("SCE_FORGE_CODEC_LINE_BAD_VALUE"),
+            // Swift's decode throws the runtime's typed `CodecError` (docs/adr/0099: a
+            // refusal is not a value), each case named after Rust's variant.
+            (Language::Swift, failure) => Some(failure.swift_symbol()),
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
-            // Swift's decode throws the runtime's typed error, which the conformance schedule
-            // does not yet name.
-            (Language::Cpp | Language::Kotlin | Language::Python | Language::Swift, _) => None,
+            (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
         }
     }
 }
@@ -500,10 +523,32 @@ mod tests {
         }
     }
 
+    /// Swift's decode throws a typed error for every failure (docs/adr/0099),
+    /// so a reject vector names each one there: the case the runtime's
+    /// `CodecError` declares for it, which a generated statement that raises it
+    /// throws by the same name.
+    #[test]
+    fn every_failure_is_named_on_swift_by_its_codec_error_case() {
+        for f in CodecFailure::ALL {
+            let symbol = f
+                .observable_symbol(Language::Swift)
+                .unwrap_or_else(|| panic!("{f:?} is not named on Swift"));
+            assert!(symbol.starts_with("CodecError."), "{f:?}: {symbol}");
+            if let Some(raise) = f.raise_stmt(Language::Swift) {
+                assert_eq!(raise, format!("throw {symbol}"), "{f:?}");
+            }
+        }
+        assert_eq!(
+            CodecFailure::TooManyElements.observable_symbol(Language::Swift),
+            Some("CodecError.tooManyElements")
+        );
+    }
+
     /// A VLE's value past its width is named where the runtime's reader
-    /// returns a typed error (Rust, C11, Go), and read from the cursor's flag
-    /// where the decode answers one sentinel (C++, Kotlin): a reject vector of
-    /// it asserts the reason on five backends, not only that a decode refused.
+    /// returns a typed error (Rust, C11, Go, Swift), and read from the cursor's
+    /// flag where the decode answers one sentinel (C++, Kotlin): a reject
+    /// vector of it asserts the reason on six backends, not only that a decode
+    /// refused.
     #[test]
     fn a_vle_past_its_width_is_observable_by_name_or_by_the_cursor_flag() {
         let f = CodecFailure::VleWidthOverflow;
@@ -513,16 +558,15 @@ mod tests {
             (Language::Rust, "CodecError::VleWidthOverflow"),
             (Language::C11, "SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW"),
             (Language::Go, "codec.ErrVLEWidthOverflow"),
+            (Language::Swift, "CodecError.vleWidthOverflow"),
         ] {
             assert_eq!(f.observable_symbol(lang), Some(symbol), "{lang:?}");
             assert_eq!(f.cursor_flag(lang), None, "{lang:?}");
         }
         assert_eq!(f.cursor_flag(Language::Cpp), Some("last_vle_overflow()"));
         assert_eq!(f.cursor_flag(Language::Kotlin), Some("lastVleOverflow"));
-        for lang in [Language::Python, Language::Swift] {
-            assert_eq!(f.observable_symbol(lang), None, "{lang:?}");
-            assert_eq!(f.cursor_flag(lang), None, "{lang:?}");
-        }
+        assert_eq!(f.observable_symbol(Language::Python), None);
+        assert_eq!(f.cursor_flag(Language::Python), None);
         // No other failure is read from a cursor flag.
         for &lang in Language::ALL {
             for other in CodecFailure::ALL.into_iter().filter(|o| *o != f) {
