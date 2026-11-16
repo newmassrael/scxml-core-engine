@@ -2200,8 +2200,9 @@ GATES: dict[str, dict] = {
         "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
         # The browser and the glue tool are pinned tools of bx.toml's platform
         # (`chrome`, Chrome for Testing at the version scripts/install_chrome.sh
-        # names, and `wasm-bindgen` at Cargo.lock's), and the gate adds the
-        # wasm32 standard library to the release the plan names. In a landing
+        # names, and `wasm-bindgen` at Cargo.lock's), and the wasm32 standard
+        # library is a target of the release the plan names, declared with it
+        # in `[platform.linux.tools.rust]`. In a landing
         # only the pinned Chrome judges the module, so a pass kept from one is
         # that browser's; outside a landing the gate may replay in the Chrome on
         # the machine's PATH, which no key names.
