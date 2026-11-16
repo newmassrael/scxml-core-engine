@@ -3732,9 +3732,11 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             code: DiagnosticCode::MeshDeployDiscoveryNotSupported,
             stage: Stage::MeshDeploy,
             // No per-machine target: `discovery:` is a top-level deploy
-            // key. `actual` surfaces the rejected content summary so
-            // the CLI wire format points the author at what was seen.
-            actual: Some(content_kind.clone()),
+            // key, and the key as written is `actual`. The summary of what
+            // it held is SCE's description, not a token of the file
+            // (SCE_ERROR_CONTRACT.md §2.1); it rides `message` and keys
+            // the record.
+            actual: Some("discovery".to_string()),
             expected: None,
             fix: None,
             // fnv1a keying on the content summary so two differently

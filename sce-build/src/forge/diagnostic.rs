@@ -8207,7 +8207,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationTransformOutputCycle,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(cycle.join(" → ")),
+            // The path is SCE's, joining ids written on several rows: no
+            // line holds it (SCE_ERROR_CONTRACT.md §2.1). It rides
+            // `message`, as an import cycle's does.
+            actual: None,
             fix: None,
             // Document name first, then the cycle path: two transforms
             // in one build can carry the same output ids, so the path
@@ -10197,20 +10200,17 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             link_name,
             peer_table_capacity,
             per_peer_quota,
-            product,
+            ..
         } => DiagnosticPayload {
             // Declared-consumption — peer_table.capacity × per_peer_quota
             // >= slot_count. 3-axis repair; NeutralOrDeterministic.
-            // `actual` carries the violating product so consumers can
-            // see the shortfall without parsing the message body.
+            // No `actual`: the product is computed, and the relation is no
+            // token of the document (SCE_ERROR_CONTRACT.md §2.1); both
+            // numbers ride `message`.
             code: DiagnosticCode::ReassemblyPerPeerQuotaBuildInvariantViolated,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(format!(
-                "{product} < {slot_count}",
-                product = product,
-                slot_count = slot_count
-            )),
+            actual: None,
             fix: None,
             key_fragments: vec![
                 pool_name.clone(),
@@ -10285,7 +10285,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // detection across multiple layer-1 + layer-2 violations
             // in the same worker doesn't collapse them.
             expected: None,
-            actual: Some(worker_shared_state_actual(reason)),
+            actual: Some(worker_shared_state_token(reason)).filter(|token| !token.is_empty()),
             fix: None,
             key_fragments: vec![
                 worker_name.clone(),
@@ -10854,7 +10854,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::QueueStorageNotExactlyOne,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(written.join(", ")),
+            // The elements written are a list SCE made of several rows, or
+            // none at all: no one token is the fault (SCE_ERROR_CONTRACT.md
+            // §2.1). They ride `message`.
+            actual: None,
             fix: None,
             key_fragments: vec![queue_name.clone(), written.join(",")],
         },
@@ -11649,6 +11652,22 @@ fn worker_shared_state_layer_tag(
 /// pair; layer 2 surfaces the `element.attr="value"` triple. Used by
 /// the payload builder so the wire format carries the most specific
 /// fragment the diagnostic could quote.
+/// The token a shared-state refusal is about, as the document writes it: the
+/// alias of the forbidden import, or the value of the foreign attribute. The
+/// record's `actual` (SCE_ERROR_CONTRACT.md §2.1); the element SCE describes
+/// it by ([`worker_shared_state_actual`]) is no text of the document, whose
+/// attributes may stand in any order.
+fn worker_shared_state_token(reason: &crate::forge::error::WorkerSharedStateReason) -> String {
+    use crate::forge::error::WorkerSharedStateReason;
+    match reason {
+        WorkerSharedStateReason::WorkerImportForbidden { imported_alias, .. } => {
+            imported_alias.clone()
+        }
+        WorkerSharedStateReason::BodyForeignNamespace { value, .. } => value.clone(),
+    }
+}
+
+/// The element a shared-state refusal describes, which keys the record.
 fn worker_shared_state_actual(reason: &crate::forge::error::WorkerSharedStateReason) -> String {
     use crate::forge::error::WorkerSharedStateReason;
     match reason {
@@ -14195,7 +14214,7 @@ mod tests {
                     cycle: vec!["a".into(), "b".into(), "a".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:924af7f5278f8f99","code":"validation/transform-output-cycle","stage":"validation","message":"transform 'scaler': outputs form a dependency cycle: a → b → a","actual":"a → b → a"}"#,
+                r#"{"v":1,"id":"fnv1a:924af7f5278f8f99","code":"validation/transform-output-cycle","stage":"validation","message":"transform 'scaler': outputs form a dependency cycle: a → b → a"}"#,
             ),
             (
                 "forge/reserved-context-id",
@@ -15538,7 +15557,7 @@ mod tests {
                     product: 8,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool.","actual":"8 < 16"}"#,
+                r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool."}"#,
             ),
             (
                 // RFC §synth-5-E sample-callback: on-sample subscriber on a
@@ -15601,7 +15620,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
+                r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"tx_loop"}"#,
             ),
             // ── §synth-5-D worker cross-resolution: link-rx + outbox ref ──
             (
@@ -16787,7 +16806,7 @@ mod tests {
                     written: vec!["<sce:bounded>".into(), "<sce:intrusive>".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:bb40ee1cae5afe5d","code":"queue/storage-not-exactly-one","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': 2 of <sce:bounded>, <sce:segmented>, <sce:intrusive> written (<sce:bounded>, <sce:intrusive>); exactly one is required. SCE Protocol-Synthesis RFC §5.P: the storage mode selects the algorithm, so a default would choose one the author never saw. Repair: keep the one storage element the queue should use and remove the others.","actual":"<sce:bounded>, <sce:intrusive>"}"#,
+                r#"{"v":1,"id":"fnv1a:bb40ee1cae5afe5d","code":"queue/storage-not-exactly-one","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': 2 of <sce:bounded>, <sce:segmented>, <sce:intrusive> written (<sce:bounded>, <sce:intrusive>); exactly one is required. SCE Protocol-Synthesis RFC §5.P: the storage mode selects the algorithm, so a default would choose one the author never saw. Repair: keep the one storage element the queue should use and remove the others."}"#,
             ),
             (
                 "forge/queue-allocator-progress-missing",
@@ -18467,7 +18486,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b515214da13d33fa","code":"mesh/deploy-discovery-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §3.3","message":"deploy.yaml 'discovery:' top-level block is not supported (object with keys [mode, resolution]). SCE Mesh §3.3 invariant: transport-native routing is the source of truth for peer availability; SCE does not maintain a peer table (the §13 rejected list rejects SCE-maintained peer tables and a `discovery.mode: static | dynamic` deploy switch). For per-binding runtime target selection use value-field placeholders (§14.4). For transport-level peer discovery configure the external OEM config (zenoh.json5 scouting, vsomeip.json service-discovery).","actual":"object with keys [mode, resolution]"}"#,
+                r#"{"v":1,"id":"fnv1a:b515214da13d33fa","code":"mesh/deploy-discovery-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §3.3","message":"deploy.yaml 'discovery:' top-level block is not supported (object with keys [mode, resolution]). SCE Mesh §3.3 invariant: transport-native routing is the source of truth for peer availability; SCE does not maintain a peer table (the §13 rejected list rejects SCE-maintained peer tables and a `discovery.mode: static | dynamic` deploy switch). For per-binding runtime target selection use value-field placeholders (§14.4). For transport-level peer discovery configure the external OEM config (zenoh.json5 scouting, vsomeip.json service-discovery).","actual":"discovery"}"#,
             ),
             (
                 "mesh/deploy-pool-not-supported-by-transport",
@@ -20091,7 +20110,7 @@ mod tests {
                     record: "acceptance/base.json".into(),
                     lapses: vec!["design/frag.xml: changed since it was accepted".into()],
                 },
-                r#"{"v":1,"id":"fnv1a:d06121782c34018d","code":"cli/acceptance-lapsed","stage":"cli","message":"acceptance/base.json: the acceptance no longer holds: design/frag.xml: changed since it was accepted","actual":"design/frag.xml: changed since it was accepted"}"#,
+                r#"{"v":1,"id":"fnv1a:d06121782c34018d","code":"cli/acceptance-lapsed","stage":"cli","message":"acceptance/base.json: the acceptance no longer holds: design/frag.xml: changed since it was accepted"}"#,
             ),
             // ── A host type under SCE's reserved prefix ──
             //    The flag and the name key the record: the same name on
@@ -20118,7 +20137,7 @@ mod tests {
                         "U-1@upper: does not arrive: lower carries no requirement L-404".into(),
                     ],
                 },
-                r#"{"v":1,"id":"fnv1a:24668063e3f38221","code":"cli/requirement-closure-broken","stage":"cli","message":"the requirement closure does not close: U-1@upper: does not arrive: lower carries no requirement L-404","actual":"U-1@upper: does not arrive: lower carries no requirement L-404"}"#,
+                r#"{"v":1,"id":"fnv1a:24668063e3f38221","code":"cli/requirement-closure-broken","stage":"cli","message":"the requirement closure does not close: U-1@upper: does not arrive: lower carries no requirement L-404"}"#,
             ),
             // Keyed on the KIND alone, not the path. The same kind is
             // unreviewable in every document written in it, so two files
@@ -20142,14 +20161,14 @@ mod tests {
                     kind: "statechart".into(),
                     feature: "an <invoke>".into(),
                 },
-                r#"{"v":1,"id":"fnv1a:4634ffbae78e91b7","code":"cli/pseudo-unavailable","stage":"cli","message":"statechart: no pseudocode — this document carries an <invoke>","actual":"statechart: an <invoke>"}"#,
+                r#"{"v":1,"id":"fnv1a:4634ffbae78e91b7","code":"cli/pseudo-unavailable","stage":"cli","message":"statechart: no pseudocode — this document carries an <invoke>"}"#,
             ),
             (
                 "cli/diagram-unavailable",
                 CliError::DiagramUnavailable {
                     feature: "the page's action lines refuse an <invoke>".into(),
                 },
-                r#"{"v":1,"id":"fnv1a:dcfc2cd874018f17","code":"cli/diagram-unavailable","stage":"cli","message":"no print figure — the page's action lines refuse an <invoke>","actual":"the page's action lines refuse an <invoke>"}"#,
+                r#"{"v":1,"id":"fnv1a:dcfc2cd874018f17","code":"cli/diagram-unavailable","stage":"cli","message":"no print figure — the page's action lines refuse an <invoke>"}"#,
             ),
             (
                 "cli/diagram-does-not-fit",
@@ -20161,7 +20180,7 @@ mod tests {
                     area_w: 510.0,
                     area_h: 757.0,
                 },
-                r#"{"v":1,"id":"fnv1a:c5ba580e20672c22","code":"cli/diagram-does-not-fit","stage":"cli","message":"the figure 'whole document' needs 900 x 300 pt at 7 pt type, and the page gives 510 x 757 pt; it is not shrunk below that size — use a larger page, or split the container's children","actual":"whole document: 900 x 300 pt at 7 pt, page 510 x 757 pt"}"#,
+                r#"{"v":1,"id":"fnv1a:c5ba580e20672c22","code":"cli/diagram-does-not-fit","stage":"cli","message":"the figure 'whole document' needs 900 x 300 pt at 7 pt type, and the page gives 510 x 757 pt; it is not shrunk below that size — use a larger page, or split the container's children"}"#,
             ),
             // ── An authoring profile that cannot be used ──
             //    Keyed on which refusal, never on the path or on the

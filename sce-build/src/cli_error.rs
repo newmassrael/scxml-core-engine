@@ -724,10 +724,13 @@ impl SingleDiagnostic for CliError {
             // each lapse names paths relative to the root it was checked
             // against, so the same lapse is the same diagnostic on every
             // checkout, and two different lapses are two.
+            // No `actual`: a lapse is SCE's sentence, not an argument the
+            // invocation gave (SCE_ERROR_CONTRACT.md §2.1); it rides
+            // `message`.
             CliError::AcceptanceLapsed { lapses, .. } => (
                 DiagnosticCode::CliAcceptanceLapsed,
                 lapses.clone(),
-                Some(lapses.join("; ")),
+                None,
                 None,
             ),
             // The flag joins the key because the same name is a different
@@ -747,10 +750,11 @@ impl SingleDiagnostic for CliError {
             // documents and requirement ids, which are the same words on
             // every checkout, so one broken closure is one diagnostic
             // however the manifests were reached on the command line.
+            // No `actual`, for the reason a lapse has none.
             CliError::RequirementClosureBroken { claims } => (
                 DiagnosticCode::CliRequirementClosureBroken,
                 claims.clone(),
-                Some(claims.join("; ")),
+                None,
                 None,
             ),
             // The kind keys the record, not the path: the same kind is
@@ -768,34 +772,29 @@ impl SingleDiagnostic for CliError {
             // kinds blocked by the same construct are still that one
             // finding. Keying on the kind would split it and keying on
             // the path would multiply it per file.
-            CliError::PseudoUnavailable { kind, feature } => (
+            //
+            // No `actual` here or in the two figure refusals below: the
+            // construct and the sizes are SCE's description of the
+            // document, not an argument the invocation gave
+            // (SCE_ERROR_CONTRACT.md §2.1); they ride `message`.
+            CliError::PseudoUnavailable { feature, .. } => (
                 DiagnosticCode::CliPseudoUnavailable,
                 vec![feature.clone()],
-                Some(format!("{kind}: {feature}")),
+                None,
                 None,
             ),
             CliError::DiagramUnavailable { feature } => (
                 DiagnosticCode::CliDiagramUnavailable,
                 vec![feature.clone()],
-                Some(feature.clone()),
+                None,
                 None,
             ),
             // Keyed by the figure: the same container too large is one
             // finding however the page is chosen.
-            CliError::DiagramDoesNotFit {
-                figure,
-                min_pt,
-                need_w,
-                need_h,
-                area_w,
-                area_h,
-            } => (
+            CliError::DiagramDoesNotFit { figure, .. } => (
                 DiagnosticCode::CliDiagramDoesNotFit,
                 vec![figure.clone()],
-                Some(format!(
-                    "{figure}: {need_w:.0} x {need_h:.0} pt at {min_pt} pt, \
-                     page {area_w:.0} x {area_h:.0} pt"
-                )),
+                None,
                 None,
             ),
             // The refusal keys the record and the path does not: the same

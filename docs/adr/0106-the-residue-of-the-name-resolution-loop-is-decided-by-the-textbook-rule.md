@@ -136,9 +136,16 @@ the guard is tightened in the same change.
 
 ### #53g — `actual` is an input token
 
-Partly fixed before this ADR (`94e56bc16c`: counts and cycle paths are no longer `actual`). Left: the remaining codes
-whose golden `actual` is prose, a relation or a computed value move that text to `message` or `expected`, found by
-the same golden scan the loop ran (303 goldens then).
+Partly fixed before this ADR (`94e56bc16c`: counts and cycle paths are no longer `actual`).
+
+Implemented (2026-11-16): the golden scan, over the 527 goldens of 2026-11-16, found twelve whose `actual` read as
+prose, a relation or a computed value. Two are input tokens as written (an extern's `sig`, a guard's text) and stay.
+The other ten now carry the token as written or none: a transform's output cycle and a per-peer-quota relation, a
+queue's list of storage elements, five `cli` refusals whose `actual` was SCE's sentence (`acceptance-lapsed`,
+`requirement-closure-broken`, `pseudo-unavailable`, `diagram-unavailable`, `diagram-does-not-fit`), carry none; a
+worker's forbidden import carries its alias and a foreign attribute its value, where both carried an element SCE
+re-spelled; a deployment's `discovery:` block carries the key. Every id is unchanged: the key fragments did not
+move.
 
 ### #111 — `_event.data.reason` is structured
 
