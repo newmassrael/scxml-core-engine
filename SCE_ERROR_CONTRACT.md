@@ -424,6 +424,16 @@ distinguish them (`validation/invalid-reference` and
 
 `line` and `col` are optional; `file` is required when the object is present.
 
+`col` is 1-based and counts characters. When the record carries `actual`,
+`col` is the column at which `actual` begins on `line`: the value of an
+attribute, not the attribute's name, when the value is what the record
+reports. When it carries none, `col` is the column of the element the
+record stands on. Every forge refusal placed at a node of the document is
+placed by this rule (`forge::parser::located`); the statechart parser's
+own sites still place some records at the element that holds the token,
+and are moved to it as they are measured (docs/adr/0106, item #81), which
+is why §3.1.1's guard reads `line` and not yet `col`.
+
 `file` names the document **as the caller named it** — the path passed
 to `check` / `generate`, not its basename. A consumer opens it to apply
 a fix, and `file` is one of the id's hash inputs, so a producer that

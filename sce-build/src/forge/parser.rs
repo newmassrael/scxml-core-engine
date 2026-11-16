@@ -58,18 +58,53 @@ pub(crate) fn located<E: Into<ForgeError>>(
 ) -> Located<ForgeError> {
     use crate::forge::diagnostic::SingleDiagnostic;
     let err = err.into();
+    let input = node.document().input_text();
+    let actual = err.diagnostic_payload().actual.filter(|a| !a.is_empty());
     let observed = observed_attribute(node, &err);
-    let start = observed
-        .as_ref()
-        .map_or(node.range().start, |a| a.range().start);
-    let pos = node.document().text_pos_at(start);
     let as_written = observed.as_ref().and_then(|attribute| {
-        let actual = err.diagnostic_payload().actual?;
-        let written = node.document().input_text().get(attribute.range_value())?;
+        let actual = actual.as_deref()?;
+        let written = input.get(attribute.range_value())?;
         (attribute.value() == actual && written != actual)
             .then(|| crate::forge::error::AsWritten::Text(written.to_string()))
     });
+    // `col` is where `actual` begins (SCE_ERROR_CONTRACT.md §2.2): the token
+    // as the record reports it, found in the observed attribute, or in the
+    // element's start tag when no attribute holds it (a tag name); the
+    // element's start when the record reports none.
+    let token = match &as_written {
+        Some(crate::forge::error::AsWritten::Text(text)) => Some(text.as_str()),
+        _ => actual.as_deref(),
+    };
+    let find_in = |range: std::ops::Range<usize>, token: &str| {
+        input
+            .get(range.clone())
+            .and_then(|text| text.find(token))
+            .map(|offset| range.start + offset)
+    };
+    // In the attribute's value first, so `n` in `count="n"` is the value
+    // and not the `n` of `count`; then in the whole attribute, for a record
+    // that reports the attribute's name.
+    let start = match (&observed, token) {
+        (Some(attribute), Some(token)) => find_in(attribute.range_value(), token)
+            .or_else(|| find_in(attribute.range(), token))
+            .unwrap_or(attribute.range().start),
+        (None, Some(token)) => find_in(start_tag(node), token).unwrap_or(node.range().start),
+        (Some(attribute), None) => attribute.range().start,
+        (None, None) => node.range().start,
+    };
+    let pos = node.document().text_pos_at(start);
     Located::new(err, name, Some(pos.row), Some(pos.col)).with_as_written(as_written)
+}
+
+/// The byte range of `node`'s start tag: from its `<` to the first `>`
+/// after it, or the whole node when the text holds no `>`.
+fn start_tag(node: &roxmltree::Node) -> std::ops::Range<usize> {
+    let range = node.range();
+    let input = node.document().input_text();
+    input
+        .get(range.clone())
+        .and_then(|text| text.find('>'))
+        .map_or(range.clone(), |end| range.start..range.start + end + 1)
 }
 
 /// The 1-based row `node` starts on — what a model element records as its
@@ -15844,6 +15879,9 @@ mod located_tests {
         };
         let placed = located(&data, "t.scxml", refusal());
         assert_eq!(placed.location.line, Some(3), "the attribute's row");
+        // `        sce:type="` is eighteen characters: the value begins at
+        // column 19, where `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+        assert_eq!(placed.location.col, Some(19), "where the value begins");
         let record = &placed.to_diagnostics()[0];
         assert_eq!(record.actual.as_deref(), Some("a&amp;b"));
 

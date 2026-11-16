@@ -51,6 +51,8 @@ struct Case {
     document: &'static str,
     code: &'static str,
     line: u64,
+    /// The column the attribute that breaks the rule starts at; the record
+    /// stands where its `actual` begins inside it ([`expected_col`]).
     col: u64,
     /// The value as the document spells it on `line` — `None` when the
     /// refusal is of something not written at all (a missing attribute).
@@ -1256,6 +1258,28 @@ fn refusal(dir: &Path, file: &str) -> Result<serde_json::Value, String> {
     }
 }
 
+/// The column the record stands at for `case` (SCE_ERROR_CONTRACT.md §2.2):
+/// where `actual` begins in the attribute that starts at `case.col` — its
+/// value when the value holds it, else its name — or `case.col` itself when
+/// the record reports nothing.
+fn expected_col(case: &Case) -> u64 {
+    let Some(actual) = case.actual else {
+        return case.col;
+    };
+    let row = case
+        .document
+        .lines()
+        .nth(case.line as usize - 1)
+        .expect("the case's row is in its document");
+    let from: String = row.chars().skip(case.col as usize - 1).collect();
+    let offset = from
+        .find(&format!("\"{actual}"))
+        .map(|quote| quote + 1)
+        .or_else(|| from.find(actual))
+        .expect("the attribute at the case's column holds its actual");
+    case.col + from[..offset].chars().count() as u64
+}
+
 /// What is wrong with `record` as the refusal of `case`, if anything.
 fn mismatches(case: &Case, record: &serde_json::Value) -> Vec<String> {
     let mut wrong = Vec::new();
@@ -1269,7 +1293,7 @@ fn mismatches(case: &Case, record: &serde_json::Value) -> Vec<String> {
         (
             "location.col",
             record["location"]["col"].clone(),
-            serde_json::json!(case.col),
+            serde_json::json!(expected_col(case)),
         ),
         (
             "actual",

@@ -140,9 +140,15 @@ value and the document escapes it, `actual` is the value as written; the id keep
 
 Decided: `col` is the column at which `actual` begins on `line` when the record carries `actual`, and the column at
 which the element begins otherwise; the guard of SCE_ERROR_CONTRACT.md section 3.1.1 is then `line[col-1..]` starts
-with `actual`. Left: `located()` places a refusal at the attribute's start, not its value's, and other producers have
-not been measured; the producers move first, measured by the corpus that `diagnostic_fix_is_applicable` reads, and
-the guard is tightened in the same change.
+with `actual`.
+
+Implemented in part (2026-11-16): SCE_ERROR_CONTRACT.md section 2.2 defines `col` so, and `forge::parser::located`,
+where every node-placed forge refusal passes, places it so (the value's start for a value, the name's for a name, the
+tag's for a tag). Left: the statechart parser's own placements (some 38 sites in `parser.rs` and a handful in
+`scxml_identifier.rs`, `test_component/rules.rs`, `product_line.rs`, `declared_names.rs`) are moved by measuring them
+on the corpus, which takes a run this change could not make; the §3.1.1 guard (`wire_site::locate`) is tightened to
+`line[col-1..]` starting with `actual` in the change that moves the last of them, not before, since a guard tightened
+ahead of its producers fails on records that are right by the rule they were written to.
 
 ### #53g — `actual` is an input token
 

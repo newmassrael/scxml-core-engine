@@ -77,10 +77,19 @@ fn refusal(document: &str, code: &str) -> serde_json::Value {
     }
 }
 
-/// `record` reports `actual` and stands where `needle` starts in `document`.
+/// `record` reports `actual` and stands where `actual` begins within the
+/// first `needle` of `document`: `col` is the column of `actual`
+/// (SCE_ERROR_CONTRACT.md §2.2), not of the attribute that holds it.
 fn assert_placed(record: &serde_json::Value, document: &str, actual: &str, needle: &str) {
     assert_eq!(record["actual"], actual, "{record}");
     let (row, col) = written_at(document, needle);
+    // The value as quoted, so `n` in `count="n"` is the value and not the
+    // `n` of `count`.
+    let col = col
+        + needle
+            .find(&format!("\"{actual}\""))
+            .map(|quote| quote + 1)
+            .expect("the needle holds the actual as a quoted value") as u64;
     assert_eq!(
         (
             record["location"]["line"].as_u64(),
