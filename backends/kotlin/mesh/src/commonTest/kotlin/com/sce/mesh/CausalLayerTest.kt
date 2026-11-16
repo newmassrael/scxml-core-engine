@@ -361,7 +361,7 @@ class CausalLayerTest {
         ).map { it.toByte() }.toByteArray()
         val hex = bytes.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
         assertTrue(bytes.size >= tail.size && bytes.copyOfRange(bytes.size - tail.size, bytes.size).contentEquals(tail), hex)
-        val decoded = Envelope.decode(SceCursor(bytes)) ?: fail("the envelope reads back")
+        val decoded = Envelope.decode(SceCursor(bytes)).valueOr { fail("the envelope reads back: ${it.error}") }
         assertEquals(EnvelopeTag.Tagged(tag), envelopeTag(decoded))
         assertEquals(EnvelopeTag.Untagged, envelopeTag(plainEnvelope()))
         assertEquals(EnvelopeTag.HalfTagged, envelopeTag(plainEnvelope().copy(causal_epoch = 0uL)))

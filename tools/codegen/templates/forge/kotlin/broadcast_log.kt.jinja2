@@ -284,7 +284,9 @@ private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
     val tag = entry[1 + {{ context.tag_word }}].toUByte()
 {% endif %}
     val element = {{ element_pascal }}.decode(SceCursor(bytes){% for flag in context.flags %}, flagInput(flags.{{ flag.camel }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
-        ?: return {{ pascal }}Read.Unreadable(seq, "the stored bytes do not decode as a {{ element_pascal }}")
+        .valueOr { refused ->
+            return {{ pascal }}Read.Unreadable(seq, "the stored bytes do not decode as a {{ element_pascal }}: ${refused.error}")
+        }
 {% if context.present %}
     return {{ pascal }}Read.Item(
         seq,

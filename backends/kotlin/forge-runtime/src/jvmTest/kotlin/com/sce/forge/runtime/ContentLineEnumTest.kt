@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.fail
 
 class ContentLineEnumTest {
     /** A closed vocabulary the way a generated codec holds it: the carriers neither start at zero nor run on. */
@@ -24,23 +25,23 @@ class ContentLineEnumTest {
         ),
     )
 
-    private fun enumValue(value: String): ULong? {
-        val bytes = "BEGIN:VEVENT\r\nS:$value\r\nEND:VEVENT\r\n".encodeToByteArray()
-        val reader = assertNotNull(ContentLineReader.begin(bytes, "VEVENT"))
-        return assertNotNull(reader.next()).readEnum(status)
+    /** The first property line of the component [bytes] hold. */
+    private fun firstLine(bytes: ByteArray): ContentLineProperty {
+        val reader = ContentLineReader.begin(bytes, "VEVENT").valueOr { fail("no component: ${it.error}") }
+        return assertNotNull(reader.next().valueOr { fail("no line: ${it.error}") })
     }
 
-    private fun enumParam(line: String): ULong? {
-        val bytes = "BEGIN:VEVENT\r\n$line\r\nEND:VEVENT\r\n".encodeToByteArray()
-        val reader = assertNotNull(ContentLineReader.begin(bytes, "VEVENT"))
-        val property = assertNotNull(reader.next())
-        assertEquals(true, property.nextParam())
+    private fun enumValue(value: String): Decoded<ULong> =
+        firstLine("BEGIN:VEVENT\r\nS:$value\r\nEND:VEVENT\r\n".encodeToByteArray()).readEnum(status)
+
+    private fun enumParam(line: String): Decoded<ULong> {
+        val property = firstLine("BEGIN:VEVENT\r\n$line\r\nEND:VEVENT\r\n".encodeToByteArray())
+        assertEquals(Decoded.Ok(true), property.nextParam())
         return property.readParamEnum(status)
     }
 
     private fun refusedValue(value: String) {
-        assertNull(enumValue(value), value)
-        assertEquals(CodecError.LineBadValue, ContentLine.lastError, value)
+        assertEquals(Decoded.Refused(CodecError.LineBadValue), enumValue(value), value)
     }
 
     private fun written(write: (ContentLineWriter) -> Unit): String {
@@ -54,13 +55,13 @@ class ContentLineEnumTest {
 
     @Test
     fun aTextIsMatchedAsciiCaseInsensitively() {
-        assertEquals(1UL, enumValue("NEEDS-ACTION"))
-        assertEquals(1UL, enumValue("needs-action"))
-        assertEquals(2UL, enumValue("In-Process"))
-        assertEquals(4UL, enumValue("completed"))
+        assertEquals(Decoded.Ok(1UL), enumValue("NEEDS-ACTION"))
+        assertEquals(Decoded.Ok(1UL), enumValue("needs-action"))
+        assertEquals(Decoded.Ok(2UL), enumValue("In-Process"))
+        assertEquals(Decoded.Ok(4UL), enumValue("completed"))
         // A variant with no text of its own is read by its declared name, in any case.
-        assertEquals(8UL, enumValue("CANCELLED"))
-        assertEquals(8UL, enumValue("Cancelled"))
+        assertEquals(Decoded.Ok(8UL), enumValue("CANCELLED"))
+        assertEquals(Decoded.Ok(8UL), enumValue("Cancelled"))
     }
 
     @Test
@@ -89,22 +90,19 @@ class ContentLineEnumTest {
     @Test
     fun aTextCutByAFoldIsReadWhole() {
         val bytes = "BEGIN:VEVENT\r\nS:IN-PRO\r\n CESS\r\nEND:VEVENT\r\n".encodeToByteArray()
-        val reader = assertNotNull(ContentLineReader.begin(bytes, "VEVENT"))
-        assertEquals(2UL, assertNotNull(reader.next()).readEnum(status))
+        assertEquals(Decoded.Ok(2UL), firstLine(bytes).readEnum(status))
     }
 
     @Test
     fun aParameterThatIsAnEnumIsMatchedQuotedOrNot() {
-        assertEquals(4UL, enumParam("S;ROLE=completed:x"))
-        assertEquals(1UL, enumParam("S;ROLE=\"Needs-Action\":x"))
+        assertEquals(Decoded.Ok(4UL), enumParam("S;ROLE=completed:x"))
+        assertEquals(Decoded.Ok(1UL), enumParam("S;ROLE=\"Needs-Action\":x"))
         for (bad in listOf("S;ROLE=:x", "S;ROLE=BOSS:x", "S;ROLE=\"\":x", "S;ROLE=COMPLETED,COMPLETED:x")) {
-            assertNull(enumParam(bad), bad)
-            assertEquals(CodecError.LineBadValue, ContentLine.lastError, bad)
+            assertEquals(Decoded.Refused(CodecError.LineBadValue), enumParam(bad), bad)
         }
         // The value is scanned whole before it is judged, so a quote that never closes
         // is malformed even though the text before it names no variant.
-        assertNull(enumParam("S;ROLE=\"ZZZ:x"))
-        assertEquals(CodecError.LineMalformed, ContentLine.lastError)
+        assertEquals(Decoded.Refused(CodecError.LineMalformed), enumParam("S;ROLE=\"ZZZ:x"))
     }
 
     @Test

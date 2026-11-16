@@ -3,52 +3,52 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- The read of one entry's value, as the expression bound to it; a refusal
-    returns `null` from `decodeAt`, this backend's decode convention. Every
+    is answered from `decodeAt` as its own `Decoded.Refused`. Every
     CBOR item is the runtime's (`com.sce.forge.runtime.Cbor`). #}
 {% macro decode_value(e) -%}
 {%- if e.kind == "bool" -%}
-Cbor.readBool(c) ?: return null
+Cbor.readBool(c).valueOr { _refused -> return _refused }
 {%- elif e.kind == "text" -%}
-Cbor.readText(c, {{ e.max_size if e.max_size is not none else "null" }}) ?: return null
+Cbor.readText(c, {{ e.max_size if e.max_size is not none else "null" }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "bytes" -%}
-Cbor.readBytes(c, {{ e.max_size if e.max_size is not none else "null" }}) ?: return null
+Cbor.readBytes(c, {{ e.max_size if e.max_size is not none else "null" }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "bytes_exact" -%}
-Cbor.readBytesExact(c, {{ e.length }}) ?: return null
+Cbor.readBytesExact(c, {{ e.length }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "enum" -%}
-{{ e.enum_from_underlying }}((Cbor.readUintUpto(c, {{ e.carrier_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return null{% endif %}
+{{ e.enum_from_underlying }}((Cbor.readUintUpto(c, {{ e.carrier_type }}.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return Decoded.Refused(CodecError.UndeclaredEnumValue){% endif %}
 {%- elif e.kind == "record_list" -%}
 run {
                             // A definite-length array within the list's counts,
                             // each item one record's map.
-                            val len = Cbor.readArrayLen(c) ?: return null
-                            if (len > {{ e.list_max }}UL{% if e.list_min > 0 %} || len < {{ e.list_min }}UL{% endif %}) return null
+                            val len = Cbor.readArrayLen(c).valueOr { _refused -> return _refused }
+                            if (len > {{ e.list_max }}UL{% if e.list_min > 0 %} || len < {{ e.list_min }}UL{% endif %}) return Decoded.Refused(CodecError.CborOutOfRange)
                             val list = ArrayList<{{ e.record_type }}>(len.toInt())
                             var n = 0UL
                             while (n < len) {
                                 n++
-                                list.add({{ e.record_decode_fn }}(c) ?: return null)
+                                list.add({{ e.record_decode_fn }}(c).valueOr { _refused -> return _refused })
                             }
                             list
                         }
 {%- elif e.value_type == "ULong" -%}
-Cbor.readUint(c) ?: return null
+Cbor.readUint(c).valueOr { _refused -> return _refused }
 {%- else -%}
-(Cbor.readUintUpto(c, {{ e.value_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.value_type }}()
+(Cbor.readUintUpto(c, {{ e.value_type }}.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).to{{ e.value_type }}()
 {%- endif -%}
 {%- endmacro %}
 {#- The read of one field of a record a list holds, as the expression bound to
     its `held_` local. #}
 {% macro decode_record_field(f) -%}
 {%- if f.kind == "bool" -%}
-Cbor.readBool(c) ?: return null
+Cbor.readBool(c).valueOr { _refused -> return _refused }
 {%- elif f.kind == "text" -%}
-Cbor.readText(c, {{ f.max }}) ?: return null
+Cbor.readText(c, {{ f.max }}).valueOr { _refused -> return _refused }
 {%- elif f.kind == "bytes" -%}
-Cbor.readBytes(c, {{ f.max }}) ?: return null
+Cbor.readBytes(c, {{ f.max }}).valueOr { _refused -> return _refused }
 {%- elif f.value_type == "ULong" -%}
-Cbor.readUint(c) ?: return null
+Cbor.readUint(c).valueOr { _refused -> return _refused }
 {%- else -%}
-(Cbor.readUintUpto(c, {{ f.int_max }}UL) ?: return null).to{{ f.value_type }}()
+(Cbor.readUintUpto(c, {{ f.int_max }}UL).valueOr { _refused -> return _refused }).to{{ f.value_type }}()
 {%- endif -%}
 {%- endmacro %}
 {#- The write of one field of `record`, its key already written. The
@@ -107,6 +107,7 @@ package {{ package | kotlin_forge_package }}
 
 import com.sce.forge.runtime.Cbor
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -171,38 +172,42 @@ data class {{ struct_name }}(
     companion object {
         /**
          * Decode one map from [cursor]. On success the cursor advances past
-         * it; `null` on any refusal, with the cursor left where it was.
+         * it; a refusal answers the [CodecError] that refused the map
+         * (docs/adr/0099, amendment of 2026-11-16), with the cursor left where
+         * it was.
          */
-        fun decode(cursor: SceCursor): {{ struct_name }}? {
+        fun decode(cursor: SceCursor): Decoded<{{ struct_name }}> {
             val mark = cursor.mark()
             val value = decodeAt(cursor)
-            if (value == null) cursor.reset(mark)
+            if (value is Decoded.Refused) cursor.reset(mark)
             return value
         }
 
-        private fun decodeAt(c: SceCursor): {{ struct_name }}? {
-            val count = Cbor.readMapLen(c) ?: return null
+        private fun decodeAt(c: SceCursor): Decoded<{{ struct_name }}> {
+            val count = Cbor.readMapLen(c).valueOr { _refused -> return _refused }
 {% for e in entries %}
             var {{ e.name }}: {{ e.value_type }}? = null
 {% endfor %}
             var i = 0UL
             while (i < count) {
                 i++
-                when (Cbor.readUint(c) ?: return null) {
+                when (Cbor.readUint(c).valueOr { _refused -> return _refused }) {
 {% for e in entries_by_key %}
                     {{ e.key }}UL -> {
                         // A key given twice is not one map entry.
-                        if ({{ e.name }} != null) return null
+                        if ({{ e.name }} != null) return Decoded.Refused(CodecError.CborMalformed)
                         {{ e.name }} = {{ decode_value(e) }}
                     }
 {% endfor %}
-                    else -> if (!Cbor.skip(c)) return null
+                    else -> Cbor.skip(c).valueOr { _refused -> return _refused }
                 }
             }
-            return {{ struct_name }}(
+            return Decoded.Ok(
+                {{ struct_name }}(
 {% for e in entries %}
-                {{ e.name }} = {{ e.name }}{% if e.required %} ?: return null{% endif %},
+                    {{ e.name }} = {{ e.name }}{% if e.required %} ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing){% endif %},
 {% endfor %}
+                ),
             )
         }
 {% for r in cbor_records %}
@@ -214,31 +219,33 @@ data class {{ struct_name }}(
          * CBOR map of every field, each under its id as text (docs/adr/0086,
          * section 9.2). Its keys in any order, a key the schema does not declare
          * skipped whole; a key given twice, a field missing and a text or byte
-         * string past its bound are `null`.
+         * string past its bound are refused, each by its kind.
          */
-        private fun {{ r.decode_fn }}(c: SceCursor): {{ r.type_name }}? {
-            val count = Cbor.readMapLen(c) ?: return null
+        private fun {{ r.decode_fn }}(c: SceCursor): Decoded<{{ r.type_name }}> {
+            val count = Cbor.readMapLen(c).valueOr { _refused -> return _refused }
 {% for f in r.fields %}
             var held_{{ f.name }}: {{ f.value_type }}? = null
 {% endfor %}
             var i = 0UL
             while (i < count) {
                 i++
-                when (Cbor.readText(c, null) ?: return null) {
+                when (Cbor.readText(c, null).valueOr { _refused -> return _refused }) {
 {% for f in r.fields %}
                     {{ f.key_literal }} -> {
                         // A key given twice is not one map entry.
-                        if (held_{{ f.name }} != null) return null
+                        if (held_{{ f.name }} != null) return Decoded.Refused(CodecError.CborMalformed)
                         held_{{ f.name }} = {{ decode_record_field(f) }}
                     }
 {% endfor %}
-                    else -> if (!Cbor.skip(c)) return null
+                    else -> Cbor.skip(c).valueOr { _refused -> return _refused }
                 }
             }
-            return {{ r.type_name }}(
+            return Decoded.Ok(
+                {{ r.type_name }}(
 {% for f in r.fields %}
-                {{ f.name }} = held_{{ f.name }} ?: return null,
+                    {{ f.name }} = held_{{ f.name }} ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
 {% endfor %}
+                ),
             )
         }
 

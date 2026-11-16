@@ -66,7 +66,8 @@ class RouterTest {
         return only.bytes
     }
 
-    private fun decode(bytes: ByteArray): Envelope = Envelope.decode(SceCursor(bytes)) ?: fail("not an envelope")
+    private fun decode(bytes: ByteArray): Envelope =
+        Envelope.decode(SceCursor(bytes)).valueOr { fail("not an envelope: ${it.error}") }
 
     private fun events(effects: List<Effect>): List<String> =
         effects.map { (it as? Effect.Deliver)?.event ?: fail("expected only deliveries, got $effects") }

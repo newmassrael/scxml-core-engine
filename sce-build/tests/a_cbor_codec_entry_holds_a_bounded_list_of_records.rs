@@ -420,10 +420,10 @@ fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
             "var seen: List<CborCausalEntryPayload> = emptyList(),",
             "var context: List<CborCausalEntryPayload>? = null,",
             // A read past the bound is refused before any record is read.
-            "if (len > 2UL) return null",
-            "if (len > 3UL) return null",
-            "list.add(decodeRecordCausalEntry(c) ?: return null)",
-            "held_author = Cbor.readText(c, 16) ?: return null",
+            "if (len > 2UL) return Decoded.Refused(CodecError.CborOutOfRange)",
+            "if (len > 3UL) return Decoded.Refused(CodecError.CborOutOfRange)",
+            "list.add(decodeRecordCausalEntry(c).valueOr { _refused -> return _refused })",
+            "held_author = Cbor.readText(c, 16).valueOr { _refused -> return _refused }",
             // The list carries no bound, so the encode refuses past it.
             "if (v.size > 2) return CodecError.CborOutOfRange",
             "Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }",

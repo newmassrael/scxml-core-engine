@@ -20,7 +20,6 @@ import com.sce.generated.codec_variant_default_marker.CodecVariantDefaultMarker
 import com.sce.generated.codec_variant_default_marker.CodecVariantDefaultMarkerVariant
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -61,7 +60,7 @@ class DefaultRoundTripTest {
 
         val cursor = com.sce.forge.runtime.SceCursor(wire)
         val decoded = CodecVariantDefaultMarker.decode(cursor)
-        assertNotNull(decoded, "freshly-constructed codec must decode without error")
+            .valueOr { kotlin.test.fail("freshly-constructed codec must decode without error: ${it.error}") }
         assertEquals(
             0,
             cursor.remaining(),

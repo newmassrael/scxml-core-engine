@@ -514,7 +514,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         fun raise(signal: Signal) = Routed.Done(listOf(Effect.Raise(peerName, signal)))
         // The bytes are the envelope's CBOR (§mesh-7.5); nothing in them can
         // be trusted to name a source.
-        val envelope = Envelope.decode(SceCursor(bytes)) ?: return raise(Signal.EnvelopeCorrupt(null, "cbor"))
+        val envelope = Envelope.decode(SceCursor(bytes)).valueOr { return raise(Signal.EnvelopeCorrupt(null, "cbor")) }
         val tag = when (val read = envelopeTag(envelope)) {
             is EnvelopeTag.Tagged -> read.tag
             // An envelope on a causal route carries its tag; one without it,
@@ -541,7 +541,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         // These bytes decoded on arrival, and decoding is a function of the
         // bytes alone.
         return Routed.Done(
-            messages.mapNotNull { released -> Envelope.decode(SceCursor(released))?.let { deliver(it, peerName) } },
+            messages.mapNotNull { released -> Envelope.decode(SceCursor(released)).valueOrNull()?.let { deliver(it, peerName) } },
         )
     }
 
@@ -551,7 +551,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      * the receive half to report.
      */
     private fun undeclaredReply(bytes: ByteArray, peer: String): Signal? {
-        val envelope = Envelope.decode(SceCursor(bytes)) ?: return null
+        val envelope = Envelope.decode(SceCursor(bytes)).valueOrNull() ?: return null
         val wireId = replyTo(envelope) ?: return null
         return when (requests.check(wireId, peer)) {
             Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source, uuidText(wireId))

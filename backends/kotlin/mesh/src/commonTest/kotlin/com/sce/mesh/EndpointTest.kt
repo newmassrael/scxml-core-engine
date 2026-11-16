@@ -301,7 +301,7 @@ class EndpointTest {
         assertEquals(2, transport.sent.size)
         val (peer, bytes) = transport.sent.last()
         assertEquals("people", peer)
-        val vector = Envelope.decode(SceCursor(bytes)) ?: fail("the vector is an envelope")
+        val vector = Envelope.decode(SceCursor(bytes)).valueOr { fail("the vector is an envelope: ${it.error}") }
         assertEquals(PatternKind.CAUSAL_VECTOR, vector.pattern)
         assertEquals(listOf(phone.entry(1uL)), vector.causal_vector)
         // Each send drew an id, the refused one too; the vector drew the third.

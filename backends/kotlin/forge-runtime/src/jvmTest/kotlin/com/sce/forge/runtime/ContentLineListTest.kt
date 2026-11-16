@@ -12,18 +12,24 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.fail
 
 class ContentLineListTest {
-    private fun values(value: String, separator: Char, maxValues: Int, maxSize: Int, text: Boolean): List<String>? {
-        val bytes = "BEGIN:VEVENT\r\nV:$value\r\nEND:VEVENT\r\n".encodeToByteArray()
-        val reader = assertNotNull(ContentLineReader.begin(bytes, "VEVENT"))
-        val line = assertNotNull(reader.next())
-        return line.readStrings(separator, maxValues, maxSize, text)
+    /** The first property line of the component [bytes] hold. */
+    private fun firstLine(bytes: ByteArray): ContentLineProperty {
+        val reader = ContentLineReader.begin(bytes, "VEVENT").valueOr { fail("no component: ${it.error}") }
+        return assertNotNull(reader.next().valueOr { fail("no line: ${it.error}") })
     }
 
+    private fun read(value: String, separator: Char, maxValues: Int, maxSize: Int, text: Boolean): Decoded<MutableList<String>> =
+        firstLine("BEGIN:VEVENT\r\nV:$value\r\nEND:VEVENT\r\n".encodeToByteArray())
+            .readStrings(separator, maxValues, maxSize, text)
+
+    private fun values(value: String, separator: Char, maxValues: Int, maxSize: Int, text: Boolean): List<String>? =
+        read(value, separator, maxValues, maxSize, text).valueOrNull()
+
     private fun refused(value: String, why: CodecError) {
-        assertNull(values(value, ',', 3, 8, true), value)
-        assertEquals(why, ContentLine.lastError, value)
+        assertEquals(Decoded.Refused(why), read(value, ',', 3, 8, true), value)
     }
 
     private fun written(write: (ContentLineWriter) -> Unit): String {
@@ -94,9 +100,8 @@ class ContentLineListTest {
                 assertNull(w.property("V"))
                 assertNull(w.strings(list, ',', true, 8, 4))
             }
-            val reader = assertNotNull(ContentLineReader.begin(text.encodeToByteArray(), "VEVENT"))
-            val line = assertNotNull(reader.next())
-            assertEquals<List<String>?>(list, line.readStrings(',', 4, 8, true))
+            val line = firstLine(text.encodeToByteArray())
+            assertEquals<List<String>?>(list, line.readStrings(',', 4, 8, true).valueOrNull())
         }
     }
 }

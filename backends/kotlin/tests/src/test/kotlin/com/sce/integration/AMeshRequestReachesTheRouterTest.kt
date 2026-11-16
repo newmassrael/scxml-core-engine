@@ -182,7 +182,7 @@ class AMeshRequestReachesTheRouterTest {
         try {
             val (peer, bytes) = sent.single()
             assertEquals("motor", peer)
-            val request = Envelope.decode(SceCursor(bytes)) ?: error("not an envelope")
+            val request = Envelope.decode(SceCursor(bytes)).valueOr { error("not an envelope: ${it.error}") }
             assertEquals(PatternKind.RPC_REQUEST, request.pattern)
             assertEquals("service.request.force", request.event_type)
             assertEquals("""{"force":3,"speed":"3"}""", request.data.decodeToString())

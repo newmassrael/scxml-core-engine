@@ -525,7 +525,7 @@ mod tests {
             Language::Kotlin => in_block(
                 "sealed class CodecError {",
                 "\n}",
-                "object ",
+                "data object ",
                 " : CodecError()",
             ),
             Language::Python => at_top("class ", "(CodecError):"),

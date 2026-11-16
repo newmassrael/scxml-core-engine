@@ -7,21 +7,20 @@
     `decode_expr` reads that carrier and the enum's own conversion
     turns it into a value of the type; a closed set's conversion is
     partial, and a carrier value it does not declare is not a value of
-    that type, so the frame does not decode — which this backend
-    reports as the truncation sentinel, as it does for malformed text.
-    The statement carries its own indentation because the three call
-    sites below share it. #}
+    that type, so the frame does not decode: it is refused as
+    `UndeclaredEnumValue`. The statement carries its own indentation
+    because the three call sites below share it. #}
 {% macro decode_field(field) %}
 {% if field.bound_guard is defined %}
             {{ field.bound_guard }}
 {% endif %}
 {% if field.length_ref_end is defined %}
-            if (frameLen < {{ field.length_ref_end }}) return null
+            if (frameLen < {{ field.length_ref_end }}) return Decoded.Refused(CodecError.NeedMoreBytes)
 {% endif %}
 {% if field.is_enum and field.enum_is_open %}
             val {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
 {%- elif field.is_enum %}
-            val {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }}) ?: return null
+            val {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }}) ?: return Decoded.Refused(CodecError.UndeclaredEnumValue)
 {%- else %}
             val {{ field.id }} = {{ field.decode_expr }}
 {%- endif %}
@@ -35,6 +34,7 @@
 package {{ package | kotlin_forge_package }}
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -312,16 +312,19 @@ data class {{ struct_name }}(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
 {% if has_parent_flags or has_caller_tag or has_flag_inputs %}
         @Suppress("UNUSED_PARAMETER")
 {% endif %}
-        fun decode(cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
+        fun decode(cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}): Decoded<{{ struct_name }}> {
 {% if has_no_fields %}
             // RFC §synth-5-B empty body — zero-byte payload, no cursor work.
-            return {{ struct_name }}()
+            return Decoded.Ok({{ struct_name }}())
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
             // RFC §synth-5-B peek-byte / streaming-
@@ -347,11 +350,11 @@ data class {{ struct_name }}(
 {% else %}
 {% if fields %}
             // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-            val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
+            val raw = cursor.peekSlice({{ min_bytes }}) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
-            if (!cursor.advance({{ min_bytes }})) return null
+            if (!cursor.advance({{ min_bytes }})) return Decoded.Refused(CodecError.NeedMoreBytes)
 {% endif %}
 {% endif %}
             // Dispatch on the tag field; each arm decodes its body codec
@@ -361,25 +364,28 @@ data class {{ struct_name }}(
             val body: {{ struct_name }}Variant = when ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
                 {{ arm.value_literal }} -> {
-                    val _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }}) ?: return null
+                    val _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }}).valueOr { _refused -> return _refused }
                     {{ struct_name }}Variant.{{ arm.variant_name }}(_arm)
                 }
 {% endfor %}
                 else -> {
 {% if variant.default_arm %}
-                    val _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }}) ?: return null
+                    val _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }}).valueOr { _refused -> return _refused }
                     {{ struct_name }}Variant.{{ variant.default_arm.variant_name }}(tag = {{ variant.tag_store_expr }}, body = _arm)
 {% else %}
-                    // codec/variant-arm-unreachable rejected this case at parse time.
-                    return null
+                    // codec/variant-arm-unreachable proves every tag names an
+                    // arm, so no frame reaches here.
+                    error("codec/variant-arm-unreachable admitted a tag no arm names")
 {% endif %}
                 }
             }
-            return {{ struct_name }}(
+            return Decoded.Ok(
+                {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.id }},
+                    {{ field.id }} = {{ field.id }},
 {% endfor %}
-                body = body
+                    body = body
+                )
             )
 {% elif needs_streaming %}
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
@@ -405,40 +411,46 @@ data class {{ struct_name }}(
             {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
-            return {{ struct_name }}(
+            return Decoded.Ok(
+                {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
+                )
             )
 {% elif has_variable_fields %}
             val frameLen = cursor.remaining()
 {% if min_bytes > 0 %}
-            if (frameLen < {{ min_bytes }}) return null
+            if (frameLen < {{ min_bytes }}) return Decoded.Refused(CodecError.NeedMoreBytes)
 {% endif %}
-            val raw = cursor.peekSlice(frameLen) ?: return null
+            val raw = cursor.peekSlice(frameLen) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
-            if (!cursor.advance(frameLen)) return null
+            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return {{ struct_name }}(
+            return Decoded.Ok(
+                {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
+                )
             )
 {% else %}
-            val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
+            val raw = cursor.peekSlice({{ min_bytes }}) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
-            if (!cursor.advance({{ min_bytes }})) return null
+            if (!cursor.advance({{ min_bytes }})) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return {{ struct_name }}(
+            return Decoded.Ok(
+                {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
+                )
             )
 {% endif %}
         }

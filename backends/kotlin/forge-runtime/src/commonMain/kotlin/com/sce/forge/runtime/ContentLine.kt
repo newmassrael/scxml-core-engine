@@ -12,10 +12,10 @@ package com.sce.forge.runtime
  * A generated codec calls these and spells no line grammar of its own. The
  * rules are written once in SCE_FORGE.md §4.6.4 and implemented once per
  * backend runtime; this is Kotlin's, the sibling of `sce_forge_runtime::
- * content_line` (Rust). **Reading** answers `null` for what the codec cannot
- * read — Kotlin's codec convention, where every decode failure is `null`;
- * [lastError] says which rule refused. **Writing** answers a [CodecError] or
- * `null` on success, as every Kotlin encode does.
+ * content_line` (Rust). **Reading** answers a [Decoded]: what was read, or the
+ * [CodecError] of the rule that refused it, as the answer of the read that met
+ * it (docs/adr/0099, amendment of 2026-11-16). **Writing** answers a
+ * [CodecError] or `null` on success, as every Kotlin encode does.
  */
 object ContentLine {
     /** The most octets of one physical line (SCE_FORGE.md §4.6.4, *Folding*). */
@@ -27,25 +27,6 @@ object ContentLine {
      * frame this runtime reads has a length.
      */
     const val UNBOUNDED = Int.MAX_VALUE
-
-    /**
-     * Why the last read or write answered a failure. Diagnostic only — a
-     * decode's contract is its `null` — and read by single-threaded tests that
-     * pin which rule refused; it is not synchronised, so concurrent codecs
-     * overwrite it.
-     */
-    var lastError: CodecError? = null
-        internal set
-
-    internal fun <T> refuse(error: CodecError): T? {
-        lastError = error
-        return null
-    }
-
-    internal fun fail(error: CodecError): CodecError {
-        lastError = error
-        return error
-    }
 
     /** A control character a value never holds: below U+0020 but the tab, and U+007F. */
     internal fun isControl(b: Int): Boolean = (b < 0x20 && b != 0x09) || b == 0x7F
@@ -165,15 +146,8 @@ class ContentLineReader private constructor(
     private var depth = 0
 
     /**
-     * Whether [next] answered `null` because the reader refused, and not because
-     * the component ended.
-     */
-    var failed = false
-        private set
-
-    /**
      * How many bytes of the input the walk has passed — after
-     * `END:<component>` once [next] has answered `null` without [failed].
+     * `END:<component>` once [next] has answered no property.
      */
     fun consumed(): Int = pos
 
@@ -194,21 +168,16 @@ class ContentLineReader private constructor(
         return RawLine(start, input.size, false)
     }
 
-    private fun refuse(error: CodecError): ContentLineProperty? {
-        failed = true
-        return ContentLine.refuse(error)
-    }
-
     /**
      * The next property line of the component, or `null` after its
-     * `END:<component>` — or, with [failed] set, when the reader refused.
+     * `END:<component>`; a line the grammar does not admit is refused.
      *
      * A nested component is skipped through its `END:` without reading its lines.
      * An input that ends before `END:<component>` is [CodecError.NeedMoreBytes].
      */
-    fun next(): ContentLineProperty? {
+    fun next(): Decoded<ContentLineProperty?> {
         while (true) {
-            val line = nextRawLine() ?: return refuse(CodecError.NeedMoreBytes)
+            val line = nextRawLine() ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val head = headOf(input, line.from, line.to)
             if (depth > 0) {
                 if (head != null && head.separator == ':'.code) {
@@ -223,28 +192,28 @@ class ContentLineReader private constructor(
             // A line with no name is cut short at the end of the input and
             // malformed anywhere else.
             val cut = if (line.terminated) CodecError.LineMalformed else CodecError.NeedMoreBytes
-            if (head == null) return refuse(cut)
+            if (head == null) return Decoded.Refused(cut)
             if (head.separator == ':'.code) {
                 if (ContentLine.unfoldedEq(input, line.from, head.nameEnd, "END")) {
-                    if (ContentLine.unfoldedEq(input, head.restStart, line.to, component)) return null
-                    return refuse(cut)
+                    if (ContentLine.unfoldedEq(input, head.restStart, line.to, component)) return Decoded.Ok(null)
+                    return Decoded.Refused(cut)
                 }
                 if (line.terminated && ContentLine.unfoldedEq(input, line.from, head.nameEnd, "BEGIN")) {
                     depth = 1
                     continue
                 }
             }
-            if (!line.terminated) return refuse(CodecError.NeedMoreBytes)
-            return ContentLineProperty(input, line.from, line.to, head.nameEnd)
+            if (!line.terminated) return Decoded.Refused(CodecError.NeedMoreBytes)
+            return Decoded.Ok(ContentLineProperty(input, line.from, line.to, head.nameEnd))
         }
     }
 
     companion object {
         /**
-         * Skip lines up to the first `BEGIN:<component>` and stand after it.
-         * `null` when the input ends before it ([CodecError.NeedMoreBytes]).
+         * Skip lines up to the first `BEGIN:<component>` and stand after it,
+         * refused as [CodecError.NeedMoreBytes] when the input ends before it.
          */
-        fun begin(input: ByteArray, component: String): ContentLineReader? {
+        fun begin(input: ByteArray, component: String): Decoded<ContentLineReader> {
             val reader = ContentLineReader(input, component)
             while (true) {
                 val line = reader.nextRawLine() ?: break
@@ -254,10 +223,10 @@ class ContentLineReader private constructor(
                     ContentLine.unfoldedEq(input, line.from, head.nameEnd, "BEGIN") &&
                     ContentLine.unfoldedEq(input, head.restStart, line.to, component)
                 ) {
-                    return reader
+                    return Decoded.Ok(reader)
                 }
             }
-            return ContentLine.refuse(CodecError.NeedMoreBytes)
+            return Decoded.Refused(CodecError.NeedMoreBytes)
         }
     }
 }
@@ -268,8 +237,8 @@ class ContentLineReader private constructor(
  * Ask [isNamed] whether it is one the codec reads. Then, for a property that
  * declares parameters, loop on [nextParam] and read the ones the codec declares;
  * then read the value. A parameter no one reads is skipped by the next call, and
- * a property read by value alone skips them all. Every read answers `null` for
- * what the entry cannot hold.
+ * a property read by value alone skips them all. Every read answers a
+ * [Decoded], refused with the rule for what the entry cannot hold.
  */
 class ContentLineProperty internal constructor(
     private val raw: ByteArray,
@@ -303,17 +272,17 @@ class ContentLineProperty internal constructor(
 
     /**
      * Stand on the next parameter, skipping the value of one not read: `true`
-     * when there is one, `false` when the value is next, `null` when the line
-     * does not admit it.
+     * when there is one, `false` when the value is next, refused as
+     * [CodecError.LineMalformed] when the line does not admit it.
      */
-    fun nextParam(): Boolean? {
+    fun nextParam(): Decoded<Boolean> {
         when (phase) {
-            Phase.PARAM_VALUE -> if (!skipParamValue()) return null
-            Phase.DONE -> return ContentLine.refuse(CodecError.LineMalformed)
+            Phase.PARAM_VALUE -> skipParamValue()?.let { return Decoded.Refused(it) }
+            Phase.DONE -> return Decoded.Refused(CodecError.LineMalformed)
             Phase.AT_SEPARATOR -> {}
         }
         return when (scan.peek()) {
-            ':'.code -> false
+            ':'.code -> Decoded.Ok(false)
             ';'.code -> {
                 scan.bump()
                 scan.peek()
@@ -324,125 +293,112 @@ class ContentLineProperty internal constructor(
                 }
                 val end = scan.pos
                 if (end == start || scan.bump() != '='.code) {
-                    return ContentLine.refuse(CodecError.LineMalformed)
+                    return Decoded.Refused(CodecError.LineMalformed)
                 }
                 paramFrom = start
                 paramTo = end
                 phase = Phase.PARAM_VALUE
-                true
+                Decoded.Ok(true)
             }
-            else -> ContentLine.refuse(CodecError.LineMalformed)
+            else -> Decoded.Refused(CodecError.LineMalformed)
         }
     }
 
     /**
      * Scan one parameter value — a quoted string, or text up to `;`, `:`, `,`
-     * or `"` — handing each byte of it to [emit] (`null`: skipped). Answers 1
-     * when another value follows a `,`, 0 when none does, -1 when refused.
+     * or `"` — handing each byte of it to [emit] (`null`: skipped), which
+     * answers the refusal of a byte its value cannot hold or `null`. Answers
+     * whether another value follows a `,`, or the first refusal met.
      */
-    private fun scanParamValue(emit: ((Int) -> Boolean)?): Int {
+    private fun scanParamValue(emit: ((Int) -> CodecError?)?): Decoded<Boolean> {
         if (scan.peek() == '"'.code) {
             scan.bump()
             while (true) {
                 val b = scan.bump()
-                if (b < 0) return refuseScan(CodecError.LineMalformed)
+                if (b < 0) return Decoded.Refused(CodecError.LineMalformed)
                 if (b == '"'.code) break
-                if (emit != null && !emit(b)) return -1
+                emit?.invoke(b)?.let { return Decoded.Refused(it) }
             }
         } else {
             while (true) {
                 val b = scan.peek()
                 if (b < 0 || b == ';'.code || b == ':'.code || b == ','.code) break
-                if (b == '"'.code) return refuseScan(CodecError.LineMalformed)
+                if (b == '"'.code) return Decoded.Refused(CodecError.LineMalformed)
                 scan.bump()
-                if (emit != null && !emit(b)) return -1
+                emit?.invoke(b)?.let { return Decoded.Refused(it) }
             }
         }
         return when (scan.peek()) {
             ','.code -> {
                 scan.bump()
-                1
+                Decoded.Ok(true)
             }
-            ';'.code, ':'.code -> 0
-            else -> refuseScan(CodecError.LineMalformed)
+            ';'.code, ':'.code -> Decoded.Ok(false)
+            else -> Decoded.Refused(CodecError.LineMalformed)
         }
     }
 
-    private fun refuseScan(error: CodecError): Int {
-        ContentLine.lastError = error
-        return -1
-    }
-
-    private fun skipParamValue(): Boolean {
+    /** Skip the values of the parameter stood on: the refusal met, or `null`. */
+    private fun skipParamValue(): CodecError? {
         while (true) {
-            when (scanParamValue(null)) {
-                1 -> continue
-                0 -> break
-                else -> return false
-            }
+            val more = scanParamValue(null).valueOr { refused -> return refused.error }
+            if (!more) break
         }
         paramFrom = -1
         phase = Phase.AT_SEPARATOR
-        return true
+        return null
     }
 
     /**
      * Read the value of the parameter [nextParam] stands on, into at most
      * [maxSize] bytes. A second value is [CodecError.LineBadValue].
      */
-    fun readParamString(maxSize: Int): String? {
-        if (phase != Phase.PARAM_VALUE) return ContentLine.refuse(CodecError.LineMalformed)
+    fun readParamString(maxSize: Int): Decoded<String> {
+        if (phase != Phase.PARAM_VALUE) return Decoded.Refused(CodecError.LineMalformed)
         val buf = ValueBytes()
         val more = scanParamValue { b ->
             when {
-                ContentLine.isControl(b) -> {
-                    ContentLine.lastError = CodecError.LineBadValue
-                    false
-                }
-                buf.size == maxSize -> {
-                    ContentLine.lastError = CodecError.LineTooLong
-                    false
-                }
+                ContentLine.isControl(b) -> CodecError.LineBadValue
+                buf.size == maxSize -> CodecError.LineTooLong
                 else -> {
                     buf.add(b)
-                    true
+                    null
                 }
             }
-        }
-        if (more < 0) return null
-        if (more > 0) return ContentLine.refuse(CodecError.LineBadValue)
+        }.valueOr { refused -> return refused }
+        if (more) return Decoded.Refused(CodecError.LineBadValue)
         paramFrom = -1
         phase = Phase.AT_SEPARATOR
         return utf8(buf)
     }
 
-    private fun utf8(buf: ValueBytes): String? =
+    private fun utf8(buf: ValueBytes): Decoded<String> =
         try {
-            buf.array.decodeToString(0, buf.size, throwOnInvalidSequence = true)
+            Decoded.Ok(buf.array.decodeToString(0, buf.size, throwOnInvalidSequence = true))
         } catch (_: CharacterCodingException) {
-            ContentLine.refuse(CodecError.LineBadValue)
+            Decoded.Refused(CodecError.LineBadValue)
         }
 
-    /** Stand at the value: skip the parameters still unread and step over `:`. */
-    private fun beginValue(): Boolean {
+    /**
+     * Stand at the value: skip the parameters still unread and step over `:`.
+     * The refusal met, or `null`.
+     */
+    private fun beginValue(): CodecError? {
         while (true) {
-            when (nextParam()) {
-                true -> continue
-                false -> break
-                null -> return false
-            }
+            val another = nextParam().valueOr { refused -> return refused.error }
+            if (!another) break
         }
         scan.bump()
         phase = Phase.DONE
-        return true
+        return null
     }
 
     /**
      * Read the value as a `string` of at most [maxSize] bytes. With [text],
      * `\\`, `\;`, `\,`, `\n` and `\N` are escapes; an unescaped `;` or `,` is itself.
      */
-    fun readString(maxSize: Int, text: Boolean): String? {
-        if (!beginValue()) return null
+    fun readString(maxSize: Int, text: Boolean): Decoded<String> {
+        beginValue()?.let { return Decoded.Refused(it) }
         val buf = ValueBytes()
         while (true) {
             val b = scan.bump()
@@ -454,14 +410,14 @@ class ContentLineProperty internal constructor(
                     ';'.code -> ';'.code
                     ','.code -> ','.code
                     'n'.code, 'N'.code -> 0x0A
-                    else -> return ContentLine.refuse(CodecError.LineBadEscape)
+                    else -> return Decoded.Refused(CodecError.LineBadEscape)
                 }
             } else if (ContentLine.isControl(b)) {
-                return ContentLine.refuse(CodecError.LineBadValue)
+                return Decoded.Refused(CodecError.LineBadValue)
             } else {
                 byte = b
             }
-            if (buf.size == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
+            if (buf.size == maxSize) return Decoded.Refused(CodecError.LineTooLong)
             buf.add(byte)
         }
         return utf8(buf)
@@ -476,19 +432,19 @@ class ContentLineProperty internal constructor(
      * the line's: a part past [maxValues] is [CodecError.LineTooMany], even one
      * that is empty or too long; an empty part is [CodecError.LineBadValue].
      */
-    fun readStrings(separator: Char, maxValues: Int, maxSize: Int, text: Boolean): MutableList<String>? {
-        if (!beginValue()) return null
+    fun readStrings(separator: Char, maxValues: Int, maxSize: Int, text: Boolean): Decoded<MutableList<String>> {
+        beginValue()?.let { return Decoded.Refused(it) }
         val values = mutableListOf<String>()
         val buf = ValueBytes()
         while (true) {
             val b = scan.bump()
             if (b < 0 || b == separator.code) {
-                if (buf.size == 0) return ContentLine.refuse(CodecError.LineBadValue)
-                values.add(utf8(buf) ?: return null)
-                if (b < 0) return values
+                if (buf.size == 0) return Decoded.Refused(CodecError.LineBadValue)
+                values.add(utf8(buf).valueOr { refused -> return refused })
+                if (b < 0) return Decoded.Ok(values)
                 buf.clear()
                 // A separator opens another part, which may not pass the bound.
-                if (values.size >= maxValues) return ContentLine.refuse(CodecError.LineTooMany)
+                if (values.size >= maxValues) return Decoded.Refused(CodecError.LineTooMany)
                 continue
             }
             val byte: Int
@@ -498,14 +454,14 @@ class ContentLineProperty internal constructor(
                     ';'.code -> ';'.code
                     ','.code -> ','.code
                     'n'.code, 'N'.code -> 0x0A
-                    else -> return ContentLine.refuse(CodecError.LineBadEscape)
+                    else -> return Decoded.Refused(CodecError.LineBadEscape)
                 }
             } else if (ContentLine.isControl(b)) {
-                return ContentLine.refuse(CodecError.LineBadValue)
+                return Decoded.Refused(CodecError.LineBadValue)
             } else {
                 byte = b
             }
-            if (buf.size == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
+            if (buf.size == maxSize) return Decoded.Refused(CodecError.LineTooLong)
             buf.add(byte)
         }
     }
@@ -515,62 +471,62 @@ class ContentLineProperty internal constructor(
      * (negative, magnitude). A `-` is read only when [allowMinus], so an unsigned
      * type refuses `-0` as well.
      */
-    private fun readDecimal(allowMinus: Boolean): Pair<Boolean, ULong>? {
-        if (!beginValue()) return null
+    private fun readDecimal(allowMinus: Boolean): Decoded<Pair<Boolean, ULong>> {
+        beginValue()?.let { return Decoded.Refused(it) }
         var next = scan.bump()
         val negative = next == '-'.code
-        if (negative && !allowMinus) return ContentLine.refuse(CodecError.LineBadValue)
+        if (negative && !allowMinus) return Decoded.Refused(CodecError.LineBadValue)
         if (negative || next == '+'.code) next = scan.bump()
         var magnitude = 0UL
         var digits = 0
         while (next >= 0) {
-            if (next < '0'.code || next > '9'.code) return ContentLine.refuse(CodecError.LineBadValue)
+            if (next < '0'.code || next > '9'.code) return Decoded.Refused(CodecError.LineBadValue)
             val d = (next - '0'.code).toULong()
             if (magnitude > (ULong.MAX_VALUE - d) / 10UL) {
-                return ContentLine.refuse(CodecError.LineBadValue)
+                return Decoded.Refused(CodecError.LineBadValue)
             }
             magnitude = magnitude * 10UL + d
             digits++
             next = scan.bump()
         }
-        if (digits == 0) return ContentLine.refuse(CodecError.LineBadValue)
-        return negative to magnitude
+        if (digits == 0) return Decoded.Refused(CodecError.LineBadValue)
+        return Decoded.Ok(negative to magnitude)
     }
 
     /** Read the value as an unsigned integer of at most [max]. */
-    fun readUint(max: ULong): ULong? {
-        val (_, magnitude) = readDecimal(false) ?: return null
-        return if (magnitude <= max) magnitude else ContentLine.refuse(CodecError.LineBadValue)
+    fun readUint(max: ULong): Decoded<ULong> {
+        val (_, magnitude) = readDecimal(false).valueOr { refused -> return refused }
+        return if (magnitude <= max) Decoded.Ok(magnitude) else Decoded.Refused(CodecError.LineBadValue)
     }
 
     /** Read the value as a signed integer within [min]..[max]. */
-    fun readInt(min: Long, max: Long): Long? {
-        val (negative, magnitude) = readDecimal(true) ?: return null
+    fun readInt(min: Long, max: Long): Decoded<Long> {
+        val (negative, magnitude) = readDecimal(true).valueOr { refused -> return refused }
         val value: Long = if (negative) {
-            if (magnitude > 0x8000_0000_0000_0000UL) return ContentLine.refuse(CodecError.LineBadValue)
+            if (magnitude > 0x8000_0000_0000_0000UL) return Decoded.Refused(CodecError.LineBadValue)
             // 2^63 wraps to Long.MIN_VALUE, whose negation is itself.
             -(magnitude.toLong())
         } else {
-            if (magnitude > Long.MAX_VALUE.toULong()) return ContentLine.refuse(CodecError.LineBadValue)
+            if (magnitude > Long.MAX_VALUE.toULong()) return Decoded.Refused(CodecError.LineBadValue)
             magnitude.toLong()
         }
-        return if (value in min..max) value else ContentLine.refuse(CodecError.LineBadValue)
+        return if (value in min..max) Decoded.Ok(value) else Decoded.Refused(CodecError.LineBadValue)
     }
 
     /** Read the value as `TRUE` or `FALSE`, in either case. */
-    fun readBool(): Boolean? {
-        if (!beginValue()) return null
+    fun readBool(): Decoded<Boolean> {
+        beginValue()?.let { return Decoded.Refused(it) }
         val word = StringBuilder()
         while (true) {
             val b = scan.bump()
             if (b < 0) break
-            if (word.length == 5) return ContentLine.refuse(CodecError.LineBadValue)
+            if (word.length == 5) return Decoded.Refused(CodecError.LineBadValue)
             word.append(ContentLine.lower(b).toChar())
         }
         return when (word.toString()) {
-            "true" -> true
-            "false" -> false
-            else -> ContentLine.refuse(CodecError.LineBadValue)
+            "true" -> Decoded.Ok(true)
+            "false" -> Decoded.Ok(false)
+            else -> Decoded.Refused(CodecError.LineBadValue)
         }
     }
 
@@ -581,8 +537,8 @@ class ContentLineProperty internal constructor(
      * whatever its bytes are: it is no TEXT, so a backslash in it is not an
      * escape, and nothing of it is kept past the longest text.
      */
-    fun readEnum(table: EnumTexts): ULong? {
-        if (!beginValue()) return null
+    fun readEnum(table: EnumTexts): Decoded<ULong> {
+        beginValue()?.let { return Decoded.Refused(it) }
         val longest = table.longest()
         val word = ArrayList<Byte>()
         while (true) {
@@ -600,18 +556,17 @@ class ContentLineProperty internal constructor(
      * before it is [CodecError.LineBadValue]; a second value is
      * [CodecError.LineBadValue].
      */
-    fun readParamEnum(table: EnumTexts): ULong? {
-        if (phase != Phase.PARAM_VALUE) return ContentLine.refuse(CodecError.LineMalformed)
+    fun readParamEnum(table: EnumTexts): Decoded<ULong> {
+        if (phase != Phase.PARAM_VALUE) return Decoded.Refused(CodecError.LineMalformed)
         val longest = table.longest()
         val word = ArrayList<Byte>()
         val more = scanParamValue { b ->
             if (word.size <= longest) word.add(b.toByte())
-            true
-        }
-        if (more < 0) return null
+            null
+        }.valueOr { refused -> return refused }
         paramFrom = -1
         phase = Phase.AT_SEPARATOR
-        if (more > 0) return ContentLine.refuse(CodecError.LineBadValue)
+        if (more) return Decoded.Refused(CodecError.LineBadValue)
         return table.carrierOf(word.toByteArray())
     }
 }
@@ -636,7 +591,7 @@ class EnumTexts(private val rows: List<EnumText>) {
      * to one of them (U+017F, U+0131) is not that letter. A value no variant names
      * is [CodecError.LineBadValue].
      */
-    internal fun carrierOf(value: ByteArray): ULong? {
+    internal fun carrierOf(value: ByteArray): Decoded<ULong> {
         for (row in rows) {
             val text = row.text.encodeToByteArray()
             if (text.size != value.size) continue
@@ -647,9 +602,9 @@ class EnumTexts(private val rows: List<EnumText>) {
                     break
                 }
             }
-            if (same) return row.value
+            if (same) return Decoded.Ok(row.value)
         }
-        return ContentLine.refuse(CodecError.LineBadValue)
+        return Decoded.Refused(CodecError.LineBadValue)
     }
 
     /**
@@ -744,9 +699,9 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
      */
     fun param(name: String, value: String, maxSize: Int): CodecError? {
         val bytes = value.encodeToByteArray()
-        if (bytes.size > maxSize) return ContentLine.fail(CodecError.LineTooLong)
+        if (bytes.size > maxSize) return CodecError.LineTooLong
         if (bytes.any { it.toInt() == '"'.code || ContentLine.isControl(it.toInt() and 0xFF) }) {
-            return ContentLine.fail(CodecError.LineBadValue)
+            return CodecError.LineBadValue
         }
         val quoted = bytes.any { it.toInt() == ':'.code || it.toInt() == ';'.code || it.toInt() == ','.code }
         unit(';')?.let { return it }
@@ -771,9 +726,9 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
      */
     fun string(value: String, text: Boolean, maxSize: Int): CodecError? {
         val bytes = value.encodeToByteArray()
-        if (bytes.size > maxSize) return ContentLine.fail(CodecError.LineTooLong)
+        if (bytes.size > maxSize) return CodecError.LineTooLong
         if (bytes.any { ContentLine.isControl(it.toInt() and 0xFF) && !(text && it == LF) }) {
-            return ContentLine.fail(CodecError.LineBadValue)
+            return CodecError.LineBadValue
         }
         unit(':')?.let { return it }
         valueUnits(bytes, text)?.let { return it }
@@ -790,16 +745,16 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
      * value is held before any of the line is written.
      */
     fun strings(values: List<String>, separator: Char, text: Boolean, maxSize: Int, maxValues: Int): CodecError? {
-        if (values.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
-        if (values.size > maxValues) return ContentLine.fail(CodecError.LineTooMany)
+        if (values.isEmpty()) return CodecError.LineRequiredMissing
+        if (values.size > maxValues) return CodecError.LineTooMany
         val encoded = values.map { it.encodeToByteArray() }
         for (bytes in encoded) {
-            if (bytes.size > maxSize) return ContentLine.fail(CodecError.LineTooLong)
+            if (bytes.size > maxSize) return CodecError.LineTooLong
             if (bytes.any { ContentLine.isControl(it.toInt() and 0xFF) && !(text && it == LF) }) {
-                return ContentLine.fail(CodecError.LineBadValue)
+                return CodecError.LineBadValue
             }
             if (bytes.isEmpty() || (!text && bytes.any { it.toInt() == separator.code })) {
-                return ContentLine.fail(CodecError.LineBadValue)
+                return CodecError.LineBadValue
             }
         }
         unit(':')?.let { return it }
@@ -831,7 +786,7 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
      * variant declares has no text and is [CodecError.LineBadValue].
      */
     fun enumParam(name: String, table: EnumTexts, carrier: ULong): CodecError? {
-        val text = table.textOf(carrier) ?: return ContentLine.fail(CodecError.LineBadValue)
+        val text = table.textOf(carrier) ?: return CodecError.LineBadValue
         unit(';')?.let { return it }
         asciiUnits(name)?.let { return it }
         unit('=')?.let { return it }
@@ -844,7 +799,7 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
      * [CodecError.LineBadValue].
      */
     fun enumValue(table: EnumTexts, carrier: ULong): CodecError? {
-        val text = table.textOf(carrier) ?: return ContentLine.fail(CodecError.LineBadValue)
+        val text = table.textOf(carrier) ?: return CodecError.LineBadValue
         return digits(text)
     }
 }

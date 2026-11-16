@@ -3,29 +3,30 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- The read of one property's value, as the expression bound to it; a refusal
-    returns `null` from `decode`, this backend's decode convention. The line
+    is answered from `decode` as its own `Decoded.Refused`. The line
     grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`com.sce.forge.runtime.ContentLine*`); this spells none of it. #}
 {% macro read_value(e) -%}
 {%- if e.separator -%}
-line.readStrings('{{ e.separator }}', {{ e.max_values_lit }}, {{ e.max_size_lit }}, {{ "true" if e.text else "false" }}) ?: return null
+line.readStrings('{{ e.separator }}', {{ e.max_values_lit }}, {{ e.max_size_lit }}, {{ "true" if e.text else "false" }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "string" -%}
-line.readString({{ e.max_size_lit }}, {{ "true" if e.text else "false" }}) ?: return null
+line.readString({{ e.max_size_lit }}, {{ "true" if e.text else "false" }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "bool" -%}
-line.readBool() ?: return null
+line.readBool().valueOr { _refused -> return _refused }
 {%- elif e.kind == "enum" -%}
 {#- The text names a carrier and the enum's own conversion takes it to a variant,
     so a closed and an open enum are read by one rule (docs/adr/0015): a closed
-    enum answers `null` for a carrier it does not declare. #}
-{{ e.enum_from }}((line.readEnum(TEXTS_{{ e.enum_alias }}) ?: return null).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return ContentLine.refuse(CodecError.LineBadValue){% endif %}
+    enum answers `null` for a carrier it does not declare, which the line refuses
+    as a value it cannot hold. #}
+{{ e.enum_from }}((line.readEnum(TEXTS_{{ e.enum_alias }}).valueOr { _refused -> return _refused }).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return Decoded.Refused(CodecError.LineBadValue){% endif %}
 {%- elif e.kind == "uint" and e.value_type == "ULong" -%}
-line.readUint(ULong.MAX_VALUE) ?: return null
+line.readUint(ULong.MAX_VALUE).valueOr { _refused -> return _refused }
 {%- elif e.kind == "uint" -%}
-(line.readUint({{ e.value_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.value_type }}()
+(line.readUint({{ e.value_type }}.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).to{{ e.value_type }}()
 {%- elif e.kind == "int" and e.value_type == "Long" -%}
-line.readInt(Long.MIN_VALUE, Long.MAX_VALUE) ?: return null
+line.readInt(Long.MIN_VALUE, Long.MAX_VALUE).valueOr { _refused -> return _refused }
 {%- else -%}
-(line.readInt({{ e.value_type }}.MIN_VALUE.toLong(), {{ e.value_type }}.MAX_VALUE.toLong()) ?: return null).to{{ e.value_type }}()
+(line.readInt({{ e.value_type }}.MIN_VALUE.toLong(), {{ e.value_type }}.MAX_VALUE.toLong()).valueOr { _refused -> return _refused }).to{{ e.value_type }}()
 {%- endif -%}
 {%- endmacro %}
 {#- The write of one property's value `v`, its name and parameters already
@@ -58,9 +59,9 @@ out.param("{{ p.param }}", {{ x }}, {{ p.max_size_lit }})?.let { return it }
 {#- The read of one parameter's value, as the expression bound to it. #}
 {% macro read_param(p) -%}
 {%- if p.kind == "enum" -%}
-{{ p.enum_from }}((line.readParamEnum(TEXTS_{{ p.enum_alias }}) ?: return null).to{{ p.carrier_type }}()){% if not p.enum_is_open %} ?: return ContentLine.refuse(CodecError.LineBadValue){% endif %}
+{{ p.enum_from }}((line.readParamEnum(TEXTS_{{ p.enum_alias }}).valueOr { _refused -> return _refused }).to{{ p.carrier_type }}()){% if not p.enum_is_open %} ?: return Decoded.Refused(CodecError.LineBadValue){% endif %}
 {%- else -%}
-line.readParamString({{ p.max_size_lit }}) ?: return null
+line.readParamString({{ p.max_size_lit }}).valueOr { _refused -> return _refused }
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -75,6 +76,7 @@ import com.sce.forge.runtime.CodecError
 import com.sce.forge.runtime.ContentLine
 import com.sce.forge.runtime.ContentLineReader
 import com.sce.forge.runtime.ContentLineWriter
+import com.sce.forge.runtime.Decoded
 {% if enum_tables %}
 import com.sce.forge.runtime.EnumText
 import com.sce.forge.runtime.EnumTexts
@@ -153,10 +155,10 @@ data class {{ struct_name }}(
 {% for e in entries %}
 {% if e.is_records %}
 {% if e.max_count is not none %}
-        if ({{ e.name }}.size > {{ e.max_count }}) return ContentLine.fail(CodecError.LineTooMany)
+        if ({{ e.name }}.size > {{ e.max_count }}) return CodecError.LineTooMany
 {% endif %}
 {% if e.required %}
-        if ({{ e.name }}.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
+        if ({{ e.name }}.isEmpty()) return CodecError.LineRequiredMissing
 {% endif %}
         for (record in {{ e.name }}) {
             val v = record.{{ e.value_member }}
@@ -173,10 +175,10 @@ data class {{ struct_name }}(
         }
 {% elif e.is_list %}
 {% if e.max_count is not none %}
-        if ({{ e.name }}.size > {{ e.max_count }}) return ContentLine.fail(CodecError.LineTooMany)
+        if ({{ e.name }}.size > {{ e.max_count }}) return CodecError.LineTooMany
 {% endif %}
 {% if e.required %}
-        if ({{ e.name }}.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
+        if ({{ e.name }}.isEmpty()) return CodecError.LineRequiredMissing
 {% endif %}
         for (v in {{ e.name }}) {
             out.property("{{ e.property }}")?.let { return it }
@@ -214,7 +216,7 @@ data class {{ struct_name }}(
                 {{ write_value(e) }}
             }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}Value != null{% endfor %}) {
                 // A parameter with no value of its property has no line to stand on.
-                return ContentLine.fail(CodecError.LineRequiredMissing)
+                return CodecError.LineRequiredMissing
             }{% endif %}
 
         }
@@ -233,12 +235,13 @@ data class {{ struct_name }}(
     companion object {
         /**
          * Decode one component from [cursor]. On success the cursor advances past
-         * its `END:` line; `null` on any refusal, with the cursor left where it
-         * was and [ContentLine.lastError] naming the rule.
+         * its `END:` line; a refusal answers the [CodecError] of the rule that
+         * refused it (docs/adr/0099, amendment of 2026-11-16), with the cursor
+         * left where it was.
          */
-        fun decode(cursor: SceCursor): {{ struct_name }}? {
-            val rest = cursor.peekSlice(cursor.remaining()) ?: return null
-            val reader = ContentLineReader.begin(rest, "{{ component }}") ?: return null
+        fun decode(cursor: SceCursor): Decoded<{{ struct_name }}> {
+            val rest = cursor.peekSlice(cursor.remaining()) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
+            val reader = ContentLineReader.begin(rest, "{{ component }}").valueOr { _refused -> return _refused }
 {% for e in entries %}
 {% if e.is_records %}
             val {{ e.name }}Values = mutableListOf<{{ e.record_type }}>()
@@ -256,21 +259,18 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
             while (true) {
-                val line = reader.next()
-                if (line == null) {
-                    if (reader.failed) return null
-                    break
-                }
+                // No property after `END:<component>`: the component is read.
+                val line = reader.next().valueOr { _refused -> return _refused } ?: break
 {% for e in entries %}
                 {% if not loop.first %}else {% endif %}if (line.isNamed("{{ e.property }}")) {
 {% if e.is_list or e.is_records %}
 {% if e.max_count is not none %}
                     if ({{ e.name }}Values.size >= {{ e.max_count }}) {
-                        return ContentLine.refuse(CodecError.LineTooMany)
+                        return Decoded.Refused(CodecError.LineTooMany)
                     }
 {% endif %}
 {% else %}
-                    if ({{ e.name }}Value != null) return ContentLine.refuse(CodecError.LineTooMany)
+                    if ({{ e.name }}Value != null) return Decoded.Refused(CodecError.LineTooMany)
 {% endif %}
 {% set held = "Line" if e.is_records else "Read" %}
 {% if e.is_records %}
@@ -281,10 +281,10 @@ data class {{ struct_name }}(
 {% endfor %}
 {% endif %}
 {% if e.params %}
-                    while (line.nextParam() ?: return null) {
+                    while (line.nextParam().valueOr { _refused -> return _refused }) {
 {% for p in e.params %}
                         {% if not loop.first %}else {% endif %}if (line.paramNamed("{{ p.param }}")) {
-                            if ({{ p.name }}{{ held }} != null) return ContentLine.refuse(CodecError.LineTooMany)
+                            if ({{ p.name }}{{ held }} != null) return Decoded.Refused(CodecError.LineTooMany)
                             {{ p.name }}{{ held }} = {{ read_param(p) }}
                         }
 {% endfor %}
@@ -292,7 +292,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% if e.is_records %}
 {% for p in e.params if p.required %}
-                    if ({{ p.name }}Line == null) return ContentLine.refuse(CodecError.LineRequiredMissing)
+                    if ({{ p.name }}Line == null) return Decoded.Refused(CodecError.LineRequiredMissing)
 {% endfor %}
                     {{ e.name }}Values.add({{ e.record_type }}(
 {% for p in e.params %}
@@ -310,25 +310,25 @@ data class {{ struct_name }}(
             }
 {% for e in entries if e.required and (e.is_list or e.is_records) %}
             // A required list needs a line.
-            if ({{ e.name }}Values.isEmpty()) return ContentLine.refuse(CodecError.LineRequiredMissing)
+            if ({{ e.name }}Values.isEmpty()) return Decoded.Refused(CodecError.LineRequiredMissing)
 {% endfor %}
             val value = {{ struct_name }}(
 {% for e in entries %}
 {% if e.is_list or e.is_records %}
                 {{ e.name }} = {{ e.name }}Values,
 {% elif e.is_values and e.required %}
-                {{ e.name }} = {{ e.name }}Value ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+                {{ e.name }} = {{ e.name }}Value ?: return Decoded.Refused(CodecError.LineRequiredMissing),
 {% elif e.is_values %}
                 {{ e.name }} = {{ e.name }}Value ?: mutableListOf(),
 {% elif e.required %}
-                {{ e.name }} = {{ e.name }}Value ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+                {{ e.name }} = {{ e.name }}Value ?: return Decoded.Refused(CodecError.LineRequiredMissing),
 {% else %}
                 {{ e.name }} = {{ e.name }}Value,
 {% endif %}
 {% if not e.is_records %}
 {% for p in e.params %}
 {% if p.required %}
-                {{ p.name }} = {{ p.name }}Read ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+                {{ p.name }} = {{ p.name }}Read ?: return Decoded.Refused(CodecError.LineRequiredMissing),
 {% else %}
                 {{ p.name }} = {{ p.name }}Read,
 {% endif %}
@@ -338,7 +338,7 @@ data class {{ struct_name }}(
             )
             // Only a component that decoded whole moves the cursor.
             cursor.advance(reader.consumed())
-            return value
+            return Decoded.Ok(value)
         }
     }
 }

@@ -13,9 +13,10 @@ package com.sce.forge.runtime
  * A generated codec calls these and spells no CBOR of its own. **Writing** is
  * deterministic (RFC 8949 §4.2.1: every head in its shortest form), so this
  * runtime and every other write the same bytes for the same value. **Reading**
- * takes a head in any valid length and answers `null` for what the codec cannot
- * read as its entry — Kotlin's codec convention, where every decode failure is
- * `null`; [lastError] says which.
+ * takes a head in any valid length and answers a [Decoded]: the item, or the
+ * [CodecError] that refuses what the codec cannot read as its entry
+ * (docs/adr/0099, amendment of 2026-11-16). The refusal is the answer of the
+ * read that met it, so concurrent decodes never see each other's.
  *
  * Cross-language sibling: `sce_forge_runtime::cbor` (Rust).
  */
@@ -29,20 +30,6 @@ object Cbor {
 
     /** The deepest an unknown entry's value may nest before [skip] refuses it. */
     const val MAX_SKIP_DEPTH = 16
-
-    /**
-     * Why the last read answered `null`. Diagnostic only — a decode's
-     * contract is its `null` — and read by single-threaded tests that pin
-     * which rule refused; it is not synchronised, so concurrent decodes
-     * overwrite it.
-     */
-    var lastError: CodecError? = null
-        private set
-
-    private fun <T> refuse(error: CodecError): T? {
-        lastError = error
-        return null
-    }
 
     // ── Writing ─────────────────────────────────────────────────────────
 
@@ -78,13 +65,16 @@ object Cbor {
 
     // ── Reading ─────────────────────────────────────────────────────────
 
-    private fun readBe(c: SceCursor, n: Int): ULong? {
+    /** One head: its major type and the value its additional information carries. */
+    data class Head(val major: Int, val value: ULong)
+
+    private fun readBe(c: SceCursor, n: Int): Decoded<ULong> {
         var value = 0UL
         repeat(n) {
-            val b = c.readByte() ?: return refuse(CodecError.NeedMoreBytes)
+            val b = c.readByte() ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             value = (value shl 8) or b.toULong()
         }
-        return value
+        return Decoded.Ok(value)
     }
 
     /**
@@ -92,119 +82,114 @@ object Cbor {
      * carries (for a string or a map, the length). An indefinite length and
      * the reserved values 28–30 are refused.
      */
-    fun readHead(c: SceCursor): Pair<Int, ULong>? {
-        val initial = c.readByte() ?: return refuse(CodecError.NeedMoreBytes)
+    fun readHead(c: SceCursor): Decoded<Head> {
+        val initial = c.readByte() ?: return Decoded.Refused(CodecError.NeedMoreBytes)
         val major = initial ushr 5
         val value = when (val info = initial and 0x1F) {
             in 0..23 -> info.toULong()
-            24 -> readBe(c, 1)
-            25 -> readBe(c, 2)
-            26 -> readBe(c, 4)
-            27 -> readBe(c, 8)
-            else -> return refuse(CodecError.CborMalformed)
-        } ?: return null
-        return major to value
+            24 -> readBe(c, 1).valueOr { refused -> return refused }
+            25 -> readBe(c, 2).valueOr { refused -> return refused }
+            26 -> readBe(c, 4).valueOr { refused -> return refused }
+            27 -> readBe(c, 8).valueOr { refused -> return refused }
+            else -> return Decoded.Refused(CodecError.CborMalformed)
+        }
+        return Decoded.Ok(Head(major, value))
     }
 
-    private fun expect(c: SceCursor, major: Int): ULong? {
-        val (m, value) = readHead(c) ?: return null
-        return if (m == major) value else refuse(CodecError.CborMalformed)
+    private fun expect(c: SceCursor, major: Int): Decoded<ULong> {
+        val head = readHead(c).valueOr { refused -> return refused }
+        return if (head.major == major) Decoded.Ok(head.value) else Decoded.Refused(CodecError.CborMalformed)
     }
 
-    fun readUint(c: SceCursor): ULong? = expect(c, MAJOR_UNSIGNED)
+    fun readUint(c: SceCursor): Decoded<ULong> = expect(c, MAJOR_UNSIGNED)
 
     /** An unsigned integer an entry of [max] holds. */
-    fun readUintUpto(c: SceCursor, max: ULong): ULong? {
-        val value = readUint(c) ?: return null
-        return if (value > max) refuse(CodecError.CborOutOfRange) else value
+    fun readUintUpto(c: SceCursor, max: ULong): Decoded<ULong> {
+        val value = readUint(c).valueOr { refused -> return refused }
+        return if (value > max) Decoded.Refused(CodecError.CborOutOfRange) else Decoded.Ok(value)
     }
 
-    fun readBool(c: SceCursor): Boolean? {
-        val (m, value) = readHead(c) ?: return null
+    fun readBool(c: SceCursor): Decoded<Boolean> {
+        val head = readHead(c).valueOr { refused -> return refused }
         return when {
-            m == MAJOR_SIMPLE && value == 20UL -> false
-            m == MAJOR_SIMPLE && value == 21UL -> true
-            else -> refuse(CodecError.CborMalformed)
+            head.major == MAJOR_SIMPLE && head.value == 20UL -> Decoded.Ok(false)
+            head.major == MAJOR_SIMPLE && head.value == 21UL -> Decoded.Ok(true)
+            else -> Decoded.Refused(CodecError.CborMalformed)
         }
     }
 
-    private fun readPayload(c: SceCursor, len: ULong): ByteArray? {
-        if (len > c.remaining().toULong()) return refuse(CodecError.NeedMoreBytes)
+    private fun readPayload(c: SceCursor, len: ULong): Decoded<ByteArray> {
+        if (len > c.remaining().toULong()) return Decoded.Refused(CodecError.NeedMoreBytes)
         val n = len.toInt()
-        val bytes = c.peekSlice(n) ?: return refuse(CodecError.NeedMoreBytes)
+        val bytes = c.peekSlice(n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
         c.advance(n)
-        return bytes
+        return Decoded.Ok(bytes)
     }
 
     /** A text string of at most [maxSize] bytes (`null`: no bound). */
-    fun readText(c: SceCursor, maxSize: Int?): String? {
-        val len = expect(c, MAJOR_TEXT) ?: return null
-        if (maxSize != null && len > maxSize.toULong()) return refuse(CodecError.CborOutOfRange)
-        val bytes = readPayload(c, len) ?: return null
+    fun readText(c: SceCursor, maxSize: Int?): Decoded<String> {
+        val len = expect(c, MAJOR_TEXT).valueOr { refused -> return refused }
+        if (maxSize != null && len > maxSize.toULong()) return Decoded.Refused(CodecError.CborOutOfRange)
+        val bytes = readPayload(c, len).valueOr { refused -> return refused }
         return try {
-            bytes.decodeToString(throwOnInvalidSequence = true)
+            Decoded.Ok(bytes.decodeToString(throwOnInvalidSequence = true))
         } catch (_: CharacterCodingException) {
-            refuse(CodecError.CborMalformed)
+            // The kind every runtime gives a text that is not UTF-8.
+            Decoded.Refused(CodecError.InvalidUtf8)
         }
     }
 
     /** A byte string of at most [maxSize] bytes (`null`: no bound). */
-    fun readBytes(c: SceCursor, maxSize: Int?): ByteArray? {
-        val len = expect(c, MAJOR_BYTES) ?: return null
-        if (maxSize != null && len > maxSize.toULong()) return refuse(CodecError.CborOutOfRange)
+    fun readBytes(c: SceCursor, maxSize: Int?): Decoded<ByteArray> {
+        val len = expect(c, MAJOR_BYTES).valueOr { refused -> return refused }
+        if (maxSize != null && len > maxSize.toULong()) return Decoded.Refused(CodecError.CborOutOfRange)
         return readPayload(c, len)
     }
 
     /** A byte string of exactly [length] bytes. */
-    fun readBytesExact(c: SceCursor, length: Int): ByteArray? {
-        val len = expect(c, MAJOR_BYTES) ?: return null
-        if (len != length.toULong()) return refuse(CodecError.CborWrongLength)
+    fun readBytesExact(c: SceCursor, length: Int): Decoded<ByteArray> {
+        val len = expect(c, MAJOR_BYTES).valueOr { refused -> return refused }
+        if (len != length.toULong()) return Decoded.Refused(CodecError.CborWrongLength)
         return readPayload(c, len)
     }
 
     /** The head of a definite-length array: how many items follow. An indefinite length is refused, as a map's is. */
-    fun readArrayLen(c: SceCursor): ULong? = expect(c, MAJOR_ARRAY)
+    fun readArrayLen(c: SceCursor): Decoded<ULong> = expect(c, MAJOR_ARRAY)
 
     /** The head of a definite-length map: how many entries follow. */
-    fun readMapLen(c: SceCursor): ULong? = expect(c, MAJOR_MAP)
+    fun readMapLen(c: SceCursor): Decoded<ULong> = expect(c, MAJOR_MAP)
 
     /**
      * Skip one item — the value of a key the codec does not declare — and
      * everything nested in it, refusing one nested deeper than
-     * [MAX_SKIP_DEPTH]. `false` when it cannot.
+     * [MAX_SKIP_DEPTH] as [CodecError.CborTooDeep].
      */
-    fun skip(c: SceCursor): Boolean = skipAt(c, 0)
+    fun skip(c: SceCursor): Decoded<Unit> = skipAt(c, 0)
 
-    private fun skipAt(c: SceCursor, depth: Int): Boolean {
-        if (depth >= MAX_SKIP_DEPTH) {
-            lastError = CodecError.CborTooDeep
-            return false
-        }
-        val (major, value) = readHead(c) ?: return false
-        return when (major) {
-            0, 1, 7 -> true
-            2, 3 -> readPayload(c, value) != null
+    private fun skipAt(c: SceCursor, depth: Int): Decoded<Unit> {
+        if (depth >= MAX_SKIP_DEPTH) return Decoded.Refused(CodecError.CborTooDeep)
+        val head = readHead(c).valueOr { refused -> return refused }
+        when (head.major) {
+            0, 1, 7 -> {}
+            2, 3 -> readPayload(c, head.value).valueOr { refused -> return refused }
             4 -> {
                 var i = 0UL
-                while (i < value) {
-                    if (!skipAt(c, depth + 1)) return false
+                while (i < head.value) {
+                    skipAt(c, depth + 1).valueOr { refused -> return refused }
                     i++
                 }
-                true
             }
             5 -> {
                 var i = 0UL
-                while (i < value) {
-                    if (!skipAt(c, depth + 1) || !skipAt(c, depth + 1)) return false
+                while (i < head.value) {
+                    skipAt(c, depth + 1).valueOr { refused -> return refused }
+                    skipAt(c, depth + 1).valueOr { refused -> return refused }
                     i++
                 }
-                true
             }
-            6 -> skipAt(c, depth + 1)
-            else -> {
-                lastError = CodecError.CborMalformed
-                false
-            }
+            6 -> skipAt(c, depth + 1).valueOr { refused -> return refused }
+            else -> return Decoded.Refused(CodecError.CborMalformed)
         }
+        return Decoded.Ok(Unit)
     }
 }

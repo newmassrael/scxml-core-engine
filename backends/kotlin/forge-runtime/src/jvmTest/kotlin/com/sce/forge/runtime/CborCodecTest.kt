@@ -17,8 +17,8 @@ import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.fail
 
 class CborCodecTest {
     private val id = ByteArray(16) { it.toByte() }
@@ -39,8 +39,8 @@ class CborCodecTest {
         bytes(0xa5, 0x00, 0x50) + id + bytes(0x01, 0x66) + "node-a".encodeToByteArray() +
             bytes(0x03, 0x03, 0x05, 0x42, 0xde, 0xad, 0x07, 0xf5)
 
-    private fun assertSame(want: CodecCborMap, got: CodecCborMap?) {
-        assertNotNull(got)
+    private fun assertSame(want: CodecCborMap, decoded: Decoded<CodecCborMap>) {
+        val got = decoded.valueOr { fail("the map is refused as ${it.error}") }
         assertEquals(want.source, got.source)
         assertContentEquals(want.id, got.id)
         assertEquals(want.pattern, got.pattern)
@@ -91,27 +91,44 @@ class CborCodecTest {
     }
 
     @Test
-    fun everyRefusalLeavesTheCursorWhereItWas() {
-        fun refused(input: ByteArray) {
+    fun everyRefusalNamesItsKindAndLeavesTheCursorWhereItWas() {
+        fun refused(kind: CodecError, input: ByteArray) {
             val cursor = SceCursor(input)
-            assertNull(CodecCborMap.decode(cursor), input.joinToString(" ") { "%02x".format(it) })
+            assertEquals(
+                Decoded.Refused(kind),
+                CodecCborMap.decode(cursor),
+                input.joinToString(" ") { "%02x".format(it) },
+            )
             assertEquals(input.size, cursor.remaining(), "the cursor moved")
         }
         val e = expected()
         val pair = (0 until e.size - 1).first { e[it] == 0x03.toByte() && e[it + 1] == 0x03.toByte() }
 
         // A required key absent.
-        refused(bytes(0xa4) + e.copyOfRange(1, pair) + e.copyOfRange(pair + 2, e.size))
+        refused(CodecError.CborRequiredKeyMissing, bytes(0xa4) + e.copyOfRange(1, pair) + e.copyOfRange(pair + 2, e.size))
         // The id one byte short of its exact length.
-        refused(bytes(0xa5, 0x00, 0x4f) + id.copyOfRange(0, 15) + e.copyOfRange(19, e.size))
+        refused(CodecError.CborWrongLength, bytes(0xa5, 0x00, 0x4f) + id.copyOfRange(0, 15) + e.copyOfRange(19, e.size))
         // A key given twice.
-        refused(bytes(0xa6) + e.copyOfRange(1, e.size) + bytes(0x07, 0xf4))
+        refused(CodecError.CborMalformed, bytes(0xa6) + e.copyOfRange(1, e.size) + bytes(0x07, 0xf4))
         // `pattern` holding 300, past a UByte.
-        refused(e.copyOfRange(0, pair + 1) + bytes(0x19, 0x01, 0x2c) + e.copyOfRange(pair + 2, e.size))
+        refused(
+            CodecError.CborOutOfRange,
+            e.copyOfRange(0, pair + 1) + bytes(0x19, 0x01, 0x2c) + e.copyOfRange(pair + 2, e.size),
+        )
         // A text where the map expected a truth value.
-        refused(e.copyOfRange(0, e.size - 1) + bytes(0x61, 'x'.code))
+        refused(CodecError.CborMalformed, e.copyOfRange(0, e.size - 1) + bytes(0x61, 'x'.code))
         // An indefinite-length map.
-        refused(bytes(0xbf, 0xff))
+        refused(CodecError.CborMalformed, bytes(0xbf, 0xff))
+        // The value of an undeclared key nested sixteen arrays deep.
+        refused(CodecError.CborTooDeep, bytes(0xa1, 0x02) + ByteArray(16) { 0x81.toByte() } + bytes(0x00))
+        // A text that is not UTF-8.
+        refused(
+            CodecError.InvalidUtf8,
+            bytes(0xa5, 0x00, 0x50) + id + bytes(0x01, 0x62, 0xc3, 0x28) +
+                bytes(0x03, 0x03, 0x05, 0x42, 0xde, 0xad, 0x07, 0xf5),
+        )
+        // The map cut short.
+        refused(CodecError.NeedMoreBytes, e.copyOfRange(0, e.size - 1))
     }
 
     /**
@@ -139,8 +156,7 @@ class CborCodecTest {
             bytes(0x03, 0x01, 0x04, 0x01, 0x05, 0x42, 0xAA, 0xBB)
 
         assertContentEquals(golden, envelope.encodeToByteArray())
-        val decoded = Envelope.decode(SceCursor(golden))
-        assertNotNull(decoded)
+        val decoded = Envelope.decode(SceCursor(golden)).valueOr { fail("the envelope is refused as ${it.error}") }
         assertContentEquals(sampleId, decoded.id)
         assertEquals("ecu", decoded.source)
         assertEquals("evt", decoded.event_type)
@@ -153,7 +169,7 @@ class CborCodecTest {
         val reserved = golden.copyOf()
         val at = (0 until reserved.size - 1).first { reserved[it] == 0x03.toByte() && reserved[it + 1] == 0x01.toByte() }
         reserved[at + 1] = 0x0b
-        assertNull(Envelope.decode(SceCursor(reserved)))
+        assertEquals(Decoded.Refused(CodecError.UndeclaredEnumValue), Envelope.decode(SceCursor(reserved)))
     }
 
     @Test
@@ -175,10 +191,10 @@ class CborCodecTest {
         }
         assertContentEquals(bytes(0x82), written(2UL))
         assertContentEquals(bytes(0x98, 0x18), written(24UL))
-        assertEquals(3UL, Cbor.readArrayLen(SceCursor(bytes(0x83))))
-        assertEquals(24UL, Cbor.readArrayLen(SceCursor(bytes(0x98, 0x18))))
+        assertEquals(Decoded.Ok(3UL), Cbor.readArrayLen(SceCursor(bytes(0x83))))
+        assertEquals(Decoded.Ok(24UL), Cbor.readArrayLen(SceCursor(bytes(0x98, 0x18))))
         // An indefinite-length array, and a map where an array stands.
-        assertNull(Cbor.readArrayLen(SceCursor(bytes(0x9F))))
-        assertNull(Cbor.readArrayLen(SceCursor(bytes(0xA1))))
+        assertEquals(Decoded.Refused(CodecError.CborMalformed), Cbor.readArrayLen(SceCursor(bytes(0x9F))))
+        assertEquals(Decoded.Refused(CodecError.CborMalformed), Cbor.readArrayLen(SceCursor(bytes(0xA1))))
     }
 }

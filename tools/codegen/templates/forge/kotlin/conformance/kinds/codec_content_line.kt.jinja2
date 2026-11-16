@@ -5,9 +5,8 @@
    and reject vectors, as the generic codec fragment has them, with what a
    content-line component adds: an entry can be absent (`null`) or a list, a case
    marked `decode_only` is an input the codec reads and does not write, and a
-   refused decode leaves the cursor where it found it. Kotlin names no failure
-   (the null-sentinel convention), so a reject asserts refusal; the rule that
-   refused is `ContentLine.lastError`, which `ContentLineCodecTest` pins.
+   refused decode leaves the cursor where it found it. A reject asserts the kind
+   the decode is refused with, as every backend's does.
 
    An entry that is an enum (docs/adr/0015) is written in a vector as its carrier
    number and held by the codec as the enum's own type. A decoded value is
@@ -38,7 +37,7 @@
 
             val cursor = com.sce.forge.runtime.SceCursor(expectedBytes)
             val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
-                ?: error("{{ f.name }} case $i decode returned null")
+                .valueOr { refused -> error("{{ f.name }} case $i decode refused: ${refused.error}") }
 {% for field in f.fields %}
 {% if field.members %}
             // A list of line records (docs/adr/0014), as the vector writes each: an
@@ -149,17 +148,31 @@
 {# Decode-rejection vectors: the wire this codec MUST refuse, read from the
    reference like the cases are. They are not inlined as byte literals: this
    codec's vectors are whole components, and a test method holds 64 KB of
-   bytecode — 77 literals of a few hundred bytes each pass it. A refusal leaves
-   the cursor where it found it. #}
+   bytecode — 77 literals of a few hundred bytes each pass it. Each vector's
+   `error` names the kind its decode is refused with (docs/adr/0099, amendment
+   of 2026-11-16), taken to the runtime's `CodecError` by the table of the kinds
+   these vectors name, each spelled once from the folded `r.symbol`. A refusal
+   leaves the cursor where it found it. #}
+{% set kinds = namespace(seen=[]) %}
+        val rejectKinds = mapOf<String, com.sce.forge.runtime.CodecError>(
+{% for r in f.rejects %}
+{% if r.error not in kinds.seen %}
+{% set kinds.seen = kinds.seen + [r.error] %}
+            "{{ r.error }}" to com.sce.forge.runtime.{{ r.symbol }},
+{% endif %}
+{% endfor %}
+        )
         spec["rejects"]!!.jsonArray.forEachIndexed { i, rejectEl ->
             val rejectBytes = rejectEl.jsonObject["encoded"]!!.jsonArray
                 .map { it.jsonPrimitive.int.toByte() }
                 .toByteArray()
             val rejectCursor = com.sce.forge.runtime.SceCursor(rejectBytes)
             val why = rejectEl.jsonObject["why"]!!.jsonPrimitive.content
-            assertTrue(
-                {{ f.name | to_pascal_case }}.decode(rejectCursor) == null,
-                "{{ f.name }} reject $i: $why",
+            val kind = rejectEl.jsonObject["error"]!!.jsonPrimitive.content
+            assertEquals(
+                com.sce.forge.runtime.Decoded.Refused(rejectKinds.getValue(kind)),
+                {{ f.name | to_pascal_case }}.decode(rejectCursor),
+                "{{ f.name }} reject $i is refused as $kind: $why",
             )
             assertEquals(
                 rejectBytes.size,

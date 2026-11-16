@@ -70,7 +70,7 @@
 
             val cursor = com.sce.forge.runtime.SceCursor(expectedBytes)
             val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
-                ?: error("{{ f.name }} case $i decode returned null")
+                .valueOr { refused -> error("{{ f.name }} case $i decode refused: ${refused.error}") }
             assertTrue(
                 !decodeOnly || cursor.remaining() == 0,
                 "{{ f.name }} case $i: a decode-only frame is read whole",
@@ -94,38 +94,19 @@
 {% endif %}
 
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
-   shape. Kotlin returns `null` for every failure, so the first assertion is
-   that the decode refused. A refusal for a reason the cursor records (a
-   bound's, docs/adr/0077 §4) is checked there as `r.cursor_record`, and a
-   frame short of bytes is checked to record none. Byte literals go through
-   `.toByte()` because Kotlin's Byte is signed and a header with the high bit
-   set does not fit an unsuffixed literal. #}
+   shape. A Kotlin decode answers `Decoded.Refused` with the kind that refused
+   the frame (docs/adr/0099, amendment of 2026-11-16), and `r.symbol` is that
+   kind, so the vector asserts the kind and not only that the decode refused.
+   Byte literals go through `.toByte()` because Kotlin's Byte is signed and a
+   header with the high bit set does not fit an unsuffixed literal. #}
 {% for r in f.rejects %}
         run {
             val rejectBytes = byteArrayOf({% for b in r.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
             val rejectCursor = com.sce.forge.runtime.SceCursor(rejectBytes)
-            assertTrue(
-                {{ f.name | to_pascal_case }}.decode(rejectCursor) == null,
-                "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}",
-            )
-{% if r.cursor_record %}
-            assertTrue(
-                rejectCursor.lastRefusal == {{ r.cursor_record }},
+            assertEquals(
+                com.sce.forge.runtime.Decoded.Refused(com.sce.forge.runtime.{{ r.symbol }}),
+                {{ f.name | to_pascal_case }}.decode(rejectCursor),
                 "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
             )
-{% elif r.cursor_records_nothing %}
-            assertTrue(
-                rejectCursor.lastRefusal == null,
-                "{{ f.name }} reject {{ loop.index0 }} is a frame short of bytes, not a refusal for a reason: {{ r.why }}",
-            )
-{% endif %}
-{% if r.cursor_flag %}
-            {# A reason the cursor keeps in a flag of its own (a VLE's value
-               past its width, `lastVleOverflow`). #}
-            assertTrue(
-                rejectCursor.{{ r.cursor_flag }},
-                "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}",
-            )
-{% endif %}
         }
 {% endfor %}

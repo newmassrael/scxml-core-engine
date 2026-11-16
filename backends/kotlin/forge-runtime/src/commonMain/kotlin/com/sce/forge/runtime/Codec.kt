@@ -4,8 +4,10 @@
 // sce_forge_runtime — codec cursor + typed error contract (Kotlin).
 //
 // Mirrors `backends/rust/forge-runtime/src/codec.rs`. RFC §synth-5-B L494-519 pins
-// the per-language cursor + null-on-truncation contract on decode so a
-// truncated input never aborts.
+// the per-language cursor + typed-refusal contract on decode so a truncated
+// input never aborts: a decode answers a [Decoded], the value it read or the
+// [CodecError] that refused the frame (docs/adr/0099, amendment of
+// 2026-11-16).
 //
 // The cursor ships peekSlice / advance / remaining plus the readVle*
 // readers. Other streaming readers (e.g. a dedicated readU8 / readTag)
@@ -13,97 +15,127 @@
 
 package com.sce.forge.runtime
 
-/// Typed decode error. The variant primitive intentionally does
-/// NOT need a typed UnknownVariantTag — RFC §synth-5-B requires
-/// `<sce:default>` when arms don't exhaust the tag domain (build-time
-/// codec/variant-arm-unreachable otherwise), so the default arm
-/// catches every unmatched tag at runtime.
+/// Typed codec error: the kind of rejection a decode answers, or of
+/// refusal an encode answers. The kinds a decode answers are one
+/// vocabulary across every runtime (`sce-build/src/forge/codec_failure.rs`).
+///
+/// The variant primitive intentionally does NOT need a typed
+/// UnknownVariantTag — RFC §synth-5-B requires `<sce:default>` when arms
+/// don't exhaust the tag domain (build-time codec/variant-arm-unreachable
+/// otherwise), so the default arm catches every unmatched tag at runtime.
 ///
 /// The TLV chain primitive emits on Kotlin like every other backend
 /// (Zenoh extension envelopes need server-class peers, not only the
-/// MCU). A chain past its depth is refused as `TooManyElements` and
-/// recorded on the cursor, as a list past its count is.
+/// MCU). A chain past its depth is refused as `TooManyElements`, as a
+/// list past its count is.
 sealed class CodecError {
-    object NeedMoreBytes : CodecError()
+    data object NeedMoreBytes : CodecError()
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §synth-5-B `codec/vle-width-overflow`.
-    object VleWidthOverflow : CodecError()
+    data object VleWidthOverflow : CodecError()
     /// The bytes of a `sce:type="string"` field are not well-formed UTF-8
     /// (RFC 3629): the frame is refused rather than read as a malformed text.
-    object InvalidUtf8 : CodecError()
+    data object InvalidUtf8 : CodecError()
     /// A field of a closed enum (`sce:strict-variants`, the default) carried a
     /// value no variant declares: not a value of the type, so the frame does
     /// not decode. An open set carries every value of its carrier.
-    object UndeclaredEnumValue : CodecError()
+    data object UndeclaredEnumValue : CodecError()
     /// A value inside its field's bound and past the capacity a deployment gave
     /// the container that stores it (docs/adr/0077 §7). A Kotlin list or array
     /// is sized to its value, so no decode of this runtime refuses with it: it
     /// is declared so that every runtime holds one vocabulary of the kinds a
     /// decode is refused with (docs/adr/0099, amendment of 2026-11-16).
-    object CapacityExceeded : CodecError()
+    data object CapacityExceeded : CodecError()
     /// A frame whose variant tag selects an arm the document declares under a
     /// build feature the build left out (docs/adr/0072). A Kotlin codec keeps
     /// every arm, so it is declared for the one vocabulary, as
     /// [CapacityExceeded] is.
-    object VariantArmNotBuilt : CodecError()
+    data object VariantArmNotBuilt : CodecError()
     /// RFC §synth-5-B encode-side counterpart to NeedMoreBytes: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded [ByteArraySink] can raise
     /// this; the growable [MutableListSink] is effectively infallible.
-    object BufferOverflow : CodecError()
+    data object BufferOverflow : CodecError()
     /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
-    /// are not the CBOR it expects. Decode-side; Kotlin's `decode()`
-    /// collapses it to `null` as it does every decode failure.
-    object CborMalformed : CodecError()
+    /// are not the CBOR it expects.
+    data object CborMalformed : CodecError()
     /// A CBOR codec's map lacked an entry of a bare type, one that is not `optional<T>`.
-    object CborRequiredKeyMissing : CodecError()
+    data object CborRequiredKeyMissing : CodecError()
     /// A CBOR codec's `bytes` entry declared `sce:length` held another number
-    /// of bytes — raised by `encode()`; decode collapses it to `null`.
-    object CborWrongLength : CodecError()
+    /// of bytes, on decode or on encode.
+    data object CborWrongLength : CodecError()
     /// A CBOR codec skipped an unknown entry nested deeper than 16.
-    object CborTooDeep : CodecError()
-    /// A CBOR codec's value exceeds its entry's width or `sce:max-size` —
-    /// raised by `encode()`; decode collapses it to `null`.
-    object CborOutOfRange : CodecError()
+    data object CborTooDeep : CodecError()
+    /// A CBOR codec's value exceeds its entry's width or `sce:max-size`, on
+    /// decode or on encode.
+    data object CborOutOfRange : CodecError()
     /// Encode-side: a field gated by a `sce:present-if` the codec cannot
     /// derive (a chain-membership test, a flag input the caller gives, a
     /// disjunction, a flag wider than one bit) was given when the predicate
     /// says it does not belong on the wire, or left out when it does.
     /// `encode()` refuses before writing the first byte, so the sink is
     /// untouched.
-    object PresentIfMismatch : CodecError()
+    data object PresentIfMismatch : CodecError()
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line,
-    /// a parameter or an `END:` the grammar does not admit. Decode collapses it
-    /// to `null`; [ContentLine.lastError] says which rule refused.
-    object LineMalformed : CodecError()
+    /// a parameter or an `END:` the grammar does not admit.
+    data object LineMalformed : CodecError()
     /// A content-line component lacked a property or parameter of a bare type,
     /// one that is not `optional<T>`; on encode, a parameter was given without the
     /// property it belongs to.
-    object LineRequiredMissing : CodecError()
+    data object LineRequiredMissing : CodecError()
     /// A content-line property that holds one value occurred twice, a parameter
     /// was given twice in one line, or a list passed its `sce:max-count`.
-    object LineTooMany : CodecError()
+    data object LineTooMany : CodecError()
     /// A content-line value passed its `sce:max-size`.
-    object LineTooLong : CodecError()
+    data object LineTooLong : CodecError()
     /// A content-line TEXT carried an escape other than `\\`, `\;`, `\,`, `\n`
     /// and `\N`.
-    object LineBadEscape : CodecError()
+    data object LineBadEscape : CodecError()
     /// A content-line value its entry cannot hold: a control character, invalid
     /// UTF-8, an integer or `bool` out of its type, a parameter of more values
     /// than one, a `"` in a parameter value.
-    object LineBadValue : CodecError()
+    data object LineBadValue : CodecError()
     /// On decode, a byte string's or a text's length outside its bound: the
     /// declared `sce:max-size` intersected with what its length field can say
     /// after its `sce:length-arith` (docs/adr/0077 §1). Judged before the
     /// frame's own length, so such a frame is refused and never waited on.
-    /// `decode()` returns `null` and records this on the cursor
-    /// ([SceCursor.lastRefusal]).
-    object LengthOutOfRange : CodecError()
+    data object LengthOutOfRange : CodecError()
     /// On decode, a list's count past its declared `max-count`, or an entry
     /// past it in a list read to the end of the frame, refused before that
-    /// entry is read (docs/adr/0077 §2). Recorded on the cursor as
-    /// [LengthOutOfRange] is.
-    object TooManyElements : CodecError()
+    /// entry is read (docs/adr/0077 §2).
+    data object TooManyElements : CodecError()
+}
+
+/// What a decode answers (docs/adr/0099, amendment of 2026-11-16): the value
+/// it read, or the kind of rejection that refused the frame. A rejection is
+/// not a value of the decoded type and no sentinel stands for it, so a caller
+/// tells a frame cut short ([CodecError.NeedMoreBytes], resumed by appending
+/// bytes) from one no more bytes make whole by the kind it holds. The sealed
+/// result is Kotlin's own spelling of a failure the caller is expected to
+/// handle, as Rust's `Result<T, CodecError>` is, and [valueOr] is its `?`.
+sealed class Decoded<out T> {
+    /// The value a decode read.
+    data class Ok<out T>(val value: T) : Decoded<T>()
+
+    /// The kind of rejection that refused the frame.
+    data class Refused(val error: CodecError) : Decoded<Nothing>()
+
+    /// The value, or what [onRefused] does with the refusal, which can only
+    /// leave: a generated decode writes `valueOr { r -> return r }`, so a
+    /// nested refusal is answered as its own, and a caller that cannot go on
+    /// throws or returns.
+    inline fun valueOr(onRefused: (Refused) -> Nothing): T =
+        when (this) {
+            is Ok -> this.value
+            is Refused -> onRefused(this)
+        }
+
+    /// The value, or `null` for a refusal, for a caller that has no use for
+    /// the kind.
+    fun valueOrNull(): T? = (this as? Ok)?.value
+
+    /// The kind of rejection, or `null` for a value.
+    fun errorOrNull(): CodecError? = (this as? Refused)?.error
 }
 
 /// The bytes of a ZInt that carry a continuation flag: a chain of this many
@@ -157,14 +189,22 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
     /// encoding of a value it holds, the padded ones included, and refuses a
     /// value past its width, never a longer encoding.
     ///
-    /// On `null` return, [lastVleOverflow] distinguishes truncation
-    /// (false) from width overflow (true).
-    fun readVleU16(): UShort? = readVleInner(16)?.toUShort()
-    fun readVleU32(): UInt? = readVleInner(32)?.toUInt()
-    fun readVleU64(): ULong? = readVleInner(64)
+    /// A buffer that ends inside the chain is refused as
+    /// [CodecError.NeedMoreBytes], a value past the width as
+    /// [CodecError.VleWidthOverflow].
+    fun readVleU16(): Decoded<UShort> =
+        when (val read = readVleInner(16)) {
+            is Decoded.Ok -> Decoded.Ok(read.value.toUShort())
+            is Decoded.Refused -> read
+        }
 
-    var lastVleOverflow: Boolean = false
-        private set
+    fun readVleU32(): Decoded<UInt> =
+        when (val read = readVleInner(32)) {
+            is Decoded.Ok -> Decoded.Ok(read.value.toUInt())
+            is Decoded.Refused -> read
+        }
+
+    fun readVleU64(): Decoded<ULong> = readVleInner(64)
 
     /// One ZInt: each of the first eight bytes carries 7 data bits in its
     /// low 7 and a continuation flag in bit 7; a ninth carries a full 8 data
@@ -188,32 +228,14 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
     }
 
     /// One ZInt whatever the width, then the value held to `maxBits`: past
-    /// `2^maxBits - 1` it is refused and [lastVleOverflow] is set.
-    private fun readVleInner(maxBits: Int): ULong? {
-        lastVleOverflow = false
-        val value = readZint() ?: return null
+    /// `2^maxBits - 1` it is refused as [CodecError.VleWidthOverflow].
+    private fun readVleInner(maxBits: Int): Decoded<ULong> {
+        val value = readZint() ?: return Decoded.Refused(CodecError.NeedMoreBytes)
         if (maxBits < 64 && (value shr maxBits) != 0uL) {
-            lastVleOverflow = true
-            return null
+            return Decoded.Refused(CodecError.VleWidthOverflow)
         }
-        return value
+        return Decoded.Ok(value)
     }
-
-    /// Record that a decode refused its frame for a reason other than running
-    /// out of bytes ([CodecError.LengthOutOfRange], [CodecError.TooManyElements]).
-    /// The decode then returns `null`; the cursor stands where the refusal was
-    /// found, inside the frame, so the frame is not resumed by appending bytes.
-    /// The record stays until the next refusal replaces it. Mirrors
-    /// `SceCursor::refuse` of the C++ runtime.
-    fun refuse(error: CodecError) {
-        lastRefusal = error
-    }
-
-    /// The reason the last refused decode over this cursor gave, or `null` when
-    /// no decode over it refused a frame. A decode that returned `null` while
-    /// this is `null` ran out of bytes (or overflowed a VLE, [lastVleOverflow]).
-    var lastRefusal: CodecError? = null
-        private set
 }
 
 // ── Write-side sink ──────────────────────────────────────────────
@@ -222,8 +244,8 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
 /// bodies accept by reference.
 ///
 /// Return contract: `null` on success; populated [CodecError] on
-/// failure (mirrors the decode-side `T?` convention — decode returns
-/// Optional<Value>, encode returns Optional<Error>). Generated code
+/// failure — an encode has no value to answer, so its answer is the
+/// refusal or nothing, where a decode answers a [Decoded]. Generated code
 /// propagates via `?.let { return it }`.
 ///
 /// `SceSink` is an interface rather than abstract class so Kotlin

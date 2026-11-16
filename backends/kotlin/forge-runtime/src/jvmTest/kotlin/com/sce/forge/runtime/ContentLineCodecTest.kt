@@ -4,10 +4,10 @@
 // SCE_FORGE.md §4.6.4 — a `sce:encoding="content-line"` codec, generated for
 // Kotlin from tests/forge/resources/codec_content_line_event.scxml. The wire
 // vectors are the numerical harness's, run from numerical_reference.json; what
-// is held here is what a vector cannot say on Kotlin: that a refusal is `null`
-// with the rule that refused it in `ContentLine.lastError`, that a refused
-// decode leaves the cursor where it was, and what encode does with a value it
-// cannot write.
+// is held here is what a vector cannot say on Kotlin: that a refusal is a
+// `Decoded.Refused` holding the rule that refused it, that a refused decode
+// leaves the cursor where it was, and what encode answers for a value it cannot
+// write.
 
 package com.sce.forge.runtime
 
@@ -30,11 +30,13 @@ class ContentLineCodecTest {
 
     private fun written(v: CodecContentLineEvent): String? = v.encodeToByteArray()?.decodeToString()
 
+    /** What encode answers for [v]: the refusal, or `null` when it is written. */
+    private fun refusal(v: CodecContentLineEvent): CodecError? = v.encode(MutableListSink(mutableListOf()))
+
     private fun refused(text: String, why: CodecError) {
         val bytes = text.encodeToByteArray()
         val cursor = SceCursor(bytes)
-        assertNull(CodecContentLineEvent.decode(cursor), text)
-        assertEquals(why, ContentLine.lastError, text)
+        assertEquals(Decoded.Refused(why), CodecContentLineEvent.decode(cursor), text)
         assertEquals(bytes.size, cursor.remaining(), "the cursor moved: $text")
     }
 
@@ -59,7 +61,7 @@ class ContentLineCodecTest {
     fun aDecodeStandsAfterTheComponentAndNoFurther() {
         val tail = "BEGIN:VEVENT\r\nUID:next\r\n"
         val cursor = SceCursor((expected + tail).encodeToByteArray())
-        assertEquals(value(), CodecContentLineEvent.decode(cursor))
+        assertEquals(Decoded.Ok(value()), CodecContentLineEvent.decode(cursor))
         assertEquals(tail.length, cursor.remaining())
     }
 
@@ -90,22 +92,17 @@ class ContentLineCodecTest {
     @Test
     fun aParameterWithNoValueOfItsPropertyIsRefusedOnEncode() {
         val v = value().copy(organizerCn = "Kim")
-        assertNull(written(v))
-        assertEquals(CodecError.LineRequiredMissing, ContentLine.lastError)
+        assertEquals(CodecError.LineRequiredMissing, refusal(v))
         val ok = v.copy(organizer = "mailto:kim@example.org")
         assertTrue(written(ok)!!.contains("ORGANIZER;CN=Kim:mailto:kim@example.org\r\n"))
     }
 
     @Test
     fun aValueALineCouldNotCarryIsRefusedOnEncode() {
-        assertNull(written(value().copy(rrule = "FREQ=DAILY\r\nATTENDEE:mailto:x")))
-        assertEquals(CodecError.LineBadValue, ContentLine.lastError)
-        assertNull(written(value().copy(dtstartTzid = "a\"b")))
-        assertEquals(CodecError.LineBadValue, ContentLine.lastError)
-        assertNull(written(value().copy(uid = "x".repeat(25))))
-        assertEquals(CodecError.LineTooLong, ContentLine.lastError)
-        assertNull(written(value().copy(exdate = mutableListOf("1", "2", "3", "4"))))
-        assertEquals(CodecError.LineTooMany, ContentLine.lastError)
+        assertEquals(CodecError.LineBadValue, refusal(value().copy(rrule = "FREQ=DAILY\r\nATTENDEE:mailto:x")))
+        assertEquals(CodecError.LineBadValue, refusal(value().copy(dtstartTzid = "a\"b")))
+        assertEquals(CodecError.LineTooLong, refusal(value().copy(uid = "x".repeat(25))))
+        assertEquals(CodecError.LineTooMany, refusal(value().copy(exdate = mutableListOf("1", "2", "3", "4"))))
     }
 
     @Test
@@ -123,7 +120,7 @@ class ContentLineCodecTest {
         )
         val bytes = assertNotNull(v.encodeToByteArray())
         val cursor = SceCursor(bytes)
-        assertEquals(v, CodecContentLineEvent.decode(cursor))
+        assertEquals(Decoded.Ok(v), CodecContentLineEvent.decode(cursor))
         assertEquals(0, cursor.remaining())
     }
 }

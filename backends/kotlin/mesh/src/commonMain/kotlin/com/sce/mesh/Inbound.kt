@@ -120,7 +120,8 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
      * follows on.
      */
     fun admit(bytes: ByteArray, delivery: Delivery, nowMs: Long): Admission {
-        val envelope = Envelope.decode(SceCursor(bytes)) ?: return Admission.Refused(AdmitError.Malformed)
+        // Every kind of rejection is one malformed envelope to the receive half.
+        val envelope = Envelope.decode(SceCursor(bytes)).valueOr { return Admission.Refused(AdmitError.Malformed) }
         val sequence = envelope.sequence_no
         if (delivery.ordered && sequence == null) {
             return Admission.Refused(AdmitError.Unstamped)

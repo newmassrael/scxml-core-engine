@@ -5,14 +5,13 @@ package com.sce.forge.runtime
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * The wire of a `vle_u<N>` field is a ZInt64 at every width, and the type
  * bounds the value: a narrow field reads every encoding of a value it holds,
- * the padded ones included, and refuses a value past its width.
+ * the padded ones included, and refuses a value past its width as
+ * [CodecError.VleWidthOverflow], a chain the buffer ends inside as
+ * [CodecError.NeedMoreBytes].
  */
 class VleTest {
 
@@ -32,7 +31,7 @@ class VleTest {
         )
         for ((bytes, value) in cases) {
             val cursor = SceCursor(bytes)
-            assertEquals(value.toUShort(), cursor.readVleU16(), bytes.joinToString())
+            assertEquals(Decoded.Ok(value.toUShort()), cursor.readVleU16(), bytes.joinToString())
             assertEquals(0, cursor.remaining(), "${bytes.joinToString()} left bytes unread")
         }
     }
@@ -40,42 +39,38 @@ class VleTest {
     @Test
     fun aU32AndAU64ReadAPaddedEncodingOfAValueTheyHold() {
         val nine = wire(0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00)
-        assertEquals(1u, SceCursor(nine).readVleU32())
-        assertEquals(1uL, SceCursor(nine).readVleU64())
+        assertEquals(Decoded.Ok(1u), SceCursor(nine).readVleU32())
+        assertEquals(Decoded.Ok(1uL), SceCursor(nine).readVleU64())
         assertEquals(
-            UInt.MAX_VALUE,
+            Decoded.Ok(UInt.MAX_VALUE),
             SceCursor(wire(0xFF, 0xFF, 0xFF, 0xFF, 0x8F, 0x80, 0x80, 0x80, 0x00)).readVleU32(),
         )
         assertEquals(
-            ULong.MAX_VALUE,
+            Decoded.Ok(ULong.MAX_VALUE),
             SceCursor(wire(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)).readVleU64(),
         )
     }
 
     @Test
     fun aNarrowFieldRefusesTheFirstValuePastItsWidth() {
-        val u16 = SceCursor(wire(0x80, 0x80, 0x04))
-        assertNull(u16.readVleU16())
-        assertTrue(u16.lastVleOverflow, "65536 is past a u16")
-        val u32 = SceCursor(wire(0x80, 0x80, 0x80, 0x80, 0x10))
-        assertNull(u32.readVleU32())
-        assertTrue(u32.lastVleOverflow, "2^32 is past a u32")
+        val overflow = Decoded.Refused(CodecError.VleWidthOverflow)
+        assertEquals(overflow, SceCursor(wire(0x80, 0x80, 0x04)).readVleU16(), "65536 is past a u16")
+        assertEquals(
+            overflow,
+            SceCursor(wire(0x80, 0x80, 0x80, 0x80, 0x10)).readVleU32(),
+            "2^32 is past a u32",
+        )
         // A ninth byte with its high bit set is data, not a flag asking for a tenth.
         val high = wire(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80)
-        val highU32 = SceCursor(high)
-        assertNull(highU32.readVleU32())
-        assertTrue(highU32.lastVleOverflow, "2^63 is past a u32")
-        assertEquals(1uL shl 63, SceCursor(high).readVleU64())
+        assertEquals(overflow, SceCursor(high).readVleU32(), "2^63 is past a u32")
+        assertEquals(Decoded.Ok(1uL shl 63), SceCursor(high).readVleU64())
     }
 
     @Test
     fun aChainTheBufferEndsInsideNeedsMoreBytes() {
         val short = wire(0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80)
-        val u16 = SceCursor(short)
-        assertNull(u16.readVleU16())
-        assertFalse(u16.lastVleOverflow, "a short chain is not an overflow")
-        val u64 = SceCursor(short)
-        assertNull(u64.readVleU64())
-        assertFalse(u64.lastVleOverflow, "a short chain is not an overflow")
+        val needMore = Decoded.Refused(CodecError.NeedMoreBytes)
+        assertEquals(needMore, SceCursor(short).readVleU16(), "a short chain is not an overflow")
+        assertEquals(needMore, SceCursor(short).readVleU64(), "a short chain is not an overflow")
     }
 }
