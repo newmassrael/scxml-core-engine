@@ -15,7 +15,7 @@ use super::super::rust_source::{
     case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
 };
 use super::*;
-use crate::forge::encode_plan::{EncodePlan, Value};
+use crate::forge::encode_plan::{Element, EncodePlan, Law, Value};
 
 /// The name the harness gives the value a case makes.
 const VALUE: &str = "value";
@@ -100,8 +100,9 @@ pub(crate) fn source_case(
 /// The value of the codec `plan`, whose Swift type is `type_name`, that `source` states, made by
 /// its initializer, each element in declaration order: a byte string or a text through its bound's
 /// one door, bound first in `bindings`, which the harness requires to answer; a body by the
-/// initializer of its own codec's value; a number as a literal. An element a gate leaves out is
-/// `nil`. A shape the Swift printer does not print (a group, a list, a variant) is refused by name,
+/// initializer of its own codec's value; a list of entries each made so, through its count bound's
+/// door; a number as a literal. An element a gate leaves out is `nil`. A shape the Swift printer
+/// does not print (a group, a variant, a list held to its law) is refused by name,
 /// and so is a source that states an element the value does not present or leaves out one it does.
 fn value_literal(
     plan: &EncodePlan<'_>,
@@ -142,12 +143,63 @@ fn value_literal(
                 value_literal(plan, &type_name, value, held, bindings)
             })
             .map_err(|e| format!("`{id}`: {e}"))?
+        } else if let Value::List { codec, law, .. } = &element.value {
+            list_literal(type_name, element, codec, law, value, held, bindings)
+                .map_err(|e| format!("`{id}`: {e}"))?
         } else {
             number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?
         };
         arguments.push(format!("{id}: {spelled}"));
     }
     Ok(format!("{type_name}({})", arguments.join(", ")))
+}
+
+/// The list or chain `element` of the codec whose Swift type is `type_name`, its entries of the
+/// codec imported as `codec`, that `json` states as an array of its entries: each made by its own
+/// codec's initializer, and the list through its count bound's one door (docs/adr/0065 §6 R2),
+/// bound first in `bindings`, which the harness requires to answer. A list held to its law, which
+/// a source states with its start, is refused by name.
+fn list_literal(
+    type_name: &str,
+    element: &Element<'_>,
+    codec: &str,
+    law: &Law,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    if !law.is_none() {
+        return Err(
+            "a list held to the law of the inputs its entries say, which the Swift printer does \
+             not print"
+                .to_string(),
+        );
+    }
+    let stated = json
+        .as_array()
+        .ok_or_else(|| "a list is an array of its entries".to_string())?;
+    let mut entries = Vec::new();
+    for (i, entry) in stated.iter().enumerate() {
+        let literal = held
+            .read(codec, &mut |plan, _, held| {
+                let type_name = filters::to_pascal_case(plan.model.name.clone());
+                value_literal(plan, &type_name, entry, held, bindings)
+            })
+            .map_err(|e| format!("entry {i}: {e}"))?;
+        entries.push(literal);
+    }
+    let entry_type = held.read(codec, &mut |plan, _, _| {
+        Ok(filters::to_pascal_case(plan.model.name.clone()))
+    })?;
+    let list = super::source::list_type(type_name, element, &entry_type)
+        .expect("a list is held in a list type");
+    // Numbered, as a byte string's door is bound.
+    let local = format!("bound{}", bindings.len());
+    bindings.push(format!(
+        "let {local} = try #require({list}([{}]))",
+        entries.join(", ")
+    ));
+    Ok(local)
 }
 
 /// The Swift array literal of the bytes a source states, an array of numbers each a byte.

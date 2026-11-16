@@ -260,6 +260,11 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_zenoh_timestamp_ext.scxml",
         "tests/forge/resources/codec_zenoh_decl_kexpr.scxml",
         "tests/forge/resources/codec_embed_basic.scxml",
+        "tests/forge/resources/codec_repeat_basic.scxml",
+        "tests/forge/resources/codec_until_eof_basic.scxml",
+        "tests/forge/resources/codec_repeat_present_if_basic.scxml",
+        "tests/forge/resources/codec_tlv_chain_basic.scxml",
+        "tests/forge/resources/codec_chain_depth_plain.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -275,7 +280,7 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
     }
     for (template, why) in [(
         "tests/forge/resources/codec_repeat_flag_carrier.scxml",
-        "a list of entries",
+        "a list of a codec whose fields a gate group holds",
     )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
@@ -1167,9 +1172,17 @@ fn a_chain_hands_its_entries_an_input_read_off_the_entry_before() {
 fn a_chain_to_the_end_of_the_frame_is_read_while_bytes_are_left_to_its_depth() {
     let code = swift_of("tests/forge/resources/codec_tlv_chain_basic.scxml")
         .expect("a chain to the end of the frame is written");
+    // docs/adr/0065 §6 R2: the chain is held in a list type bounded by its depth, which holds no
+    // entry until a frame is read.
     assert!(
-        code.contains("\n    public var extensions: [CodecTlvEntry] = []\n"),
+        code.contains(
+            "\n    public var extensions: BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound> = .fewest(of: CodecTlvEntry())\n"
+        ),
         "{code}"
+    );
+    assert!(
+        code.contains("public enum ExtensionsBound: SceCountBound {\n        public static let least = 0\n        public static let most: Int? = 8\n"),
+        "the depth is the chain's count bound: {code}"
     );
     assert!(
         code.contains("for _ in 0..<8 {\n            if reader.remaining == 0 { break }\n            let entry = try CodecTlvEntry.decode(&reader)\n            extensions_items.append(entry)\n        }\n        if reader.remaining > 0 {\n            throw CodecError.tooManyElements\n        }"),
@@ -1177,9 +1190,20 @@ fn a_chain_to_the_end_of_the_frame_is_read_while_bytes_are_left_to_its_depth() {
     );
     assert!(
         code.contains(
-            "if self.extensions.count > 8 {\n            throw CodecError.tooManyElements"
+            "let extensions = try BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>(decoding: extensions_items)"
         ),
-        "an encode refuses a chain past its depth: {code}"
+        "a decode makes the chain through its bound's door: {code}"
+    );
+    // The encode holds no check of the depth: a chain past it is no value of its type.
+    assert!(
+        !code.contains("extensions.count > 8"),
+        "an encode does not count a chain its type bounds: {code}"
+    );
+    assert!(
+        code.contains(
+            "        var extensions_entries = BytesSink()\n        for entry in source.extensions {\n            try CodecTlvEntry.encodeSource(entry, into: &extensions_entries)\n        }\n        frame += extensions_entries.bytes\n"
+        ),
+        "an encode writes each entry in turn by its codec's encode: {code}"
     );
 }
 
@@ -1256,9 +1280,100 @@ fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
         code.contains("if (num_elems ?? 0) > 32 {\n                throw CodecError.tooManyElements\n            }\n            var elems_items"),
         "the count is judged before an entry is read, from the count a gate may leave absent: {code}"
     );
+    // docs/adr/0081 §3: the count is derived from the list where the value holds one, and the
+    // value holds no count; a list past the bound is no value of its type (docs/adr/0065 §6 R2).
     assert!(
-        code.contains("if let value = self.elems, value.count > 32 {\n            throw CodecError.tooManyElements\n        }"),
-        "an encode refuses a list past the bound before its first byte: {code}"
+        code.contains("let num_elems_derived: UInt8 = source.elems != nil ? UInt8((source.elems?.count ?? 0)) : 0"),
+        "the count is the entries the list holds: {code}"
+    );
+    assert!(
+        !code.contains("value.count > 32") && !code.contains("num_elems: UInt8"),
+        "an encode neither counts a list its type bounds nor reads a stated count: {code}"
+    );
+    assert!(
+        code.contains("        if let held = source.elems {\n            var elems_entries = BytesSink()\n            for entry in held {\n                try CodecRepeatElem.encodeSource(entry, into: &elems_entries)\n            }\n            frame += elems_entries.bytes\n        }\n"),
+        "a gated list is written where the value holds it: {code}"
+    );
+}
+
+#[test]
+fn a_printed_list_presents_its_entries_as_sources_of_their_codec_within_a_count_bound() {
+    let code = swift_of("tests/forge/resources/codec_until_eof_basic.scxml")
+        .expect("a list to the end of the frame is written");
+    assert!(
+        code.contains("    associatedtype Msgs_Entry: CodecRepeatElemSource\n")
+            && code.contains(
+                "    var msgs: BoundedList<Msgs_Entry, CodecUntilEofBasic.MsgsBound> { get }\n"
+            )
+            && code.contains("    public typealias Msgs_Entry = CodecRepeatElem\n"),
+        "each entry is presented as a source of its codec, bound to its value: {code}"
+    );
+    assert!(
+        code.contains("public enum MsgsBound: SceCountBound {\n        public static let least = 0\n        public static let most: Int? = 64\n"),
+        "the list's max-count is its count bound: {code}"
+    );
+    assert!(
+        code.contains("let msgs = try BoundedList<CodecRepeatElem, CodecUntilEofBasic.MsgsBound>(decoding: msgs_items)"),
+        "a decode makes the list through its bound's door: {code}"
+    );
+}
+
+#[test]
+fn a_count_of_entries_is_derived_from_the_list_and_is_no_member_of_the_value() {
+    let code = swift_of("tests/forge/resources/codec_repeat_basic.scxml")
+        .expect("a counted list is written");
+    let counted = code
+        .find("        let num_frags_derived: UInt8 = UInt8(source.frags.count)\n")
+        .unwrap_or_else(|| panic!("the count is the entries the list holds: {code}"));
+    let written = code
+        .find("        var frags_entries = BytesSink()\n")
+        .unwrap_or_else(|| panic!("the entries are written after the count: {code}"));
+    assert!(counted < written, "{code}");
+    assert!(
+        code.contains(
+            "public init(frags: BoundedList<CodecRepeatElem, CodecRepeatBasic.FragsBound>)"
+        ) && !code.contains("public var num_frags"),
+        "the value holds the list and not its count: {code}"
+    );
+}
+
+#[test]
+fn a_printed_chain_hands_each_entry_what_the_entry_before_supplies() {
+    let code = swift_of("tests/forge/resources/codec_chain_handed.scxml")
+        .expect("a chain that supplies an input to its entries is written");
+    // The entry does not say `after_marker`, so the walk hands it: clear for the first entry, then
+    // set where the entry just written is of the kind 4 (`entry-flag-bind previous-entry-id`).
+    assert!(
+        code.contains(
+            "        var entries_after_marker_previous: UInt8 = 0\n        var entries_left = source.entries.count\n        for entry in source.entries {\n            entries_left -= 1\n            try CodecChainHandedEntry.encodeSource(entry, into: &entries_entries, after_marker: entries_after_marker_previous, overrides: CodecChainHandedEntry.Overrides(headerZ: entries_left != 0))\n            entries_after_marker_previous = ((chainIdentifier(entry.header) >> 0) & 0xF) == 0x4 ? 1 : 0\n        }\n"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains("public static func encodeSource<Source: CodecChainHandedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {"),
+        "the chain takes no input of its own and passes on its entries' refusal: {code}"
+    );
+}
+
+#[test]
+fn a_chain_sets_the_flag_its_entries_end_on_through_each_entrys_overrides() {
+    let code = swift_of("tests/forge/resources/codec_chain_depth_plain.scxml")
+        .expect("a chain closed by an entry flag is written");
+    // docs/adr/0065 §6 R7: the flag is set on every entry but the last, whatever the entry
+    // presents, and the chain holds one entry or more.
+    assert!(
+        code.contains(
+            "        var extensions_left = source.extensions.count\n        for entry in source.extensions {\n            extensions_left -= 1\n            try CodecChainDepthEntry.encodeSource(entry, into: &extensions_entries, overrides: CodecChainDepthEntry.Overrides(headerZ: extensions_left != 0))\n        }\n"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains("public enum ExtensionsBound: SceCountBound {\n        public static let least = 1\n        public static let most: Int? = 8\n"),
+        "a chain closed by its entries' flag holds at least one entry: {code}"
+    );
+    assert!(
+        code.contains(" = .fewest(of: CodecChainDepthEntry())"),
+        "a value that has read no frame holds the fewest entries its bound admits: {code}"
     );
 }
 

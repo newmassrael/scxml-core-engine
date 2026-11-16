@@ -1314,6 +1314,33 @@ pub(super) fn render(
             .filter(|_| prints)
             .and_then(|e| source::bounded_type(&struct_name, e))
     };
+    // A printed value holds each list and chain in the bounded list type its plan gives it, of the
+    // entry codec's own value (docs/adr/0065 §6 R2, R7), which a decode makes through the door that
+    // refuses what the bound does not hold.
+    let listed_of = |f: &CodecField, entry: &str| {
+        plan.elements
+            .iter()
+            .find(|e| e.field.id == f.id)
+            .filter(|_| prints)
+            .and_then(|e| source::list_type(&struct_name, e, entry))
+    };
+    // The type, the default and the door of a list or a chain of entries `element`: the bounded
+    // list a printed value holds, which holds the fewest entries its bound admits until a frame is
+    // read, or an array.
+    let list_parts = |f: &CodecField, element: &str, gated: bool| {
+        let listed = listed_of(f, element);
+        let optional = if gated { "?" } else { "" };
+        let swift_type = match &listed {
+            Some(ty) => format!("{ty}{optional}"),
+            None => format!("[{element}]{optional}"),
+        };
+        let default = match (&listed, gated) {
+            (_, true) => "nil".to_string(),
+            (Some(_), false) => format!(".fewest(of: {element}())"),
+            (None, false) => "[]".to_string(),
+        };
+        (swift_type, default, listed)
+    };
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -1414,11 +1441,12 @@ pub(super) fn render(
                         serde_json::Value::String(flag_property(flag_name))
                     }
                 };
+                let (swift_type, default, wrap) = list_parts(f, &element, present.is_some());
                 return serde_json::json!({
                     "id": f.id,
-                    "swift_type": format!("[{element}]{optional}"),
+                    "swift_type": swift_type,
                     "offset": f.byte_offset,
-                    "default": if present.is_some() { "nil" } else { "[]" },
+                    "default": default,
                     "flags": Vec::<serde_json::Value>::new(),
                     "bits": serde_json::Value::Null,
                     "present": present,
@@ -1433,6 +1461,7 @@ pub(super) fn render(
                         "decls": binds.decls(Language::Swift, &at(0)),
                         "updates": binds.update_lines(f, "entry", Language::Swift, &at(4)),
                         "has_decode": has_decode,
+                        "wrap": wrap,
                     },
                 });
             }
@@ -1448,6 +1477,7 @@ pub(super) fn render(
                     thread(f.repeat_body_alias.as_deref().unwrap_or_default());
                 let pad = if present.is_some() { 4 } else { 0 };
                 let at = |extra: usize| " ".repeat(8 + pad + extra);
+                let (swift_type, default, wrap) = list_parts(f, &element, present.is_some());
                 let list = match count_ref {
                     CountRef::LengthField(name) => {
                         // A count that is on the wire only on a condition is an optional; it is
@@ -1463,6 +1493,7 @@ pub(super) fn render(
                             "items": items,
                             "count": count,
                             "guard": repeat_count_guard(f, &m.fields, &count, Language::Swift, &at(0)),
+                            "wrap": wrap,
                         })
                     }
                     CountRef::UntilEof => serde_json::json!({
@@ -1478,13 +1509,14 @@ pub(super) fn render(
                             Language::Swift,
                             &at(4),
                         ),
+                        "wrap": wrap,
                     }),
                 };
                 return serde_json::json!({
                     "id": f.id,
-                    "swift_type": format!("[{element}]{optional}"),
+                    "swift_type": swift_type,
                     "offset": f.byte_offset,
-                    "default": if present.is_some() { "nil" } else { "[]" },
+                    "default": default,
                     "flags": Vec::<serde_json::Value>::new(),
                     "bits": serde_json::Value::Null,
                     "present": present,

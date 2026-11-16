@@ -43,6 +43,10 @@ public protocol {{ printed.protocol }} {
     /// What `{{ b.field }}` is presented as: a source of `{{ b.type }}`, written by its encode.
     associatedtype {{ b.name }}: {{ b.protocol }}
 {% endfor %}
+{% for e in printed.entries %}
+    /// What each entry of `{{ e.field }}` is presented as: a source of `{{ e.type }}`, written by its encode.
+    associatedtype {{ e.name }}: {{ e.protocol }}
+{% endfor %}
 {% for r in printed.requirements %}
     var {{ r.name }}: {{ r.type }} { get }
 {% endfor %}
@@ -62,9 +66,14 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% if printed %}
 {% for b in printed.bounds %}
 
+{% if b.protocol == "SceCountBound" %}
+    /// How many entries `{{ b.field }}` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+{% else %}
     /// How many bytes `{{ b.field }}` holds on the wire, as the document bounds it (docs/adr/0065 §6
     /// R1): its type is held to it where a value of it is made.
-    public enum {{ b.name }}: SceByteBound {
+{% endif %}
+    public enum {{ b.name }}: {{ b.protocol }} {
         public static let least = {{ b.least }}
         public static let most: Int? = {{ b.most }}
     }
@@ -73,6 +82,11 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 
     /// The value presents `{{ b.field }}` as a value of its own codec.
     public typealias {{ b.name }} = {{ b.type }}
+{% endfor %}
+{% for e in printed.entries %}
+
+    /// The value presents each entry of `{{ e.field }}` as a value of its own codec.
+    public typealias {{ e.name }} = {{ e.type }}
 {% endfor %}
 {% endif %}
 {# An element the encode derives is no member of a value printed from its plan (docs/adr/0081
@@ -89,18 +103,19 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// kept in step by whoever holds the value.
 {% elif f.chain %}
     /// Entries of `{{ f.chain.element }}`, one after another{% if f.chain.max_depth is not none %}, at most {{ f.chain.max_depth }}{% endif %}: {% if f.chain.accessor %}until one says it is the last{% else %}to the end of the frame{% endif %}.{% if f.chain.max_depth is not none %} A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.{% else %} The protocol states no depth.{% endif %}{{ '' }}
+    /// with more is refused with `tooManyElements`, {% if f.chain.wrap %}and a value with more is no value of its type{% else %}as is a value with more at its encode{% endif %}.{% else %} The protocol states no depth.{% endif %}{{ '' }}
 {% elif f.embed %}
     /// A `{{ f.embed.element }}` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands{% if f.embed.length %}, read from as many bytes as the document says an earlier field gives it, of which it need not take all{% endif %}.
 {% elif f.list and f.list.kind == "count" %}
     /// As many entries as `{{ f.list.count_field }}` says, each a `{{ f.list.element }}`, as many as the document's
-    /// `max-count` admits: a frame that says more is refused with `tooManyElements`, as is a value
-    /// with more at its encode.
+    /// `max-count` admits: a frame that says more is refused with `tooManyElements`, {% if f.list.wrap %}and a value
+    /// with more is no value of its type; the encode derives the count{% else %}as is a value
+    /// with more at its encode{% endif %}.
 {% elif f.list %}
     /// The entries to the end of the frame, each a `{{ f.list.element }}`, as many as the document's
-    /// `max-count` admits: a frame with more is refused with `tooManyElements`, as is a value with
-    /// more at its encode.
+    /// `max-count` admits: a frame with more is refused with `tooManyElements`, {% if f.list.wrap %}and a value with
+    /// more is no value of its type{% else %}as is a value with more at its encode{% endif %}.
 {% elif f.variable and f.variable.kind == "tail" %}
     /// The {% if f.variable.text %}text of the UTF-8 bytes{% else %}bytes{% endif %} to the end of the frame, as many as the document's `max-size` admits: a frame
     /// with more is refused with `lengthOutOfRange`, {% if f.variable.wrap %}and a value with more is no value of its type{% else %}as is a value with more at its encode{% endif %}.
@@ -266,7 +281,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {% if f.chain.wrap %}try {{ f.chain.wrap }}(decoding: {{ f.chain.items }}){% else %}{{ f.chain.items }}{% endif %}
 {% elif f.chain %}
 {{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {% if f.chain.max_depth is none %}
@@ -286,7 +301,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {% if f.chain.wrap %}try {{ f.chain.wrap }}(decoding: {{ f.chain.items }}){% else %}{{ f.chain.items }}{% endif %}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
@@ -299,13 +314,13 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
 {{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {% if f.list.wrap %}try {{ f.list.wrap }}(decoding: {{ f.list.items }}){% else %}{{ f.list.items }}{% endif %}
 {% elif f.list %}
 {{ pad }}        var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        while reader.remaining > 0 {
 {{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {% if f.list.wrap %}try {{ f.list.wrap }}(decoding: {{ f.list.items }}){% else %}{{ f.list.items }}{% endif %}
 {% else %}
 {{ pad }}        {{ bind }}{{ f.id }} = {{ f.read }}
 {% endif %}

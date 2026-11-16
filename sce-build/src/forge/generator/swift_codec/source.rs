@@ -37,14 +37,23 @@
 //! is handed each input it does not say from the carrier as the encode writes it or from an input
 //! of the parent's own, and an input it says that the parent hands it from elsewhere is a check
 //! (`presentIfMismatch`).
+//!
+//! A list or a chain of entries of a codec the Swift printer prints is held in the runtime's
+//! `BoundedList` over a count bound the codec declares (docs/adr/0065 §6 R2), each entry a source of
+//! the entry codec, an associated type of the protocol as a body's is. Its count, where a field or
+//! a flag holds it, is derived from the entries (docs/adr/0081 §3). The walk writes each entry by
+//! the entry codec's encode, hands each the inputs a chain supplies from the entry before, and on
+//! a chain that ends on its entries' flag sets that flag on every entry but the last through the
+//! entry codec's `Overrides` (§6 R7), whatever the entry presents; an input every entry says that
+//! the parent hands them from elsewhere is held to it entry by entry before the first byte.
 
 use super::*;
 use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
-    HandedFrom, InputCheck, Measured, Narrow, Number, NumberInto, Offset, Presence, PresenceFlag,
-    Value, Write,
+    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Derived, Element, EncodePlan,
+    EntryId, Guard, HandedFrom, InputCheck, ListWrite, Measured, Narrow, Number, NumberInto,
+    Offset, Presence, PresenceFlag, Value, Write,
 };
 
 /// The Swift struct of each codec a codec holds as a body, by the id of the field that holds it.
@@ -69,6 +78,57 @@ fn import_of<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i Import
 /// Whether the codec imported as `alias` says its input `input` in some of its values only.
 fn says_partly(imports: &[ImportContext], alias: &str, input: &str) -> bool {
     import_of(imports, alias).is_some_and(|i| i.codec_partly_says_inputs.iter().any(|s| s == input))
+}
+
+/// How the encode walks the list or chain `id`, where the program writes one.
+fn walk_of<'p>(plan: &'p EncodePlan<'_>, id: &str) -> Option<&'p ListWrite> {
+    plan.program.iter().find_map(|write| match write {
+        Write::Streamed {
+            field,
+            list: Some(walk),
+            ..
+        } if field.id == id => Some(walk),
+        _ => None,
+    })
+}
+
+/// Whether every element of the codec that holds the codec imported as `alias` is a chain that
+/// supplies its entries the input `input` from the entry before (`ListWrite::previous`), which the
+/// parent then binds nothing to.
+fn chain_supplies(plan: &EncodePlan<'_>, alias: &str, input: &str) -> bool {
+    let mut holders = plan
+        .elements
+        .iter()
+        .filter(|element| match &element.value {
+            Value::Body { codec } | Value::List { codec, .. } => *codec == alias,
+            _ => false,
+        })
+        .peekable();
+    holders.peek().is_some()
+        && holders.all(|element| {
+            walk_of(plan, &element.field.id)
+                .is_some_and(|walk| walk.previous.iter().any(|(bound, _)| bound == input))
+        })
+}
+
+/// The identifier of `entry`, an entry of the chain `chain` of the codec of `plan`, as a `UInt64`
+/// (`EncodePlan::entry_ids`): the bits of its carrier, or its field less the flags the chain leaves
+/// out, read off the source the chain holds it as.
+fn entry_identifier(plan: &EncodePlan<'_>, chain: &str, entry: &str) -> String {
+    match plan
+        .entry_ids
+        .get(chain)
+        .expect("a chain whose entries a gate, a bind or a check tells apart declares entry-id")
+    {
+        EntryId::Flag { carrier, bit, mask } => {
+            format!("((chainIdentifier({entry}.{carrier}) >> {bit}) & 0x{mask:X})")
+        }
+        EntryId::Whole {
+            field,
+            mask: Some(mask),
+        } => format!("(chainIdentifier({entry}.{field}) & 0x{mask:X})"),
+        EntryId::Whole { field, mask: None } => format!("chainIdentifier({entry}.{field})"),
+    }
 }
 
 /// [`unlowered`] of a positional codec's plan.
@@ -99,7 +159,18 @@ pub(crate) fn unlowered_positional(
                     "an embedded body of `{codec}`, which the Swift printer does not print"
                 )),
             },
-            Value::List { .. } => Some("a list of entries".to_string()),
+            // A list's entries are written by their own codec's printed encode, so the Swift
+            // printer prints the codec they are first. A list held to its law (docs/adr/0065 §6
+            // R8) waits for the form that walks it through its law.
+            Value::List { codec, law, .. } => match import_of(imports, codec) {
+                Some(import) if import.swift_printed && law.is_none() => None,
+                Some(import) if import.swift_printed => {
+                    Some("a list held to the law of the inputs its entries say".to_string())
+                }
+                _ => Some(format!(
+                    "a list of `{codec}`, which the Swift printer does not print"
+                )),
+            },
         }
         .or_else(|| match element.presence {
             Presence::Always | Presence::Gated => None,
@@ -111,12 +182,17 @@ pub(crate) fn unlowered_positional(
             return Some(format!("field '{id}': {what}"));
         }
     }
-    // A body is handed each input it does not say from the parent's carrier or its own input.
-    if let Some((alias, handed)) = plan
-        .handed
-        .iter()
-        .find_map(|(alias, handed)| Some((alias, handed.iter().find(|h| h.from.is_none())?)))
-    {
+    // A body or an entry is handed each input it does not say from the parent's carrier or its
+    // own input, and an entry of a chain, besides, an input the chain supplies from the entry
+    // before (`ListWrite::previous`).
+    if let Some((alias, handed)) = plan.handed.iter().find_map(|(alias, handed)| {
+        Some((
+            alias,
+            handed
+                .iter()
+                .find(|h| h.from.is_none() && !chain_supplies(plan, alias, &h.input))?,
+        ))
+    }) {
         return Some(format!(
             "the input `{}` of `{alias}`, which no declaration binds",
             handed.input
@@ -132,10 +208,18 @@ pub(crate) fn unlowered_positional(
         };
         presented(first.0) && (presence.together || rest.iter().all(|&(f, _)| presented(f)))
     };
+    // The flag a chain's entries end on is set by the walk on every entry but the last, through
+    // the entry codec's `Overrides` (docs/adr/0065 §6 R7).
+    let continued = |derived: &&Derived<'_>| match (&derived.element, &derived.by) {
+        (ElementId::Flag { field, .. }, Derive::ChainContinuation) => {
+            walk_of(plan, field).is_some_and(|walk| walk.ends.is_some())
+        }
+        _ => false,
+    };
     if let Some(derived) = plan.derivations.iter().find(|derived| {
         let presence = presence_flag(&derived.element, &derived.by)
             .is_some_and(|(_, _, presence)| readable(presence));
-        !presence && printed_number(&derived.element, &derived.by).is_none()
+        !presence && printed_number(&derived.element, &derived.by).is_none() && !continued(derived)
     }) {
         return Some(format!("`{}`, which the encode derives", derived.element));
     }
@@ -172,7 +256,7 @@ pub(crate) fn unlowered_positional(
     if let Some(check) = plan
         .input_checks
         .iter()
-        .find(|check| !matches!(check.site, CheckSite::Embed { .. }))
+        .find(|check| !matches!(check.site, CheckSite::Embed { .. } | CheckSite::List { .. }))
     {
         return Some(format!(
             "the input `{}` the held codec `{}` says",
@@ -235,6 +319,15 @@ pub(crate) fn unlowered_positional(
         {
             None
         }
+        // A list or a chain where the value holds it, each entry written in turn by its codec's
+        // printed encode, handed what the entry before supplies and, on a chain that ends on its
+        // entries' flag, the flag set on every entry but the last. A walk through a law or of
+        // slots waits for the group that holds it.
+        Write::Streamed {
+            list: Some(walk),
+            guard: Guard::Always | Guard::Present,
+            ..
+        } if !walk.lawful && walk.slots.is_none() => None,
         // The bytes or text after a frame laid out by byte, never gated (a gate makes a frame one
         // written in turn).
         Write::Tail { .. } => None,
@@ -246,10 +339,10 @@ pub(crate) fn unlowered_positional(
 }
 
 /// The number `element` is, where `by` derives it as one the printer writes: a number of the byte
-/// strings and texts it measures, of the inputs the bodies it measures say, or of the bytes the
-/// bodies it measures encode to, into a field of its own (zero where a gate leaves every one of
-/// them out, beside which the field is gated too) or, but for an encoded length, into a flag of a
-/// carrier.
+/// strings and texts it measures, of the entries of the lists it counts, of the inputs the bodies
+/// it measures say, or of the bytes the bodies it measures encode to, into a field of its own
+/// (zero where a gate leaves every one of them out, beside which the field is gated too) or, but
+/// for an encoded length, into a flag of a carrier.
 fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d Number<'m>> {
     let Derive::Number(number) = by else {
         return None;
@@ -258,7 +351,10 @@ fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<
     let measures = number.measures.iter().all(|measure| {
         matches!(
             measure.of,
-            Measured::Bytes { .. } | Measured::Says { .. } | Measured::Encoded { .. }
+            Measured::Bytes { .. }
+                | Measured::Entries { .. }
+                | Measured::Says { .. }
+                | Measured::Encoded { .. }
         )
     });
     // An encoded length is counted once the bodies are encoded, after every carrier is folded, so
@@ -299,11 +395,11 @@ fn presence_flag<'d, 'm>(
 }
 
 /// Whether the printer writes the refusal of `kind` at `element`: the presence of a field held to a
-/// gate the encode cannot derive, or an input a body says held to what the parent hands it; fields
-/// that each say one flag, or measures that each say one number, and may disagree; a length past
-/// the field that holds it where the plan checks it, past the bits of the flag that holds it, or
-/// below what its arithmetic takes off; and the refusal of a body whose codec refuses, which its
-/// encode throws.
+/// gate the encode cannot derive, or an input a body or the entries of a list say held to what the
+/// parent hands them; fields that each say one flag, or measures that each say one number, and may
+/// disagree; a length past the field that holds it where the plan checks it, past the bits of the
+/// flag that holds it, or below what its arithmetic takes off; and the refusal of a body or an
+/// entry whose codec refuses, which its encode throws.
 fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bool {
     let derived_at =
         |derived: &&crate::forge::encode_plan::Derived<'_>| derived.element.to_string() == element;
@@ -311,7 +407,8 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
         RefusalKind::PresentIfMismatch => {
             plan.gate_checks.iter().any(|f| f.id == element)
                 || plan.input_checks.iter().any(|check| {
-                    check.at == element && matches!(check.site, CheckSite::Embed { .. })
+                    check.at == element
+                        && matches!(check.site, CheckSite::Embed { .. } | CheckSite::List { .. })
                 })
         }
         RefusalKind::InconsistentSource => {
@@ -341,10 +438,9 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
             });
             past_its_field || below_its_arithmetic
         }),
-        RefusalKind::Child => plan
-            .elements
-            .iter()
-            .any(|e| e.field.id == element && matches!(e.value, Value::Body { .. })),
+        RefusalKind::Child => plan.elements.iter().any(|e| {
+            e.field.id == element && matches!(e.value, Value::Body { .. } | Value::List { .. })
+        }),
         _ => false,
     }
 }
@@ -445,12 +541,36 @@ pub(super) fn bounded_type(struct_name: &str, element: &Element<'_>) -> Option<S
     ))
 }
 
+/// The associated type of a printed codec's protocol that each entry of the list or chain `field`
+/// is a source of, which the generated value binds to the entry codec's own value: the field's name
+/// in upper camel case and `_Entry`, which hides no codec's type, as [`body_source_type`] says.
+fn entry_source_type(field: &str) -> String {
+    format!("{}_Entry", filters::to_pascal_case(field.to_string()))
+}
+
+/// The Swift type a printed codec named `struct_name` holds the list or chain `element` as, each
+/// entry an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2, R7);
+/// `None` for another element.
+pub(super) fn list_type(struct_name: &str, element: &Element<'_>, entry: &str) -> Option<String> {
+    matches!(element.value, Value::List { .. }).then(|| {
+        format!(
+            "BoundedList<{entry}, {struct_name}.{}>",
+            bound_name(&element.field.id)
+        )
+    })
+}
+
 /// The Swift type the protocol of `plan` presents `element` as: its number, its bounded byte string
-/// or text, or the associated type its body is a source of, optional where a gate decides it.
+/// or text, the associated type its body is a source of, or its list of the associated type each
+/// entry is a source of, optional where a gate decides it.
 fn presented_type(l: &LangCtx, plan: &EncodePlan<'_>, element: &Element<'_>) -> String {
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     let ty = match &element.value {
         Value::Body { .. } => body_source_type(&element.field.id),
+        Value::List { .. } => {
+            list_type(&struct_name, element, &entry_source_type(&element.field.id))
+                .expect("a list is held in a list type")
+        }
         _ => bounded_type(&struct_name, element)
             .unwrap_or_else(|| l.type_name(&element.field.sce_type).into_owned()),
     };
@@ -645,19 +765,39 @@ pub(super) fn context(
             })
         })
         .collect();
+    // The source each entry of a list or a chain is presented as, as a body is.
+    let entries: Vec<serde_json::Value> = plan
+        .elements
+        .iter()
+        .filter(|element| matches!(element.value, Value::List { .. }))
+        .map(|element| {
+            let child = held_of(element.field);
+            serde_json::json!({
+                "name": entry_source_type(&element.field.id),
+                "field": element.field.id,
+                "protocol": format!("{child}Source"),
+                "type": child,
+            })
+        })
+        .collect();
     // The bound each byte string and text is held to, a type of the codec's own (docs/adr/0065 §6
-    // R1): the value's type of the element names it, so a value made for one is no value of another.
+    // R1), and the count bound each list or chain is held to (R2, R7): the value's type of the
+    // element names it, so a value made for one is no value of another, and a byte bound is no
+    // count bound.
     let bounds: Vec<serde_json::Value> = plan
         .elements
         .iter()
         .filter_map(|element| {
-            let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
-                return None;
+            let (kind, bound) = match &element.value {
+                Value::Bytes(bound) | Value::Text(bound) => ("SceByteBound", bound),
+                Value::List { bound, .. } => ("SceCountBound", bound),
+                _ => return None,
             };
             let Bound { least, most } = *bound;
             Some(serde_json::json!({
                 "name": bound_name(&element.field.id),
                 "field": element.field.id,
+                "protocol": kind,
                 "least": least,
                 "most": most.map_or_else(|| "nil".to_string(), |most| most.to_string()),
             }))
@@ -764,6 +904,24 @@ pub(super) fn context(
                         gated: measure.gated,
                     }
                 }
+                // How many entries a list or a chain holds, as the value presents it within its
+                // bound (docs/adr/0065 §6 R2); where a gate leaves the list out, it counts none.
+                Measured::Entries { list } => {
+                    let content = format!("{SOURCE}.{}", list.id);
+                    if measure.gated {
+                        MeasureText {
+                            size: format!("({content}?.count ?? 0)"),
+                            present: Some(format!("{content} != nil")),
+                            gated: true,
+                        }
+                    } else {
+                        MeasureText {
+                            size: format!("{content}.count"),
+                            present: None,
+                            gated: false,
+                        }
+                    }
+                }
                 // The input a body says, read off the source the value presents it by through its
                 // codec (docs/adr/0065 §6 R4a); where a gate leaves the body out, it says nothing.
                 Measured::Says {
@@ -788,7 +946,9 @@ pub(super) fn context(
                         }
                     }
                 }
-                _ => unreachable!("`printed_number` holds bytes, inputs and encoded lengths alone"),
+                _ => unreachable!(
+                    "`printed_number` holds bytes, entries, inputs and encoded lengths alone"
+                ),
             })
             .collect();
         let local = derived_local(&derived.element);
@@ -907,22 +1067,18 @@ pub(super) fn context(
             format!("{SOURCE}.{}", f.id)
         }
     };
-    // Each input a body says that the parent hands it from elsewhere, held to what the parent
-    // hands it, before the first byte (docs/adr/0065 §6 R4a): a value whose body says otherwise
-    // has no frame.
+    // Each input a body or the entries of a list say that the parent hands them from elsewhere,
+    // held to what the parent hands them, before the first byte (docs/adr/0065 §6 R4a): a value
+    // whose body or entry says otherwise has no frame.
     for check in &plan.input_checks {
         body.extend(input_check(plan, held, check, &carrier_read));
     }
-    // Each body, encoded into bytes of its own by its codec, handed the inputs it does not say: its
-    // encoded length is the count of those bytes, measured once (docs/adr/0058 §3).
-    for element in &plan.elements {
-        let Value::Body { codec } = element.value else {
-            continue;
-        };
-        let id = &element.field.id;
-        let child = held_of(element.field);
-        let arguments: String = plan
-            .handed
+    // The arguments the codec imported as `codec` is handed after the sink, one for each input it
+    // takes and does not say, in the order it declares them: the bits of a carrier as the encode
+    // writes it, an input of the parent's own, or, for an entry of a chain, the local the chain
+    // keeps what the entry before supplies in (`supplied`).
+    let handed_arguments = |codec: &str, supplied: &dyn Fn(&str) -> Option<String>| -> String {
+        plan.handed
             .get(codec)
             .into_iter()
             .flatten()
@@ -944,11 +1100,23 @@ pub(super) fn context(
                         )
                     }
                     Some(HandedFrom::Input { name }) => name.clone(),
-                    None => unreachable!("`unlowered` refuses a body's input no declaration binds"),
+                    None => supplied(&handed.input).unwrap_or_else(|| {
+                        unreachable!("`unlowered` refuses an input no declaration binds")
+                    }),
                 };
                 format!(", {}: {value}", handed.input)
             })
-            .collect();
+            .collect()
+    };
+    // Each body, encoded into bytes of its own by its codec, handed the inputs it does not say: its
+    // encoded length is the count of those bytes, measured once (docs/adr/0058 §3).
+    for element in &plan.elements {
+        let Value::Body { codec } = element.value else {
+            continue;
+        };
+        let id = &element.field.id;
+        let child = held_of(element.field);
+        let arguments = handed_arguments(codec, &|_| None);
         // A body whose codec refuses a value throws its refusal, which this encode passes on.
         if plan.totality.refuses(RefusalKind::Child, id) {
             plan.totality.require(RefusalKind::Child, id);
@@ -1111,6 +1279,49 @@ pub(super) fn context(
                     body.push(piece_write(l, carrier_of(f), &read(f), at, piece));
                 }
             }
+            // A list or a chain, where the value holds it: each entry written in turn by its
+            // codec's encode into bytes of the list's own, appended once every entry is written.
+            Write::Streamed {
+                field: f,
+                guard,
+                list: Some(ref walk),
+            } => {
+                let Some(&Value::List { codec, .. }) = plan
+                    .elements
+                    .iter()
+                    .find(|e| e.field.id == f.id)
+                    .map(|e| &e.value)
+                else {
+                    unreachable!("a list the program walks is a list the value presents")
+                };
+                // A list whose entries' codec refuses a value throws its refusal, which this
+                // encode passes on.
+                if plan.totality.refuses(RefusalKind::Child, &f.id) {
+                    plan.totality.require(RefusalKind::Child, &f.id);
+                }
+                // An input the chain supplies each entry from the entry before is the local the
+                // walk keeps it in.
+                let arguments = handed_arguments(codec, &|input: &str| {
+                    walk.previous
+                        .iter()
+                        .any(|(bound, _)| bound == input)
+                        .then(|| previous_local(&f.id, input))
+                });
+                let write =
+                    |entries: &str| list_write(plan, f, walk, held_of(f), entries, &arguments);
+                match guard {
+                    Guard::Always => {
+                        let entries = format!("{SOURCE}.{}", f.id);
+                        body.extend(write(entries.as_str()))
+                    }
+                    Guard::Present => {
+                        body.push(format!("if let {HELD} = {SOURCE}.{} {{", f.id));
+                        body.extend(write(HELD).into_iter().map(|line| format!("    {line}")));
+                        body.push("}".to_string());
+                    }
+                    Guard::Gate => unreachable!("a list is presented, never derived whole"),
+                }
+            }
             // A body appends the bytes it encoded to, where the value holds it.
             Write::Streamed {
                 field: f, guard, ..
@@ -1195,6 +1406,7 @@ pub(super) fn context(
         "protocol": source_protocol(&plan.model.name),
         "requirements": requirements,
         "bodies": bodies,
+        "entries": entries,
         "said": said,
         "given": plan.given.iter().map(|input| input.name.clone()).collect::<Vec<_>>(),
         "refuses": !plan.totality.is_total(),
@@ -1204,30 +1416,35 @@ pub(super) fn context(
     })
 }
 
-/// The statements that hold the input a body says to what the parent hands it from elsewhere
-/// ([`InputCheck`], docs/adr/0065 §6 R4a), in a scope of their own: the value is refused with
-/// `presentIfMismatch` where its body says otherwise. A body that says the input in some of its
-/// values only disagrees with nothing in the others (§6 R4e).
+/// The statements that hold the input a body or every entry of a list says to what the parent
+/// hands it from elsewhere ([`InputCheck`], docs/adr/0065 §6 R4a), in a scope of their own: the
+/// value is refused with `presentIfMismatch` where its body or an entry says otherwise. A body
+/// that says the input in some of its values only disagrees with nothing in the others (§6 R4e).
+/// The entries of a chain are each handed whether the entry before is of a kind, the first none,
+/// which the check walks the chain for as the encode will (`Against::PreviousEntry`).
 fn input_check(
     plan: &EncodePlan<'_>,
     held: &HeldTypes,
     check: &InputCheck<'_>,
     carrier_read: &dyn Fn(&CodecField) -> String,
 ) -> Vec<String> {
-    let CheckSite::Embed { body: holder } = &check.site else {
-        unreachable!("`unlowered` refuses a check of an input a list or an arm says")
+    let holder = match &check.site {
+        CheckSite::Embed { body } => *body,
+        CheckSite::List { list } => *list,
+        CheckSite::Arm { .. } => {
+            unreachable!("`unlowered` refuses a check of an input an arm says")
+        }
     };
     let child = held
         .get(&holder.id)
-        .expect("a body whose input is checked holds a codec of the module");
+        .expect("a body or a list whose input is checked holds a codec of the module");
+    let before = format!("{}_before", holder.id);
     let handed = match &check.against {
         Against::Carrier { carrier, bit } => {
             format!("(({} >> {bit}) & 1) != 0", carrier_read(carrier))
         }
         Against::Input { name } => format!("{name} != 0"),
-        Against::PreviousEntry { .. } => {
-            unreachable!("an input the entry before decides is handed to the entries of a chain")
-        }
+        Against::PreviousEntry { id } => format!("{before} == 0x{id:X}"),
     };
     let reader = said_reader(&check.input);
     let says_otherwise = |value: &str| {
@@ -1238,21 +1455,113 @@ fn input_check(
         }
     };
     let refuse = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
-    let differs = if holder.present_if.is_some() {
-        format!(
-            "let {HELD} = {SOURCE}.{}, {}",
-            holder.id,
-            says_otherwise(HELD)
-        )
+    let gated = holder.present_if.is_some();
+    let content = if gated {
+        HELD.to_string()
     } else {
-        says_otherwise(&format!("{SOURCE}.{}", holder.id))
+        format!("{SOURCE}.{}", holder.id)
     };
-    vec![
-        "do {".to_string(),
-        format!("    let handed: Bool = {handed}"),
-        format!("    if {differs} {{ {refuse} }}"),
-        "}".to_string(),
-    ]
+    let mut lines = vec!["do {".to_string()];
+    match &check.site {
+        CheckSite::List { .. } => {
+            let indent = if gated { "    " } else { "" };
+            let previous = matches!(check.against, Against::PreviousEntry { .. });
+            if previous {
+                lines.push(format!("    var {before}: UInt64? = nil"));
+            }
+            if gated {
+                lines.push(format!("    if let {HELD} = {SOURCE}.{} {{", holder.id));
+            }
+            lines.push(format!("    {indent}for entry in {content} {{"));
+            lines.push(format!("    {indent}    let handed: Bool = {handed}"));
+            lines.push(format!(
+                "    {indent}    if {} {{ {refuse} }}",
+                says_otherwise("entry")
+            ));
+            if previous {
+                lines.push(format!(
+                    "    {indent}    {before} = {}",
+                    entry_identifier(plan, &holder.id, "entry")
+                ));
+            }
+            lines.push(format!("    {indent}}}"));
+            if gated {
+                lines.push("    }".to_string());
+            }
+        }
+        _ => {
+            let differs = if gated {
+                format!(
+                    "let {HELD} = {SOURCE}.{}, {}",
+                    holder.id,
+                    says_otherwise(HELD)
+                )
+            } else {
+                says_otherwise(&content)
+            };
+            lines.push(format!("    let handed: Bool = {handed}"));
+            lines.push(format!("    if {differs} {{ {refuse} }}"));
+        }
+    }
+    lines.push("}".to_string());
+    lines
+}
+
+/// The local the walk of the chain `list` keeps the input `input` it hands each entry in, set from
+/// the entry before (`ListWrite::previous`): zero for the first entry. A field is read through the
+/// source and never bare, so the local hides no field.
+fn previous_local(list: &str, input: &str) -> String {
+    format!("{list}_{input}_previous")
+}
+
+/// The statements that write the entries of the list or chain `list`, which the encode reads as
+/// `entries`, each a source of `child`'s codec, by its printed encode into bytes of the list's
+/// own, appended to the frame once every entry is written: handed `arguments` after the sink,
+/// each input the chain supplies set from the entry just written, and, on a chain that ends on
+/// its entries' flag, the flag set through the entry codec's `Overrides` on every entry but the
+/// last (docs/adr/0065 §6 R7), whatever flag the entry presents.
+fn list_write(
+    plan: &EncodePlan<'_>,
+    list: &CodecField,
+    walk: &ListWrite,
+    child: &str,
+    entries: &str,
+    arguments: &str,
+) -> Vec<String> {
+    let id = &list.id;
+    let written = format!("{id}_entries");
+    let left = format!("{id}_left");
+    let mut lines = vec![format!("var {written} = BytesSink()")];
+    for (input, _) in &walk.previous {
+        lines.push(format!("var {}: UInt8 = 0", previous_local(id, input)));
+    }
+    let overrides = match &walk.ends {
+        Some((carrier, flag)) => {
+            lines.push(format!("var {left} = {entries}.count"));
+            format!(
+                ", overrides: {child}.Overrides({}: {left} != 0)",
+                override_member(carrier, flag)
+            )
+        }
+        None => String::new(),
+    };
+    lines.push(format!("for entry in {entries} {{"));
+    if walk.ends.is_some() {
+        lines.push(format!("    {left} -= 1"));
+    }
+    lines.push(format!(
+        "    try {child}.encodeSource(entry, into: &{written}{arguments}{overrides})"
+    ));
+    for (input, kind) in &walk.previous {
+        lines.push(format!(
+            "    {} = {} == 0x{kind:X} ? 1 : 0",
+            previous_local(id, input),
+            entry_identifier(plan, id, "entry")
+        ));
+    }
+    lines.push("}".to_string());
+    lines.push(format!("frame += {written}.bytes"));
+    lines
 }
 
 /// The member of a printed codec's `Overrides` that sets the flag `flag` of the carrier `carrier`:

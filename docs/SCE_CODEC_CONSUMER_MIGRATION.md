@@ -2219,4 +2219,15 @@ Landing: the commit that adds this section, and each later one that names a form
   the encode writes the count of the bytes the body encodes to. A call site moves from
   `CodecZenohTimestampExt(ext_size: 4, ts: ts)` to `CodecZenohTimestampExt(ts: ts)`. A codec that hands its own
   input on to a body that says it (`CodecZenohDeclKexpr`'s `N`) says it too, and its encode takes no `N`.
+- A list or a chain of entries of a codec the printer prints is printed (docs/adr/0065 §6 R2, R7): the value holds it
+  in `BoundedList<{Entry}, {Codec}.{Field}Bound>` (`SceForgeRuntime`), a collection of the entries whose failable
+  initializer is the one door, the bound being the list's `max-count` or the chain's `max-depth` and one entry at
+  least for a chain closed by its entries' flag. The protocol requires each entry as a source of the entry codec,
+  `associatedtype {Field}_Entry: {Entry}Source`, bound by the generated struct to the entry's struct. A list past its
+  bound is no value, so the encode no longer throws `tooManyElements`; the decode still does. The count that measures
+  the list is derived: it is no member of the value and no parameter of its initializer. A chain closed by its
+  entries' flag sets that flag on every entry but the last, whatever the entry presents. Read the entries by
+  iterating the list, or as `.entries`; an array literal compared with the list compares with `.entries`. A call
+  site moves from `CodecRepeatBasic(num_frags: 2, frags: [a, b])` to `CodecRepeatBasic(frags: BoundedList([a, b])!)`.
+  A list held to the law of the inputs its entries say, or held by a gate group, keeps its template's encode.
 

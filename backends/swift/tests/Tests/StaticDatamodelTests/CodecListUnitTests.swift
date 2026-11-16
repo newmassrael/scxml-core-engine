@@ -53,10 +53,20 @@ final class CodecListUnitTests: XCTestCase {
     func testAListToTheEndOfTheFrameTakesEveryEntryThatIsLeft() throws {
         var cursor = SceCursor([0xCA, 0xFE, 0xBE, 0xEF])
         let frame = try CodecUntilEofBasic.decode(&cursor)
-        XCTAssertEqual(frame.msgs, [entry(0xCAFE), entry(0xBEEF)])
+        XCTAssertEqual(frame.msgs.entries, [entry(0xCAFE), entry(0xBEEF)])
         XCTAssertEqual(cursor.remaining, 0)
         var empty = SceCursor([])
-        XCTAssertEqual(try CodecUntilEofBasic.decode(&empty).msgs, [])
+        XCTAssertEqual(try CodecUntilEofBasic.decode(&empty).msgs.entries, [])
+    }
+
+    // docs/adr/0065 §6 R2: the list is held in a type bounded by its `max-count`, made through its
+    // one door, and the encode writes the entries it holds in turn.
+    func testAListToTheEndOfTheFrameIsWrittenEntryByEntry() throws {
+        let msgs = try XCTUnwrap(
+            BoundedList<CodecRepeatElem, CodecUntilEofBasic.MsgsBound>([entry(0xCAFE), entry(0xBEEF)]))
+        var sink = BytesSink()
+        try CodecUntilEofBasic(msgs: msgs).encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0xCA, 0xFE, 0xBE, 0xEF])
     }
 
     func testATrailingEntryCutShortRefusesTheWholeFrame() {
@@ -82,18 +92,19 @@ final class CodecListUnitTests: XCTestCase {
     func testAClosedGateLeavesTheListAbsentAndAnEmptyListIsAValue() throws {
         var closed = SceCursor([0x00])
         let absent = try CodecRepeatPresentIfBasic.decode(&closed)
-        XCTAssertNil(absent.num_elems)
         XCTAssertNil(absent.elems)
         var empty = SceCursor([0x01, 0x00])
         let none = try CodecRepeatPresentIfBasic.decode(&empty)
-        XCTAssertEqual(none.elems, [])
+        XCTAssertEqual(none.elems?.entries, [])
     }
 
+    // The count and the gate flag are derived from the list (docs/adr/0081 §3): the value holds
+    // neither, and the encode writes the count of the entries the value holds and sets the flag
+    // where it holds a list.
     func testAGatedListIsReadWhenItsGateIsOpen() throws {
         var cursor = SceCursor([0x01, 0x02, 0xBE, 0xEF, 0xFA, 0xCE])
         let frame = try CodecRepeatPresentIfBasic.decode(&cursor)
-        XCTAssertEqual(frame.num_elems, 2)
-        XCTAssertEqual(frame.elems, [entry(0xBEEF), entry(0xFACE)])
+        XCTAssertEqual(frame.elems?.entries, [entry(0xBEEF), entry(0xFACE)])
         var sink = BytesSink()
         try frame.encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x01, 0x02, 0xBE, 0xEF, 0xFA, 0xCE])
@@ -101,20 +112,24 @@ final class CodecListUnitTests: XCTestCase {
 
     func testAnAbsentGatedListWritesNothing() throws {
         var sink = BytesSink()
-        try CodecRepeatPresentIfBasic(carrier: 0x00, num_elems: nil, elems: nil).encode(into: &sink)
+        try CodecRepeatPresentIfBasic(carrier: 0x00, elems: nil).encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x00])
     }
 
-    func testAListPastItsBoundIsRefusedAtItsEncodeBeforeAByteIsWritten() {
-        var frame = CodecRepeatPresentIfBasic()
-        frame.carrier = 0x01
-        frame.num_elems = 33
-        frame.elems = [CodecRepeatElem](repeating: entry(1), count: 33)
+    func testAnEmptyGatedListIsWrittenWithItsGateSetAndACountOfNone() throws {
+        let elems = try XCTUnwrap(BoundedList<CodecRepeatElem, CodecRepeatPresentIfBasic.ElemsBound>([]))
         var sink = BytesSink()
-        XCTAssertThrowsError(try frame.encode(into: &sink)) { error in
-            XCTAssertEqual(error as? CodecError, .tooManyElements)
-        }
-        XCTAssertEqual(sink.bytes, [])
+        try CodecRepeatPresentIfBasic(carrier: 0x00, elems: elems).encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0x01, 0x00])
+    }
+
+    // docs/adr/0065 §6 R2: a list past its `max-count` is no value of its type, so no encode is
+    // ever handed one.
+    func testAListPastItsBoundIsNoValueOfItsType() {
+        let past = [CodecRepeatElem](repeating: entry(1), count: 33)
+        XCTAssertNil(BoundedList<CodecRepeatElem, CodecRepeatPresentIfBasic.ElemsBound>(past))
+        let most = [CodecRepeatElem](repeating: entry(1), count: 32)
+        XCTAssertNotNil(BoundedList<CodecRepeatElem, CodecRepeatPresentIfBasic.ElemsBound>(most))
     }
 
     // `count` says 3 entries and the bound is 2: refused for that, though the frame holds none.

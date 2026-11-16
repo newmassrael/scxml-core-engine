@@ -1353,6 +1353,24 @@ old encode, the old encode and its templates are removed in the same landing.
    `Equatable` down into its bodies, so the case printer makes a body by its codec's initializer and compares it
    whole. An encoded length into the bits of a flag, a body's input bound to nothing, and a body that says an input
    in some of its values only stay refused by name.
+   *Lists and chains, 2026-11-16:* a list or a chain, always there or gated, of entries of a codec the Swift printer
+   prints is printed. The refinement R2 is the runtime's `BoundedList<Element, Bound: SceCountBound>`, a collection
+   of the entries whose failable initializer is the one door and whose `init(decoding:)` throws `tooManyElements`;
+   the count bound is a type of its own and no byte bound, so neither stands for the other, and its `least` is one
+   for a chain closed by its entries' flag (R7). The protocol presents each entry as an associated type bound to a
+   source of the entry codec (`{Field}_Entry`), as a body is, so a host's entries are written with no copy. A count a
+   field or a flag holds is derived from the entries (`Measured::Entries`), as a length is from bytes. The walk
+   writes the entries in turn into bytes of the list's own by the entry codec's `encodeSource`, appended once every
+   entry is written, so a refusal of an entry is thrown before a byte reaches the sink; it hands each entry what its
+   import binds and, for an input a chain supplies (`ListWrite::previous`), a local the walk sets from the identifier
+   of the entry just written (`EncodePlan::entry_ids`), clear for the first. A chain that ends on its entries' flag
+   (`ListWrite::ends`) sets that flag on every entry but the last through the entry codec's `Overrides`, which is
+   the one place a flag the entry presents is overridden by its holder, so the derivation `ChainContinuation` has
+   no other spelling. An input every entry says that the holder hands them from elsewhere is held to it entry by
+   entry before the first byte (`InputCheck` at a list, against the entry before where a chain supplies it). A
+   decode makes the list through `init(decoding:)` after its read has refused an entry past the bound as before. A
+   list held to its law (R8), a chain of slots or one a group holds (R6), and two lists of one count (R5) wait for
+   the forms that hold them.
 
 ## Consequences
 

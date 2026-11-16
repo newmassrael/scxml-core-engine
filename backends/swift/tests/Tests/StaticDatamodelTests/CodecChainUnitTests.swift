@@ -28,13 +28,13 @@ final class CodecChainUnitTests: XCTestCase {
         var cursor = SceCursor([0x07, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x00])
         let frame = try CodecTlvChainBasic.decode(&cursor)
         XCTAssertEqual(frame.header_flags, 0x07)
-        XCTAssertEqual(frame.extensions, [entry(1, [0xAA, 0xBB]), entry(2, [])])
+        XCTAssertEqual(frame.extensions.entries, [entry(1, [0xAA, 0xBB]), entry(2, [])])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
     func testAFrameWithNoEntriesHasAnEmptyChain() throws {
         var cursor = SceCursor([0x07])
-        XCTAssertEqual(try CodecTlvChainBasic.decode(&cursor).extensions, [])
+        XCTAssertEqual(try CodecTlvChainBasic.decode(&cursor).extensions.entries, [])
     }
 
     func testTheDeepestChainTheDocumentAdmitsIsTaken() throws {
@@ -62,20 +62,21 @@ final class CodecChainUnitTests: XCTestCase {
     }
 
     func testAnEncodeWritesEachEntryInTurn() throws {
+        let extensions = try XCTUnwrap(
+            BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>([
+                entry(1, [0xAA, 0xBB]), entry(2, []),
+            ]))
         var sink = BytesSink()
-        try CodecTlvChainBasic(header_flags: 0x07, extensions: [entry(1, [0xAA, 0xBB]), entry(2, [])])
-            .encode(into: &sink)
+        try CodecTlvChainBasic(header_flags: 0x07, extensions: extensions).encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x07, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x00])
     }
 
-    func testAChainPastItsDepthIsRefusedAtItsEncodeBeforeAByteIsWritten() {
-        var sink = BytesSink()
+    // docs/adr/0065 §6 R2: a chain past its `max-depth` is no value of its type, so no encode is
+    // ever handed one.
+    func testAChainPastItsDepthIsNoValueOfItsType() {
         let nine = (0..<9).map { _ in entry(1, []) }
-        XCTAssertThrowsError(try CodecTlvChainBasic(header_flags: 0, extensions: nine).encode(into: &sink)) {
-            error in
-            XCTAssertEqual(error as? CodecError, .tooManyElements)
-        }
-        XCTAssertEqual(sink.bytes, [])
+        XCTAssertNil(BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>(nine))
+        XCTAssertNotNil(BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>(Array(nine.prefix(8))))
     }
 
     // The chain of `CodecZenohErr` is gated by `Z` in its header and closed by the `Z` of an entry.
