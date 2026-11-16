@@ -51,7 +51,7 @@ from sce_forge_runtime.bounded import {{ python_source.runtime }}
 {% endif %}
 
 from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields or has_tlv_chain_fields or python_source.factory else "" }}
-from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}
+from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}{{ ", Union" if python_source.union else "" }}
 
 
 {% if has_variant %}
@@ -120,13 +120,18 @@ class {{ struct_name }}:
 {# An element the encode derives is no field of a value printed from its plan
    (docs/adr/0081 §3). Such a value's decode makes an element of other than the
    local it read where `py_decoded` says so: a number the value states only
-   while its content is absent is `None` where the decode read any of it. #}
+   while its content is absent is `None` where the decode read any of it. A
+   field a gate group holds is no field of the value either: the group is
+   (docs/adr/0065 §6 R4), made by the decode as `decoded` says. #}
 {% for field in fields if not field.derived %}
 {% if field.py_flag_default_literal is defined %}
     {{ field.id }}: {{ field.py_type }} = {{ field.py_flag_default_literal }}
 {% else %}
     {{ field.id }}: {{ field.py_type }} = {{ field.default_value }}
 {% endif %}
+{% endfor %}
+{% for group in python_source.groups %}
+    {{ group.name }}: {{ group.ty }} = {{ group.default }}
 {% endfor %}
 {% if has_variant %}
     body: {{ struct_name }}Variant = field(default_factory={{ struct_name }}Variant)
@@ -218,6 +223,9 @@ class {{ struct_name }}:
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
+{% for group in python_source.groups %}
+            {{ group.name }}={{ group.decoded }},
+{% endfor %}
             body=body,
         )
 {% elif needs_streaming %}
@@ -245,6 +253,9 @@ class {{ struct_name }}:
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
+{% for group in python_source.groups %}
+            {{ group.name }}={{ group.decoded }},
+{% endfor %}
         )
 {% elif has_variable_fields %}
         _frame_len = cursor.remaining()
@@ -260,6 +271,9 @@ class {{ struct_name }}:
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
+{% for group in python_source.groups %}
+            {{ group.name }}={{ group.decoded }},
+{% endfor %}
         )
         cursor.advance(_frame_len)
         return value
@@ -271,6 +285,9 @@ class {{ struct_name }}:
         value = cls(
 {% for field in fields if not field.derived %}
             {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
+{% endfor %}
+{% for group in python_source.groups %}
+            {{ group.name }}={{ group.decoded }},
 {% endfor %}
         )
         cursor.advance({{ min_bytes }})

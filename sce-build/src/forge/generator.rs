@@ -14977,6 +14977,17 @@ fn render_codec(
                 "runtime": printed.runtime,
                 "modules": printed.modules,
                 "factory": printed.factory,
+                "union": printed.union,
+                "groups": printed
+                    .groups
+                    .iter()
+                    .map(|group| serde_json::json!({
+                        "name": group.name,
+                        "ty": group.ty,
+                        "default": group.default,
+                        "decoded": group.decoded,
+                    }))
+                    .collect::<Vec<_>>(),
             }),
         );
     }

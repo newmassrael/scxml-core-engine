@@ -377,6 +377,25 @@ pub(super) struct PythonSource {
     /// For each element the decode makes other than as the local it read, by
     /// field id, the expression it makes it of.
     pub(super) decoded: BTreeMap<String, String>,
+    /// Each gate group the value holds as one field (docs/adr/0065 §6 R4), in
+    /// the order of the plan's groups; its members are no fields of their own.
+    pub(super) groups: Vec<GroupField>,
+    /// Whether the module names `typing.Union`, the type of a group of several
+    /// arms.
+    pub(super) union: bool,
+}
+
+/// A gate group as the value holds it: one field of the value's class.
+pub(super) struct GroupField {
+    /// The field's name, the group's accessor.
+    pub(super) name: String,
+    /// The type it is declared as.
+    pub(super) ty: String,
+    /// The default it takes.
+    pub(super) default: String,
+    /// The expression the decode makes it of, over the locals it read each
+    /// member and carrier into and the inputs it is handed.
+    pub(super) decoded: String,
 }
 
 /// The module alias a printed codec's module is imported under where a
@@ -600,6 +619,8 @@ pub(super) fn render(
         modules: modules.into_iter().collect::<Vec<_>>().join("\n"),
         factory,
         decoded,
+        groups: Vec::new(),
+        union: false,
     }
 }
 
