@@ -3363,7 +3363,7 @@ impl SCXMLParser {
         // (formerly the substate-driven join in
         // `resolve_listener_links`) lives here so the partial-claim
         // surfaces at parse time, independently of any deploy.yaml.
-        validate_axis3_accept_side_state_naming(&model, diag_label)?;
+        validate_axis3_accept_side_state_naming(&root, &model, diag_label)?;
 
         // Feature detection
         self.detect_features(&mut model);
@@ -7490,6 +7490,7 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
 /// `BTreeMap` iteration, which a comment here called document order and
 /// which is alphabetical.
 fn validate_axis3_accept_side_state_naming(
+    root: &roxmltree::Node,
     model: &crate::model::SCXMLModel,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
@@ -7511,32 +7512,52 @@ fn validate_axis3_accept_side_state_naming(
     let Some((first, others)) = offending.split_first() else {
         return Ok(());
     };
+    // Each state stands where its id is written (SCE_ERROR_CONTRACT.md §2.2):
+    // the record's `actual` and each `also-refused` site's is the id.
+    let element_of = |state: &crate::model::State| {
+        root.descendants().find(|node| {
+            node.is_element()
+                && node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
+                && matches!(node.tag_name().name(), "state" | "parallel" | "final")
+                && node.attribute("id") == Some(state.id.as_str())
+        })
+    };
     let row = |state: &crate::model::State| {
         state
             .source_location
             .as_ref()
             .map_or((None, None), |at| (at.line, at.col))
     };
-    let (line, col) = row(first);
-    let refusal = Located::new(
-        ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
-            offending_ids: offending.iter().map(|state| state.id.clone()).collect(),
+    let refused = ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
+        offending_ids: offending.iter().map(|state| state.id.clone()).collect(),
+    };
+    let refusal = match element_of(first) {
+        Some(node) => crate::forge::parser::located(&node, diag_label, refused),
+        None => {
+            let (line, col) = row(first);
+            Located::new(refused.into(), diag_label, line, col)
         }
-        .into(),
-        diag_label,
-        line,
-        col,
-    );
+    };
     Err(others.iter().fold(refusal, |refusal, state| {
-        let (line, col) = row(state);
-        refusal.related_to(RelatedSite {
-            role: RelatedRole::AlsoRefused,
-            location: SourceLocation {
-                file: diag_label.to_string(),
-                line,
-                col,
-            },
-            actual: Some(state.id.clone()),
+        refusal.related_to(match element_of(state) {
+            Some(node) => crate::forge::parser::related_at(
+                &node,
+                diag_label,
+                RelatedRole::AlsoRefused,
+                Some(state.id.clone()),
+            ),
+            None => {
+                let (line, col) = row(state);
+                RelatedSite {
+                    role: RelatedRole::AlsoRefused,
+                    location: SourceLocation {
+                        file: diag_label.to_string(),
+                        line,
+                        col,
+                    },
+                    actual: Some(state.id.clone()),
+                }
+            }
         })
     }))
 }
@@ -9413,17 +9434,33 @@ mod tests {
                 "t.scxml",
             )
             .expect_err("accept-side state names without the role are refused");
-        assert_eq!(err.location.line, Some(2), "{err:?}");
-        let related: Vec<(RelatedRole, Option<u32>, Option<&str>)> = err
+        // Where each id begins (SCE_ERROR_CONTRACT.md §2.2): `  <state id="`
+        // is thirteen columns, and the nested state's row is indented by two
+        // more.
+        assert_eq!(
+            (err.location.line, err.location.col),
+            (Some(2), Some(14)),
+            "{err:?}"
+        );
+        type Site<'a> = (RelatedRole, Option<u32>, Option<u32>, Option<&'a str>);
+        let related: Vec<Site> = err
             .related()
             .iter()
-            .map(|site| (site.role, site.location.line, site.actual.as_deref()))
+            .map(|site| {
+                (
+                    site.role,
+                    site.location.line,
+                    site.location.col,
+                    site.actual.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             related,
             [(
                 RelatedRole::AlsoRefused,
                 Some(3),
+                Some(16),
                 Some("Accepting.AwaitingInitSyn")
             )]
         );

@@ -171,6 +171,9 @@ fn a_transition_that_stays_where_its_target_goes_is_refused_with_the_least_confi
     assert_eq!(related.len(), 1);
     assert_eq!(related[0].role, RelatedRole::Referent);
     assert_eq!(related[0].location.line, Some(8));
+    // Where the referent's id begins: `  <state id="` is thirteen columns.
+    assert_eq!(related[0].location.col, Some(14));
+    assert_eq!(related[0].actual.as_deref(), Some("accepting"));
 }
 
 #[test]
@@ -328,6 +331,15 @@ fn a_second_feature_model_is_refused() {
         "{error:?}"
     );
     assert_eq!(err.location.line, Some(5));
+    // The first import, where the `src` it names begins.
+    let related = err.related();
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].role, RelatedRole::AlsoRefused);
+    assert_eq!(
+        (related[0].location.line, related[0].location.col),
+        (Some(4), Some(41))
+    );
+    assert_eq!(related[0].actual.as_deref(), Some("features.scxml"));
 }
 
 #[test]

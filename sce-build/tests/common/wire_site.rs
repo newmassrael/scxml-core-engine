@@ -8,7 +8,8 @@
 //! when the record carries that too ([`locate_at`]); when it does not, `actual`
 //! occurs exactly once in the document, since a whole-file search is then
 //! the only locating strategy the wire offers. A substitution is performed
-//! on that same site.
+//! on that same site. Each `related` entry that carries `actual` is held to
+//! the same rule through [`locate_at`], its column included (§2.4).
 //!
 //! `diagnostic_fix_is_applicable` holds the tracked corpus to the rule, and
 //! the suites that write their own documents hold theirs — refusals no

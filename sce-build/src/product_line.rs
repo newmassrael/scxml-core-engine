@@ -78,8 +78,8 @@ pub struct ProductLine {
     /// The elements that carry a condition, in document order.
     gates: Vec<Gate>,
     /// Every state, parallel, final and history by id: its effective condition
-    /// and its row.
-    states: BTreeMap<String, (PresenceCondition, u32)>,
+    /// and where its id is written.
+    states: BTreeMap<String, (PresenceCondition, roxmltree::TextPos)>,
     /// The elements that name states by id.
     references: Vec<Reference>,
 }
@@ -98,7 +98,6 @@ pub fn feature_model_import<'a, 'input>(
     });
     let first = imports.next();
     if let (Some(first), Some(second)) = (first, imports.next()) {
-        let first_line = row(&first);
         return Err(at(
             &second,
             source_name,
@@ -106,11 +105,12 @@ pub fn feature_model_import<'a, 'input>(
                 src: second.attribute("src").unwrap_or_default().to_string(),
             },
         )
-        .related_to(RelatedSite {
-            role: RelatedRole::AlsoRefused,
-            location: location(source_name, first_line, None),
-            actual: first.attribute("src").map(str::to_string),
-        }));
+        .related_to(crate::forge::parser::related_at(
+            &first,
+            source_name,
+            RelatedRole::AlsoRefused,
+            first.attribute("src").map(str::to_string),
+        )));
     }
     Ok(first)
 }
@@ -160,7 +160,7 @@ impl ProductLine {
             for id in &reference.ids {
                 // An id that names no state is the reference checker's to refuse
                 // (`crate::scxml_references`), in every variant alike.
-                let Some((referent, referent_line)) = self.states.get(id) else {
+                let Some((referent, referent_at)) = self.states.get(id) else {
                     continue;
                 };
                 let Err(witness) = reference.condition.implies(referent) else {
@@ -180,7 +180,7 @@ impl ProductLine {
                 )
                 .related_to(RelatedSite {
                     role: RelatedRole::Referent,
-                    location: location(source_name, *referent_line, None),
+                    location: location(source_name, referent_at.row, Some(referent_at.col)),
                     actual: Some(id.clone()),
                 }));
             }
@@ -347,8 +347,8 @@ struct Walk<'m, 's> {
     source_name: &'s str,
     gates: Vec<Gate>,
     /// Every state, parallel, final and history by id: its effective condition
-    /// and its row.
-    states: BTreeMap<String, (PresenceCondition, u32)>,
+    /// and where its id is written.
+    states: BTreeMap<String, (PresenceCondition, roxmltree::TextPos)>,
     references: Vec<Reference>,
 }
 
@@ -377,9 +377,12 @@ impl Walk<'_, '_> {
         if is_scxml(node) {
             let tag = node.tag_name().name();
             if matches!(tag, "state" | "parallel" | "final" | "history") {
-                if let Some(id) = node.attribute("id") {
+                if let Some(id) = node.attribute_node("id") {
+                    // Where the id's value begins, so a `referent` site
+                    // naming it stands where its `actual` does.
+                    let written = node.document().text_pos_at(id.range_value().start);
                     self.states
-                        .insert(id.to_string(), (effective.clone(), row(node)));
+                        .insert(id.value().to_string(), (effective.clone(), written));
                 }
             }
             let named = match tag {

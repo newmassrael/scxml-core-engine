@@ -58,11 +58,49 @@ pub(crate) fn located<E: Into<ForgeError>>(
 ) -> Located<ForgeError> {
     use crate::forge::diagnostic::SingleDiagnostic;
     let err = err.into();
+    let actual = err.diagnostic_payload().actual;
+    let (pos, as_written) = token_place(node, actual.as_deref());
+    Located::new(err, name, Some(pos.row), Some(pos.col)).with_as_written(as_written)
+}
+
+/// A `related` site on `node` (SCE_ERROR_CONTRACT.md §2.4), placed by the rule
+/// [`located`] places a record by: where `actual` begins on the element, or
+/// where the element begins when the site names no token. The site's `actual`
+/// is the token as written, as a record's is.
+pub(crate) fn related_at(
+    node: &roxmltree::Node,
+    name: &str,
+    role: crate::forge::error::RelatedRole,
+    actual: Option<String>,
+) -> crate::forge::error::RelatedSite {
+    let (pos, as_written) = token_place(node, actual.as_deref());
+    let actual = match as_written {
+        Some(crate::forge::error::AsWritten::Text(text)) => Some(text),
+        _ => actual,
+    };
+    crate::forge::error::RelatedSite {
+        role,
+        location: SourceLocation {
+            file: name.to_string(),
+            line: Some(pos.row),
+            col: Some(pos.col),
+        },
+        actual,
+    }
+}
+
+/// Where on `node` the token `actual` begins, and the token as written when
+/// the document escapes the value it decodes to: the one rule a record and
+/// each of its `related` sites are placed by (SCE_ERROR_CONTRACT.md §2.2).
+fn token_place(
+    node: &roxmltree::Node,
+    actual: Option<&str>,
+) -> (roxmltree::TextPos, Option<crate::forge::error::AsWritten>) {
     let input = node.document().input_text();
-    let actual = err.diagnostic_payload().actual.filter(|a| !a.is_empty());
-    let observed = observed_attribute(node, &err);
+    let actual = actual.filter(|a| !a.is_empty());
+    let observed = actual.and_then(|actual| observed_attribute(node, actual));
     let as_written = observed.as_ref().and_then(|attribute| {
-        let actual = actual.as_deref()?;
+        let actual = actual?;
         let written = input.get(attribute.range_value())?;
         (attribute.value() == actual && written != actual)
             .then(|| crate::forge::error::AsWritten::Text(written.to_string()))
@@ -73,7 +111,7 @@ pub(crate) fn located<E: Into<ForgeError>>(
     // element's start when the record reports none.
     let token = match &as_written {
         Some(crate::forge::error::AsWritten::Text(text)) => Some(text.as_str()),
-        _ => actual.as_deref(),
+        _ => actual,
     };
     let find_in = |range: std::ops::Range<usize>, token: &str| {
         input
@@ -92,8 +130,7 @@ pub(crate) fn located<E: Into<ForgeError>>(
         (Some(attribute), None) => attribute.range().start,
         (None, None) => node.range().start,
     };
-    let pos = node.document().text_pos_at(start);
-    Located::new(err, name, Some(pos.row), Some(pos.col)).with_as_written(as_written)
+    (node.document().text_pos_at(start), as_written)
 }
 
 /// The byte range of `node`'s start tag: from its `<` to the first `>`
@@ -113,16 +150,14 @@ fn row_of(node: &roxmltree::Node) -> u32 {
     node.document().text_pos_at(node.range().start).row
 }
 
-/// The attribute of `node` that holds the value `err` reports as observed
-/// — its value, else its qualified name, else the first value containing
-/// it — or `None` when no attribute does.
+/// The attribute of `node` that holds the value `actual` a record reports as
+/// observed — its value, else its qualified name, else the first value
+/// containing it — or `None` when no attribute does. `actual` is not empty:
+/// an empty value is contained in every attribute and names none.
 fn observed_attribute<'a, 'input>(
     node: &roxmltree::Node<'a, 'input>,
-    err: &ForgeError,
+    actual: &str,
 ) -> Option<roxmltree::Attribute<'a, 'input>> {
-    use crate::forge::diagnostic::SingleDiagnostic;
-    // An empty value is contained in every attribute and names none.
-    let actual = err.diagnostic_payload().actual.filter(|a| !a.is_empty())?;
     let qualified = |a: &roxmltree::Attribute| match a.namespace() {
         Some(ns) => node
             .lookup_prefix(ns)
@@ -136,13 +171,10 @@ fn observed_attribute<'a, 'input>(
         .find(|a| a.value() == actual)
         .or_else(|| {
             node.attributes()
-                .find(|a| input.get(a.range_value()) == Some(actual.as_str()))
+                .find(|a| input.get(a.range_value()) == Some(actual))
         })
         .or_else(|| node.attributes().find(|a| qualified(a) == actual))
-        .or_else(|| {
-            node.attributes()
-                .find(|a| a.value().contains(actual.as_str()))
-        })
+        .or_else(|| node.attributes().find(|a| a.value().contains(actual)))
 }
 
 /// The refusal of a child element its parent does not take, located at
@@ -233,7 +265,6 @@ fn misplaced_child(
     home: &roxmltree::Node,
 ) -> Located<ForgeError> {
     let under = written_tag(home);
-    let home_pos = home.document().text_pos_at(home.range().start);
     located(
         child,
         doc_name,
@@ -243,15 +274,13 @@ fn misplaced_child(
             belongs_under: under.clone(),
         },
     )
-    .related_to(crate::forge::error::RelatedSite {
-        role: crate::forge::error::RelatedRole::Destination,
-        location: SourceLocation {
-            file: doc_name.to_string(),
-            line: Some(home_pos.row),
-            col: Some(home_pos.col),
-        },
-        actual: Some(under),
-    })
+    // The destination's tag, where its name begins after the `<`.
+    .related_to(related_at(
+        home,
+        doc_name,
+        crate::forge::error::RelatedRole::Destination,
+        Some(under),
+    ))
 }
 
 /// The refusal of an element that takes exactly one of several FORMS —

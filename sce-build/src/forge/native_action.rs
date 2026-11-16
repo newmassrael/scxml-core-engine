@@ -197,6 +197,23 @@ fn located_on_action(
     located_at(action.source_location.as_ref(), diag_label, err)
 }
 
+/// Where `action`'s `name` is written, which a site that reports the name as
+/// its `actual` stands at (SCE_ERROR_CONTRACT.md §2.2): the value's start
+/// when its spelling places it, the element's start otherwise.
+fn name_written_at(action: &Action) -> Option<SourceLocation> {
+    let element = action.source_location.clone()?;
+    Some(
+        match action.spellings.get("name").and_then(|name| name.value()) {
+            Some(written) => SourceLocation {
+                line: Some(written.row),
+                col: Some(written.col),
+                ..element
+            },
+            None => element,
+        },
+    )
+}
+
 /// A refusal at a recorded position, or file-scoped when none was
 /// recorded.
 fn located_at(
@@ -934,8 +951,8 @@ fn register_signature(
 ) -> Result<(), Located<ForgeError>> {
     match signatures.get(&action.native_action_name) {
         Some((_, first_at, prev_effect)) if *prev_effect != action.native_action_effect => {
-            let refusal = located_on_action(
-                action,
+            let refusal = located_at(
+                name_written_at(action).as_ref(),
                 diag_label,
                 ValidationError::NativeActionSignatureConflict {
                     name: action.native_action_name.clone(),
@@ -960,8 +977,8 @@ fn register_signature(
             })
         }
         Some((prev, first_at, _)) if *prev != sig => {
-            let refusal = located_on_action(
-                action,
+            let refusal = located_at(
+                name_written_at(action).as_ref(),
                 diag_label,
                 ValidationError::NativeActionSignatureConflict {
                     name: action.native_action_name.clone(),
@@ -993,7 +1010,7 @@ fn register_signature(
                 action.native_action_name.clone(),
                 (
                     sig,
-                    action.source_location.clone(),
+                    name_written_at(action),
                     action.native_action_effect.clone(),
                 ),
             );
@@ -2740,7 +2757,13 @@ mod tests {
         let refusal = validate(&model, &fragment_schema(), "t").expect_err("the signatures differ");
         // The record names the call that contradicts; `related` names the
         // call that fixed the signature first, where the same name is.
-        assert_eq!(refusal.location.line, Some(7), "{refusal:?}");
+        // Both stand where the name `f` begins: twenty-four columns of indent
+        // and `<sce:action name="` before it.
+        assert_eq!(
+            (refusal.location.line, refusal.location.col),
+            (Some(7), Some(43)),
+            "{refusal:?}"
+        );
         assert_eq!(
             refusal.related(),
             [RelatedSite {
@@ -2748,7 +2771,7 @@ mod tests {
                 location: SourceLocation {
                     file: "t".to_string(),
                     line: Some(4),
-                    col: refusal.related()[0].location.col,
+                    col: Some(43),
                 },
                 actual: Some("f".to_string()),
             }],

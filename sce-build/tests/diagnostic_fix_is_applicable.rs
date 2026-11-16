@@ -139,6 +139,7 @@ struct RelatedEntry {
     role: String,
     file: String,
     line: Option<usize>,
+    col: Option<usize>,
     actual: Option<String>,
 }
 
@@ -341,6 +342,11 @@ impl FixRecord {
                                 .and_then(|l| l.get("line"))
                                 .and_then(serde_json::Value::as_u64)
                                 .map(|n| n as usize),
+                            col: entry
+                                .get("location")
+                                .and_then(|l| l.get("col"))
+                                .and_then(serde_json::Value::as_u64)
+                                .map(|n| n as usize),
                             actual: entry
                                 .get("actual")
                                 .and_then(|a| a.as_str())
@@ -521,10 +527,10 @@ fn related_violations(root: &Path, rec: &FixRecord) -> Vec<String> {
                 "[{} / {}] {} related[{}]",
                 rec.doc, rec.lang, rec.code, entry.role
             );
-            // A related site is held to its row: the producers of related
-            // sites are not all placed by `col` yet (SCE_ERROR_CONTRACT.md
-            // §2.4), so its column is not judged here.
-            token_violation(root, &site, &entry.file, entry.line, None, actual)
+            // A related site is held to its row and, when it gives one, to
+            // its column, as the record's own `actual` is (SCE_ERROR_CONTRACT.md
+            // §2.2, §2.4).
+            token_violation(root, &site, &entry.file, entry.line, entry.col, actual)
         })
         .collect()
 }

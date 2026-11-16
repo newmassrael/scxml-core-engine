@@ -193,6 +193,16 @@ attributes) keep their own placement. The guard (`wire_site::locate_at`, read by
 sweep) holds a record's own `actual` to its column. A `related` entry is held to its row only: its producers were not
 measured in this change.
 
+Implemented (2026-11-16): the `related` producers, measured by reading each. A site on an element is placed by
+`forge::parser::related_at`, which shares `located`'s rule (`token_place`): the misplaced element's `destination`
+at its tag's name, a feature model imported twice at the first import's `src` value, the accept-side naming rule's
+record and `also-refused` sites at each state's id (both stood at the `<`). A feature-gate `referent` stands at the
+referent's id value and a native action's `conflicting-use` (and its record) at the `name` value, from the reader's
+recorded positions. The sites with no column (an import cycle's other imports, a generation error's positioned rows,
+an artifact collision's first writer, an import route's step without `actual`) claim none, which the rule allows;
+an `<invoke>` route step already stood at its token. The corpus sweep now hands each entry's `col` to
+`wire_site::locate_at`, so a related site is held to its column as the record's own `actual` is.
+
 ### #53g — `actual` is an input token
 
 Partly fixed before this ADR (`94e56bc16c`: counts and cycle paths are no longer `actual`).

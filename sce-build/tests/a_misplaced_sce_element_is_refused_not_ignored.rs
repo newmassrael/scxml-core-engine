@@ -42,6 +42,9 @@ struct Refusal {
     line: Option<u32>,
     under: Option<String>,
     destination_line: Option<u32>,
+    /// The `destination` site's `actual` begins at its `col`
+    /// (SCE_ERROR_CONTRACT.md §2.2, §2.4).
+    destination_at_its_col: bool,
 }
 
 fn parse(text: &str, stem: &str) -> Result<Option<String>, Refusal> {
@@ -55,7 +58,24 @@ fn parse(text: &str, stem: &str) -> Result<Option<String>, Refusal> {
             let record = &refusal.error.to_diagnostics()[0];
             let code = serde_json::to_string(&record.code).expect("a code serialises");
             let fix = serde_json::to_value(&record.fix).expect("a fix serialises");
+            let destination = refusal
+                .related()
+                .iter()
+                .find(|site| site.role == RelatedRole::Destination);
+            let destination_at_its_col = destination.is_some_and(|site| {
+                let (Some(line), Some(col), Some(actual)) = (
+                    site.location.line,
+                    site.location.col,
+                    site.actual.as_deref(),
+                ) else {
+                    return false;
+                };
+                let row = text.lines().nth(line as usize - 1).unwrap_or_default();
+                let from: String = row.chars().skip(col as usize - 1).collect();
+                from.starts_with(actual)
+            });
             Err(Refusal {
+                destination_at_its_col,
                 code,
                 line: refusal.location.line,
                 under: fix
@@ -136,7 +156,8 @@ fn an_sce_element_no_reader_asks_for_is_refused_in_every_kind() {
                 if refusal.code == "\"validation/misplaced-element\""
                     && refusal.line == Some(row)
                     && refusal.under.as_deref() == Some("datamodel")
-                    && refusal.destination_line == Some(home_row) =>
+                    && refusal.destination_line == Some(home_row)
+                    && refusal.destination_at_its_col =>
             {
                 moved += 1;
             }
