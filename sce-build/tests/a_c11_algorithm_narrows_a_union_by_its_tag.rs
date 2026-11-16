@@ -129,3 +129,27 @@ fn a_c11_algorithm_returns_a_union_it_was_given_or_built() {
     // Its last statement returns, so the body needs nothing after it.
     assert!(!text.contains("abort();"), "{text}");
 }
+
+/// A list of unions (docs/adr/0099, "Still open" item 2) is a view of the
+/// union's typedef, declared beside the algorithm as a list of records' view is:
+/// an element a union local copies is read inside the checked conditional, whose
+/// value beside a recorded `out-of-range` is the struct's own zero, never
+/// committed (section 2.2); a loop copies each element out of the view, and the
+/// list the body builds is the caller's destination of the typedef.
+#[test]
+fn a_c11_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, "const union_shape_minimal_t *data;");
+    holds(&at, "union_shape_minimal_view_t shapes");
+    holds(
+        &at,
+        &format!(
+            "const {SHAPE} picked = (sce_forge_checked_index_from_u(&sce_failure_, at, \
+             (shapes).len) ? shapes.data[at] : (__typeof__(shapes.data[at])){{0}});"
+        ),
+    );
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, &format!("{SHAPE} shape = shapes.data[__shape_i];"));
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("{SHAPE} items[8];"));
+}

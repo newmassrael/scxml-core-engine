@@ -12453,6 +12453,10 @@ enum CFailedRead {
     /// The absent value of an element that may be absent, a struct of its flag and its value
     /// (docs/adr/0055, section 5).
     Absent,
+    /// The language's own zero of a union's struct, `{0}`, whose first member is the tag:
+    /// the value beside a recorded failure that no statement commits (docs/adr/0099,
+    /// section 2.2).
+    Whole,
 }
 
 /// What a checked index read in C gives when it records a failure, by the type of what it
@@ -12498,6 +12502,7 @@ fn c_checked_index(
         // `-Wmissing-braces`, and the rest of the value is zeroed all the same.
         CFailedRead::Aggregate => format!("(__typeof__({read})){{ .len = 0 }}"),
         CFailedRead::Absent => format!("(__typeof__({read})){{ .present = false }}"),
+        CFailedRead::Whole => format!("(__typeof__({read})){{0}}"),
     };
     Ok(format!(
         "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) ? {read} : {failed})"
@@ -12850,11 +12855,21 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // read, an empty collection's included. A `bytes` view and a
         // `list<T>` parameter's view carry their length; a build-time
         // array's is its `sizeof`.
+        // An element of a list of unions, which a union local copies whole
+        // (docs/adr/0099, section 5.2), is a struct the expression types by no
+        // operand type: its filler is the struct's own zero.
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => c_checked_index(left, index, "", c_failed_part(expr.ty))?,
+        } => {
+            let failed = if listed_union(left.ty).is_some() {
+                CFailedRead::Whole
+            } else {
+                c_failed_part(expr.ty)
+            };
+            c_checked_index(left, index, "", failed)?
+        }
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no

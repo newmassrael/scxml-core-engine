@@ -46349,13 +46349,16 @@ fn render_algorithm(
             | Language::Swift,
         ) => String::new(),
     };
-    // C11 views of the read-only lists of records the algorithm takes, one
-    // per record type ([`c11_record_view_typedef`]).
+    // C11 views of the read-only lists of records and of unions the algorithm
+    // takes, one per element type ([`c11_record_view_typedef`]): a union's
+    // typedef is viewed as a record's is (docs/adr/0099, "Still open" item 2).
     let mut record_views = String::new();
     if matches!(lang, Language::C11) {
         let mut declared = std::collections::BTreeSet::new();
         for p in &m.signature.params {
-            let Some(elem @ AlgorithmValueType::Record { .. }) = p.sce_type.list_elem() else {
+            let Some(elem @ (AlgorithmValueType::Record { .. } | AlgorithmValueType::Union { .. })) =
+                p.sce_type.list_elem()
+            else {
                 continue;
             };
             let record_type = ListSpelling::new(&l, elem, imports)?.elem_name;
