@@ -116,32 +116,43 @@ pub struct ListOutput {
     pub compare: CompareMode,
 }
 
-/// The element of a list argument or output: a canonical scalar (`"i64"`)
-/// or a record typed by an event-schema fixture (`{"record": "<fixture>"}`),
+/// The element of a list argument or output: a canonical scalar (`"i64"`),
+/// a record typed by an event-schema fixture (`{"record": "<fixture>"}`),
 /// whose elements the oracle writes as JSON objects keyed by the schema's
-/// field ids. Untagged, as [`AlgorithmArg`] is, so a scalar list keeps its
-/// bare-string spelling.
+/// field ids, or a value of a union typed by a union fixture (`{"union":
+/// "<fixture>"}`, docs/adr/0099, "Still open" item 2), whose elements the
+/// oracle writes as the union's wire objects, an argument only. Untagged, as
+/// [`AlgorithmArg`] is, so a scalar list keeps its bare-string spelling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum ListElemArg {
     Scalar(CanonicalType),
     Record(RecordRef),
+    Union(UnionArg),
 }
 
 impl ListElemArg {
-    /// The record the element is, or `None` for a scalar element.
+    /// The record the element is, or `None` for a scalar or a union element.
     pub fn record(&self) -> Option<&RecordRef> {
         match self {
             Self::Record(r) => Some(r),
-            Self::Scalar(_) => None,
+            Self::Scalar(_) | Self::Union(_) => None,
         }
     }
 
     fn record_mut(&mut self) -> Option<&mut RecordRef> {
         match self {
             Self::Record(r) => Some(r),
-            Self::Scalar(_) => None,
+            Self::Scalar(_) | Self::Union(_) => None,
+        }
+    }
+
+    /// The union the element is a value of, or `None` for any other element.
+    pub fn union(&self) -> Option<&UnionArg> {
+        match self {
+            Self::Union(u) => Some(u),
+            Self::Scalar(_) | Self::Record(_) => None,
         }
     }
 }
@@ -1896,6 +1907,16 @@ impl Manifest {
                                 f.name
                             ));
                         }
+                        // A list of unions is an argument only: no fragment
+                        // compares two values of a union, which no backend
+                        // compares alike (docs/adr/0086, section 6.1).
+                        if list.list_of.union().is_some() {
+                            return Err(format!(
+                                "fixture {}: an algorithm's answer is no list of unions \
+                                 (a list of unions is an argument; answer what is read of it)",
+                                f.name
+                            ));
+                        }
                     }
                     // A record names an event-schema fixture of this manifest,
                     // and its fields are that document's, derived when the
@@ -1940,9 +1961,11 @@ impl Manifest {
                         }
                     }
                     // A value of a union names a union fixture of this manifest,
-                    // whose cases are derived when the harness renders.
+                    // whose cases are derived when the harness renders; so does
+                    // the element of a list of unions.
                     for u in args.iter().filter_map(|a| match a {
                         AlgorithmArg::Union(u) => Some(u),
+                        AlgorithmArg::List(list) => list.list_of.union(),
                         _ => None,
                     }) {
                         let names_a_union = self.fixtures.iter().any(|g| {
@@ -4576,7 +4599,10 @@ pub fn render_harness(
                                 language,
                             )?;
                         }
-                        AlgorithmArg::Union(u) => {
+                        AlgorithmArg::Union(u)
+                        | AlgorithmArg::List(ListArg {
+                            list_of: ListElemArg::Union(u),
+                        }) => {
                             u.shape = Some(read_union_shape(
                                 manifest,
                                 resource_dir,
@@ -5872,6 +5898,70 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `sce:std/time/resolve_date_at`, which takes a list of a union's values
+    /// (docs/adr/0099, "Still open" item 2), is scheduled and rendered on every
+    /// backend's harness: the manifest's `{"list_of": {"union": …}}` argument has
+    /// its shape derived as a union argument's is, each element is built case by
+    /// case by the identifier the union's unit declares, and the C11 case table
+    /// holds the elements in the union's typedef, handed as its view.
+    #[test]
+    fn a_list_of_unions_argument_reaches_every_harness() {
+        let mut names = DATE_EXPRESSION_FIXTURES.to_vec();
+        names.push("resolve_date_at");
+        let manifest = catalog_of(&names);
+        let at = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "resolve_date_at")
+            .expect("the catalog holds resolve_date_at");
+        let FixtureSpec::Algorithm { args, .. } = &at.spec else {
+            panic!("resolve_date_at is an algorithm fixture");
+        };
+        assert!(
+            matches!(&args[1], AlgorithmArg::List(list)
+                if list.list_of.union().is_some_and(|u| u.union_document == "date_expression")),
+            "the second argument is a list of date expressions: {:?}",
+            args[1]
+        );
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        for &lang in Language::ALL
+            .iter()
+            .filter(|lang| crate::forge::codegen_matrix::emits_anything(**lang))
+        {
+            let rendered = render_harness(&manifest, lang, &template_base, &resource_dir)
+                .unwrap_or_else(|e| panic!("{lang:?}: render failed: {e}"));
+            let symbol = crate::forge::generator::forge_algorithm_symbol("resolve_date_at", lang);
+            assert!(
+                rendered.source.contains(&format!("{symbol}(")),
+                "{lang:?}: the harness does not call `{symbol}`, so resolve_date_at was not \
+                 scheduled for it"
+            );
+            if lang == Language::C11 {
+                assert!(
+                    rendered.source.contains("date_expression_t input_arg1[")
+                        && rendered
+                            .source
+                            .contains("const date_expression_view_t arg1 = "),
+                    "C11: the case table does not hold the list in the union's typedef"
+                );
+            }
+        }
+    }
+
+    /// A list output of unions is refused: the harness compares no two values of
+    /// a union.
+    #[test]
+    fn a_list_of_unions_is_no_answer_a_fixture_compares() {
+        let refused = validated_algorithm(
+            r#"["i64"]"#,
+            r#"{"list_of": {"union": "date_expression"}, "compare": "equality"}"#,
+        )
+        .expect_err("a list of unions as an answer is refused");
+        assert!(refused.contains("no list of unions"), "{refused}");
     }
 
     /// A union's shape is its document's: one case per variant of the tag's

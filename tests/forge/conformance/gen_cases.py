@@ -1163,6 +1163,29 @@ def resolve_date_args(rng: SplitMix64):
     return [today, drawn_expression(rng, rng.pick(DATE_KINDS), RESOLVE_DATE_DRAWS)]
 
 
+def resolve_date_at(today: int, expressions: list, at: int):
+    """sce:std/time/resolve_date_at — the day the expression at position `at` of
+    `expressions` names, as `resolve_date` resolves it. The expression is read
+    by the checked read of its index, so an `at` not below the number of
+    expressions fails `out-of-range` before anything is resolved (docs/adr/0099,
+    section 5.2)."""
+    if at >= len(expressions):
+        return ("fails", "out-of-range")
+    return resolve_date(today, expressions[at])
+
+
+def resolve_date_at_args(rng: SplitMix64):
+    """Up to four date expressions from today, each drawn as `resolve_date_args`
+    draws one, and a position inside a list that holds one three times in four,
+    or else at its end or up to two past it."""
+    today = clamp(resolve_date_today(rng), I64_MIN, I64_MAX)
+    size = rng.between(0, 4)
+    expressions = [drawn_expression(rng, rng.pick(DATE_KINDS), RESOLVE_DATE_DRAWS) for _ in range(size)]
+    inside = size > 0 and rng.below(4) > 0
+    at = rng.between(0, size - 1) if inside else rng.between(size, size + 2)
+    return [today, expressions, at]
+
+
 #: How far each kind may shift a date in `resolve_date_datetime_args`, so that
 #: no kind carries today past datetime's years; a kind that reads no count has
 #: the bound of the rest.
@@ -4479,6 +4502,7 @@ FIXTURES = {
     "algorithm_tick_until_due": (lambda args: tick_until_due(*args), tick_args, 300, 0xE110_006C),
     "algorithm_lcg_table": (lambda args: lcg_table(*args), lcg_args, 100, 0xE110_006D),
     "resolve_date": (lambda args: resolve_date(*args), resolve_date_args, 400, 0xE110_006E),
+    "resolve_date_at": (lambda args: resolve_date_at(*args), resolve_date_at_args, 200, 0xE110_0070),
 }
 
 #: Inputs a fixture is held to whole, written before its drawn cases, in the

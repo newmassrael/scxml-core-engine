@@ -49,6 +49,15 @@
             arg{{ loop.index0 }}_buf.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
         SCE::Forge::Span<const std::uint8_t> arg{{ loop.index0 }}{ arg{{ loop.index0 }}_buf };
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+{# A list of unions (docs/adr/0099, "Still open" item 2): each wire object built
+   as a union argument is, held in a vector the parameter's `SCE::Forge::Span`
+   views. #}
+{% set u = arg_ty.list_of.shape %}
+        std::vector<SCE::Generated::{{ u.document | to_pascal_case }}::{{ u.type_name }}> arg{{ ai }};
+        for (const auto &x : c["args"][{{ ai }}]) {
+            arg{{ ai }}.push_back({{ values.union_value(u, "x") }});
+        }
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
 {# A list of records: each JSON object filled into a payload struct, held
    in a vector the parameter's `SCE::Forge::Span` views. #}

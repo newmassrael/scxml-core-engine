@@ -54,6 +54,18 @@
 		for __i, __v := range arg{{ loop.index0 }}_buf {
 			arg{{ loop.index0 }}[__i] = byte(__v)
 		}
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+{# A list of unions (docs/adr/0099, "Still open" item 2) is a slice of the
+   unit's value struct, each element built from its wire object as a union
+   argument is. #}
+{% set u = arg_ty.list_of.shape %}
+		var arg{{ i }}_src []json.RawMessage
+		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
+		arg{{ i }} := make([]{{ u.document }}.{{ u.type_name }}, 0, len(arg{{ i }}_src))
+		for _, __raw := range arg{{ i }}_src {
+{{ values.union_value(u, "__e", "__raw", f.name ~ " arg" ~ i) }}
+			arg{{ i }} = append(arg{{ i }}, __e)
+		}
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
 {% set r = arg_ty.list_of %}
 		var arg{{ i }}_src []struct {

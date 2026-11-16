@@ -38,7 +38,8 @@
    the wire's object the oracle writes: the case its tag names, holding that
    case's record. The values of a record's field, of an enum and of a union are
    built by `values.rs.jinja2`, which a union fixture's fragment builds its
-   values by too. #}
+   values by too. A list of unions (docs/adr/0099, "Still open" item 2) is a
+   `Vec` of such values, handed as the slice the algorithm reads. #}
 {% import "values.rs.jinja2" as values %}
 {# A value that may be absent, read from the oracle's JSON `raw`: `None` for `null`. #}
 {% macro optional_value(raw, ty) %}if {{ raw }}.is_null() { None } else { Some({{ raw | rust_unmarshal(ty) }}) }{% endmacro %}
@@ -64,6 +65,14 @@
             {{ fld.ident }}: {{ values.field_value(fld, "case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]", f.name) }},
 {% endfor %}
         };
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+{% set u = arg_ty.list_of.shape %}
+        let arg{{ i }}: Vec<fixtures::{{ u.document }}::{{ u.type_name }}> = case["args"][{{ i }}]
+            .as_array()
+            .expect("a list argument is an array")
+            .iter()
+            .map(|x| {{ values.union_value(u, "x", f.name ~ " arg" ~ i) }})
+            .collect();
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
 {% set r = arg_ty.list_of %}
         let arg{{ i }}: Vec<fixtures::{{ r.record }}::{{ r.record | to_pascal_case }}Payload> = case["args"][{{ i }}]

@@ -77,6 +77,8 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
 {% if arg_ty.list_of.record is defined %}
         {{ arg_ty.list_of.record | to_pascal_case }}Payload_t input_arg{{ ai }}[{{ w.n }}];
+{% elif arg_ty.list_of.union is defined %}
+        {{ arg_ty.list_of.shape.type_name }} input_arg{{ ai }}[{{ w.n }}];
 {% else %}
         {{ arg_ty.list_of | c_type }} input_arg{{ ai }}[{{ w.n }}];
 {% endif %}
@@ -122,6 +124,9 @@ static void test_{{ f.name }}(void) {
             .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {{ values.c_field(fld, c.args[ai][fld.name]) }}, {% endfor %}},
 {% elif arg_ty == "bytes" %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
+            .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ values.union_value(arg_ty.list_of.shape, v) }}, {% else %}{0}{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {{ values.c_field(fld, v[fld.name]) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
@@ -169,6 +174,10 @@ static void test_{{ f.name }}(void) {
         sce_forge_bytes_t arg{{ loop.index0 }} = {0};
         memcpy(arg{{ loop.index0 }}.data, cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len);
         arg{{ loop.index0 }}.len = cases[i].input_arg{{ loop.index0 }}_len;
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+{# The view the algorithm's header declares beside it for this union's typedef
+   (docs/adr/0099, "Still open" item 2), named as a record's view is. #}
+        const {{ arg_ty.list_of.shape.type_name[:-2] }}_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
 {# The view the algorithm's header declares beside it for this record. #}
         const {{ arg_ty.list_of.record | to_pascal_case }}Payload_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };

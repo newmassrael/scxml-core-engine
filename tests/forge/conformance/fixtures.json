@@ -2749,6 +2749,22 @@
       }
     },
     {
+      "name": "resolve_date_at",
+      "document": "sce:std/time/resolve_date_at.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "resolve_date_at",
+      "args": [
+        "i64",
+        { "list_of": { "union": "date_expression" } },
+        "u32"
+      ],
+      "output": {
+        "optional": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "codec_declared_bounds",
       "kind": "codec",
       "ref_section": "codecs",

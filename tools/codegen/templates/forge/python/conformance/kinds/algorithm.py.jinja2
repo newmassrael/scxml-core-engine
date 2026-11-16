@@ -43,6 +43,10 @@
             )
 {% elif arg_ty == "bytes" %}
             arg{{ ai }} = bytes(case["args"][{{ ai }}])
+{% elif arg_ty.list_of is defined and arg_ty.list_of.union is defined %}
+{# A list of unions (docs/adr/0099, "Still open" item 2) is a `list` of the
+   union's class, each element built as a union argument is. #}
+            arg{{ ai }} = [{{ values.union_value(arg_ty.list_of.shape, "e") }} for e in case["args"][{{ ai }}]]
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
 {% set r = arg_ty.list_of %}
             arg{{ ai }} = [

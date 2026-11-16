@@ -768,13 +768,16 @@
       "additionalProperties": false
     },
     "ListElemArg": {
-      "description": "The element of a list argument or output: a canonical scalar (`\"i64\"`) or a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), whose elements the oracle writes as JSON objects keyed by the schema's field ids. Untagged, as [`AlgorithmArg`] is, so a scalar list keeps its bare-string spelling.",
+      "description": "The element of a list argument or output: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), whose elements the oracle writes as JSON objects keyed by the schema's field ids, or a value of a union typed by a union fixture (`{\"union\": \"<fixture>\"}`, docs/adr/0099, \"Still open\" item 2), whose elements the oracle writes as the union's wire objects, an argument only. Untagged, as [`AlgorithmArg`] is, so a scalar list keeps its bare-string spelling.",
       "anyOf": [
         {
           "$ref": "#/definitions/CanonicalType"
         },
         {
           "$ref": "#/definitions/RecordRef"
+        },
+        {
+          "$ref": "#/definitions/UnionArg"
         }
       ]
     },

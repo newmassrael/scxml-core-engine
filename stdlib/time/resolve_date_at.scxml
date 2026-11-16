@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/resolve_date_at.scxml — the day the date expression at
+  position `at` of a list of them names, resolved from `today` as
+  resolve_date.scxml resolves one: a list a statechart lifted from a text
+  that named several dates, of which one was then chosen by its position.
+
+  The expression is copied whole out of the list into a union local, read
+  by the checked read of its index (docs/adr/0099, section 5.2): an element
+  at an index is no subject a test of its tag narrows, the local is, and
+  resolve_date reads each kind under such a test. Absent where the chosen
+  expression names no date (`none`).
+
+  Failures (SCE_FORGE.md §3.4.1):
+  - `out-of-range`: `at` is not below the number of expressions, the empty
+    list included; nothing is resolved;
+  - every failure of resolve_date, for the expression at `at`.
+
+  today 20761 (2026-11-04), expressions [none, relativeDays 1,
+  comingWeekday 3]: at 1 → 20762 · at 0 → absent · at 2 → 20768 ·
+  at 3 → out-of-range.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="resolve_date_at" version="1.0">
+  <sce:import kind="union" src="date_expression.scxml" as="DateExpression"/>
+  <sce:import kind="algorithm" src="resolve_date.scxml" as="resolve"/>
+  <sce:signature>
+    <sce:param name="today" type="int64"/>
+    <sce:param name="expressions" type="list&lt;union:DateExpression&gt;"/>
+    <sce:param name="at" type="uint32"/>
+    <sce:return type="optional&lt;int64&gt;" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="picked" type="union:DateExpression" init="expressions[at]"/>
+    <sce:return expr="resolve(today, picked)"/>
+  </sce:body>
+</scxml>
