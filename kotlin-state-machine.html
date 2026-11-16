@@ -258,7 +258,7 @@ sce-codegen generate traffic_light.scxml -o ./generated/ -l kotlin</code></pre>
             </p>
 
 <pre><code># Run W3C conformance tests
-./gradlew :sce-kotlin-tests:test
+./gradlew :sce-kotlin-w3c:test
 
 # Run benchmarks
 ./gradlew :sce-kotlin-benchmark:jmh --no-configuration-cache</code></pre>
@@ -291,8 +291,12 @@ sce-codegen generate traffic_light.scxml -o ./generated/ -l kotlin</code></pre>
                     <td>Spring Boot auto-configuration</td>
                 </tr>
                 <tr>
-                    <td><code>sce-kotlin-tests</code></td>
+                    <td><code>sce-kotlin-w3c</code></td>
                     <td>W3C conformance tests (202/202)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-tests</code></td>
+                    <td>Integration tests (generated machines, shared scenarios)</td>
                 </tr>
                 <tr>
                     <td><code>sce-android-app</code></td>
