@@ -18,13 +18,13 @@
        bytes 2..: text      (UTF-8 string, length=text_len, max 32,
                              present iff carrier.has_text)
 
-     Co-gating contract (author trust, mirrors present-if-gating bytes precedent):
+     Co-gating rule (as for present-if-gating bytes; the encode derives text_len):
      when `text` carries `sce:present-if="carrier.has_text"`, the
      length source `text_len` MUST also carry the IDENTICAL
      predicate. The streaming decoder unwraps `text_len` only inside
      the gated branch, so a non-gated `text_len` paired with a gated
      `text` would emit code that reads the optional as if it were
-     unwrapped (same hazard as gated bytes — author keeps both gates
+     unwrapped (same hazard as gated bytes, so both gates are
      identical).
 
      Wrap shape per language (mirrors string string + present-if-gating present-if):

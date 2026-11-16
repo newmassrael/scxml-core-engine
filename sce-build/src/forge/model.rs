@@ -2954,10 +2954,9 @@ pub struct CodecField {
     /// v1 grammar restricts the offset to `±1` (parser rejects 0 and
     /// `|x| > 1`). Widening defers to a reachable consumer.
     /// `length-arith` requires `length-field`; standalone `length-arith`
-    /// without a sibling reference is rejected at parse time. Author
-    /// trust contract: payload length stays `len_sibling + arith` bytes
-    /// across encode/decode round-trips (mirrors the variant tag/body
-    /// trust contract of the variant primitive).
+    /// without a sibling reference is rejected at parse time. The encode
+    /// derives the sibling from the payload, `len(payload) - arith`, and
+    /// never takes it from the value (docs/adr/0058 §1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_arith: Option<i32>,
     /// Physical-quantity annotation on

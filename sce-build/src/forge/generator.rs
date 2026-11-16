@@ -14314,8 +14314,8 @@ fn render_codec(
                     }
                     // Kotlin data-class primary-constructor default.
                     // Plain embed: emits `<Type>()` (bare struct
-                    // member; trust contract — imported codec
-                    // exposes a no-arg constructor). Gated
+                    // member; every generated Kotlin codec class
+                    // has a no-arg constructor). Gated
                     // shape: the field is `T?`, default `null` so
                     // absent-on-wire round-trips correctly.
                     if matches!(lang, crate::generator::Language::Kotlin) {
@@ -19041,10 +19041,11 @@ fn embed_streaming_encode_block(
     let id = id_owned.as_str();
     // Non-C11 backends discriminate gated-embed presence via the host
     // language's Optional / nullable / pointer wrapper. The carrier
-    // flag bit and the Optional are kept in sync by the author trust
-    // contract (mirroring `present_if_encode_fixed/tail/length_ref/
-    // vle` precedent — none of those four emit an outer carrier-flag
-    // gate at encode site, only the inner Optional discriminant).
+    // flag bit is the body's presence (docs/adr/0058 §1); this
+    // template encode writes the carrier as the value holds it, a
+    // derivation owed to the backend's plan printer (docs/adr/0081
+    // §3), and, as `present_if_encode_fixed/tail/length_ref/vle`, it
+    // tests only the inner Optional discriminant at the encode site.
     // Earlier embed code had a redundant outer `if {test}` wrapper
     // that referenced the carrier as a *bare* identifier (e.g.
     // `header`) — correct at decode site (where `header` is a
@@ -20071,8 +20072,10 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
 /// RFC §synth-5-B — gated repeat encode. Mirrors
 /// the item B2 tail/length-ref present-if encode shape: 5 backends test
 /// the wrapped storage form (Option::is_some / has_value / ?.let /
-/// `is not None` / Go nil-slice) — author owns the carrier-flag-vs-
-/// storage trust contract. C11 has no nullable wrapper, so the
+/// `is not None` / Go nil-slice); the carrier flag is the list's
+/// presence (docs/adr/0058 §1), which this template encode writes as
+/// the value holds it until the backend prints the plan (docs/adr/0081
+/// §3). C11 has no nullable wrapper, so the
 /// carrier flag bit IS presence; encode tests `(self->carrier & mask)
 /// <op> 0` directly.
 fn repeat_streaming_encode_block_gated(
@@ -21035,9 +21038,9 @@ fn tlv_chain_streaming_encode_block(
         // host-language list and append each element's encoded bytes onto
         // the parent's `r` buffer. Repeat already extends to every backend
         // (item B2 closures); TLV chain encode mirrors that shape with no
-        // overflow check (encoder writes whatever the struct holds; the
-        // author keeps `len ≤ max_depth` via the host language's list
-        // length, mirroring the variant tag/body trust contract).
+        // overflow check: the encoder writes the list the struct holds,
+        // and its bound (docs/adr/0065 §6 R2) becomes a type of the value
+        // when the backend prints the plan (docs/adr/0081 §2).
         Language::Kotlin => {
             let decls = entry_binds.decls(lang, "        ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
@@ -22413,8 +22416,9 @@ fn present_if_decode_tail(
 /// RFC §synth-5-B item B2 present-if + LengthRef bit-size: read N bytes from
 /// the cursor where N is the value of a sibling integer field
 /// already decoded into a local. When the predicate fires the bytes
-/// are consumed; when it doesn't, the codec assumes the author kept
-/// the length field at 0 (trust contract) and skips zero bytes.
+/// are consumed; when it doesn't, no bytes are read, whatever the
+/// length field holds: a length of absent content is what the value
+/// states (docs/adr/0058 §1).
 ///
 /// RFC §synth-5-B length-ref extensions:
 /// - **VLE-length-ref**: when the sibling field is `BitSize::Vle`,
@@ -22466,10 +22470,10 @@ fn present_if_decode_length_ref(
     }
     // Per-language sibling value expression (inside the gated if-branch
     // when payload is gated; outside otherwise). The non-gated arm
-    // requires sibling to be non-gated too (parser doesn't enforce this
-    // — it's the author trust contract; gated sibling + non-gated
-    // payload would emit code that reads the optional as if it were
-    // unwrapped).
+    // requires the sibling to be non-gated too: a gated sibling beside a
+    // non-gated payload would be read here as if unwrapped. The parser
+    // does not refuse that pairing yet, which is a defect of the parser
+    // and not a duty of the author.
     let _ = arith;
     // The length, checked against the field's bound and narrowed
     // (docs/adr/0077 §2), at the indentation of the block it opens.
@@ -24056,10 +24060,10 @@ fn present_if_encode_string_length_ref(
         // representation per C11 §6.5/7), so the cast is the textbook
         // pattern for `char` array serialization. Mirrors the bytes
         // encode shape (single-line `r.len++` post-increment loop) so
-        // String/Bytes encode byte-stable side by side. Author-trust
-        // contract: `<id>_len` is in sync with the sibling integer
-        // length field — codec API stays infallible to avoid surfacing
-        // a Result type on every String-bearing codec.
+        // String/Bytes encode byte-stable side by side. `<id>_len` is
+        // the text's length, which this template encode writes beside a
+        // sibling length the value holds; the sibling is derived from it
+        // once C11 prints the plan (docs/adr/0081 §3).
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
@@ -24082,8 +24086,9 @@ fn present_if_encode_string_length_ref(
 
 /// RFC §synth-5-B item B2 present-if + LengthRef bit-size encode: append the
 /// payload bytes (clamped to the sibling length field's value) when
-/// the predicate / optional fires. Author-trust contract: `<id>_len`
-/// is kept consistent with the actual payload length.
+/// the predicate / optional fires. The sibling is derived from the
+/// payload (docs/adr/0058 §1); this template encode writes it as the
+/// value holds it until the backend prints the plan (docs/adr/0081 §3).
 fn present_if_encode_length_ref(
     field: &CodecField,
     fields: &[CodecField],

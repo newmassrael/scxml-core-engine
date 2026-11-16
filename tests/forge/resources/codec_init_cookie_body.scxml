@@ -21,7 +21,7 @@
        clear, the entire `<size-prefix> + <cookie-bytes>` span is
        absent from the wire (full upstream parity). Decode helper
        unwraps the sibling Optional inside the same gated branch as
-       the payload (trust contract: shared predicate).
+       the payload, the two sharing one predicate.
 
      Wire shape (1 byte minimum, +1..3 VLE size, +0..N cookie bytes):
        byte 0   : version       (uint8, always present)
