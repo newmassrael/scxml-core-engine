@@ -2607,3 +2607,38 @@ the record of a broadcast log among them). Every other Go codec is unchanged.
 - An algorithm that this generator writes over a collection of such elements reads a text element as its string,
   `[]byte(entry.Pattern().String())` where it read `[]byte(entry.Pattern)`.
 
+## A printed Go codec holds a gated element as its optional type, derives its flag, and returns its refusals (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Go tree and the Go round-trip tree
+(`backends/go/forge-runtime/round_trip/generate.sh`) are regenerated after it. It moves the positional codecs that
+also hold elements a gate on a flag of their own carriers or on a flag input decides, lengths the value states while
+their content is absent, lengths several byte strings share or a flag of a carrier holds, and an encode that refuses
+what its totality names (`codec_present_if_basic`, `codec_present_if_checked`, `codec_present_if_string`,
+`codec_present_if_tail` and `codec_length_shared` among them). A codec with a group, a body, a list, a variant or an
+input its value says is unchanged.
+
+- A gated element is the runtime's `optional.Of` of what the value presents: `optional.Of[uint16]`, or
+  `optional.Of[codec.Bytes[B]]` for a gated byte string. `&pkg.Frame{Flags: f, Seq: optional.Some(uint16(7))}` is
+  `pkg.MakeFrame(f, optional.Some(uint16(7)))`, and `frame.Seq` is `frame.Seq()`. A gated byte string or text is
+  made by `codec.MakeOptionalBytes[B]` or `codec.MakeOptionalText[B]` over the optional slice or string, which
+  answers absent for absent and `codec.MakeBytes`'s error where the value is there; `codec.OptionalBytes` and
+  `codec.OptionalText` read one back as the optional slice or string.
+- The flag a gated element's presence says is derived: the encode sets or clears it from whether the element is
+  there, whatever the carrier the value presents says. A test that set `Flags: 0x01` beside a present element can
+  leave the bit out; the decode still presents the carrier as the wire held it.
+- A length gated beside its content is no element, as a length always there was in the second landing. A length on
+  the wire whether or not its content is there is an `optional.Of` of its number: absent where the encode derives it
+  from the content, or the number the value states where the content is absent; a stated number beside content
+  that disagrees with it is refused.
+- An encode that can refuse (a codec that states `sce:encode-may-fail`) returns the runtime's sentinel before its
+  first byte: `codec.ErrPresentIfMismatch` for an element a gate it cannot derive disagrees with,
+  `codec.ErrInconsistentSource` (new in `backends/go/forge-runtime/codec/codec.go`) for two byte strings that
+  share one length and differ in it, and `codec.ErrLengthOutOfRange` for a length past its field or flag. Compare
+  with `errors.Is`. `EncodeToBytes` then returns `([]byte, error)`.
+- A flag input the value does not say is a parameter of `EncodeSource` after the sink, as of the decode after the
+  cursor: `pkg.EncodeSource(src, w, a)`.
+- A procedure that assigns a byte string or a text of a printed codec makes its bounded value first, and raises
+  `error.execution` where the bound refuses it; an assign to a length the encode derives is refused when the
+  procedure is generated, as the value holds no such element. A validator reads such a length as the encode
+  derives it, from the bytes it counts.
+

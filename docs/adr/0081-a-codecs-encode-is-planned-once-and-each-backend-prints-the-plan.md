@@ -1684,6 +1684,35 @@ old encode, the old encode and its templates are removed in the same landing.
    makes the value again by `Make{Codec}` over every field the codec declares, as the first landing has it; no
    document assigns to a codec with a byte string, a text or a derived length, and the rebuild that would hand a
    bounded value and leave the length out lands with the procedures that need it.
+
+   *The rebuild of a printed Go codec, 2026-11-16:* what a reader in another package knows of a printed codec is
+   one value, `go_source::GoPrinted`, which `ImportContext::go_printed` now holds in place of a flag: the elements
+   the value presents, in the order `Make{Codec}` takes them, and the lengths the encode derives. A procedure's
+   rebuild hands `Make{Codec}` the presented elements alone; an assigned byte string or text is first made into its
+   bounded value by `codec.MakeBytes` or `codec.MakeText` (`codec.MakeOptionalBytes` where a gate decides it),
+   whose refusal raises `error.execution` as a value past a bytes slot's cap does; an assign to a derived length is
+   refused when the procedure is generated (`InvalidLvalue`), since the value has no place for it. A validator or a
+   procedure reads a derived length of one byte string always there as the encode derives it, from the bytes it
+   counts. The runtime's `codec` package is imported where a file's text names it, read off the text by the render
+   door as the `optional` package is (`uses_forge_codec`). A read of a length of gated content, or of several
+   measures, outside the codec's package is not printed: no document reads one.
+
+   *The third Go landing, 2026-11-16:* an element a gate decides, on a flag of the codec's own carriers or on a
+   flag input the encode is handed, and a length the value states while its content is absent, each presented as
+   the runtime's `optional.Of` of what it holds; the flag the presence of one element says, and a length held in a
+   flag of a carrier, folded into a local of the carrier in place of the bits the value presents; a length several
+   byte strings and texts share, or that may not fit its field; and the refusals these bring (§4): a gate the
+   encode cannot derive holds the element it gates (`codec.ErrPresentIfMismatch`), measures that disagree
+   (`codec.ErrInconsistentSource`, added to the runtime), and a number past its field or flag
+   (`codec.ErrLengthOutOfRange`), each returned before the first byte, the runtime's sentinel unwrapped, so
+   `EncodeFailure::symbol` names it for Go. The printer writes exactly the refusals the totality names
+   (`Totality::assert_all_written`), as Python's does. The decode reads a gated byte string or text as the
+   optional slice or string it did and makes the bounded value by `codec.MakeOptionalBytes` or
+   `codec.MakeOptionalText`, so the bound is checked in one function of the runtime. A flag input the value does not
+   say is a parameter of `EncodeSource`, named as the decode's. A group, a body, a list, a variant, an input the
+   value says and a gate on a chain's entries stay unlowered. The Go harness runs a printed codec's `cases` with
+   `EncodeToBytes` answering an error where the codec states `sce:encode-may-fail`; its `sources` and `refused`
+   wait for the Go case printer.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
