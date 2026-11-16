@@ -13958,11 +13958,11 @@ fn render_codec(
     // docs/adr/0081 §3: the decode of a C11 value printed from its plan reads
     // each number the encode derives into a local, as the value holds no
     // member of it, and reads a length off that local.
-    let c11_derived = |id: &str| {
-        c11_printed
-            .as_ref()
-            .is_some_and(|(plan, _)| c11_source::derived_field(plan, id))
-    };
+    let c11_derived_numbers = c11_printed
+        .as_ref()
+        .map(|(plan, _)| c11_source::Derived::of(plan))
+        .unwrap_or_default();
+    let c11_derived = |id: &str| c11_derived_numbers.contains(id);
 
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
@@ -14856,14 +14856,7 @@ fn render_codec(
                             Language::Swift => no_swift_emitter("render_codec"),
                         };
                         let guard = if matches!(lang, Language::C11) {
-                            // A length the encode derives is read off the
-                            // decode's local of it.
-                            let derived_length = f
-                                .length_field
-                                .as_deref()
-                                .filter(|lf| dotted_length_field(lf).is_none() && c11_derived(lf))
-                                .map(|lf| c11_source::derived_local(&l, lf));
-                            c11_positional_bound_guard(f, &m.fields, indent, derived_length)
+                            c11_positional_bound_guard(f, &m.fields, indent, &c11_derived_numbers)
                         } else {
                             positional_bound_guard(f, &m.fields, lang, frame_len, indent)
                         };
@@ -14920,7 +14913,7 @@ fn render_codec(
                             // holds it, or off its own local where the encode
                             // derives it (docs/adr/0081 §3).
                             let decode_len = if c11_derived(lf) {
-                                c11_source::derived_local(&l, lf)
+                                c11_source::derived_local(lf)
                             } else {
                                 format!("out->{}", l.codec_field_id(lf))
                             };
@@ -15209,7 +15202,14 @@ fn render_codec(
             if needs_streaming_path {
                 obj.insert(
                     "present_if_decode_stmt".into(),
-                    present_if_streaming_decode_stmt(&l, f, &m.fields, m.default_endian).into(),
+                    present_if_streaming_decode_stmt(
+                        &l,
+                        f,
+                        &m.fields,
+                        m.default_endian,
+                        &c11_derived_numbers,
+                    )
+                    .into(),
                 );
                 if field_encode_blocks {
                     let mut encode_block =
@@ -22420,18 +22420,27 @@ fn codec_field_decode_local(id: &str, lang: crate::generator::Language) -> Strin
 /// `Some(&PresentIfPredicate)` for gated ones; the carrier's `flags`
 /// list is read off `fields` so the bit position resolves at codegen
 /// time into a literal mask (no runtime metadata).
+///
+/// `derived` names the numbers a C11 value holds no member of: the decode
+/// reads each into a local of its own and reads a length off it
+/// (docs/adr/0081 §3).
 fn present_if_streaming_decode_stmt(
     l: &LangCtx,
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
+    derived: &c11_source::Derived,
 ) -> String {
     let lang = l.lang;
     match &field.bit_size {
-        BitSize::Fixed { bits } => present_if_decode_fixed(l, field, fields, default_endian, *bits),
+        BitSize::Fixed { bits } => {
+            present_if_decode_fixed(l, field, fields, default_endian, *bits, derived)
+        }
         BitSize::Tail => present_if_decode_tail(field, fields, lang),
-        BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang),
-        BitSize::Vle { width_bits } => present_if_decode_vle(field, fields, lang, *width_bits),
+        BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang, derived),
+        BitSize::Vle { width_bits } => {
+            present_if_decode_vle(field, fields, lang, *width_bits, derived)
+        }
         // Repeat / TLV-chain / Embed fields are routed to their dedicated
         // streaming helpers by the template's per-field dispatch —
         // this helper is still called eagerly for every field in the
@@ -22529,6 +22538,7 @@ fn present_if_decode_fixed(
     fields: &[CodecField],
     default_endian: Endian,
     bits: u32,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     let lang = l.lang;
@@ -22697,13 +22707,27 @@ fn present_if_decode_fixed(
         // UB from reading an indeterminate value through the public
         // accessor). Each field's read lives in its own `{ ... }`
         // sub-block so `raw` doesn't leak across siblings.
+        // A number the encode derives is no member of the value
+        // (docs/adr/0081 §3): it is read into a local of its own, declared
+        // before the block so that a later field reads its length off it.
         (Language::C11, None) => {
-            let id_snake = filters::to_snake_case(id.to_string());
+            let (declare, target) = if derived.contains(&field.id) {
+                let local = c11_source::derived_local(&field.id);
+                (
+                    format!("{} {local};\n    ", l.type_name(&field.sce_type)),
+                    local,
+                )
+            } else {
+                (
+                    String::new(),
+                    format!("out->{}", filters::to_snake_case(id.to_string())),
+                )
+            };
             format!(
-                "{{\n        \
+                "{declare}{{\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     {conv8}out->{id_snake} = {body8};\n        \
+                     {conv8}{target} = {body8};\n        \
                      if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }}"
             )
@@ -23006,6 +23030,7 @@ fn present_if_decode_length_ref(
     field: &CodecField,
     fields: &[CodecField],
     lang: crate::generator::Language,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -23032,6 +23057,7 @@ fn present_if_decode_length_ref(
             sibling_gated,
             arith,
             lang,
+            derived,
         );
     }
     // Per-language sibling value expression (inside the gated if-branch
@@ -23050,6 +23076,7 @@ fn present_if_decode_length_ref(
         sibling_gated,
         lang,
         length_block_indent(lang, field.present_if.is_some()),
+        derived,
     );
     // C11's hold of the bytes in its array, asked only of C11: no other backend
     // holds the field in an array, and one with neither a bound nor a capacity
@@ -23252,6 +23279,7 @@ fn present_if_decode_string_length_ref(
     sibling_gated: bool,
     arith: i32,
     lang: crate::generator::Language,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -23266,6 +23294,7 @@ fn present_if_decode_string_length_ref(
         sibling_gated,
         lang,
         length_block_indent(lang, field.present_if.is_some()),
+        derived,
     );
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_string_length_ref"),
@@ -23582,12 +23611,14 @@ fn apply_arith_c11(base: &str, arith: i32) -> String {
 /// a host length and no `sce:length-arith`, which [`length_count_stmts`] applies
 /// once the value is known to lie within the field's bound. `sibling_gated`
 /// reads a gated sibling through the value it holds where it is present, which
-/// the payload's own gate proves.
+/// the payload's own gate proves. A C11 decode reads a sibling `derived` names
+/// off its own local, as the value holds no member of it (docs/adr/0081 §3).
 fn carried_length(
     len_field: &str,
     fields: &[CodecField],
     sibling_gated: bool,
     lang: crate::generator::Language,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     if let Some((c, f)) = dotted_length_field(len_field) {
@@ -23628,6 +23659,7 @@ fn carried_length(
             }
         }
         Language::Python => python_field_local(len_field),
+        Language::C11 if derived.contains(len_field) => c11_source::derived_local(len_field),
         Language::C11 => format!("out->{}", c11_length_sibling_member(len_field, fields)),
         Language::Swift => no_swift_emitter("carried_length"),
     }
@@ -23652,11 +23684,12 @@ fn length_count_stmts(
     sibling_gated: bool,
     lang: crate::generator::Language,
     indent: &str,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     use length_guard::{carried_held, Guard, Held};
     let guard = Guard::of(field, fields).expect("a length-ref field has a length bound");
-    let carried = carried_length(len_field, fields, sibling_gated, lang);
+    let carried = carried_length(len_field, fields, sibling_gated, lang, derived);
     let held = carried_held(len_field, fields, lang);
     let a = guard.arith();
     let fits = guard.fits_host();
@@ -24104,12 +24137,13 @@ fn c11_body_call(over: bool, call: &str, indent: &str) -> String {
 
 /// [`positional_bound_guard`] for C11, whose positional decode reads a
 /// `length-ref` field's length off the member of the struct it decodes into,
-/// in the member's own type, and a `tail`'s as `_n`, the bytes past its offset.
+/// in the member's own type, or off its own local where `derived` names it
+/// (docs/adr/0081 §3), and a `tail`'s as `_n`, the bytes past its offset.
 fn c11_positional_bound_guard(
     field: &CodecField,
     fields: &[CodecField],
     indent: &str,
-    derived_length: Option<String>,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     use length_guard::{carried_held, Guard, Held};
@@ -24117,10 +24151,8 @@ fn c11_positional_bound_guard(
         return String::new();
     };
     let (value, held) = match (&field.bit_size, field.length_field.as_deref()) {
-        // The decode's local of a length the encode derives (docs/adr/0081
-        // §3), of the field's own type, or the member that holds it.
         (BitSize::LengthRef, Some(name)) => (
-            derived_length.unwrap_or_else(|| carried_length(name, fields, false, Language::C11)),
+            carried_length(name, fields, false, Language::C11, derived),
             carried_held(name, fields, Language::C11),
         ),
         _ => ("_n".to_string(), Held::HostInt),
@@ -24237,6 +24269,7 @@ fn present_if_decode_vle(
     fields: &[CodecField],
     lang: crate::generator::Language,
     width_bits: u32,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -24271,6 +24304,11 @@ fn present_if_decode_vle(
         // stable across both call paths (the original has_vle_fields
         // branch emitted local + assign as two statements; here we
         // fuse them into one bound statement).
+        // A number the encode derives is no member of the value
+        // (docs/adr/0081 §3): the read's own local is all that holds it.
+        if matches!(lang, Language::C11) && derived.contains(&field.id) {
+            return vle_decode_stmt(&c11_source::derived_local(&field.id), width_bits, lang);
+        }
         if matches!(lang, Language::C11) {
             let inner = vle_decode_stmt(&local_id, width_bits, lang);
             return format!("{inner}\n    out->{local_id} = {local_id};");
