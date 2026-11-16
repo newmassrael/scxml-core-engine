@@ -1746,6 +1746,23 @@ old encode, the old encode and its templates are removed in the same landing.
    length is handed the carriers as the source presents them, before the encode folds a flag it derives into them,
    so a body whose length the encode derives and which is handed a flag the encode derives stays unlowered, with a
    body handed an input its parent binds nothing to.
+
+   *The fifth Go landing, 2026-11-16:* a list, and a chain that ends with its scope, of entries of a codec the Go
+   backend prints, held to no law and walked with no flag set on or handed to an entry, and the count of its
+   entries. The refinement of R2 is the runtime's `codec.List[B, E]` (`backends/go/forge-runtime/codec/list.go`): a
+   struct with an unexported field, made only by `codec.MakeList`, which refuses more entries than the bound's most
+   (`ErrTooManyElements`) and fewer than its least (`ErrLengthOutOfRange`), its entries read in order through
+   `All() iter.Seq[E]`, as §2 gives a Go list. `B` is the bound type the codec names for the element,
+   `{Codec}{Element}Bound`, as for a byte string, and `E` the entries' codec's source interface, as a body is
+   presented, so a list is made of any sources of its entries. The decode reads the entries as values and makes the
+   list of their addresses (`codec.SourcesOf`), refused as the runtime refuses it. The encode derives the count from
+   the list's `Len()` and writes each entry the sequence yields by its codec's `EncodeSource`; a list whose entries'
+   encode can refuse has each entry encoded over `codec.CountingSink` before the first byte. The zero value of a
+   `codec.List` holds no entry, since no entry of an interface type can be made for it; where the bound's least is
+   above zero, a value of the list is made by `codec.MakeList`. Range over a function is Go 1.23, so the forge
+   runtime's module, the modules the tests build generated Go in, and the Go setup of the forge-conformance and
+   mutation workflows move from 1.22 to 1.23. A chain that sets its entries' flag, hands an entry what the one before
+   it was, holds a bare entry's place or is held to a law (R6, R7, R8) stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

@@ -2668,3 +2668,24 @@ unchanged.
   codec presents it: a gated byte string as `codec.OptionalBytes(entry.Payload())`, a derived length by its
   `Wire{Field}()` method.
 
+## A printed Go codec holds a list to its bound as a codec.List and derives its count (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree and the Go round-trip tree are regenerated after them.
+They move the positional codecs that also hold a list, or a chain that ends with its scope, of entries of a codec
+the Go backend prints, held to no law, and the count of its entries (`codec_declared_bounds` and
+`codec_tlv_chain_basic` among them). A chain that sets its entries' flag or hands an entry what the one before it
+was, and a codec with a group, a variant or an input its value says, are unchanged.
+
+- The Go modules move to `go 1.23`: a list is read through `iter.Seq`, which a `for ... range` over a function
+  walks. A module that builds a generated Go codec declares `go 1.23` or later.
+- A list is a `codec.List[B, E]` (`backends/go/forge-runtime/codec/list.go`), where `B` is the bound type the
+  codec's package names for it, `{Codec}{Element}Bound`, and `E` is the entries' codec's source interface. Make one
+  with `codec.MakeList[pkg.FrameItemsBound](entries)`, which returns `codec.ErrTooManyElements` for more entries
+  than the bound's most and `codec.ErrLengthOutOfRange` for fewer than its least; a slice of values becomes their
+  sources by `codec.SourcesOf(values, func(e *item.Item) item.ItemSource { return e })`. Read the entries with
+  `for e := range frame.Items().All()` and their number with `frame.Items().Len()`: `frame.Items[i].Seq` is read
+  through the sequence, each entry by its methods.
+- The count of a list is no element: `&pkg.Frame{Count: 2, Items: xs}` is `pkg.MakeFrame(list)`, and the frame
+  carries `frame.WireCount()`.
+- An encode over a list whose entries' encode can refuse returns that refusal before its first byte.
+
