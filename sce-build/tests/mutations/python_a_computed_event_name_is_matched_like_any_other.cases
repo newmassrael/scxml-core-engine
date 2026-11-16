@@ -30,7 +30,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/a_computed_event_name_is_matched_like_any_other
-mutation_regen scripts/regen_a_computed_event_name_is_matched_like_any_other_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/scheduler.py tools/codegen/templates/python/actions/send.py.jinja2
 mutation_oracles backends/python/tests/integration/a_computed_event_name_is_matched_like_any_other/test_a_computed_event_name_is_matched_like_any_other_aot.py
 

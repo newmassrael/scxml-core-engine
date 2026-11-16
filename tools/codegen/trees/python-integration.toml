@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Python integration machines (ADR 0097): a package directory each under
+# backends/python/tests/integration, holding a document's machine and the
+# machines of the children it writes (`--children`), which its module imports
+# as siblings. The static datamodel's directory is a tree of its own. The
+# tests beside the machines and each package's marker are written by hand.
+#
+# Not committed: the modules are ignored by version control and written by
+# the lane that runs them (scripts/gates/w3c-python.sh).
+#
+# Regenerate with `scripts/materialize.sh python-integration`.
+
+[tree]
+name = "python-integration"
+roots = ["backends/python/tests/integration/*"]
+except = ["backends/python/tests/integration/static_datamodel"]
+committed = false
+
+# Every fixture of integration_resources: a directory holding the document of
+# its name. A document whose transitions compile to a function writes it as a
+# module of its own beside the machine (docs/SCE_TRANSITION_FUNCTION.md).
+[[generation]]
+each = { directories = "integration_resources/*", as = "stem", except = [
+    "a_host_names_its_origin_in_its_own_terms",
+    "an_event_no_processor_delivered_has_no_origin",
+] }
+arguments = ["generate", "integration_resources/{stem}/{stem}.scxml", "-l", "python", "-o", "{out}", "--children"]
+place = "backends/python/tests/integration/{stem}"
+keep = ["*_sm.py", "*_transition_function.py"]
+
+# Two stems are generated for a host that serves the `x-sce-host` processor or
+# invoker; their test drives that host, so the declaration is the build's and
+# stands here, beside the stems it applies to.
+[[generation]]
+arguments = [
+    "generate", "integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml",
+    "-l", "python", "-o", "{out}", "--children", "--host-invoker", "x-sce-host",
+]
+place = "backends/python/tests/integration/a_host_names_its_origin_in_its_own_terms"
+keep = ["*_sm.py"]
+
+[[generation]]
+arguments = [
+    "generate", "integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml",
+    "-l", "python", "-o", "{out}", "--children", "--host-processor", "x-sce-host",
+]
+place = "backends/python/tests/integration/an_event_no_processor_delivered_has_no_origin"
+keep = ["*_sm.py"]
+
+# The documents outside integration_resources. A stem there is a contract of
+# seven channels (C++ Interpreter, C++ AOT, Rust, Go, Python, Kotlin, C11)
+# that `integration_stem_registration` enforces, and each of these asks a
+# question of fewer engines:
+# - a_child_timer_is_a_deadline_of_its_parent asks a host's question, when
+#   the machine next needs a tick, which C11 and the C++ Interpreter do not
+#   expose;
+# - external_chain_is_bounded holds each engine to ARCHITECTURE.md
+#   "External-Event Budget", a driver at a time;
+# - parallel_region_root_external_domain, the external transition of a
+#   region root, has a driver on six of the seven channels.
+[[generation]]
+each = { list = [
+    "a_child_timer_is_a_deadline_of_its_parent",
+    "external_chain_is_bounded",
+    "parallel_region_root_external_domain",
+], as = "document" }
+arguments = ["generate", "tests/integration/{document}.scxml", "-l", "python", "-o", "{out}", "--children"]
+place = "backends/python/tests/integration/{document}"
+keep = ["*_sm.py"]
+
+# The AI supervision loop example, for a host serving `x-sce-host`. It is an
+# example, not a fixture: `ai_loop_channel_parity` holds every channel that
+# drives it to one scenario set.
+[[generation]]
+arguments = ["generate", "examples/ai_loop/ai_loop.scxml", "-l", "python", "-o", "{out}", "--children", "--host-processor", "x-sce-host"]
+place = "backends/python/tests/integration/ai_loop"
+keep = ["*_sm.py"]
+
+# A route that rests on a question its host answers, a machine of its own.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/route_rests_on_a_question/route_rests_on_a_question.scxml", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/route_rests_on_a_question"
+keep = ["*_sm.py"]
+
+# The `<sce:action>` native host dispatch: the machine declares a host
+# interface of its actions and runs no script engine, and its test drives a
+# host implementation of it.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/statechart_native_action.scxml", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/native_action"
+keep = ["*_sm.py"]
+
+# The EventSchema native lowering, three documents in one package: a typed
+# `_event.data` guard lowered to a comparison with no script engine.
+[[generation]]
+each = { list = ["statechart_minimal", "statechart_bytes", "statechart_lifted"], as = "document" }
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/{document}.scxml", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/event_schema_native"
+keep = ["*_sm.py"]
+
+# The host-served Event I/O Processor and its invoker, in one package, each
+# document declared with the host surfaces its test serves. The declaration is
+# the point: without `--host-processor` the same `<send>` compiles to
+# error.execution, with it to a dispatch into the registry the host fills.
+[[generation]]
+each = { list = [
+    "statechart_host_processor",
+    "statechart_delayed_host_send",
+    "statechart_static_literal_param",
+    "statechart_static_delayed_host_send",
+], as = "document" }
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "python", "-o", "{out}", "--host-processor", "x-sce-host"]
+place = "backends/python/tests/integration/host_processor"
+keep = ["*_sm.py"]
+
+[[generation]]
+each = { list = [
+    "statechart_host_invoker",
+    "statechart_static_host_invoke",
+    "statechart_host_invoker_optional",
+], as = "document" }
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "python", "-o", "{out}", "--host-invoker", "x-sce-host"]
+place = "backends/python/tests/integration/host_processor"
+keep = ["*_sm.py"]
+
+# The one document that needs both declarations.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml",
+    "-l", "python", "-o", "{out}", "--host-processor", "x-sce-host", "--host-invoker", "x-sce-host",
+]
+place = "backends/python/tests/integration/host_processor"
+keep = ["*_sm.py"]
+
+# No host declaration: the build names the Mesh request's type itself.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/host_processor"
+keep = ["*_sm.py"]

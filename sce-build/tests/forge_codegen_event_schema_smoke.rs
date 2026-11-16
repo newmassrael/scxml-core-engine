@@ -1825,7 +1825,7 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
 // `self._guard(engine, …)` script path. `py_compile` is the syntactic gate; the
 // substring assertions pin the lowering shape. The real run is the committed
 // integration gate `backends/python/tests/integration/event_schema_native`
-// (regen: scripts/regen_event_schema_native_python.sh).
+// (regen: scripts/materialize.sh python-integration).
 #[test]
 fn statechart_native_lowering_python_emits_engine_free_typed_guard() {
     let scratch = reset_scratch("python_statechart");

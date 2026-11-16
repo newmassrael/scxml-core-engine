@@ -75,19 +75,6 @@ edit("sce-build/src/bin/sce_codegen.rs",
     };""")
 PY
 
-mutation_case "generate-integration reverts to a bare exit for a missing script" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     """            cli_exit(CliError::ReadInput {
-                path: script.display().to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "no regen script for this stem",
-                ),
-            });""",
-     """            eprintln!("generate-integration: missing regen script");
-            std::process::exit(1);""")
-PY
-
 mutation_case "a flag stops requiring the companion it cannot work without" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
      '        #[arg(long, requires = "elf", value_parser = parse_pc_address)]',

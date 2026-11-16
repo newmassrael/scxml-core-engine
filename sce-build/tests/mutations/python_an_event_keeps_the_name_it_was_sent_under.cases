@@ -26,7 +26,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/an_event_keeps_the_name_it_was_sent_under/
-mutation_regen scripts/regen_an_event_keeps_the_name_it_was_sent_under_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/invoke.py
 mutation_oracles backends/python/tests/integration/an_event_keeps_the_name_it_was_sent_under/test_an_event_keeps_the_name_it_was_sent_under_aot.py
 

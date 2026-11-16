@@ -41,8 +41,15 @@ use sce_build::generator::Language;
 
 /// Lower bound on routes discovered. The menu is parsed by shape out of
 /// help text; a clap formatting change that stopped matching would empty
-/// the work list and every assertion below would pass vacuously.
-const MIN_ROUTES: usize = 7;
+/// the work list and every assertion below would pass vacuously. Six
+/// since `generate-integration` left with ADR 0097, every integration tree
+/// being declared and written by `materialize`.
+const MIN_ROUTES: usize = 6;
+
+/// Lower bound on the refusals that carry a candidate list: the backends
+/// the routes that restrict their menu refuse, `generate-w3c` one and
+/// `generate-conformance` two.
+const MIN_REFUSALS: usize = 3;
 
 /// Lower bound on (route, backend) pairs actually executed.
 const MIN_PROBES: usize = 40;
@@ -175,13 +182,6 @@ fn probe_args(subcommand: &str, language: &str) -> Option<Vec<String>> {
             "--list",
             "--registry",
             "__sce_no_such_registry__.json",
-        ],
-        "generate-integration" => vec![
-            "generate-integration",
-            "-l",
-            language,
-            "--stem",
-            "__sce_no_such_stem__",
         ],
         "generate-conformance" => vec![
             "generate-conformance",
@@ -424,9 +424,9 @@ fn refusal_candidates_are_the_route_menu() {
     }
 
     assert!(
-        checked >= MIN_ROUTES,
+        checked >= MIN_REFUSALS,
         "only {checked} refusals carried a candidate list, expected at least \
-         {MIN_ROUTES}"
+         {MIN_REFUSALS}"
     );
 }
 

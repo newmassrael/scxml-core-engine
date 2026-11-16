@@ -141,8 +141,8 @@ const CHANNELS: &[Channel] = &[
         engine: "Python AOT",
         driver: "backends/python/tests/integration/ai_loop/test_ai_loop_aot.py",
         scenario: r"def\s+test_(\w+)\s*\(",
-        generator: "scripts/regen_ai_loop_python.sh",
-        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+        generator: "tools/codegen/trees/python-integration.toml",
+        names_document: "[\"generate\", \"examples/ai_loop/ai_loop.scxml\", \"-l\", \"python\"",
     },
     Channel {
         engine: "C11 AOT",
@@ -155,7 +155,7 @@ const CHANNELS: &[Channel] = &[
         // This backend generates into the CMake build tree rather than into a
         // committed one, so its generator is the registration itself — the
         // same shape as the C++ channel above, and the reason neither has a
-        // `scripts/regen_ai_loop_*.sh`.
+        // tree manifest under `tools/codegen/trees`.
         generator: "backends/c/tests/CMakeLists.txt",
         names_document: "${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml",
     },

@@ -215,15 +215,15 @@ backends/swift/tests/Tests/W3cMachinesTests/*
 # (`scripts/regen_swift_feature_conformance.sh`); the tests that drive them are tracked.
 backends/swift/feature-conformance/Sources/
 
-# Python AOT integration trees: emitted by
-# `scripts/regen_donedata_local_invoke_python.sh` (and
-# `sce-codegen generate-integration -l python` in CI). Mirrors the W3C
+# Python AOT integration trees: a build output of the declared tree
+# tools/codegen/trees/python-integration.toml (`committed = false`,
+# `scripts/materialize.sh python-integration`). Mirrors the W3C
 # IRP Python pattern above — only `*_sm.py` is gitignored; the
 # hand-authored test wrappers (`test_*.py`) and `__init__.py` markers
 # under `backends/python/tests/integration/<stem>/` stay committed.
 backends/python/tests/integration/*/*_sm.py
 # The transition function a document declares (docs/SCE_TRANSITION_FUNCTION.md)
-# is a module of its own beside the machine's, emitted by the same regen script.
+# is a module of its own beside the machine's, written by the same tree.
 backends/python/tests/integration/*/*_transition_function.py
 backends/python/tests/integration/*/sce_sourcemap.json
 backends/python/tests/integration/*/__pycache__/

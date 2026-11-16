@@ -28,7 +28,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/host_processor/test_static_literal_param.py
-mutation_regen scripts/regen_host_processor_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2
 mutation_oracles backends/python/tests/integration/host_processor/test_static_literal_param.py sce-build/tests/fixtures/host_processor/statechart_static_literal_param.scxml
 

@@ -235,28 +235,14 @@ step_go_integration() {
 step_python_integration() {
     require_codegen
 
-    stage "Integration Python tree"
-    "$CODEGEN" generate-integration -l python
-
-    stage "EventSchema native-lowering Python tree"
-    scripts/regen_event_schema_native_python.sh
-
-    # Named here because the `generate-integration` fan-out enumerates
-    # `integration_resources/` stems and this input is an example.
-    stage "AI loop example Python tree"
-    scripts/regen_ai_loop_python.sh
-
-    # The Python modules are gitignored, like every other module in
-    # `backends/python/tests/integration/`, so they contribute no diff here. They
-    # are named anyway for the reason `regen_ai_loop_python.sh` is: this script is
+    # Both trees are declared (ADR 0097) and not committed
+    # (tools/codegen/trees/python-integration.toml, python-static-datamodel.toml),
+    # so they contribute no diff here. They are written anyway: this script is
     # the one place that says "regenerate everything", and a local tree whose
     # Python module is missing fails at import rather than at an assertion.
-    stage "Transition-domain witness Python tree"
-    scripts/regen_parallel_region_root_external_domain_python.sh
-    stage "Child-deadline document Python tree"
-    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
-    stage "External-event budget document Python tree"
-    scripts/regen_external_chain_is_bounded_python.sh
+    stage "Integration and static datamodel Python trees"
+    "$CODEGEN" materialize python-integration --into "$REPO_ROOT" --replace
+    "$CODEGEN" materialize python-static-datamodel --into "$REPO_ROOT" --replace
 }
 
 # ── swift-tests: the committed machines of backends/swift/tests ─────────

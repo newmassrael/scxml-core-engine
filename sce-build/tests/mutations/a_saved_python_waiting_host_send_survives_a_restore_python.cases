@@ -29,7 +29,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/host_processor/test_a_generated_machines_waiting_host_send_survives_a_restore.py
-mutation_regen scripts/regen_host_processor_python.sh
+mutation_regen scripts/materialize.sh python-integration
 mutation_runtime_targets backends/python/runtime/sce_runtime/saved_engine.py
 mutation_oracles backends/python/tests/integration/host_processor/test_a_generated_machines_waiting_host_send_survives_a_restore.py sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json
 

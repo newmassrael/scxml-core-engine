@@ -1853,10 +1853,8 @@ struct Cli {
     /// tree post-processed after generating (a formatter run in place)
     /// holds bytes the generator did not write, and cannot pass.
     /// Accepted by `generate`, `orchestrate`, `generate-w3c`,
-    /// `generate-conformance` and `diagram`. `generate-integration` refuses it, because
-    /// each of its stems is a shell pipeline writing through its own copy
-    /// and formatter, which this process cannot see; so do
-    /// `generate-w3c --clean` and `--list`, which generate nothing.
+    /// `generate-conformance` and `diagram`. `generate-w3c --clean` and
+    /// `--list` refuse it, since they generate nothing.
     #[arg(long, global = true)]
     assert_unchanged: bool,
 
@@ -2275,10 +2273,9 @@ struct GenerateArgs {
     /// driver file).
     ///
     /// Authoring workflows that stage the input file into a
-    /// temporary directory before generation (e.g.
-    /// `scripts/regen_static_datamodel_kotlin.sh`, which copies a
-    /// tracked fixture into `mktemp -d` so synth-invoke children
-    /// don't pollute the source tree) must point this back at
+    /// temporary directory before generation (a copy of a tracked
+    /// fixture in `mktemp -d`, so synth-invoke children don't
+    /// pollute the source tree) must point this back at
     /// the canonical input root, otherwise the embedded
     /// `source-hash` reflects the transient staging directory
     /// and `sce-codegen verify` cannot reproduce it from the
@@ -2947,52 +2944,6 @@ enum Commands {
     Orchestrate(Box<OrchestrateArgs>),
     /// Batch generate W3C test state machines and test classes
     GenerateW3c(Box<GenerateW3cArgs>),
-    /// Batch generate integration-fixture state machines for the backends
-    /// whose integration tree is not yet declared (Python / Swift) from
-    /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
-    ///
-    /// Parallel to `generate-w3c` but reads from
-    /// `integration_resources/` (separate §synth-6.2.6 input-root from W3C
-    /// `resources/`) and emits into each backend's integration tree:
-    ///   - Python:  `backends/python/tests/integration/<stem>/`              (.gitignored, CI regen)
-    ///   - Swift:   `backends/swift/tests/Sources/IntegrationMachines/`      (committed, one sweep)
-    ///
-    /// The Rust, Go and Kotlin trees are declared (ADR 0097) and written by
-    /// `materialize <language>-integration`.
-    ///
-    /// Swift is one sweep over every stem the backend lowers
-    /// (`scripts/regen_swift_integration.sh`), so `--stem` is refused for it.
-    ///
-    /// Python mirrors the W3C IRP pattern: `generate-w3c -l python`
-    /// is already `.gitignored` + CI-regenerated, and the integration
-    /// counterpart follows the same model.
-    ///
-    /// cpp and C11 are intentionally not supported — they emit at
-    /// CMake build time through `sce_generate_static_integration_test`
-    /// (see `cmake/SCEStaticIntegrationFixture.cmake`) without an
-    /// sce-codegen-driven regen pipeline.
-    GenerateIntegration {
-        #[arg(
-            short,
-            long,
-            help = LanguageRoute::GenerateIntegration.flag_summary("Target language"),
-            long_help = LanguageRoute::GenerateIntegration.flag_help("Target language"),
-        )]
-        language: String,
-        /// Single fixture stem to regenerate. When omitted, every
-        /// `integration_resources/<stem>/` directory is processed.
-        #[arg(long)]
-        stem: Option<String>,
-        /// Which language the generated machines hand their script engine,
-        /// for every stem this run regenerates.
-        ///
-        /// It reaches the per-stem scripts through `SCE_SCRIPT_ENGINE`, which
-        /// `scripts/lib/sce_codegen.sh` reads where every one of them already
-        /// asks for the binary — so the selection lives in ONE place instead
-        /// of in each script's own `generate` invocation.
-        #[arg(long, value_name = "LANG")]
-        script_engine: Option<String>,
-    },
     /// Read metadata.txt description field
     ReadMetadata {
         /// Path to metadata.txt
@@ -4593,16 +4544,6 @@ fn main() {
         Commands::Check(args) => cmd_check(*args, error_format),
         Commands::Orchestrate(args) => cmd_orchestrate(*args, error_format),
         Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
-        Commands::GenerateIntegration {
-            language,
-            stem,
-            script_engine,
-        } => cmd_generate_integration(
-            &language,
-            stem.as_deref(),
-            script_engine.as_deref(),
-            error_format,
-        ),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
         Commands::Requirements {
@@ -4978,12 +4919,6 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Deployment { .. }
         | Commands::Diagram { .. }
         | Commands::ExportTtcn3 { .. } => None,
-        Commands::GenerateIntegration { .. } => Some(
-            "--assert-unchanged cannot apply to generate-integration: each stem is a shell \
-             pipeline writing through its own copy and formatter, out of this process's \
-             sight — regenerate and compare instead (scripts/gate regen-reproduces)"
-                .to_string(),
-        ),
         Commands::Check(_)
         | Commands::ReadMetadata { .. }
         | Commands::Manifest { .. }
@@ -11735,8 +11670,8 @@ struct KotlinBackend {
 impl KotlinBackend {
     /// The module that holds the W3C suite and nothing else
     /// (`:sce-kotlin-w3c`, backends/kotlin/w3c/build.gradle.kts). The
-    /// integration machines are `:sce-kotlin-tests`'s, written by
-    /// `generate-integration` and the per-stem scripts; keeping the two
+    /// integration machines are `:sce-kotlin-tests`'s, written by the
+    /// `kotlin-integration` and `kotlin-static-datamodel` trees; keeping the two
     /// populations in separate modules is what keeps either one's compile
     /// from growing with the other's.
     const RELATIVE_ROOT: &'static str = "backends/kotlin/w3c";
@@ -14174,157 +14109,6 @@ fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat)
     out_stream(|w| {
         sce_build::unresolved_check::emit_unresolved_ndjson_under(&model, &house_rule_ids, w)
     });
-}
-
-// ── Subcommand: generate-integration ───────────────────────────
-
-/// Batch integration-fixture regeneration for the backends whose
-/// integration tree is still written by a script each (Python) or by one
-/// sweep (Swift). Parallel to `generate-w3c` but scoped to
-/// `integration_resources/<stem>/<stem>.scxml` fixtures.
-///
-/// Each `<stem>` is dispatched to the matching backend's regen script
-/// (`scripts/regen_<stem>_python.sh`); those scripts encode the per-language
-/// TMP staging + `--input-root` override + post-processing.
-///
-/// Rust, Go and Kotlin are not served: their integration trees are declared
-/// (`tools/codegen/trees/{rust,go,kotlin}-integration.toml`, ADR 0097) and
-/// written by `materialize`. Build-time backends (cpp / c11) are not
-/// served either — they emit at CMake time without a committed tree, so
-/// there is nothing for `generate-integration` to drive.
-fn cmd_generate_integration(
-    language: &str,
-    stem: Option<&str>,
-    script_engine: Option<&str>,
-    error_format: ErrorFormat,
-) {
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        error_format.emit_and_exit(
-            &CliError::UnknownLanguage {
-                lang: language.to_string(),
-                route: LanguageRoute::GenerateIntegration,
-            },
-            "",
-        )
-    });
-
-    // The refusal routes through `CliError` like every other language
-    // refusal rather than through a bare `eprintln!` + `exit(2)`: this
-    // one restated its own menu in prose, so `--error-format=json`
-    // received nothing structured for the one route whose restriction is
-    // real, and the sentence was a third copy of the set to keep current.
-    let script_suffix = match lang {
-        Language::Python => "_python",
-        // Swift is one sweep over every stem, not a script each: see
-        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.
-        Language::Swift => "",
-        Language::Rust | Language::Go | Language::Kotlin | Language::Cpp | Language::C11 => {
-            error_format.emit_and_exit(
-                &CliError::UnsupportedLanguage {
-                    lang: lang.canonical_name().to_string(),
-                    route: LanguageRoute::GenerateIntegration,
-                },
-                "",
-            )
-        }
-    };
-
-    let project_root = find_project_root();
-    let integration_root = project_root.join("integration_resources");
-
-    let stems: Vec<String> = match stem {
-        Some(s) => vec![s.to_string()],
-        None => {
-            let mut v = Vec::new();
-            let entries = std::fs::read_dir(&integration_root).unwrap_or_else(|e| {
-                cli_exit(CliError::ReadInput {
-                    path: integration_root.display().to_string(),
-                    source: e,
-                })
-            });
-            for entry in entries.flatten() {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    if let Some(name) = entry.file_name().to_str() {
-                        v.push(name.to_string());
-                    }
-                }
-            }
-            v.sort();
-            v
-        }
-    };
-
-    // The selection is judged once, here, by the resolver `generate` uses —
-    // not left to the first stem script's `generate` to refuse after the
-    // stems before it have already rewritten their trees.
-    if let Err(refusal) = resolve_script_engine_target(lang, script_engine) {
-        error_format.emit_and_exit(&refusal, "");
-    }
-
-    // Swift writes every stem in one sweep, which decides for itself which stems the backend
-    // lowers, so a single stem cannot be asked of it: the sweep would regenerate them all and
-    // report success for the one that was asked about.
-    if lang == Language::Swift && stem.is_some() {
-        cli_exit(CliError::ScxmlGenerate {
-            stage: "generate-integration",
-            detail: "--stem is not honoured for swift: its channel is one sweep over every stem \
-                     (scripts/regen_swift_integration.sh), and a run that accepted the flag \
-                     would rewrite them all"
-                .to_string(),
-        });
-    }
-    let scripts: Vec<std::path::PathBuf> = if lang == Language::Swift {
-        vec![project_root.join("scripts/regen_swift_integration.sh")]
-    } else {
-        stems
-            .iter()
-            .map(|stem| project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh")))
-            .collect()
-    };
-
-    for script in &scripts {
-        if !script.exists() {
-            cli_exit(CliError::ReadInput {
-                path: script.display().to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "no regen script for this stem",
-                ),
-            });
-        }
-        let mut command = std::process::Command::new("bash");
-        command.arg(script).current_dir(&project_root);
-        // The selection reaches the stem script as environment rather than as
-        // an argument, and that is the point rather than a shortcut: the
-        // script decides its own `generate` command line. `SCE_SCRIPT_ENGINE`
-        // is read once, by the codegen locator every one of them already
-        // sources.
-        if let Some(engine) = script_engine {
-            command.env("SCE_SCRIPT_ENGINE", engine);
-            // ⚠ And WHICH backend it applies to, because a stem script may emit
-            // several from one file: `regen_native_action.sh` wrote the Rust,
-            // Go and Kotlin trees until 2026-11-07, and Rust has no arm that
-            // emits ECMAScript. Without this scope the selection reached all
-            // three and the generator refused the first one it did not fit.
-            command.env("SCE_SCRIPT_ENGINE_FOR", lang.canonical_name());
-        }
-        let status = command.status().unwrap_or_else(|e| {
-            cli_exit(CliError::ReadInput {
-                path: script.display().to_string(),
-                source: e,
-            })
-        });
-        if !status.success() {
-            cli_exit(CliError::ScxmlGenerate {
-                stage: "generate-integration",
-                detail: format!(
-                    "{} failed (exit {})",
-                    script.display(),
-                    status.code().unwrap_or(-1)
-                ),
-            });
-        }
-    }
 }
 
 // ── Subcommand: generate-conformance ───────────────────────────

@@ -327,9 +327,8 @@ file. Pass exactly the arguments and environment that produced the tree:
 the check is whether *this* invocation would change anything. It is the
 gate to use when you commit generated output. Because it compares content,
 it catches a hand edit to a generated file, a changed template and a changed
-generator, as well as changed inputs. `generate-integration`, whose stems
-are shell pipelines outside the process, refuses the flag, and so do
-`generate-w3c --clean` and `--list`, which generate nothing.
+generator, as well as changed inputs. `generate-w3c --clean` and `--list`,
+which generate nothing, refuse the flag.
 
 The run is the whole generation, only held in memory: a file it writes and
 then reads back — the Rust suite extends each test's `mod.rs` that way —

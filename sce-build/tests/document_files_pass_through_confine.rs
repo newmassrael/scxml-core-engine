@@ -226,7 +226,6 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("find_project_root", 3),
             ("read_metadata", 2),
             ("find_scxml", 1),
-            ("cmd_generate_integration", 3),
             ("validates", 1),
         ],
     ),
