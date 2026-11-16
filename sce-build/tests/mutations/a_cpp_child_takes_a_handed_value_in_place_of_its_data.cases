@@ -10,10 +10,12 @@
 # read it, and one with an effect had it. The parent filtered the names by the
 # child's datamodel, a second copy of a rule the child owns. Each case below
 # puts back one piece of an order the decision rules out, and names the
-# assertion that must go red. The oracle is
-# tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml,
+# assertion that must go red. The oracle is the canonical fixture,
+# integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/,
 # run by its AOT driver for the template cases and by its Interpreter driver
-# for the engine cases. The Interpreter's parent filtered the same way, and
+# for the engine cases; its parent keeps each value a child reported (the
+# `*_seen` variables named below) and judges it, so a value found wrong is a
+# verdict `<final>` other than the one the test asserts. The Interpreter's parent filtered the same way, and
 # its child skipped any <data> a variable of that name already stood for in
 # the session, whatever its depth.
 #
@@ -26,7 +28,7 @@
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
 mutation_targets tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/invoke_methods.jinja2 sce/src/runtime/DataModelInitializer.cpp sce/src/runtime/StateMachine.cpp sce/src/runtime/InvokeExecutor.cpp
-mutation_oracles tests/integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp tests/integration/AChildTakesAHandedValueInPlaceOfItsDataTest.cpp tests/integration/AHandedValueRefusingEngine.h tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml
+mutation_oracles tests/integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp tests/integration/AChildTakesAHandedValueInPlaceOfItsDataTest.cpp tests/integration/AHandedValueRefusingEngine.h integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
 
 # ── The own value is evaluated, then overwritten ────────────────────
 #
@@ -87,8 +89,8 @@ PY
 #
 # The shape of a child that seeds any variable its session holds: the state
 # <data> declared at the start under early binding is overwritten too.
-# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `local_seen ===
-# 'own local'` finds the handed value.
+# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `kept_seen ===
+# 'own kept'` finds the handed value.
 
 mutation_case "the cpp aot child seeds a state's data" <<'PY'
 edit("tools/codegen/templates/scriptengine_helpers.jinja2",
@@ -175,7 +177,7 @@ PY
 # ── Interpreter: a state's <data> takes a handed value ─────────────
 #
 # Killer: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
-# whose `local_seen === 'own local'` finds the handed value.
+# whose `kept_seen === 'own kept'` finds the handed value.
 
 mutation_case "the interpreter child seeds a state's data" <<'PY'
 edit("sce/src/runtime/DataModelInitializer.cpp",

@@ -7,21 +7,20 @@ initial value of the child's top-level ``<data>`` of that name, in place of the
 The parent hands every name it evaluated; the child's start decides which it
 takes, from the ids of its own top-level ``<data>``, and declares each of those
 with the handed value without evaluating the ``<data>``'s ``expr``. State-local
-``<data>`` takes no handed value, and a name that is the id of no top-level
-``<data>`` is not added. The start's order is the top-level ``<data>`` (seeded),
-the early-bound state ``<data>``, the top-level ``<script>``, then the initial
-entry.
+``<data>``, early- or late-bound, takes no handed value, and a name that is the
+id of no top-level ``<data>`` is not added. The start's order is the top-level
+``<data>`` (seeded), the early-bound state ``<data>``, the top-level
+``<script>``, then the initial entry.
 
-Each region of the document's ``<parallel>`` invokes one child and lands in a
-``<final>`` named for what the child saw, so each test below reads one region.
-The document's header comment says what each child asks.
+The parent judges what each child reported and lands a failure in a
+``<final>`` named for the sentence that broke; the fixture's header comment
+says what each phase asks.
 
-Fixture: ``a_child_takes_a_handed_value_in_place_of_its_data.scxml``, beside
-this file. It is not under ``integration_resources/``: the canonical fixture of
-docs/adr/0098 lands there once every channel meets the rule.
+Fixture: ``integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml``.
 
-Regeneration (after a template or document edit):
-  ``scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh``
+Regeneration (after fixture or template edit):
+  ``scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh`` (local)
+  ``sce-codegen generate-integration -l python --stem a_child_takes_a_handed_value_in_place_of_its_data`` (CI)
 """
 from __future__ import annotations
 
@@ -37,117 +36,72 @@ sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 import a_child_takes_a_handed_value_in_place_of_its_data_sm as _sm  # noqa: E402 — path inserted above
 from sce_runtime import LuaScriptEngine, ScriptError, ScriptValue  # noqa: E402
 
-#: The regions of `cases`, one child each.
-_REGIONS = ("failing", "effect", "local", "strayCase", "namelistCase", "whole", "ordered")
+#: What reaching each verdict `<final>` says broke.
+_WHY = {
+    "failOwnValueRan": (
+        "the own `expr` of `effectful`, which pushes onto `effects`, was "
+        "evaluated although a value was handed in its place"
+    ),
+    "failHandedValueLost": "a top-level `<data>` kept its own value: the handed one did not arrive",
+    "failStateDataTookTheValue": (
+        "the early-bound `<data id='kept'>` of the child's state took the value "
+        "handed under its name; only a top-level `<data>` takes one"
+    ),
+    "failUnmatchedNameAdded": "`stranger`, which no `<data>` of the child declares, became a variable",
+    "failObjectNotWhole": "an object handed by `<param>` or `namelist` lost part of its structure",
+    "failChildSharedTheParentsObject": (
+        "the child's write into the object it was handed reached the parent's "
+        "`record`: the child was given the parent's object, not a copy"
+    ),
+    "failScriptReadItsOwnValue": "the child's top-level `<script>` ran before the handed values were declared",
+    "failEntryReadItsOwnValue": "the child's initial `<onentry>` ran before the handed values were declared",
+    "failChildRaised": (
+        "the child saw error.execution: the own `expr` of `raising` "
+        "(`undefined.invalidProperty`) was evaluated, or a handed value could not be held"
+    ),
+    "failNamelistOwnValueRaised": (
+        "the own `expr` of `listed`, handed by `namelist`, was evaluated and raised"
+    ),
+    "failNamelistValueLost": "the value `namelist` handed for `listed` did not arrive",
+    "failNamelistNameAdded": "the `namelist` name `stray`, which the child does not declare, became a variable",
+    "failLateStateDataTookTheValue": (
+        "a late-bound state `<data>` took the value handed under its name when its state was entered"
+    ),
+    "failParentRaised": "the parent raised error.execution while it evaluated what it hands",
+}
+
+#: Where a run that never reached a `<final>` stood, and what that says.
+_STRANDED = {
+    "byParam": "the child handed `<param>`s never reported",
+    "byNamelist": "the child handed `namelist` values never reported",
+    "lateBound": "the late-bound child never reported",
+    "firstMacrostep": (
+        "the child's first macrostep read its own value of `handed`, not the "
+        "handed one, and it stands in `missed`"
+    ),
+}
 
 #: The id the parent is started under in the test that reads its session.
 _ROOT = "root"
 
 
-def _settled():
-    """The parent, started and run until every region has reached a `<final>`
-    (or 200 ms of its clock have passed, which no child here needs)."""
+def test_a_child_takes_a_handed_value_in_place_of_its_data_aot() -> None:
     engine = _sm.create_engine()
     engine.initialize()
+
     elapsed = 0
-    while not _every_region_ended(engine) and elapsed < 200:
+    while not engine.reached_final and elapsed < 200:
         engine.advance_time(10)
         elapsed += 10
-    return engine
 
-
-def _every_region_ended(engine) -> bool:
-    policy = engine.policy
-    return all(
-        engine.is_in_final_state(policy.get_state_from_name(region)) for region in _REGIONS
+    assert engine.reached_final, (
+        "a_child_takes_a_handed_value_in_place_of_its_data did not reach a "
+        f"top-level <final> within 200 ms; last leaf={engine.current_state}: "
+        f"{_STRANDED.get(str(engine.current_state), 'no phase names this state')}"
     )
-
-
-def _where(engine, region: str) -> str:
-    """The name of the active child of `region`: the `<final>` its child's
-    report sent it to, or its running state when no report arrived."""
-    policy = engine.policy
-    region_state = policy.get_state_from_name(region)
-    assert region_state is not None, f"the document declares no region {region!r}"
-    for state in engine.active_configuration():
-        if policy.get_parent(state) == region_state:
-            return policy.get_state_name(state)
-    return "<no active child>"
-
-
-def test_a_handed_value_takes_the_place_of_data_whose_own_value_would_fail() -> None:
-    engine = _settled()
-    where = _where(engine, "failing")
-    assert where == "failingHanded", (
-        f"the `failing` region ended in {where!r}. `failingRaised` means the child "
-        "evaluated `fragile`'s own `expr` (`nothing.deep`) although the parent "
-        "handed `fragile` a value, and raised its `error.execution`: §scxml-6.4 "
-        "says the value specified in the `<data>` is ignored. `failingLost` means "
-        "the handed value did not arrive"
-    )
-
-
-def test_a_handed_value_takes_the_place_of_data_whose_own_value_has_an_effect() -> None:
-    engine = _settled()
-    where = _where(engine, "effect")
-    assert where == "effectAbsent", (
-        f"the `effect` region ended in {where!r}. `effectRan` means the child "
-        "evaluated `effectful`'s own `expr`, which assigns `effects`, although "
-        "the parent handed `effectful` a value. `effectLost` means the handed "
-        "value did not arrive"
-    )
-
-
-def test_a_state_local_data_keeps_its_own_value_under_a_handed_name() -> None:
-    engine = _settled()
-    where = _where(engine, "local")
-    assert where == "localOwn", (
-        f"the `local` region ended in {where!r}: the child's state-local "
-        "`localName` took the value the parent handed under that name, where only "
-        "a top-level `<data>` is seeded"
-    )
-
-
-def test_a_handed_param_naming_no_top_level_data_is_not_added() -> None:
-    engine = _settled()
-    where = _where(engine, "strayCase")
-    assert where == "strayAbsent", (
-        f"the `strayCase` region ended in {where!r}. `strayLeaked` means the "
-        "`<param name='nowhere'>` the child declares no `<data>` for became a "
-        "variable of the child. `strayLost` means `declared`, which it does "
-        "declare, did not take the handed value"
-    )
-
-
-def test_a_handed_namelist_value_is_taken_whole_and_an_undeclared_one_is_not_added() -> None:
-    engine = _settled()
-    where = _where(engine, "namelistCase")
-    assert where == "namelistTaken", (
-        f"the `namelistCase` region ended in {where!r}. `namelistLeaked` means "
-        "the namelist's `stray`, which the child declares no `<data>` for, became "
-        "a variable of the child. `namelistLost` means `record` did not arrive as "
-        "the parent's object"
-    )
-
-
-def test_an_object_handed_value_arrives_whole() -> None:
-    engine = _settled()
-    where = _where(engine, "whole")
-    assert where == "wholeArrived", (
-        f"the `whole` region ended in {where!r}: the object the parent handed as "
-        "`handedRecord` did not arrive with its array and its nested object as "
-        "the parent evaluated them"
-    )
-
-
-def test_the_top_level_script_and_the_initial_onentry_read_the_handed_value() -> None:
-    engine = _settled()
-    where = _where(engine, "ordered")
-    assert where == "orderedInPlace", (
-        f"the `ordered` region ended in {where!r}: the child's top-level "
-        "`<script>` or its initial `<onentry>` read `greeting` before the handed "
-        "value was in place. The handed value is the `<data>`'s initial value, so "
-        "it is there before either runs"
+    actual = str(engine.terminal_state)
+    assert actual == "pass", (
+        f"reached <final id={actual!r}>: {_WHY.get(actual, 'unknown verdict state')}"
     )
 
 
@@ -159,13 +113,13 @@ def test_a_start_takes_the_values_handed_to_it_once() -> None:
     engine = _sm.create_engine(script_engine=lua, session_id=_ROOT)
     engine.policy.hand_values(
         {
-            "stray": ScriptValue.of("handed"),
+            "listed": ScriptValue.of("given by the test"),
             "undeclaredName": ScriptValue.of("leaked"),
         }
     )
     engine.initialize()
-    assert lua.evaluate_expression(_ROOT, "stray").string_val == "handed", (
-        "the top-level `<data id='stray'>` did not take the value handed under its id"
+    assert lua.evaluate_expression(_ROOT, "listed").string_val == "given by the test", (
+        "the top-level `<data id='listed'>` did not take the value handed under its id"
     )
     with pytest.raises(ScriptError):
         # A name that is the id of no top-level `<data>` is not added, so it
@@ -174,7 +128,7 @@ def test_a_start_takes_the_values_handed_to_it_once() -> None:
 
     engine.stop()
     engine.initialize()
-    assert lua.evaluate_expression(_ROOT, "stray").string_val == "stray", (
+    assert lua.evaluate_expression(_ROOT, "listed").string_val == "handed listed", (
         "a second start of the same policy took the values the first start was "
         "handed; a start consumes what it is handed"
     )

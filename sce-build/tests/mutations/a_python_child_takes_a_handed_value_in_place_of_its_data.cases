@@ -9,8 +9,11 @@
 # parent handed, and the parent used to drop at generation the names it knew
 # the child did not declare. Each case below puts back one piece of that shape,
 # or one step further from the rule, and names the test that must go red. The
-# oracle is a document whose `<parallel>` runs one child per question, each
-# landing its region in a `<final>` named for what the child saw.
+# oracle is the canonical fixture,
+# integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/,
+# whose parent judges what each child reported and lands in a `<final>` named
+# for the first check that failed; `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`
+# asserts `pass`, and the verdict each mutant reaches is named below.
 #
 # The Python machines are generated and gitignored, so the regeneration runs
 # after each case and is what carries a mutated template into the tests. The
@@ -28,10 +31,8 @@ mutation_oracles backends/python/tests/integration/a_child_takes_a_handed_value_
 #
 # The shape every backend but one had: every top-level `<data>` is evaluated,
 # and a handed value overwrites it afterwards.
-# Killers: `test_a_handed_value_takes_the_place_of_data_whose_own_value_would_fail`
-# (the child raises `error.execution` for `nothing.deep`) and
-# `test_a_handed_value_takes_the_place_of_data_whose_own_value_has_an_effect`
-# (`effects` is assigned).
+# Killer: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`
+# (`effectful`'s own `expr` pushes onto `effects`: `failOwnValueRan`).
 
 mutation_case "a seeded top-level data evaluates its own value first" <<'PY'
 edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
@@ -62,8 +63,8 @@ PY
 # The own value is still not evaluated, but the handed one is declared only
 # once the top-level `<script>` has run, so the script reads a `<data>` that is
 # not there yet.
-# Killer: `test_the_top_level_script_and_the_initial_onentry_read_the_handed_value`,
-# whose child's script saw no `greeting`.
+# Killer: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`, whose
+# child's script reads no `raising` (`failScriptReadItsOwnValue`).
 
 mutation_case "a handed value is declared after the top-level script" <<'PY'
 edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
@@ -97,8 +98,8 @@ PY
 #
 # The early-bound state `<data>` is seeded too, as the Go and Kotlin children
 # did by asking whether the session holds the variable.
-# Killer: `test_a_state_local_data_keeps_its_own_value_under_a_handed_name`,
-# whose child's `localName` holds the parent's value.
+# Killer: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`, whose
+# child's `kept` holds the parent's value (`failStateDataTookTheValue`).
 
 mutation_case "an early-bound state-local data takes a handed value" <<'PY'
 edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
@@ -123,10 +124,10 @@ PY
 #
 # The parent no longer filters, so a child that takes every name adds the ones
 # it never declared.
-# Killers: `test_a_handed_param_naming_no_top_level_data_is_not_added`,
-# `test_a_handed_namelist_value_is_taken_whole_and_an_undeclared_one_is_not_added`
-# and `test_a_start_takes_the_values_handed_to_it_once`, whose
-# `undeclaredName` reads.
+# Killers: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`
+# (`stranger` becomes a variable: `failUnmatchedNameAdded`) and
+# `test_a_start_takes_the_values_handed_to_it_once`, whose `undeclaredName`
+# reads.
 
 mutation_case "the child adds a handed name it does not declare" <<'PY'
 edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
@@ -143,7 +144,7 @@ PY
 # ── A start does not consume what it was handed ──────────────────────
 #
 # Killer: `test_a_start_takes_the_values_handed_to_it_once`, whose second
-# start finds `stray` still holding the value the first start was handed.
+# start finds `listed` still holding the value the first start was handed.
 
 mutation_case "a second start takes the values the first was handed" <<'PY'
 edit("backends/python/runtime/sce_runtime/policy.py",
@@ -158,10 +159,9 @@ PY
 
 # ── The parent hands nothing ─────────────────────────────────────────
 #
-# Killers: every case whose child expects a value: `failing` lands in
-# `failingLost`, `effect` in `effectLost`, `strayCase` in `strayLost`,
-# `namelistCase` in `namelistLost`, `whole` in `wholeBroken` and `ordered` in
-# `orderedLate`.
+# Killer: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`: every
+# child takes its own values, so `effectful`'s own `expr` runs
+# (`failOwnValueRan`).
 
 mutation_case "the parent hands its child nothing" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
@@ -173,8 +173,9 @@ PY
 
 # ── The parent drops a namelist value ────────────────────────────────
 #
-# Killer: `test_a_handed_namelist_value_is_taken_whole_and_an_undeclared_one_is_not_added`,
-# whose child's `record` keeps its own `null`.
+# Killer: `test_a_child_takes_a_handed_value_in_place_of_its_data_aot`, whose
+# namelist child evaluates `listed`'s own `expr`, which raises
+# (`failNamelistOwnValueRaised`).
 
 mutation_case "the parent evaluates a namelist name and hands nothing" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",

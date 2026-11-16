@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  docs/adr/0098, §scxml-6.4 with §scxml-5.3: a value an invoke hands its child
+  is the initial value of the child's top-level <data> whose id it names, and a
+  value the child's session cannot hold is that <data>'s initialization error.
+
+  A document of the C11 channel alone, beside its C test: the C11 child copies
+  a handed value from its parent's Lua state into its own, and the copy is
+  bounded (`SCE_MAX_HANDED_VALUE_DEPTH`, `SCE_MAX_HANDED_VALUE_ENTRIES`,
+  sce/script_session.h), which no other channel has. The C test's target sets
+  the bounds to 4 and 8 (backends/c/tests/CMakeLists.txt) so small values pass
+  them. What every channel holds of docs/adr/0098 is the canonical fixture,
+  integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/.
+
+    unheld   `tooDeep` nests five objects past the bound of four, and
+             `tooMany` holds nine entries past the bound of eight. Each raises
+             error.execution in the child and is left undefined, its own value
+             not tried, and `within`, handed beside them, still arrives.
+
+  The phase lands its failure in a <final> of its own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="unheld"
+       name="a_handed_value_past_its_bounds_is_its_datas_error">
+    <datamodel>
+        <data id="deep" expr="({a: {b: {c: {d: {e: 1}}}}})"/>
+        <data id="many" expr="[1, 2, 3, 4, 5, 6, 7, 8, 9]"/>
+    </datamodel>
+
+    <state id="unheld">
+        <invoke type="scxml" id="inv_unheld">
+            <param name="tooDeep" expr="deep"/>
+            <param name="tooMany" expr="many"/>
+            <param name="within" expr="'fits'"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="count">
+                    <datamodel>
+                        <data id="raised" expr="0"/>
+                        <data id="tooDeep" expr="'own'"/>
+                        <data id="tooMany" expr="'own'"/>
+                        <data id="within" expr="'own'"/>
+                    </datamodel>
+                    <state id="count">
+                        <onentry>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="error.execution">
+                            <assign location="raised" expr="raised + 1"/>
+                        </transition>
+                        <transition event="report" cond="raised !== 2" target="done">
+                            <send target="#_parent" event="seed.unraised"/>
+                        </transition>
+                        <transition event="report"
+                                    cond="typeof tooDeep !== 'undefined' || typeof tooMany !== 'undefined'"
+                                    target="done">
+                            <send target="#_parent" event="seed.held"/>
+                        </transition>
+                        <transition event="report" cond="within !== 'fits'" target="done">
+                            <send target="#_parent" event="seed.missing"/>
+                        </transition>
+                        <transition event="report" target="done">
+                            <send target="#_parent" event="seed.ok"/>
+                        </transition>
+                    </state>
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="seed.ok" target="pass"/>
+        <transition event="seed.unraised" target="failUnheldValueRaisedNothing"/>
+        <transition event="seed.held" target="failValuePastItsBoundHeld"/>
+        <transition event="seed.missing" target="failHandedValueLost"/>
+        <transition event="error.execution" target="failParentRaised"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failUnheldValueRaisedNothing"/>
+    <final id="failValuePastItsBoundHeld"/>
+    <final id="failHandedValueLost"/>
+    <final id="failParentRaised"/>
+</scxml>

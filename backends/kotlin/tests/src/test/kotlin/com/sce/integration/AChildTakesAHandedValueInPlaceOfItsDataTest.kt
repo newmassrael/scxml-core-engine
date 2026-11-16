@@ -5,12 +5,18 @@
 // its child is the initial value of the child's top-level `<data>` of that id,
 // declared in place of the `<data>`'s own, which is then not evaluated.
 //
-// The child reports what it saw to its parent, which keeps each report in a
-// variable of its own; the test reads them through the parent's typed readers.
-// The fixture's own comment says what each `<data>` of the child is for.
+// Each child reports what it saw to its parent, which keeps each report in a
+// variable of its own and judges it, landing a failure in a `<final>` named for
+// the sentence that broke; the test reads the verdict, and the kept values
+// through the parent's typed readers. The fixture's own comment says what each
+// `<data>` of each child is for.
 //
-// The second case runs the same machines over an engine that refuses to hold
-// one handed value: the session that cannot hold it raises error.execution for
+// The fixture is run on every engine whatever the suite selected: QuickJS
+// hands back a handle to an object it keeps, and Rhino the object itself, so
+// both are always among the engines that hand a child an object.
+//
+// One case runs the same machines over an engine that refuses to hold one
+// handed value: the session that cannot hold it raises error.execution for
 // that `<data>`, as for an expression of its own that failed, and does not take
 // the `<data>`'s own value instead.
 //
@@ -19,10 +25,10 @@
 // runs a hand-written machine, since the fixture's child is not the test's to
 // start twice.
 //
-// Fixture: backends/kotlin/tests/fixtures/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
+// Fixture: integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 
@@ -43,22 +49,37 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/** The value the parent hands its child under `refused`, which [RefusesOneHandedValue] will not hold. */
-private const val UNHOLDABLE = "unholdable"
+/** The value the parent hands its child under `refusable`, which [RefusesOneHandedValue] will not hold. */
+private const val UNHOLDABLE = "handed refusable"
+
+/** What reaching each verdict `<final>` of the fixture says broke. */
+private const val VERDICTS =
+    "FailOwnValueRan / FailChildRaised: the own expression of a `<data>` whose value was handed " +
+        "was evaluated. FailHandedValueLost / FailNamelistValueLost / FailNamelistOwnValueRaised: " +
+        "a handed value did not take its `<data>`'s place. FailStateDataTookTheValue / " +
+        "FailLateStateDataTookTheValue: a state's `<data>`, early- or late-bound, took a handed " +
+        "value. FailUnmatchedNameAdded / FailNamelistNameAdded: a name no top-level `<data>` " +
+        "declares became a variable. FailObjectNotWhole: an object lost its structure. " +
+        "FailChildSharedTheParentsObject: the child was handed the parent's object, not a copy. " +
+        "FailScriptReadItsOwnValue / FailEntryReadItsOwnValue: the top-level `<script>` or the " +
+        "initial `<onentry>` ran before the values were declared. FailParentRaised: the parent " +
+        "could not evaluate what it hands. null: a child never reported, or the child of " +
+        "`firstMacrostep` read its own value in its first macrostep."
 
 /**
  * The engine the suite runs on, refusing to hold one value: [UNHOLDABLE]
- * written to `refused`, as a session refuses a value it cannot hold. Any other
- * value written there, the `<data>`'s own `'own'` included, is held, so a start
- * that fell back to the `<data>`'s own value would be seen. The members it does
- * not name are the engine's own; the `ScriptSource` entry points are not
- * overridden (`ScriptLanguageSeamTest.theLanguageContractIsNotAnEngineDetail`).
+ * written to `refusable`, as a session refuses a value it cannot hold. Any
+ * other value written there, the `<data>`'s own `'own refusable'` included, is
+ * held, so a start that fell back to the `<data>`'s own value would be seen.
+ * The members it does not name are the engine's own; the `ScriptSource` entry
+ * points are not overridden
+ * (`ScriptLanguageSeamTest.theLanguageContractIsNotAnEngineDetail`).
  */
 private class RefusesOneHandedValue(
     private val engine: ScxmlScriptEngine = W3CTestBase.createEngine(),
 ) : ScxmlScriptEngine by engine {
     override fun setVariable(sessionId: String, name: String, value: Any?) {
-        if (name == "refused" && value == UNHOLDABLE) {
+        if (name == "refusable" && value == UNHOLDABLE) {
             throw ScriptEngineException("the double holds no '$name' of '$value'")
         }
         engine.setVariable(sessionId, name, value)
@@ -110,8 +131,8 @@ private class SeedMachine(engine: ScxmlScriptEngine) : StateMachineEngine<SeedSt
     }
 }
 
-/** Run the fixture's parent over [engine] until its child has reported, and hand it to [check]. */
-private fun reported(
+/** Run the fixture's parent over [engine] until it ends, and hand it to [check]. */
+private fun ended(
     engine: ScxmlScriptEngine,
     check: (AChildTakesAHandedValueInPlaceOfItsDataStateMachine) -> Unit,
 ) {
@@ -119,12 +140,6 @@ private fun reported(
     try {
         sm.initializeOnVirtualTime()
         sm.driveOnVirtualTime(3000L)
-        assertEquals(
-            AChildTakesAHandedValueInPlaceOfItsDataState.Reported,
-            sm.terminalState,
-            "the parent ends when its child reports, and its child reports once its " +
-                "start has run: a parent left in `invoking` was told nothing",
-        )
         check(sm)
     } finally {
         sm.cleanup()
@@ -136,59 +151,11 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
 
     @Test
     fun `a handed value is declared in place of the data's own, which is not evaluated`() {
-        reported(W3CTestBase.createEngine()) { sm ->
+        ended(W3CTestBase.createEngine()) { sm ->
             assertEquals(
-                "handed",
-                sm.sawFailing(),
-                "`failing` takes the value its invoke handed it",
-            )
-            assertEquals(
-                "none",
-                sm.sawErrors(),
-                "the child raised error.execution in its start: `failing`'s own expression, " +
-                    "which fails, was evaluated although a value was handed in its place",
-            )
-            assertEquals(
-                "handed",
-                sm.sawEffectful(),
-                "`effectful` takes the value its invoke handed it",
-            )
-            assertEquals(
-                "untouched",
-                sm.sawEffects(),
-                "`effects` was changed: `effectful`'s own expression, which assigns it, was " +
-                    "evaluated although a value was handed in its place",
-            )
-            assertEquals(
-                "own",
-                sm.sawStateLocal(),
-                "a state's `<data>` took a handed value: only the top-level `<data>` take one",
-            )
-            assertEquals(
-                "undefined",
-                sm.sawNowhere(),
-                "a handed name the child declares nowhere became a variable of the child",
-            )
-            assertEquals(
-                "whole",
-                sm.sawRecord(),
-                "the object the parent handed did not arrive whole, its inner object and " +
-                    "array included",
-            )
-            assertEquals(
-                "handed",
-                sm.sawByScript(),
-                "the top-level `<script>` read `failing` before the handed value was declared",
-            )
-            assertEquals(
-                "handed",
-                sm.sawByEntry(),
-                "the initial `<onentry>` read `effectful` before the handed value was declared",
-            )
-            assertEquals(
-                "string",
-                sm.sawRefused(),
-                "`refused` takes the value its invoke handed it",
+                AChildTakesAHandedValueInPlaceOfItsDataState.Pass,
+                sm.terminalState,
+                "errors_seen=${sm.errorsSeen()}. $VERDICTS",
             )
         }
     }
@@ -199,28 +166,15 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
         // it, and hands back a handle to it (`EngineHeldValue`), which the child's
         // session refuses; Rhino hands back the object itself, which a child
         // given it would share with its parent. The value is copied out where
-        // the parent hands it, so it arrives whole and as the child's own. Every
-        // engine is run whatever the suite selected, so both are always among
-        // them.
+        // the parent hands it, so it arrives whole and as the child's own: the
+        // fixture lands in `failObjectNotWhole` or
+        // `failChildSharedTheParentsObject` otherwise.
         for (name in W3CTestBase.KNOWN_ENGINES) {
-            reported(W3CTestBase.engineFor(name)) { sm ->
+            ended(W3CTestBase.engineFor(name)) { sm ->
                 assertEquals(
-                    "whole",
-                    sm.sawRecord(),
-                    "$name: the object the parent handed did not arrive whole in the child",
-                )
-                assertEquals(
-                    "whole",
-                    sm.sawParentRecord(),
-                    "$name: the name the child wrote into the object it was handed is what the " +
-                        "parent's `record` holds, so the child was handed the parent's object " +
-                        "rather than a copy of it",
-                )
-                assertEquals(
-                    "none",
-                    sm.sawErrors(),
-                    "$name: the child raised error.execution in its start, so a handed value " +
-                        "it could not hold, or a `<data>`'s own expression, failed",
+                    AChildTakesAHandedValueInPlaceOfItsDataState.Pass,
+                    sm.terminalState,
+                    "$name: payload_seen=${sm.payloadSeen()} record_seen=${sm.recordSeen()}. $VERDICTS",
                 )
             }
         }
@@ -255,23 +209,27 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
 
     @Test
     fun `a handed value the session cannot hold is the error of its data`() {
-        reported(RefusesOneHandedValue()) { sm ->
+        ended(RefusesOneHandedValue()) { sm ->
+            // The parent judges every other value of the child before its error
+            // count, so this verdict says they were all in their places.
             assertEquals(
-                "one",
-                sm.sawErrors(),
-                "the session refused the value handed to `refused`, which is that `<data>`'s " +
-                    "initialization error: one error.execution, and no other",
+                AChildTakesAHandedValueInPlaceOfItsDataState.FailChildRaised,
+                sm.terminalState,
+                "the session refused the value handed to `refusable`, which is that `<data>`'s " +
+                    "initialization error, and every other handed value is still declared. " +
+                    VERDICTS,
             )
             assertEquals(
-                "undefined",
-                sm.sawRefused(),
-                "`refused` holds a value: a `<data>` whose handed value was refused is left as " +
-                    "one whose own expression failed, not given its own value instead",
+                1L,
+                sm.errorsSeen(),
+                "the refusal is the one error.execution of `refusable`'s initialization, and no " +
+                    "other `<data>` raised",
             )
             assertEquals(
-                "handed",
-                sm.sawFailing(),
-                "the refusal of one handed value reached another `<data>`",
+                "unbound",
+                sm.refusableSeen(),
+                "`refusable` holds a value: a `<data>` whose handed value was refused is left as " +
+                    "one whose initialization failed, not given its own value instead",
             )
         }
     }

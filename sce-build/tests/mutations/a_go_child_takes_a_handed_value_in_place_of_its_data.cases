@@ -10,35 +10,37 @@
 # The Go child used to evaluate every <data> and then overwrite the ones whose
 # name its session held (`HasVariable`), which reached an early-bound state
 # <data> too. Each case below puts back one piece of a wrong shape and names
-# the test that must go red. The script engine of the oracle is a double over
-# the Lua engine, shared by the parent and its child, that records every
-# expression it runs and every value it writes, and can refuse the writes of
-# one name, so a failure to hold a handed value is reached through the engine
-# a generated machine is handed, as a host's would be.
+# the test that must go red. The oracle is the canonical fixture,
+# integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/,
+# whose parent judges what each child reported and ends in a `<final>` named
+# for the first check that failed. The script engine of the oracle is a double
+# over the Lua engine, shared by the parent and its children, that records
+# every expression it runs and every value it writes, and can refuse the
+# writes of one name, so a failure to hold a handed value is reached through
+# the engine a generated machine is handed, as a host's would be.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_go backends/go/tests ./integration/a_go_child_takes_a_handed_value_in_place_of_its_data/
+mutation_go backends/go/tests ./integration/a_child_takes_a_handed_value_in_place_of_its_data/
 
 # The templates reach the Go tests only through the committed tree the
 # regeneration below writes, so both halves are declared: the generated files
 # are compiled into the test, and the command is what carries a mutated
 # template into them.
 mutation_targets tools/codegen/templates/go/scriptengine_helpers.go.jinja2
-mutation_targets backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data/a_go_child_takes_a_handed_value_in_place_of_its_data_sm.go
-mutation_targets backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data/a_go_child_takes_a_handed_value_in_place_of_its_data__sce_synth_invoke__taker_sm.go
+mutation_targets_glob 'backends/go/tests/integration/a_child_takes_a_handed_value_in_place_of_its_data/*_sm.go'
 mutation_regen scripts/materialize.sh go-integration
 
-mutation_oracles backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data/a_go_child_takes_a_handed_value_in_place_of_its_data_test.go backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data/a_go_child_takes_a_handed_value_in_place_of_its_data.scxml
+mutation_oracles backends/go/tests/integration/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data_test.go integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
 
 # ── The <data>'s own value is evaluated, then overwritten ───────────
 #
 # The old shape: every top-level <data> takes its own value, and a handed
-# one is written over it afterwards. `risky`'s own expression raises and
-# `noted`'s pushes onto `trail`, though neither value is kept.
+# one is written over it afterwards. `raising`'s own expression raises and
+# `effectful`'s pushes onto `effects`, though neither value is kept.
 # Killers: `TestAChildTakesEachHandedValueInPlaceOfItsTopLevelData` (the
-# parent ends in sawErrorExecution, and the double ran `invalidProperty`)
+# parent ends in failOwnValueRan, and the double ran `invalidProperty`)
 # and `TestAHandedValueTheSessionCannotHoldIsThatDataInitializationError`
 # (the double ran the own values).
 
@@ -56,7 +58,7 @@ PY
 # The child declares every top-level <data> with its own value and takes
 # nothing it was handed.
 # Killer: `TestAChildTakesEachHandedValueInPlaceOfItsTopLevelData`, whose
-# parent ends in sawErrorExecution and whose `risky` is never written with
+# parent ends in failOwnValueRan and whose `raising` is never written with
 # the handed value.
 
 mutation_case "a handed value is ignored" <<'PY'
@@ -68,11 +70,11 @@ PY
 # ── The handed values are declared after the top-level <script> ─────
 #
 # Each handed <data> is declared when the start returns, after the
-# top-level <script> ran: the script reads `risky` before it holds the
+# top-level <script> ran: the script reads `raising` before it holds the
 # handed value. Its own value is still not evaluated, so this case is held
 # by the order alone.
 # Killer: `TestAChildTakesEachHandedValueInPlaceOfItsTopLevelData`, whose
-# parent ends in sawScriptReadOwnValue.
+# parent ends in failScriptReadItsOwnValue.
 
 mutation_case "the handed values are declared after the top-level script" <<'PY'
 edit("tools/codegen/templates/go/scriptengine_helpers.go.jinja2",
@@ -84,9 +86,10 @@ PY
 #
 # The `HasVariable` shape put back after the early-bound state <data> is
 # declared: any name the session holds takes the handed value, so the
-# state `report`'s `stateOwned` loses its own.
+# state `collect`'s `kept` loses its own.
 # Killer: `TestAChildTakesEachHandedValueInPlaceOfItsTopLevelData`, whose
-# parent ends in sawStateDataSeeded, and whose `risky` is written twice.
+# parent ends in failStateDataTookTheValue, and whose `raising` is written
+# twice.
 
 mutation_case "a state's data takes a handed value" <<'PY'
 edit("tools/codegen/templates/go/scriptengine_helpers.go.jinja2",
@@ -97,9 +100,9 @@ PY
 # ── A name no top-level <data> carries is added ─────────────────────
 #
 # Every handed name becomes a variable of the child before its <data> is
-# declared, `stray` among them.
+# declared, `stranger` among them.
 # Killer: `TestAChildTakesEachHandedValueInPlaceOfItsTopLevelData`, whose
-# parent ends in sawStrayAdded and whose double wrote `stray`.
+# parent ends in failUnmatchedNameAdded and whose double wrote `stranger`.
 
 mutation_case "a name no top-level data carries is added" <<'PY'
 edit("tools/codegen/templates/go/scriptengine_helpers.go.jinja2",
@@ -109,10 +112,10 @@ PY
 
 # ── A handed value the session cannot hold raises nothing ───────────
 #
-# The refused write is passed over: `risky` is left unset and the child
+# The refused write is passed over: `refusable` is left unset and the child
 # runs on as if nothing failed.
 # Killer: `TestAHandedValueTheSessionCannotHoldIsThatDataInitializationError`,
-# whose parent ends in sawOwnValueKept rather than sawErrorExecution.
+# whose parent ends in failHandedValueLost rather than failChildRaised.
 
 mutation_case "a handed value the session cannot hold raises nothing" <<'PY'
 edit("tools/codegen/templates/go/scriptengine_helpers.go.jinja2",

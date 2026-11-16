@@ -114,15 +114,6 @@ sce_gate_step "generating the Python W3C and integration suites"
 "$SCE_REPO_ROOT/scripts/regen_route_rests_on_a_question_python.sh" >/dev/null \
     || sce_gate_fail "Python route-rests-on-a-question generation"
 
-# The handed-value document of docs/adr/0098, for the reason the transition-domain
-# witness gives: it sits beside its driver rather than under
-# `integration_resources/` (a stem there is a commitment of every channel, and
-# the canonical fixture of that ADR lands last, once every backend meets the
-# rule), so `generate-integration` never sees it, and its gitignored `_sm.py`
-# modules would be modules nothing produced.
-"$SCE_REPO_ROOT/scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh" >/dev/null \
-    || sce_gate_fail "Python handed-value document generation"
-
 # The `datamodel="sce-static"` machines (SCE Accepted Subset §2.15), for the
 # reason the others give a sixth time: they live under the build tests' fixtures
 # and `tests/integration/` rather than `integration_resources/`, so

@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  §scxml-6.4 (docs/adr/0098): a value an <invoke> hands its child, whose name
+  is the id of a <data> in the child's TOP-LEVEL datamodel, is that <data>'s
+  initial value, declared in place of its own:
+
+    "the SCXML Processor MUST use the value of the <param> element as the
+     initial value of the corresponding <data> element. [...] (Note that this
+     means that any value specified in the <data> element is ignored.) [...]
+     If the names do not match, the Processor MUST NOT add the value of the
+     <param> element or namelist key/value pair to the invoked session's data
+     model."
+
+  The child's start declares its top-level <data> in document order, each
+  handed one with the value it was handed, then the early-bound <data> of its
+  states, then runs its top-level <script>, then enters its initial
+  configuration; so the <data>'s own expression is never evaluated, raises
+  nothing and has no effect, and the <script>, the first <onentry> and every
+  condition of the first macrostep read the handed value. A state's <data>,
+  early- or late-bound, never takes a handed value. A value crosses sessions
+  whole, as the parent evaluated it, and is the child's own copy.
+
+  The canonical fixture of docs/adr/0098, for every channel. The children
+  report what they saw; the parent keeps each report in a variable of its own
+  and judges it, landing a failure in a <final> named for the sentence that
+  broke. A driver asserts `pass`, and may read the kept values to say more.
+
+    byParam         six <param>s:
+      raising       its own expression (`undefined.invalidProperty`) raises
+                    error.execution when it is evaluated: the child counts the
+                    error.execution events it sees before it reports, and sees
+                    none.
+      effectful     its own expression pushes onto `effects`: the push must
+                    not happen.
+      refusable     a plain string, judged after every other value, so a
+                    driver over a script engine that refuses to hold it sees
+                    one error.execution (`failChildRaised`, `errors_seen` 1)
+                    with every other value in place, and the <data> left as
+                    one whose initialization failed (`refusable_seen`
+                    'unbound'): §scxml-5.3.
+      kept          the id of an early-bound <data> of the state `collect`,
+                    not of the top-level datamodel: it keeps its own value.
+      stranger      the id of no <data> at all: it stays undeclared.
+      payload       an object with an object and an array inside it: it
+                    arrives whole, and as the child's own copy, so the name
+                    the child writes into it after it reports is not what the
+                    parent's `record` holds.
+                    The top-level <script> and the initial <onentry> record
+                    what they read of the handed values.
+
+    byNamelist      the same rule for `namelist`: `listed`, whose top-level
+                    <data> would raise, takes the value; `stray`, which the
+                    child does not declare, is not added; `record`, an object,
+                    arrives whole.
+
+    lateBound       a child with binding="late": its top-level <data> takes
+                    the handed value, and its state's <data>, bound on the
+                    state's first entry, keeps its own.
+
+    firstMacrostep  a child that does not address its parent: its first
+                    macrostep is an eventless transition that reads the handed
+                    value. The handed value takes it to its <final>, which ends
+                    the invoke; its own value strands it in `missed`, and this
+                    machine waits in `firstMacrostep` until a driver gives up.
+
+  Every report is a string or a number the child computes, so the parent never
+  reads a location that may be missing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="byParam"
+       name="a_child_takes_a_handed_value_in_place_of_its_data">
+    <datamodel>
+        <data id="record" expr="({name: 'whole', inner: {label: 'inner', depth: 2}, list: [1, 2, 3]})"/>
+        <data id="listed" expr="'handed listed'"/>
+        <data id="stray" expr="'handed stray'"/>
+        <data id="raising_seen" expr="''"/>
+        <data id="effectful_seen" expr="''"/>
+        <data id="effects_seen" expr="-1"/>
+        <data id="refusable_seen" expr="''"/>
+        <data id="kept_seen" expr="''"/>
+        <data id="stranger_seen" expr="''"/>
+        <data id="payload_seen" expr="''"/>
+        <data id="script_seen" expr="''"/>
+        <data id="entry_seen" expr="''"/>
+        <data id="errors_seen" expr="-1"/>
+        <data id="listed_seen" expr="''"/>
+        <data id="stray_seen" expr="''"/>
+        <data id="record_seen" expr="''"/>
+        <data id="list_errors_seen" expr="-1"/>
+    </datamodel>
+
+    <state id="byParam">
+        <invoke type="scxml" id="by_param">
+            <param name="raising" expr="'handed raising'"/>
+            <param name="effectful" expr="'handed effectful'"/>
+            <param name="refusable" expr="'handed refusable'"/>
+            <param name="kept" expr="'handed kept'"/>
+            <param name="stranger" expr="'handed stranger'"/>
+            <param name="payload" expr="record"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="collect">
+                    <datamodel>
+                        <data id="effects" expr="[]"/>
+                        <data id="raising" expr="undefined.invalidProperty"/>
+                        <data id="effectful" expr="effects.push('own effectful ran')"/>
+                        <data id="refusable" expr="'own refusable'"/>
+                        <data id="payload" expr="null"/>
+                        <data id="script_saw" expr="''"/>
+                        <data id="entry_saw" expr="''"/>
+                        <data id="errors" expr="0"/>
+                    </datamodel>
+                    <script>script_saw = raising + '|' + effectful + '|' + payload.name;</script>
+                    <state id="collect">
+                        <datamodel>
+                            <data id="kept" expr="'own kept'"/>
+                        </datamodel>
+                        <onentry>
+                            <assign location="entry_saw" expr="raising + '|' + effectful + '|' + payload.inner.label"/>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="error.execution">
+                            <assign location="errors" expr="errors + 1"/>
+                        </transition>
+                        <transition event="report" target="reported">
+                            <send target="#_parent" event="params.report">
+                                <param name="raising" expr="raising"/>
+                                <param name="effectful" expr="effectful"/>
+                                <param name="effects" expr="effects.length"/>
+                                <param name="refusable" expr="typeof refusable === 'undefined' ? 'unbound' : refusable"/>
+                                <param name="kept" expr="kept"/>
+                                <param name="stranger" expr="typeof stranger"/>
+                                <param name="payload" expr="typeof payload === 'object' &amp;&amp; payload !== null &amp;&amp; payload.name === 'whole' &amp;&amp; payload.inner.label === 'inner' &amp;&amp; payload.inner.depth === 2 &amp;&amp; payload.list.length === 3 &amp;&amp; payload.list[0] === 1 &amp;&amp; payload.list[2] === 3 ? 'whole' : 'broken'"/>
+                                <param name="script" expr="script_saw"/>
+                                <param name="entry" expr="entry_saw"/>
+                                <param name="errors" expr="errors"/>
+                            </send>
+                            <assign location="payload.name" expr="'written by the child'"/>
+                        </transition>
+                    </state>
+                    <final id="reported"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="params.report" target="judgeParams">
+            <assign location="raising_seen" expr="_event.data.raising"/>
+            <assign location="effectful_seen" expr="_event.data.effectful"/>
+            <assign location="effects_seen" expr="_event.data.effects"/>
+            <assign location="refusable_seen" expr="_event.data.refusable"/>
+            <assign location="kept_seen" expr="_event.data.kept"/>
+            <assign location="stranger_seen" expr="_event.data.stranger"/>
+            <assign location="payload_seen" expr="_event.data.payload"/>
+            <assign location="script_seen" expr="_event.data.script"/>
+            <assign location="entry_seen" expr="_event.data.entry"/>
+            <assign location="errors_seen" expr="_event.data.errors"/>
+        </transition>
+        <transition event="error.execution" target="failParentRaised"/>
+    </state>
+
+    <!-- The order is the point: every value but `refusable` is judged before
+         the child's error count, so a run whose engine cannot hold
+         `refusable` reaches `failChildRaised` only with everything else in
+         place. -->
+    <state id="judgeParams">
+        <transition cond="effects_seen !== 0" target="failOwnValueRan"/>
+        <transition cond="raising_seen !== 'handed raising' || effectful_seen !== 'handed effectful'"
+                    target="failHandedValueLost"/>
+        <transition cond="kept_seen !== 'own kept'" target="failStateDataTookTheValue"/>
+        <transition cond="stranger_seen !== 'undefined'" target="failUnmatchedNameAdded"/>
+        <transition cond="payload_seen !== 'whole'" target="failObjectNotWhole"/>
+        <transition cond="record.name !== 'whole'" target="failChildSharedTheParentsObject"/>
+        <transition cond="script_seen !== 'handed raising|handed effectful|whole'"
+                    target="failScriptReadItsOwnValue"/>
+        <transition cond="entry_seen !== 'handed raising|handed effectful|inner'"
+                    target="failEntryReadItsOwnValue"/>
+        <transition cond="errors_seen !== 0" target="failChildRaised"/>
+        <transition cond="refusable_seen !== 'handed refusable'" target="failHandedValueLost"/>
+        <transition target="byNamelist"/>
+    </state>
+
+    <state id="byNamelist">
+        <invoke type="scxml" id="by_namelist" namelist="listed stray record">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="collect">
+                    <datamodel>
+                        <data id="listed" expr="undefined.invalidProperty"/>
+                        <data id="record" expr="'own record'"/>
+                        <data id="errors" expr="0"/>
+                    </datamodel>
+                    <state id="collect">
+                        <onentry>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="error.execution">
+                            <assign location="errors" expr="errors + 1"/>
+                        </transition>
+                        <transition event="report" target="reported">
+                            <send target="#_parent" event="names.report">
+                                <param name="listed" expr="listed"/>
+                                <param name="stray" expr="typeof stray"/>
+                                <param name="record" expr="typeof record === 'object' &amp;&amp; record !== null &amp;&amp; record.name === 'whole' &amp;&amp; record.inner.depth === 2 &amp;&amp; record.list.length === 3 ? 'whole' : 'broken'"/>
+                                <param name="errors" expr="errors"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="reported"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="names.report" target="judgeNames">
+            <assign location="listed_seen" expr="_event.data.listed"/>
+            <assign location="stray_seen" expr="_event.data.stray"/>
+            <assign location="record_seen" expr="_event.data.record"/>
+            <assign location="list_errors_seen" expr="_event.data.errors"/>
+        </transition>
+        <transition event="error.execution" target="failParentRaised"/>
+    </state>
+
+    <state id="judgeNames">
+        <transition cond="list_errors_seen !== 0" target="failNamelistOwnValueRaised"/>
+        <transition cond="listed_seen !== 'handed listed'" target="failNamelistValueLost"/>
+        <transition cond="stray_seen !== 'undefined'" target="failNamelistNameAdded"/>
+        <transition cond="record_seen !== 'whole'" target="failObjectNotWhole"/>
+        <transition target="lateBound"/>
+    </state>
+
+    <state id="lateBound">
+        <invoke type="scxml" id="late_bound">
+            <param name="handed" expr="'handed late'"/>
+            <param name="kept" expr="'handed kept'"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" binding="late" initial="collect">
+                    <datamodel>
+                        <data id="handed" expr="'own late'"/>
+                    </datamodel>
+                    <state id="collect">
+                        <datamodel>
+                            <data id="kept" expr="'own kept'"/>
+                        </datamodel>
+                        <onentry>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="report" cond="kept !== 'own kept'" target="reported">
+                            <send target="#_parent" event="late.kept"/>
+                        </transition>
+                        <transition event="report" cond="handed !== 'handed late'" target="reported">
+                            <send target="#_parent" event="late.lost"/>
+                        </transition>
+                        <transition event="report" target="reported">
+                            <send target="#_parent" event="late.ok"/>
+                        </transition>
+                    </state>
+                    <final id="reported"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="late.ok" target="firstMacrostep"/>
+        <transition event="late.kept" target="failLateStateDataTookTheValue"/>
+        <transition event="late.lost" target="failHandedValueLost"/>
+        <transition event="error.execution" target="failParentRaised"/>
+    </state>
+
+    <state id="firstMacrostep">
+        <invoke type="scxml" id="first_macrostep">
+            <param name="handed" expr="'handed first'"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="look">
+                    <datamodel>
+                        <data id="handed" expr="'own first'"/>
+                    </datamodel>
+                    <state id="look">
+                        <transition cond="handed === 'handed first'" target="took"/>
+                        <transition target="missed"/>
+                    </state>
+                    <state id="missed"/>
+                    <final id="took"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="done.invoke.first_macrostep" target="pass"/>
+        <transition event="error.execution" target="failParentRaised"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failOwnValueRan"/>
+    <final id="failHandedValueLost"/>
+    <final id="failStateDataTookTheValue"/>
+    <final id="failUnmatchedNameAdded"/>
+    <final id="failObjectNotWhole"/>
+    <final id="failChildSharedTheParentsObject"/>
+    <final id="failScriptReadItsOwnValue"/>
+    <final id="failEntryReadItsOwnValue"/>
+    <final id="failChildRaised"/>
+    <final id="failNamelistOwnValueRaised"/>
+    <final id="failNamelistValueLost"/>
+    <final id="failNamelistNameAdded"/>
+    <final id="failLateStateDataTookTheValue"/>
+    <final id="failParentRaised"/>
+</scxml>

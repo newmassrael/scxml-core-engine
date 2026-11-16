@@ -5,21 +5,20 @@
 // child is the initial value of the child's top-level `<data>` of that name, in
 // place of its own, which is then not evaluated.
 //
-// The child reports what it read to its parent, which copies it into its own
-// `<data>`; the cases read those. A child that evaluated each `<data>` and then
-// wrote the handed value over it raises the error.execution of `failing`'s own
-// expr and leaves the entry of `effectful`'s own `trail.push('own')`; one that
-// seeded every variable its session holds overwrites the state's `local_only`;
-// one that added every name handed declares `stray`; one that took the values
-// after its `<script>` or its first `<onentry>` reads its own values there.
+// Each child reports what it read to its parent, which keeps it in its own
+// `<data>` and judges it, landing a failure in a `<final>` named for the
+// sentence that broke. A child that evaluated each `<data>` and then wrote the
+// handed value over it pushes onto `effects` (`FailOwnValueRan`) and raises the
+// error.execution of `raising`'s own expr (`FailChildRaised`); one that seeded
+// every variable its session holds overwrites the state's `kept`; one that
+// added every name handed declares `stranger`; one that took the values after
+// its `<script>` or its first `<onentry>` reads its own values there.
 //
 // The script engine of the last case is a double over the Lua engine that
 // refuses to hold one value, so a handed value the child's session cannot
 // hold is reached through the engine the machine runs in, as a host's would be.
 //
-// Fixture: tests/integration/a_child_takes_a_handed_value_in_place_of_its_data.scxml.
-// It is outside `integration_resources/` for the reason
-// `tools/codegen/trees/rust-integration.toml` states.
+// Fixture: integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
 //
 // Regeneration (after fixture or template edit):
 //   scripts/materialize.sh rust-integration
@@ -39,115 +38,55 @@ use sce_rust_tests::integration::a_child_takes_a_handed_value_in_place_of_its_da
     AChildTakesAHandedValueInPlaceOfItsDataState as State,
 };
 
-/// The fixture's machine over `script_engine`, started and run until the
-/// child's report arrived or `timeout` passed; whether it arrived.
-fn run(script_engine: Arc<dyn IScriptEngine>, timeout: Duration) -> (Engine<Policy>, bool) {
+/// The fixture's machine over `script_engine`, started and run until it
+/// reached a final state; panics, naming where it stood, when it did not.
+fn run(script_engine: Arc<dyn IScriptEngine>) -> Engine<Policy> {
     let mut engine = Engine::new(Policy::new(script_engine));
     engine
         .initialize()
         .expect("the machine's script session is established");
-    let completed = engine.run_until_completion(timeout, Duration::from_millis(10));
-    (engine, completed)
-}
-
-/// The fixture over the Lua engine, which the child's report reached.
-fn reported() -> Engine<Policy> {
-    let (engine, completed) = run(Arc::new(LuaEngine::new()), Duration::from_secs(3));
+    let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(
         completed,
-        "the parent never received the child's report: it stands in {:?}",
+        "the parent reached no final state: it stands in {:?}. ByParam / ByNamelist / \
+         LateBound: that phase's child never reported. FirstMacrostep: the child's \
+         first macrostep read its own value of `handed` and stands in `missed`",
         engine.get_active_states()
     );
-    assert_eq!(engine.terminal_state(), Some(State::Received));
     engine
 }
 
 #[test]
-fn a_seeded_data_whose_own_expr_would_fail_takes_the_handed_value_and_raises_nothing() {
-    let engine = reported();
+fn a_child_takes_each_handed_value_in_place_of_its_top_level_data() {
+    let engine = run(Arc::new(LuaEngine::new()));
+    let reached = engine.terminal_state();
     assert_eq!(
-        engine.policy().saw_failing().as_deref(),
-        Some("handed-failing"),
-        "`failing` holds the value its invoke handed it"
-    );
-    assert_eq!(
-        engine.policy().saw_errors(),
-        Some(0),
-        "`failing`'s own expr `holder.missing.deep` raises error.execution when it \
-         is evaluated, and a seeded <data>'s own value is never evaluated"
-    );
-}
-
-#[test]
-fn a_seeded_data_whose_own_expr_acts_takes_the_handed_value_without_the_act() {
-    let engine = reported();
-    assert_eq!(
-        engine.policy().saw_effectful().as_deref(),
-        Some("handed-effectful")
-    );
-    assert_eq!(
-        engine.policy().saw_trail(),
-        Some(0),
-        "`effectful`'s own expr `trail.push('own')` leaves an entry in `trail` when \
-         it is evaluated, and a seeded <data>'s own value is never evaluated"
-    );
-}
-
-#[test]
-fn a_state_data_of_a_handed_name_keeps_its_own_value() {
-    let engine = reported();
-    assert_eq!(
-        engine.policy().saw_local().as_deref(),
-        Some("own"),
-        "only a top-level <data> takes a handed value; `local_only` is declared by \
-         the child's state `report`"
-    );
-}
-
-#[test]
-fn a_handed_name_no_top_level_data_declares_is_not_added() {
-    let engine = reported();
-    assert_eq!(
-        engine.policy().saw_stray().as_deref(),
-        Some("undefined"),
-        "the child declares no `stray`, so the value handed under it is not added \
-         to its datamodel"
-    );
-}
-
-#[test]
-fn an_object_value_arrives_whole() {
-    let engine = reported();
-    assert_eq!(
-        engine.policy().saw_label().as_deref(),
-        Some("whole"),
-        "the handed object's own field"
-    );
-    assert_eq!(
-        engine.policy().saw_depth(),
-        Some(2),
-        "the field of the object inside the handed object"
-    );
-}
-
-#[test]
-fn the_childs_script_and_first_onentry_read_the_handed_values() {
-    let engine = reported();
-    assert_eq!(
-        engine.policy().saw_script().as_deref(),
-        Some("handed-failing"),
-        "the top-level <script> runs after the top-level <data> are declared, \
-         seeded, and reads `failing`"
-    );
-    assert_eq!(
-        engine.policy().saw_entry().as_deref(),
-        Some("handed-effectful"),
-        "the initial state's <onentry> reads `effectful` as seeded"
+        reached,
+        Some(State::Pass),
+        "reached {reached:?}. \
+         FailOwnValueRan: `effectful`'s own expr `effects.push(..)` was evaluated \
+         although a value was handed in its place. \
+         FailChildRaised: the child saw error.execution, so `raising`'s own expr \
+         `undefined.invalidProperty` was evaluated (errors_seen={:?}). \
+         FailHandedValueLost: a top-level <data> kept its own value. \
+         FailStateDataTookTheValue / FailLateStateDataTookTheValue: a state's \
+         <data>, early- or late-bound, took a handed value. \
+         FailUnmatchedNameAdded / FailNamelistNameAdded: a handed name no \
+         top-level <data> declares became a variable. \
+         FailObjectNotWhole: an object lost its structure. \
+         FailChildSharedTheParentsObject: the child was handed the parent's \
+         object rather than a copy of it. \
+         FailScriptReadItsOwnValue / FailEntryReadItsOwnValue: the top-level \
+         <script> or the initial <onentry> ran before the values were declared. \
+         FailNamelistOwnValueRaised / FailNamelistValueLost: the same, for a \
+         namelist value. FailParentRaised: the parent could not evaluate what \
+         it hands.",
+        engine.policy().errors_seen()
     );
 }
 
 /// The id of the one top-level `<data>` of the child the double refuses to set.
-const REFUSED: &str = "failing";
+const REFUSED: &str = "refusable";
 
 /// The Lua engine, refusing to hold any value set under [`REFUSED`].
 struct RefusingEngine {
@@ -273,25 +212,28 @@ impl IScriptEngine for RefusingEngine {
 
 #[test]
 fn a_handed_value_the_session_cannot_hold_is_its_datas_initialization_error() {
-    // Whether the rest of the report arrives over a `failing` that holds
-    // nothing is not this case's question, so its arrival is not asserted:
-    // `counted` is sent first, and is all this reads.
-    let (engine, _) = run(
-        Arc::new(RefusingEngine {
-            inner: LuaEngine::new(),
-        }),
-        Duration::from_secs(1),
+    let engine = run(Arc::new(RefusingEngine {
+        inner: LuaEngine::new(),
+    }));
+    // The parent judges every other value of the child before its error
+    // count, so reaching `FailChildRaised` says they were all in place.
+    assert_eq!(
+        engine.terminal_state(),
+        Some(State::FailChildRaised),
+        "the session refused the value handed for `refusable`, which is that \
+         <data>'s initialization error (§scxml-5.3): the child sees it, and every \
+         other handed value is still declared in its place"
     );
     assert_eq!(
-        engine.policy().saw_errors(),
+        engine.policy().errors_seen(),
         Some(1),
-        "the session refused the value handed for `failing`: that is the one \
-         error.execution of `failing`'s initialization (§scxml-5.3), and its own \
-         expr, which would raise a second, is not evaluated in its place"
+        "the refusal is the one error.execution of `refusable`'s initialization, \
+         and no other <data> raised"
     );
     assert_eq!(
-        engine.policy().saw_trail(),
-        Some(0),
-        "`effectful` was seeded all the same"
+        engine.policy().refusable_seen().as_deref(),
+        Some("unbound"),
+        "a <data> whose handed value was refused is left as one whose \
+         initialization failed, and does not take its own value instead"
     );
 }

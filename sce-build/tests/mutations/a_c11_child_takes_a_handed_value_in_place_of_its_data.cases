@@ -14,7 +14,8 @@
 # declares each top-level <data> a value is handed for with that value, copied
 # whole, in place of its own. Each case below puts back one piece of the old
 # shape, or lifts one bound of the copy, and names the verdict that must go red.
-# The oracle's document is C11's alone; its target lowers the bounds of the copy
+# The oracles are the canonical fixture of docs/adr/0098 and, for the bounds of
+# the copy, a document of C11 alone, whose target lowers them
 # (`SCE_MAX_HANDED_VALUE_DEPTH` 4, `SCE_MAX_HANDED_VALUE_ENTRIES` 8).
 #
 # The machines are generated when the tests are built, so there is no committed
@@ -25,15 +26,15 @@
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_ctest --test-dir build -R '^c11_integration_a_child_takes_what_it_is_handed$'
+mutation_ctest --test-dir build -R '^c11_integration_(a_child_takes_a_handed_value_in_place_of_its_data|a_handed_value_past_its_bounds_is_its_datas_error)$'
 mutation_targets tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
-mutation_oracles backends/c/tests/integration/test_a_child_takes_what_it_is_handed.c backends/c/tests/integration_resources/a_child_takes_what_it_is_handed/a_child_takes_what_it_is_handed.scxml
+mutation_oracles backends/c/tests/integration/test_a_child_takes_a_handed_value_in_place_of_its_data.c integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml backends/c/tests/integration/test_a_handed_value_past_its_bounds_is_its_datas_error.c backends/c/tests/integration_resources/a_handed_value_past_its_bounds_is_its_datas_error/a_handed_value_past_its_bounds_is_its_datas_error.scxml
 
 # ── The child takes nothing it is handed ───────────────────────────
 #
 # Every top-level <data> takes its own value, as if no invoke had handed it
-# anything: `failing`'s own expression runs and raises error.execution.
-# Killer: `failOwnExpressionRaised`.
+# anything: `effectful`'s own expression runs and pushes onto `effects`.
+# Killer: `failOwnValueRan`.
 
 mutation_case "the child takes no handed value" <<'PY'
 edit("tools/codegen/templates/c/scriptengine.jinja2",
@@ -45,7 +46,7 @@ PY
 #
 # The shape Go and Kotlin had: any name the child's session holds takes a
 # handed value, an early-bound state <data> included.
-# Killer: `failStateLocalDataSeeded`.
+# Killer: `failStateDataTookTheValue`.
 
 mutation_case "a state-local data takes a handed value" <<'PY'
 edit("tools/codegen/templates/c/scriptengine.jinja2",
@@ -93,7 +94,7 @@ PY
 #
 # The old copy carried a boolean, a number or a string and nothing else; this
 # one makes the table and copies none of its entries.
-# Killer: `failObjectNotWhole` (and the namelist phase, stranded).
+# Killer: `failObjectNotWhole`.
 
 mutation_case "a table crosses without its entries" <<'PY'
 edit("tools/codegen/templates/c/scriptengine.jinja2",
@@ -107,7 +108,7 @@ PY
 #
 # `tooDeep` nests five objects and is held, so the child raises one
 # error.execution where it should raise two.
-# Killer: `failUnheldValueRaisedNothing`.
+# Killer: `failUnheldValueRaisedNothing` of the bounds document.
 
 mutation_case "the copy has no depth bound" <<'PY'
 edit("tools/codegen/templates/c/scriptengine.jinja2",
@@ -147,7 +148,7 @@ PY
 # `_init_invoked` starts the child with no values, so its first macrostep reads
 # its own `handed`, as the old `_init` route did when it ran that macrostep
 # before the parent wrote the values.
-# Killer: the driver's stranded `firstMacrostep`.
+# Killer: the canonical driver's stranded `firstMacrostep`.
 
 mutation_case "a child started through _init_invoked is handed nothing" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
@@ -164,8 +165,8 @@ PY
 #
 # Every invoke leaves its arguments on the parent's Lua stack after the child's
 # start returned.
-# Killer: the driver's check that the parent's stack is as high after the run
-# as it was after the start.
+# Killer: the canonical driver's check that the parent's stack is as high
+# after the run as it was after the start.
 
 mutation_case "the parent keeps the values it handed on its stack" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",

@@ -4246,36 +4246,60 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # docs/adr/0098, §scxml-6.4: a handed value is the initial value of the
     # child's top-level <data>, declared in place of its own before the child's
     # top-level <script>, its entry walk and its first macrostep; state-local
-    # <data> takes nothing, a name the child does not declare is not added, an
-    # object arrives whole, and a value past the bounds of the copy is the
-    # <data>'s initialization error. A document of this channel alone until the
-    # canonical fixture of the ADR lands; this target lowers the bounds of the
-    # copy so its last phase can pass them with small values.
-    sce_generate_static_integration_c_test(a_child_takes_what_it_is_handed
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_child_takes_what_it_is_handed/a_child_takes_what_it_is_handed.scxml"
+    # <data>, early- or late-bound, takes nothing, a name the child does not
+    # declare is not added, and an object arrives whole, as the child's copy.
+    # The canonical fixture of the ADR, a stem of every channel.
+    sce_generate_static_integration_c_test(a_child_takes_a_handed_value_in_place_of_its_data "${SCE_C_INTEGRATION_GENERATED_DIR}")
+    add_executable(sce_c_integration_a_child_takes_a_handed_value_in_place_of_its_data
+        integration/test_a_child_takes_a_handed_value_in_place_of_its_data.c
+        ${INTEGRATION_C_TEST_a_child_takes_a_handed_value_in_place_of_its_data_SOURCES}
     )
-    add_executable(sce_c_integration_a_child_takes_what_it_is_handed
-        integration/test_a_child_takes_what_it_is_handed.c
-        ${INTEGRATION_C_TEST_a_child_takes_what_it_is_handed_SOURCES}
-    )
-    target_compile_definitions(sce_c_integration_a_child_takes_what_it_is_handed PRIVATE
-        SCE_MAX_HANDED_VALUE_DEPTH=4
-        SCE_MAX_HANDED_VALUE_ENTRIES=8
-    )
-    sce_c_link_runtime(sce_c_integration_a_child_takes_what_it_is_handed)
-    target_include_directories(sce_c_integration_a_child_takes_what_it_is_handed PRIVATE
+    sce_c_link_runtime(sce_c_integration_a_child_takes_a_handed_value_in_place_of_its_data)
+    target_include_directories(sce_c_integration_a_child_takes_a_handed_value_in_place_of_its_data PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
-    set_target_properties(sce_c_integration_a_child_takes_what_it_is_handed PROPERTIES
+    set_target_properties(sce_c_integration_a_child_takes_a_handed_value_in_place_of_its_data PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
-    add_test(NAME c11_integration_a_child_takes_what_it_is_handed
-        COMMAND sce_c_integration_a_child_takes_what_it_is_handed
+    add_test(NAME c11_integration_a_child_takes_a_handed_value_in_place_of_its_data
+        COMMAND sce_c_integration_a_child_takes_a_handed_value_in_place_of_its_data
     )
-    set_tests_properties(c11_integration_a_child_takes_what_it_is_handed PROPERTIES
+    set_tests_properties(c11_integration_a_child_takes_a_handed_value_in_place_of_its_data PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # docs/adr/0098 with §scxml-5.3: a handed value past the bounds of the
+    # copy between two Lua states is the <data>'s initialization error. A
+    # document of this channel alone, the one with such bounds; this target
+    # lowers them so small values pass them.
+    sce_generate_static_integration_c_test(a_handed_value_past_its_bounds_is_its_datas_error
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_handed_value_past_its_bounds_is_its_datas_error/a_handed_value_past_its_bounds_is_its_datas_error.scxml"
+    )
+    add_executable(sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error
+        integration/test_a_handed_value_past_its_bounds_is_its_datas_error.c
+        ${INTEGRATION_C_TEST_a_handed_value_past_its_bounds_is_its_datas_error_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error PRIVATE
+        SCE_MAX_HANDED_VALUE_DEPTH=4
+        SCE_MAX_HANDED_VALUE_ENTRIES=8
+    )
+    sce_c_link_runtime(sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error)
+    target_include_directories(sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_handed_value_past_its_bounds_is_its_datas_error
+        COMMAND sce_c_integration_a_handed_value_past_its_bounds_is_its_datas_error
+    )
+    set_tests_properties(c11_integration_a_handed_value_past_its_bounds_is_its_datas_error PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

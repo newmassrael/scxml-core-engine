@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The build's script engine with one variable it cannot hold, for the drivers
-// of tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml.
+// The build's script engine with one variable it cannot hold, for the C++
+// drivers of the canonical fixture of docs/adr/0098,
+// integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/.
 //
 // §scxml-6.4 + §scxml-5.3 (docs/adr/0098): a value an invoke hands its child
 // is the initial value of the child's top-level <data> of that name, so a

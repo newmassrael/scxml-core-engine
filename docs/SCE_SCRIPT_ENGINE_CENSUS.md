@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 283
+engine-documents 282
 native-prefix-documents 2
-datamodel-variable-init 532
-transition-guard 258
-assign-action 458
-child-invoke-needs-script-engine 67
+datamodel-variable-init 525
+transition-guard 272
+assign-action 451
+child-invoke-needs-script-engine 66
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 102
@@ -142,53 +142,33 @@ parent's `box`) and `child-invoke-needs-script-engine` by two (`inv_early`,
 `inv_late`), as the analyzer counts the parent: an inline child's own causes
 are not the parent's.
 
-⚠ **2026-11-12, deliberately:** `tests/integration/a_child_takes_a_handed_value_in_place_of_its_data.scxml`
-holds docs/adr/0098 on the Rust channel: a child whose top-level `<data>` own
-values would raise error.execution or act, read back through its parent, so the
-child and the parent both need an engine, and the point is what the child's
-engine holds. Read against `script_engine_analyzer`, it raises
-`engine-documents` by one (280 to 281, after the Swift carrier above),
-`datamodel-variable-init` by eleven (506 to 517, the parent's eleven `<data>`),
-`assign-action` by ten (437 to 447, the parent's ten `<assign>`s) and
-`child-invoke-needs-script-engine` by one (61 to 62); the child's own causes are
-its document's, which the sweep does not walk. Its `sce-static` sibling,
-`tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`,
-needs no engine and carries no cause.
+⚠ **2026-11-16, deliberately, counted by hand and not yet measured:** the
+documents of docs/adr/0098 (a value an invoke hands its child is the initial
+value of the child's top-level `<data>`), each needing an engine, since the
+child's engine is what they test.
+- `integration_resources/a_child_takes_a_handed_value_in_place_of_its_data`,
+  the canonical fixture of every channel. It replaces the documents each
+  backend's step carried beside its driver: the Rust one,
+  `tests/integration/a_child_takes_a_handed_value_in_place_of_its_data.scxml`,
+  counted here on 2026-11-12, and the C++, Go, Kotlin, Python and C11 ones,
+  which were not.
+- `backends/c/tests/integration_resources/a_handed_value_past_its_bounds_is_its_datas_error`,
+  C11's alone: the bounds of the copy between two Lua states.
 
-⚠ **2026-11-12, deliberately, predicted from the document and not yet
-measured:** one document lands with this table, and it exists to need an engine.
-- `backends/kotlin/tests/fixtures/a_child_takes_a_handed_value_in_place_of_its_data`
-  holds docs/adr/0098 on the Kotlin channel: a child whose top-level `<data>`
-  have expressions of their own that would fail or have an effect, each taking
-  the value its invoke handed it instead, and a parent that keeps what the
-  child reports in variables of its own. The expressions it hands and the ones
-  it must not evaluate are the point, so the engine is what it tests.
-
-Its parent raises `engine-documents` by one (281 to 282, after the Rust
-document above), `datamodel-variable-init` by 12 (517 to 529, its `<data>`),
-`assign-action` by 11 (447 to 458, the report it keeps) and
-`child-invoke-needs-script-engine` by one (62 to 63); its in-line child is not
-a document of the census. The figures were derived by reading the document
-against `script_engine_analyzer`; where the test's block disagrees, the test's
-is the one to carry.
-
-⚠ **2026-11-12, deliberately:** one document lands with this entry, and it
-exists to need an engine.
-- `backends/c/tests/integration_resources/a_child_takes_what_it_is_handed` is
-  the C11 carrier of docs/adr/0098: the values an invoke hands its child are
-  declared in place of the child's own top-level `<data>`, before its script,
-  its entry walk and its first macrostep, and they cross from the parent's Lua
-  state to the child's whole. The parent's values and the children's
-  datamodels are what the document tests.
-
-Counted by hand from what `script_engine_analyzer::analyze` collects, not
-measured (the entry was written where nothing could run the census): three
-top-level `<data>` of the parent raise `datamodel-variable-init` by three, its
-four invokes of children that need an engine raise
-`child-invoke-needs-script-engine` by four, its one invoke with a `namelist`
-raises `static-invoke-namelist` by one, and the document raises
-`engine-documents` by one. A ceiling the census finds above its count is
-lowered to it on the next run that reads it.
+Read against `script_engine_analyzer::analyze`, from main's ceilings with the
+Rust document taken out (one document, eleven `<data>`, ten `<assign>`s, one
+child invoke): the canonical parent's seventeen `<data>` and the C11
+document's two raise `datamodel-variable-init` by 19 (506 to 525); its fourteen
+`<assign>`s raise `assign-action` by 14 (437 to 451); the fourteen guarded
+transitions by which it judges its children's reports raise `transition-guard`
+by 14 (258 to 272); its four invokes and the C11 document's one raise
+`child-invoke-needs-script-engine` by five (61 to 66); its one invoke with a
+`namelist` raises `static-invoke-namelist` by one (11 to 12); and the two
+documents raise `engine-documents` by two (280 to 282). The children's own
+causes are their documents', which the sweep does not walk. The `sce-static`
+sibling, `tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`,
+needs no engine and carries no cause. A ceiling the census finds above its
+count is lowered to it on the next run that reads it.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.

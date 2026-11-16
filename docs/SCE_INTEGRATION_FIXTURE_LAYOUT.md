@@ -191,6 +191,34 @@ values its invoke hands it before it declares its datamodel, so its top-level
 `<script>`, its first `<onentry>` and its first macrostep read them. The
 fixture keeps reporting from a transition body, which is still one axis.
 
+`a_child_takes_a_handed_value_in_place_of_its_data` covers what a child does
+with the values an `<invoke>` hands it (§scxml-6.4, docs/adr/0098): a value
+whose name is the id of a top-level `<data>` of the child is that `<data>`'s
+initial value, declared in place of its own, so the `<data>`'s own expression
+is never evaluated; a state's `<data>`, early- or late-bound, never takes one;
+a name no top-level `<data>` declares is not added; an object arrives whole,
+as the child's own copy; and the child's top-level `<script>`, first
+`<onentry>` and first macrostep read the handed value. Where
+`invoke_param_seeds_declared_child_data` asks which session EVALUATES a
+`<param>`, this one asks what the child's START does with the value it is
+given, and in what order. Its children's own expressions fail
+(`undefined.invalidProperty`) or act (`effects.push(..)`), which is what makes
+"evaluate, then overwrite" observable: five backends did exactly that before
+the ADR, and every W3C fixture that seeds a child (226, 240, 241, 243, 244,
+245, 276) seeds a `<data>` whose own value is `0` or absent, so none told the
+orders apart. The parent keeps each child's report in its own `<data>` and
+judges it, landing a failure in a `<final>` named for the sentence that broke,
+and it judges the child's error count after every other value: a driver over
+an engine that refuses to hold `refusable` (C++ Interpreter and AOT, Rust, Go,
+Kotlin) reaches `failChildRaised` with every other value in its place, which
+is §scxml-5.3's answer for a value the session cannot hold. The first draft of
+each backend's step carried its own document beside its driver; they were
+folded into this one when the last backend landed, and two questions only one
+channel can ask stayed outside it: C11's bounds on the copy between two Lua
+states (`backends/c/tests/integration_resources/a_handed_value_past_its_bounds_is_its_datas_error/`)
+and a `datamodel="sce-static"` child's typed handed values
+(`tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`).
+
 `empty_finalize_updates_the_location` covers the clause an empty element
 carries. W3C §6.5.2 gives `<finalize>` with no executable content a meaning of
 its own — the Processor "MUST update the data model each time an event is

@@ -14,8 +14,10 @@
 # one piece of that shape, or of the order of the start, and names the test
 # that must go red. The oracle is
 # `AChildTakesAHandedValueInPlaceOfItsDataTest`, over the machines
-# `scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh`
-# commits from the document beside it in `backends/kotlin/tests/fixtures/`.
+# `scripts/materialize.sh kotlin-integration` commits from the canonical
+# fixture, integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/,
+# whose parent judges what each child reported and ends in a `<final>` named
+# for the first check that failed (named below after each killer).
 #
 # The template reaches the tests only through the committed tree the
 # regeneration writes, so both halves are declared: the generated files are
@@ -32,7 +34,7 @@ mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/S
 mutation_targets backends/kotlin/rhino/src/main/kotlin/com/sce/scripting/RhinoScriptEngine.kt
 mutation_targets tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2
 mutation_targets_glob 'backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_takes_a_handed_value_in_place_of_its_data/*Sm.kt'
-mutation_regen scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh
+mutation_regen scripts/materialize.sh kotlin-integration
 
 # ── The <data>'s own value is evaluated after the handed one ────────
 #
@@ -40,8 +42,8 @@ mutation_regen scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_k
 # handed, so the <data>'s own expression runs too and overwrites it: the old
 # evaluate-and-overwrite with the two steps swapped, which a document still
 # sees. Killer: `a handed value is declared in place of the data's own, which
-# is not evaluated` (`failing`'s own expression raises, `effectful`'s changes
-# `effects`).
+# is not evaluated` (`effectful`'s own expression pushes onto `effects`:
+# `failOwnValueRan`).
 
 mutation_case "a handed value is followed by the data's own" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -52,8 +54,8 @@ PY
 # ── The generated start never asks for a handed value ───────────────
 #
 # Each top-level <data> asks under a name no invoke hands, so every one takes
-# its own value and nothing is seeded. Killers: every assertion of `a handed
-# value is declared in place of the data's own, which is not evaluated`.
+# its own value and nothing is seeded. Killer: `a handed value is declared in
+# place of the data's own, which is not evaluated` (`failOwnValueRan`).
 
 mutation_case "the generated start asks for no handed value" <<'PY'
 edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
@@ -66,7 +68,7 @@ PY
 # The early-bound <data> of a state asks for a handed value as a top-level one
 # does, which is what seeding every name the session holds did. Killer: `a
 # handed value is declared in place of the data's own, which is not evaluated`
-# (`state_local` is `handed`, not `own`).
+# (`kept` is `handed kept`, not `own kept`: `failStateDataTookTheValue`).
 
 mutation_case "an early-bound state data takes a handed value" <<'PY'
 edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
@@ -76,10 +78,10 @@ PY
 
 # ── The top-level <data> are declared after the top-level <script> ──
 #
-# The script reads `failing` before it is declared, and the <data> declared
-# after it set `seen_by_script` back to its own value. Killer: `a handed value
-# is declared in place of the data's own, which is not evaluated`
-# (`seen_by_script` is `unset`, and the script's failure is an error).
+# The script reads `raising` before it is declared, and the <data> declared
+# after it set `script_saw` back to its own value. Killer: `a handed value is
+# declared in place of the data's own, which is not evaluated`
+# (`failScriptReadItsOwnValue`).
 
 mutation_case "the top-level data are declared after the top-level script" <<'PY'
 edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
@@ -92,10 +94,10 @@ PY
 
 # ── The datamodel is declared after the initial entry ───────────────
 #
-# The initial <onentry> reads `effectful` before it is declared, and the
-# declaration after it sets `seen_by_entry` back to its own value. Killer: `a
+# The initial <onentry> reads `raising` before it is declared, and the
+# declaration after it sets `entry_saw` back to its own value. Killer: `a
 # handed value is declared in place of the data's own, which is not
-# evaluated` (`seen_by_entry` is `unset`).
+# evaluated` (no longer `pass`: the entry's reads fail or read nothing).
 
 mutation_case "the datamodel is declared after the initial entry" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -119,7 +121,7 @@ PY
 # ── A value the session cannot hold is dropped without a word ───────
 #
 # Killer: `a handed value the session cannot hold is the error of its data`
-# (no error.execution).
+# (no error.execution: `failHandedValueLost`, not `failChildRaised`).
 
 mutation_case "a refused handed value raises nothing" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -131,7 +133,7 @@ PY
 #
 # The refusal answers that no value was handed, so the <data>'s own value is
 # declared instead. Killer: `a handed value the session cannot hold is the
-# error of its data` (`refused` holds its own string).
+# error of its data` (`refusable` holds its own string, not `unbound`).
 
 mutation_case "a refused handed value falls back to the data's own" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -144,9 +146,8 @@ PY
 # Nothing is copied: the parent hands the child the handle QuickJS keeps an
 # object it evaluated behind, which the child's session refuses, and Rhino's
 # own object, which the child then shares. Killer: `an object a parent hands
-# arrives whole on every engine, as a copy` (on QuickJS, `record` is not whole
-# and the child raised error.execution; on Rhino, `saw_parent_record` is the
-# child's name).
+# arrives whole on every engine, as a copy` (on QuickJS, `failObjectNotWhole`;
+# on Rhino, `failChildSharedTheParentsObject`).
 
 mutation_case "an engine-held value is handed as its handle" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -157,7 +158,7 @@ PY
 # ── A number inside a copied value crosses as its text ──────────────
 #
 # Killer: `an object a parent hands arrives whole on every engine, as a copy`
-# (on QuickJS, `record.inner.depth` is not the number 2).
+# (on QuickJS, `payload.inner.depth` is not the number 2: `failObjectNotWhole`).
 
 mutation_case "a number inside a copied value is kept as its text" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -170,7 +171,7 @@ PY
 # A map is no longer copied, so a Rhino child is handed the object its parent
 # holds (Rhino's objects are maps), and what the child writes into it the
 # parent reads. Killer: `an object a parent hands arrives whole on every
-# engine, as a copy` (on Rhino, `saw_parent_record` is the child's name).
+# engine, as a copy` (on Rhino, `failChildSharedTheParentsObject`).
 
 mutation_case "an object handed as a map is shared, not copied" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -182,7 +183,7 @@ PY
 #
 # Rhino wraps the copy as it wraps any Java value, so no script reads its
 # members. Killer: `an object a parent hands arrives whole on every engine, as
-# a copy` (on Rhino, `record` is not whole).
+# a copy` (on Rhino, `failObjectNotWhole`).
 
 mutation_case "a Rhino session holds a handed map as a Java object" <<'PY'
 edit("backends/kotlin/rhino/src/main/kotlin/com/sce/scripting/RhinoScriptEngine.kt",
