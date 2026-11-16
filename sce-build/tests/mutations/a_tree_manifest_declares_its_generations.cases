@@ -1,0 +1,52 @@
+# Mutation cases for "a tree manifest declares its generations" (ADR 0097,
+# section 2): the rules of tools/codegen/trees/<tree>.toml expanded against a
+# checkout, the script-engine variant of a tree, and which directories a tree
+# leaves to another.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_tree_manifest_declares_its_generations.cases`.
+#
+# `ExpandedTree::for_script_engine` gives every generation that leaves its
+# engine to its backend's default the engine of the variant, and keeps the one
+# a generation names: the Kotlin integration tree's jvm_long_text_ecmascript is
+# written for ECMAScript and names it, and handed a second `--script-engine` it
+# would be generated for the variant's language (the generator takes the last)
+# and refused by the engines its test runs. The manifest's own tests hold each
+# rule; each case takes one away.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib action::tree
+mutation_targets sce-build/src/action/tree.rs
+mutation_oracles sce-build/src/action/tree.rs
+
+mutation_case "a named engine is overwritten too" <<'PY'
+edit("sce-build/src/action/tree.rs",
+     r'''            let names_its_engine = arguments.iter().any(|a| {''',
+     r'''            let names_its_engine = false && arguments.iter().any(|a| {''')
+PY
+
+mutation_case "a variant gives no engine to a generation that names none" <<'PY'
+edit("sce-build/src/action/tree.rs",
+     r'''            if !names_its_engine {''',
+     r'''            if names_its_engine {''')
+PY
+
+mutation_case "an except pattern is read as a literal path" <<'PY'
+edit("sce-build/src/action/tree.rs",
+     r'''            .any(|pattern| matches_components(pattern, dir))''',
+     r'''            .any(|pattern| pattern == dir)''')
+PY
+
+mutation_case "a document set is never handed to its generation" <<'PY'
+edit("sce-build/src/action/tree.rs",
+     r'''                arguments.extend(set.iter().cloned());''',
+     r'''                let _ = &set;''')
+PY
+
+mutation_case "a document holding a later text of several is left out" <<'PY'
+edit("sce-build/src/action/tree.rs",
+     r'''            Containing::Any(texts) => texts.iter().any(|text| content.contains(text.as_str())),''',
+     r'''            Containing::Any(texts) => texts.first().is_some_and(|text| content.contains(text.as_str())),''')
+PY
