@@ -5,7 +5,9 @@
 name = "sce-rust-scenarios"
 version.workspace = true
 edition.workspace = true
-rust-version = "1.85"
+# The generator its build script links (`sce-build`) declares 1.87, and a build
+# needs its build-dependencies (docs/adr/0097).
+rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -34,6 +36,12 @@ sce-portable-bytes = { path = "../portable-bytes" }
 # `float_roundtrip` makes a JSON real parse to the nearest double, as the
 # conformance harness's own parse does (backends/rust/forge-conformance).
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# The generator, with its commands (`cli`): the build script writes the machines
+# it replays, the tree `rust-static-datamodel`, into OUT_DIR as their generator
+# (docs/adr/0097). It runs on the host, so a wasm32 build takes it as any other.
+[build-dependencies]
+sce-build = { path = "../../../sce-build", features = ["cli"] }
 
 [dev-dependencies]
 # The reference host of the standard host features, which the scenarios of

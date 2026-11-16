@@ -19,8 +19,10 @@ name: Rust engine on wasm32
 # refuses to pass without it rather than skipping the web target's own host.
 #
 # The triggers are what the module is made of: the engine, the forge runtime it
-# checks integers with, the replay crate, the committed machines it replays and
-# the scenario files they are held to.
+# checks integers with, the replay crate, and the machines it replays, which its
+# build script generates from the tree `rust-static-datamodel` (docs/adr/0097):
+# the generator, its templates and standard library, the tree's manifest and
+# the fixtures, the scenario files among them.
 
 on:
   push:
@@ -29,8 +31,11 @@ on:
       - 'backends/rust/runtime/**'
       - 'backends/rust/forge-runtime/**'
       - 'backends/rust/scenarios/**'
-      - 'backends/rust/tests/src/integration/static_datamodel/**'
-      - 'sce-build/tests/fixtures/static_datamodel/scenarios/**'
+      - 'backends/rust/portable-bytes/**'
+      - 'sce-build/**'
+      - 'stdlib/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/codegen/trees/rust-static-datamodel.toml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'scripts/gates/wasm32-scenarios.sh'
@@ -43,8 +48,11 @@ on:
       - 'backends/rust/runtime/**'
       - 'backends/rust/forge-runtime/**'
       - 'backends/rust/scenarios/**'
-      - 'backends/rust/tests/src/integration/static_datamodel/**'
-      - 'sce-build/tests/fixtures/static_datamodel/scenarios/**'
+      - 'backends/rust/portable-bytes/**'
+      - 'sce-build/**'
+      - 'stdlib/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/codegen/trees/rust-static-datamodel.toml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'scripts/gates/wasm32-scenarios.sh'
@@ -66,6 +74,14 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    # The replay crate's build script links sce-build, the generator of the
+    # machines it replays, whose default `xsd` feature binds libxml2 through
+    # pkg-config on the host the build script runs on.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev pkg-config
 
     # The release rust-toolchain.toml pins, which lists the wasm32 target
     # and clippy.

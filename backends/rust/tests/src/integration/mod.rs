@@ -7,13 +7,13 @@
 //! policy governing this layer. Each sub-module is a state machine
 //! generated from the canonical fixture at
 //! `integration_resources/<stem>/<stem>.scxml` by the actions declared in
-//! `tools/codegen/trees/rust-integration.toml` and written by
-//! `scripts/materialize.sh rust-integration`. The files under each
-//! sub-directory, their `mod.rs` included, carry a generated header and
-//! `SCE-MAP:` markers; only this `mod.rs` is hand-authored, so neither
-//! that tree nor the W3C one (`sce-codegen generate-w3c -l rust`) touches
-//! it, and adding or dropping an integration fixture is a single-line edit
-//! here.
+//! `tools/codegen/trees/rust-integration.toml`, and `static_datamodel` by
+//! those of `rust-static-datamodel.toml`. The crate's build script writes
+//! both trees into `OUT_DIR` and declares a module for each directory they
+//! placed there (docs/adr/0097), so adding or dropping an integration fixture
+//! is an edit of the tree manifest alone. The files under each sub-directory,
+//! their `mod.rs` included, carry a generated header and `SCE-MAP:` markers;
+//! only this `mod.rs` is hand-authored.
 //!
 //! Two entries do not come from there. `ai_loop` is generated from the
 //! worked example at `examples/ai_loop/ai_loop.scxml`, so that a document
@@ -50,86 +50,7 @@
 //! (`a_child_takes_a_handed_value_in_place_of_its_data`, a stem of every
 //! channel) does not reach. It lives at `tests/integration/<stem>.scxml`.
 
-pub mod a_bad_donedata_pair_is_ignored;
-pub mod a_bad_invoke_argument_is_reported_once;
-pub mod a_bad_send_argument_discards_its_message;
-pub mod a_bad_send_param_ends_its_block;
-pub mod a_child_may_send_many_events_in_one_tick;
-pub mod a_child_reply_arrives_without_a_tick;
-pub mod a_child_takes_a_handed_value_in_place_of_its_data;
-pub mod a_child_timer_is_a_deadline_of_its_parent;
-pub mod a_computed_event_name_is_matched_like_any_other;
-pub mod a_delay_is_a_css2_time;
-pub mod a_delayed_http_send_is_posted_when_due;
-pub mod a_delayed_send_reaches_what_its_target_names;
-pub mod a_host_names_its_origin_in_its_own_terms;
-pub mod a_hybrid_invoke_carries_its_arguments;
-pub mod a_mesh_request_reaches_the_router;
-pub mod a_payload_rides_on_its_own_event;
-pub mod a_peer_named_at_run_time_reaches_the_router;
-pub mod a_self_sent_event_names_its_origin;
-pub mod a_send_content_expr_is_the_payload;
-pub mod a_send_reaches_only_what_its_target_names;
-pub mod a_static_child_declares_its_data_with_a_handed_value;
-pub mod a_target_expression_is_routed_as_its_literal_is;
-pub mod ai_loop;
-pub mod an_assignment_keeps_the_document_it_is_given;
-pub mod an_error_ends_the_block_it_was_raised_in;
-pub mod an_error_inside_a_foreach_ends_its_block;
-pub mod an_event_keeps_the_name_it_was_sent_under;
-pub mod an_event_no_processor_delivered_has_no_origin;
-pub mod an_invoke_left_before_it_starts_raises_nothing;
-pub mod an_origin_is_the_address_its_sender_published;
-pub mod ancestor_entry_is_not_default_entry;
-pub mod autoforward_dequeue_point;
-pub mod autoforward_done_invoke;
-pub mod autoforward_event_fields;
-pub mod autoforward_internal_queue;
-pub mod cancelling_an_invoke_raises_nothing;
-pub mod discarded_event_is_observable;
-pub mod donedata_late_completion;
-pub mod donedata_local_invoke;
-pub mod empty_finalize_updates_the_location;
-pub mod error_cascade_is_bounded;
-pub mod event_data_arrives_as_sent;
-pub mod event_descriptor_spellings_agree;
-pub mod event_origin_is_a_location;
-pub mod event_schema_native;
-pub mod event_type_names_its_queue;
-pub mod eventless_macrostep_is_bounded;
-pub mod external_chain_is_bounded;
-pub mod flat_lifecycle;
-pub mod host_event_reaches_the_child;
-pub mod host_processor;
-pub mod inline_content_is_read_by_its_data_model;
-pub mod internal_chain_is_bounded;
-pub mod invoke_candidate_selects_the_child;
-pub mod invoke_expression_failure_is_reported;
-pub mod invoke_param_error_starts_the_child;
-pub mod invoke_param_seeds_declared_child_data;
-pub mod invoke_precedes_dequeue_midrun;
-pub mod invoke_precedes_external_dequeue;
-pub mod invoke_unsupported_type;
-pub mod late_data_binds_on_first_entry;
-pub mod late_tick_honours_cancel;
-pub mod native_action;
-pub mod nested_final_not_terminal;
-pub mod nested_lifecycle;
-pub mod onexit_runs_before_the_state_leaves;
-pub mod parallel_completion_raises_done_state;
-pub mod parallel_done_state_is_delivered;
-pub mod parallel_region_root_external_domain;
-pub mod parallel_regions_take_own_transitions;
-pub mod parallel_self_transition_keeps_its_leaf;
-pub mod send_namelist_over_http;
-pub mod send_param_payload;
-pub mod session_ids_are_distinct;
-pub mod static_datamodel;
-pub mod targetless_transition_completes_macrostep;
-pub mod the_run_ends_by_exiting_every_state;
-pub mod typed_reader_names;
-pub mod undecodable_payload_is_reported;
-pub mod unhandled_error_is_observable;
-pub mod unseen_event_is_reported;
-pub mod wildcard_in_document_order;
-pub mod xml_data_is_a_dom_tree;
+// One module per directory the trees placed under src/integration, each read
+// from its `mod.rs` in OUT_DIR: `#[path]` cannot take `env!("OUT_DIR")`, so
+// the build script writes the declarations.
+include!(concat!(env!("OUT_DIR"), "/integration.rs"));

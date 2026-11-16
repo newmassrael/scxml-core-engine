@@ -28,8 +28,17 @@
 //! directories whose listing decided a tree's members
 //! ([`ExpandedTree::listed`]), so that a document added to a set reaches the
 //! build that compiles the set.
+//!
+//! # How the crate declares what was placed
+//!
+//! `#[path]` cannot take `env!("OUT_DIR")`, so the build script writes the
+//! declarations of the modules it placed (`#[path = "<absolute path>"] pub mod
+//! <name>;`) into `OUT_DIR` ([`write_module_declarations`]), and the crate
+//! `include!`s them where it would declare the modules by hand. The modules
+//! are what was placed ([`Materialized::modules_in`]), not what a directory
+//! holds, so a file the tree no longer writes is no module of the crate.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -53,6 +62,46 @@ pub struct Materialized {
     pub files: BTreeSet<String>,
 }
 
+/// A module a crate declares over a file a build script materialized.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModuleDeclaration {
+    /// The module's name.
+    pub name: String,
+    /// The file the module is read from, absolute.
+    pub path: PathBuf,
+}
+
+impl Materialized {
+    /// The modules of what the trees placed directly in `dir`, a directory
+    /// named by its path under the checkout's root, in the order of their
+    /// names: a file `<name>.rs` is the module `name`, and a directory that
+    /// holds a placed `mod.rs` is the module of its name, read from that
+    /// file. The `mod.rs` of `dir` itself is no module of it, and neither is
+    /// a file of any other kind or a directory without a placed `mod.rs`.
+    pub fn modules_in(&self, dir: &str) -> Vec<ModuleDeclaration> {
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        let mut modules = BTreeMap::new();
+        for file in &self.files {
+            let Some(rest) = file.strip_prefix(&prefix) else {
+                continue;
+            };
+            let name = match rest.split_once('/') {
+                Some((directory, "mod.rs")) => directory,
+                Some(_) => continue,
+                None => match rest.strip_suffix(".rs") {
+                    Some("mod") | None => continue,
+                    Some(stem) => stem,
+                },
+            };
+            modules.insert(name.to_string(), self.into.join(file));
+        }
+        modules
+            .into_iter()
+            .map(|(name, path)| ModuleDeclaration { name, path })
+            .collect()
+    }
+}
+
 /// Why a build script wrote no trees.
 #[derive(Debug, thiserror::Error)]
 pub enum BuildScriptError {
@@ -67,6 +116,10 @@ pub enum BuildScriptError {
     NoStore,
     #[error("the build script cannot name its own executable, which is the generator: {0}")]
     NoExecutable(io::Error),
+    #[error("{0} is not a path of text, so no `#[path]` attribute can name it")]
+    NotText(PathBuf),
+    #[error("writing {path}: {source}")]
+    Write { path: PathBuf, source: io::Error },
     #[error("{0}")]
     Identity(#[from] IdentityError),
     #[error("{0}")]
@@ -130,6 +183,38 @@ pub fn materialize_trees(trees: &[&str]) -> Result<Materialized, BuildScriptErro
         println!("cargo:rerun-if-changed={}", path.display());
     }
     Ok(Materialized { into, files })
+}
+
+/// Write the declarations of `modules` into `OUT_DIR/<file>`, for the crate
+/// to `include!` where it would declare the modules by hand, and return the
+/// file written. Each is `#[path = "<absolute path>"] pub mod <name>;`, since
+/// `#[path]` cannot take `env!("OUT_DIR")`.
+pub fn write_module_declarations(
+    file: &str,
+    modules: &[ModuleDeclaration],
+) -> Result<PathBuf, BuildScriptError> {
+    let path = build_variable("OUT_DIR")?.join(file);
+    let text = module_declarations(modules)?;
+    std::fs::write(&path, text).map_err(|source| BuildScriptError::Write {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
+}
+
+/// The text of the declarations of `modules`, one module each, in the order
+/// given. A path is written as a Rust string literal, its escapes those of
+/// `Debug`, which spells every character a literal can hold.
+fn module_declarations(modules: &[ModuleDeclaration]) -> Result<String, BuildScriptError> {
+    let mut text = String::from("// GENERATED -- DO NOT EDIT (sce_build::action::build_script)\n");
+    for module in modules {
+        let path = module
+            .path
+            .to_str()
+            .ok_or_else(|| BuildScriptError::NotText(module.path.clone()))?;
+        text.push_str(&format!("#[path = {path:?}]\npub mod {};\n", module.name));
+    }
+    Ok(text)
 }
 
 /// The value of the variable Cargo gives a build script, as a path.
@@ -214,6 +299,98 @@ mod tests {
             .map(|p| root.path().join(p))
             .collect();
         assert_eq!(watched, expected);
+    }
+
+    fn placed(files: &[&str]) -> Materialized {
+        Materialized {
+            into: PathBuf::from("/out/sce-trees"),
+            files: files.iter().map(|f| f.to_string()).collect(),
+        }
+    }
+
+    /// The modules of a directory are its placed `.rs` files and its
+    /// directories with a placed `mod.rs`, by name; its own `mod.rs`, a file
+    /// of another kind, a file deeper down, a directory without one and a
+    /// file beside it whose name it begins are none of them.
+    #[test]
+    fn the_modules_of_a_directory_are_what_was_placed_in_it() {
+        let materialized = placed(&[
+            "crate/src/generated/mod.rs",
+            "crate/src/generated/test144/mod.rs",
+            "crate/src/generated/test144/test144_sm.rs",
+            "crate/src/generated/test144/sce_sourcemap.json",
+            "crate/src/integration/b_stem/mod.rs",
+            "crate/src/integration/a_stem/mod.rs",
+            "crate/src/integration/a_stem/a_stem_sm.rs",
+            "crate/src/integration/no_index/x_sm.rs",
+            "crate/tests_more.rs",
+            "crate/tests/test_150.rs",
+            "crate/tests/test_144.rs",
+            "crate/tests/notes.txt",
+        ]);
+        let named = |dir: &str| -> Vec<(String, PathBuf)> {
+            materialized
+                .modules_in(dir)
+                .into_iter()
+                .map(|m| (m.name, m.path))
+                .collect()
+        };
+        let at = |file: &str| Path::new("/out/sce-trees").join(file);
+        assert_eq!(
+            named("crate/src"),
+            [("generated".to_string(), at("crate/src/generated/mod.rs"))]
+        );
+        assert_eq!(
+            named("crate/src/generated"),
+            [(
+                "test144".to_string(),
+                at("crate/src/generated/test144/mod.rs")
+            )]
+        );
+        assert_eq!(
+            named("crate/src/integration/"),
+            [
+                (
+                    "a_stem".to_string(),
+                    at("crate/src/integration/a_stem/mod.rs")
+                ),
+                (
+                    "b_stem".to_string(),
+                    at("crate/src/integration/b_stem/mod.rs")
+                ),
+            ]
+        );
+        assert_eq!(
+            named("crate/tests"),
+            [
+                ("test_144".to_string(), at("crate/tests/test_144.rs")),
+                ("test_150".to_string(), at("crate/tests/test_150.rs")),
+            ]
+        );
+        assert!(named("crate/missing").is_empty());
+    }
+
+    /// A declaration names its module and the file it is read from, the path
+    /// written as a literal that holds it whatever characters it has.
+    #[test]
+    fn a_declaration_names_its_module_at_the_file_it_was_placed_at() {
+        let text = module_declarations(&[
+            ModuleDeclaration {
+                name: "test144".to_string(),
+                path: PathBuf::from("/out/sce-trees/generated/mod.rs"),
+            },
+            ModuleDeclaration {
+                name: "odd".to_string(),
+                path: PathBuf::from("/out/a \"quoted\" dir\\x/mod.rs"),
+            },
+        ])
+        .expect("the declarations are written");
+        assert_eq!(
+            text,
+            "// GENERATED -- DO NOT EDIT (sce_build::action::build_script)\n\
+             #[path = \"/out/sce-trees/generated/mod.rs\"]\npub mod test144;\n\
+             #[path = \"/out/a \\\"quoted\\\" dir\\\\x/mod.rs\"]\npub mod odd;\n"
+        );
     }
 
     /// The checkout of a package is the nearest directory above it that

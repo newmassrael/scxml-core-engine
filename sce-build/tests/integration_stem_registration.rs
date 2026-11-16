@@ -6,9 +6,10 @@
 //!
 //! Adding a stem there fans it out to seven channels — C++ Interpreter, C++
 //! AOT, Rust, Go, Python, Kotlin, C11 — and the sites that GENERATE each one
-//! are loud when they are missing: `regen_all_committed_trees.sh` exits
-//! non-zero without the four regen scripts, `rust-modrs-drift` blocks a push
-//! without the `pub mod`, and CMake fails to build without its registration.
+//! are loud when they are missing: a tree manifest generates every stem of
+//! `integration_resources/` by itself, the Rust crate declares a module for
+//! each directory its build script placed, and CMake fails to build without
+//! its registration.
 //!
 //! The sites that ASSERT are silent. A stem can land with generated code in
 //! all seven channels and a test driver in two, and every gate stays green

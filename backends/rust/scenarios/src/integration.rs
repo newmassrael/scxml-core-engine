@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! The committed `datamodel="sce-static"` machines, mounted from where they are
-//! committed (`backends/rust/tests/src/integration/static_datamodel/`) under the
-//! path `sce-rust-tests` gives them, and read by the compiler as they are:
-//! nothing is copied and nothing is rewritten, so a regeneration
-//! (`scripts/materialize.sh rust-static-datamodel`) reaches this crate with no step of
-//! its own.
+//! The `datamodel="sce-static"` machines, the tree `rust-static-datamodel`
+//! (docs/adr/0097), mounted under the path `sce-rust-tests` gives them and read
+//! by the compiler as the generator wrote them: the build script writes the
+//! tree into OUT_DIR and the declaration of its module beside it, so a change
+//! to a fixture or a template reaches this crate with no step of its own.
 
-// The path is read from this file's directory (`src/`). In an inline module it
-// would be read from the directory the module nests to, which does not exist.
-#[allow(clippy::all, dead_code)]
-#[path = "../../tests/src/integration/static_datamodel/mod.rs"]
-pub mod static_datamodel;
+// The machines are the generator's, and the replay calls only some of what
+// each one offers.
+#![allow(clippy::all, dead_code)]
+
+// `#[path]` cannot take `env!("OUT_DIR")`, so the build script writes the
+// declaration of `static_datamodel`, read from its `mod.rs` there.
+include!(concat!(env!("OUT_DIR"), "/static_datamodel.rs"));
