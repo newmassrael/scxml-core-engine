@@ -425,6 +425,32 @@ pub(super) struct PythonSource {
     pub(super) union: bool,
 }
 
+impl PythonSource {
+    /// What the codec's template reads of the printed text, as its
+    /// `python_source`: the template names each part, and the printer says
+    /// what each holds.
+    pub(super) fn context(&self) -> serde_json::Value {
+        serde_json::json!({
+            "before": self.before,
+            "hold": self.hold,
+            "runtime": self.runtime,
+            "modules": self.modules,
+            "factory": self.factory,
+            "union": self.union,
+            "groups": self
+                .groups
+                .iter()
+                .map(|group| serde_json::json!({
+                    "name": group.name,
+                    "ty": group.ty,
+                    "default": group.default,
+                    "decoded": group.decoded,
+                }))
+                .collect::<Vec<_>>(),
+        })
+    }
+}
+
 /// A gate group as the value holds it: one field of the value's class.
 pub(super) struct GroupField {
     /// The field's name, the group's accessor.

@@ -14969,27 +14969,7 @@ fn render_codec(
         );
     }
     if let Some((_, printed)) = &python_printed {
-        ctx.insert(
-            "python_source".into(),
-            serde_json::json!({
-                "before": printed.before,
-                "hold": printed.hold,
-                "runtime": printed.runtime,
-                "modules": printed.modules,
-                "factory": printed.factory,
-                "union": printed.union,
-                "groups": printed
-                    .groups
-                    .iter()
-                    .map(|group| serde_json::json!({
-                        "name": group.name,
-                        "ty": group.ty,
-                        "default": group.default,
-                        "decoded": group.decoded,
-                    }))
-                    .collect::<Vec<_>>(),
-            }),
-        );
+        ctx.insert("python_source".into(), printed.context());
     }
     // The fields each form holds and the fields the wire reads: on Rust a group
     // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
