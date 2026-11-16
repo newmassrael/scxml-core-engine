@@ -19488,11 +19488,12 @@ fn embed_flag_bind_thread_args_supplying(
                 let mask: u64 = (1u64 << width) - 1;
                 let (decode_arg, encode_arg) = match lang {
                     // A Swift codec takes its inputs as labelled `UInt8` parameters, named as the
-                    // leaf names them.
+                    // leaf names them; a decode reads the carrier from the local it read it into.
                     Language::Swift => (
                         format!(
-                            ", {}: UInt8(truncatingIfNeeded: (frame.{carrier} >> {bit}) & 0x{mask:X})",
-                            input.name
+                            ", {}: UInt8(truncatingIfNeeded: ({} >> {bit}) & 0x{mask:X})",
+                            input.name,
+                            swift_codec::decoded(carrier)
                         ),
                         format!(
                             ", {}: UInt8(truncatingIfNeeded: (self.{carrier} >> {bit}) & 0x{mask:X})",
@@ -19780,10 +19781,12 @@ fn caller_tag_arg_decode(
                     let width = flag_def.width.max(1);
                     let mask: u64 = (1u64 << width) - 1;
                     return match lang {
-                        // The carrier is a property of the frame being read, and the tag is the
-                        // bits of the flag shifted down and masked, in the byte the child takes.
+                        // The carrier is the local the decode has read it into, and the tag is
+                        // the bits of the flag shifted down and masked, in the byte the child
+                        // takes.
                         Language::Swift => format!(
-                            ", tag: UInt8(truncatingIfNeeded: (frame.{carrier_name} >> {bit}) & 0x{mask:X})"
+                            ", tag: UInt8(truncatingIfNeeded: ({} >> {bit}) & 0x{mask:X})",
+                            swift_codec::decoded(carrier_name)
                         ),
                         Language::Rust => {
                             // Decode-site local is snake_cased per
@@ -25414,13 +25417,18 @@ fn chain_has_decl_lines(
             ]
         }
         Language::Swift => {
-            // The chain is a member of the frame being decoded or the value being encoded; a gated
-            // one is `nil` when it was not on the wire, and an absent chain has no entries.
-            let holder = if encode { "self" } else { "frame" };
-            let list = if gated {
-                format!("({holder}.{id} ?? [])")
+            // The chain is the local the decode read it into, or a member of the value being
+            // encoded; a gated one is `nil` when it was not on the wire, and an absent chain has no
+            // entries.
+            let held = if encode {
+                format!("self.{id}")
             } else {
-                format!("{holder}.{id}")
+                swift_codec::decoded(&id)
+            };
+            let list = if gated {
+                format!("({held} ?? [])")
+            } else {
+                held
             };
             let found = test("_e");
             vec![format!(

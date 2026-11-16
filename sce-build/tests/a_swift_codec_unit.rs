@@ -362,7 +362,7 @@ fn a_tail_is_the_bytes_to_the_end_of_the_frame() {
         "the frame is read through a copy of the cursor: {code}"
     );
     assert!(
-        code.contains("frame.payload = Array(try reader.readSlice(reader.remaining))"),
+        code.contains("let payload = Array(try reader.readSlice(reader.remaining))"),
         "{code}"
     );
     assert!(code.contains("cursor = reader"), "{code}");
@@ -378,8 +378,12 @@ fn a_variable_length_integer_is_read_and_written_as_a_chain() {
         swift_of("tests/forge/resources/codec_vle_zint_u64.scxml").expect("a VLE is written");
     assert!(code.contains("public var value: UInt64 = 0"), "{code}");
     assert!(
-        code.contains("frame.value = try reader.readVle(UInt64.self)"),
+        code.contains("let value = try reader.readVle(UInt64.self)"),
         "{code}"
+    );
+    assert!(
+        code.contains("return VleZintU64(value: value)"),
+        "the value is made of the locals the frame was read into: {code}"
     );
     // A number written in turn is printed from the plan (docs/adr/0081 §6): the frame grows as
     // each field is appended, read off the source.
@@ -400,13 +404,13 @@ fn a_field_after_a_variable_length_one_begins_where_it_ended() {
     let code =
         swift_of("tests/forge/resources/codec_ext_timestamp.scxml").expect("a VLE is written");
     let time = code
-        .find("frame.time = try reader.readVle")
+        .find("let time = try reader.readVle")
         .expect("the chain is read");
     let size = code
-        .find("frame.zid_size = try reader.readInteger")
+        .find("let zid_size = try reader.readInteger")
         .expect("the size is read");
     let zid = code
-        .find("frame.zid = Array(try reader.readSlice")
+        .find("let zid = Array(try reader.readSlice")
         .expect("the bytes are read");
     assert!(
         time < size && size < zid,
@@ -415,10 +419,10 @@ fn a_field_after_a_variable_length_one_begins_where_it_ended() {
     let fixed_after = swift_of("tests/forge/resources/codec_fixed_after_lengthref.scxml")
         .expect("a fixed field after a length-ref is written");
     let bytes = fixed_after
-        .find("frame.payload = Array")
+        .find("let payload = Array")
         .expect("the bytes are read");
     let crc = fixed_after
-        .find("frame.crc32 = try reader.readInteger")
+        .find("let crc32 = try reader.readInteger")
         .expect("the crc is read");
     assert!(
         bytes < crc,
@@ -431,15 +435,13 @@ fn a_length_ref_takes_its_count_from_an_unsigned_field_and_its_arithmetic() {
     let code = swift_of("tests/forge/resources/codec_length_ref_uint16_be.scxml")
         .expect("a length-ref is written");
     assert!(
-        code.contains(
-            "frame.payload = Array(try reader.readSlice(Int(clamping: frame.payload_len)))"
-        ),
+        code.contains("let payload = Array(try reader.readSlice(Int(clamping: payload_len)))"),
         "{code}"
     );
     let arith = swift_of("tests/forge/resources/codec_scout_zid_body.scxml")
         .expect("a length-ref with arithmetic is written");
     assert!(
-        arith.contains("Int(clamping: frame.zid_len_m1) &+ (1)"),
+        arith.contains("Int(clamping: zid_len_m1) &+ (1)"),
         "{arith}"
     );
 }
@@ -451,7 +453,7 @@ fn a_byte_string_is_held_to_the_bound_its_document_declares() {
     )
     .expect("a bounded tail is written");
     assert!(
-        tail.contains("if reader.remaining > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        frame.body = Array(try reader.readSlice(reader.remaining))"),
+        tail.contains("if reader.remaining > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        let body = Array(try reader.readSlice(reader.remaining))"),
         "a decode refuses the bytes that are left before it cuts them: {tail}"
     );
     assert!(
@@ -464,7 +466,7 @@ fn a_byte_string_is_held_to_the_bound_its_document_declares() {
     )
     .expect("a bounded length-ref is written");
     assert!(
-        counted.contains("if frame.tag_len < 1 || frame.tag_len > 5 {"),
+        counted.contains("if tag_len < 1 || tag_len > 5 {"),
         "the carried value is judged in its own type, with the arithmetic folded into the bound, so a carried 0 that says -1 is refused and not wrapped: {counted}"
     );
 }
@@ -481,7 +483,7 @@ fn a_text_is_the_string_its_utf8_bytes_spell_and_is_measured_in_those_bytes() {
         "a field is declared on a line of its own, after its comment: {code}"
     );
     assert!(
-        code.contains("frame.name = try reader.readString(Int(clamping: frame.n))"),
+        code.contains("let name = try reader.readString(Int(clamping: n))"),
         "a decode reads the bytes as UTF-8 text, refusing bytes that are not: {code}"
     );
     assert!(
@@ -500,7 +502,7 @@ fn a_gated_text_reads_a_length_that_shares_its_gate_through_the_value_it_has_the
         .expect("a gated text with a gated length is written");
     assert!(code.contains("public var text: String? = nil"), "{code}");
     assert!(
-        code.contains("try reader.readString(Int(clamping: (frame.text_len ?? 0)))"),
+        code.contains("try reader.readString(Int(clamping: (text_len ?? 0)))"),
         "{code}"
     );
 }
@@ -532,11 +534,11 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
         "the arm the document marks as its default is what a value that has read no frame holds: {code}"
     );
     assert!(
-        code.contains("let body_tag = frame.msg_id\n        switch body_tag {\n        case 0x1:\n            frame.body = .codecVariantSessionOpen(try CodecVariantSessionOpen.decode(&reader))\n        case 0x2:"),
+        code.contains("let body_tag = msg_id\n        switch body_tag {\n        case 0x1:\n            body = .codecVariantSessionOpen(try CodecVariantSessionOpen.decode(&reader))\n        case 0x2:"),
         "{code}"
     );
     assert!(
-        code.contains("        default:\n            frame.body = .default(tag: body_tag, body: try CodecVariantSessionClose.decode(&reader))"),
+        code.contains("        default:\n            body = .default(tag: body_tag, body: try CodecVariantSessionClose.decode(&reader))"),
         "{code}"
     );
     assert!(
@@ -554,11 +556,11 @@ fn a_variant_over_the_bits_of_a_flag_reads_them_shifted_down_and_masked() {
     let code = swift_of("tests/forge/resources/codec_zenoh_push_body.scxml")
         .expect("a variant over a flag is written");
     assert!(
-        code.contains("let body_tag = (frame.header >> 0) & 0x1F"),
+        code.contains("let body_tag = (header >> 0) & 0x1F"),
         "{code}"
     );
     assert!(
-        code.contains("frame.body = .default(tag: UInt8(truncatingIfNeeded: body_tag), body: try CodecZenohPut.decode(&reader))"),
+        code.contains("body = .default(tag: UInt8(truncatingIfNeeded: body_tag), body: try CodecZenohPut.decode(&reader))"),
         "the tag the catch-all holds is the bits, in the smallest type that holds them: {code}"
     );
 }
@@ -575,7 +577,7 @@ fn a_variant_over_a_peeked_byte_reads_the_tag_and_leaves_the_byte_for_the_arm() 
     );
     assert!(
         code.contains(
-            "default:\n            frame.body = .codecPeekArmB(try CodecPeekArmB.decode(&reader))"
+            "default:\n            body = .codecPeekArmB(try CodecPeekArmB.decode(&reader))"
         ),
         "no catch-all: the last arm stands for what is left: {code}"
     );
@@ -616,7 +618,7 @@ fn a_flag_input_is_a_parameter_of_decode_and_encode_that_a_gate_reads() {
         "{code}"
     );
     assert!(
-        code.contains("        if (N & 0x1) != 0 {\n            frame.suffix_len = "),
+        code.contains("        if (N & 0x1) != 0 {\n            suffix_len = "),
         "a decode reads a field gated by the input only when the input is set: {code}"
     );
 }
@@ -646,7 +648,7 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
     let carrier = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
         .expect("a list whose entries are handed a bit of a carrier is written");
     assert!(
-        carrier.contains("wide: UInt8(truncatingIfNeeded: (frame.head >> 0) & 0x1)"),
+        carrier.contains("wide: UInt8(truncatingIfNeeded: (head >> 0) & 0x1)"),
         "a decode hands the bit of the carrier it has read: {carrier}"
     );
     assert!(
@@ -696,7 +698,7 @@ fn a_length_held_in_the_bits_of_a_flag_is_read_shifted_down_and_masked() {
     let code = swift_of("tests/forge/resources/codec_length_ref_dotted_basic.scxml")
         .expect("a length in a flag is written");
     assert!(
-        !code.contains("if ((frame.carrier >> 4) & 0xF)"),
+        !code.contains("if ((carrier >> 4) & 0xF)"),
         "four bits cannot say more than the 15 bytes the document admits, so nothing is judged: {code}"
     );
     assert!(
@@ -705,7 +707,7 @@ fn a_length_held_in_the_bits_of_a_flag_is_read_shifted_down_and_masked() {
     );
     assert!(
         code.contains(
-            "frame.payload = Array(try reader.readSlice(Int(clamping: ((frame.carrier >> 4) & 0xF))))"
+            "let payload = Array(try reader.readSlice(Int(clamping: ((carrier >> 4) & 0xF))))"
         ),
         "{code}"
     );
@@ -886,7 +888,7 @@ fn a_field_that_is_on_the_wire_on_a_flag_is_optional_and_read_only_when_the_flag
     assert!(code.contains("public var seq: UInt16? = nil"), "{code}");
     assert!(
         code.contains(
-            "if (frame.flags & 0x1) != 0 {\n            frame.seq = try reader.readInteger(UInt16.self, .big)\n        }"
+            "var seq: UInt16? = nil\n        if (flags & 0x1) != 0 {\n            seq = try reader.readInteger(UInt16.self, .big)\n        }"
         ),
         "a decode reads the field only when the bit of the carrier it has read is set: {code}"
     );
@@ -957,11 +959,11 @@ fn a_gate_the_encode_cannot_derive_is_a_check_before_the_first_byte() {
 fn a_negated_clause_is_on_a_clear_bit_and_a_disjunction_on_any_clause() {
     let negated = swift_of("tests/forge/resources/codec_present_if_negation.scxml")
         .expect("a negated gate is written");
-    assert!(negated.contains("(frame.flags & 0x1) == 0"), "{negated}");
+    assert!(negated.contains("(flags & 0x1) == 0"), "{negated}");
     let either = swift_of("tests/forge/resources/codec_present_if_disjunction.scxml")
         .expect("a disjunction is written");
     assert!(
-        either.contains("(frame.flags & 0x1) != 0 || (frame.flags & 0x2) != 0"),
+        either.contains("(flags & 0x1) != 0 || (flags & 0x2) != 0"),
         "any clause of a disjunction puts the field on the wire: {either}"
     );
 }
@@ -986,11 +988,11 @@ fn a_gate_on_the_entries_of_a_chain_reads_a_boolean_bound_where_the_chain_is_rea
     let code = swift_of("tests/forge/resources/codec_chain_has_tagged.scxml")
         .expect("a gate on the entries of a chain is written");
     assert!(
-        code.contains("let _has_entries_7 = frame.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })"),
+        code.contains("let _has_entries_7 = entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })"),
         "the chain is asked for the identifier it holds, once it is read: {code}"
     );
     assert!(
-        code.contains("if _has_entries_7 || (frame.header & 0x1) != 0 {"),
+        code.contains("if _has_entries_7 || (header & 0x1) != 0 {"),
         "a clause on a chain joins a clause on a flag: {code}"
     );
     assert!(
@@ -1025,7 +1027,7 @@ fn a_chain_hands_its_entries_an_input_read_off_the_entry_before() {
     );
     assert!(
         code.contains(
-            "CodecChainPrevEntry.decode(&reader, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (frame.head >> 0) & 0x1))"
+            "CodecChainPrevEntry.decode(&reader, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (head >> 0) & 0x1))"
         ),
         "the chain's input and the carrier's bit are passed in the entry's declared order: {code}"
     );
@@ -1105,7 +1107,7 @@ fn a_list_is_an_array_of_the_struct_its_entry_codec_is_written_as() {
     );
     assert!(
         code.contains(
-            "for _ in 0..<Int(clamping: frame.links_len) {\n            links_items.append(try CodecRepeatElem.decode(&reader))\n        }\n        frame.links = links_items"
+            "for _ in 0..<Int(clamping: links_len) {\n            links_items.append(try CodecRepeatElem.decode(&reader))\n        }\n        let links = links_items"
         ),
         "a decode reads as many entries as the count says, into a local set when whole: {code}"
     );
@@ -1136,7 +1138,7 @@ fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
     let code = swift_of("tests/forge/resources/codec_repeat_present_if_basic.scxml")
         .expect("a gated list is written");
     assert!(
-        code.contains("if (frame.num_elems ?? 0) > 32 {\n                throw CodecError.tooManyElements\n            }\n            var elems_items"),
+        code.contains("if (num_elems ?? 0) > 32 {\n                throw CodecError.tooManyElements\n            }\n            var elems_items"),
         "the count is judged before an entry is read, from the count a gate may leave absent: {code}"
     );
     assert!(
@@ -1191,7 +1193,7 @@ fn an_embedded_codec_without_a_length_is_read_from_the_frames_own_cursor() {
         "{code}"
     );
     assert!(
-        code.contains("frame.locator = try CodecZenohLocator.decode(&reader)"),
+        code.contains("let locator = try CodecZenohLocator.decode(&reader)"),
         "{code}"
     );
 }
@@ -1222,7 +1224,7 @@ fn an_embedded_codec_bounded_by_a_length_is_read_from_those_bytes_alone() {
         .expect("a length-bounded embedded codec is written");
     assert!(
         code.contains(
-            "let ts_inner_length = Int(clamping: frame.ext_size)\n        var ts_inner = SceCursor(Array(try reader.peekSlice(ts_inner_length)))\n        frame.ts = try CodecZenohTimestamp.decode(&ts_inner)\n        try reader.advance(ts_inner_length)"
+            "let ts_inner_length = Int(clamping: ext_size)\n        var ts_inner = SceCursor(Array(try reader.peekSlice(ts_inner_length)))\n        let ts = try CodecZenohTimestamp.decode(&ts_inner)\n        try reader.advance(ts_inner_length)"
         ),
         "it is decoded from a cursor over the bytes the length gives, and the frame's own cursor moves past them: {code}"
     );
@@ -1443,7 +1445,7 @@ fn an_embedded_variant_is_handed_its_tag_by_a_flag_of_the_embedding_codec() {
         .expect("a codec that embeds a variant by a dispatch flag is written");
     assert!(
         code.contains(
-            "CodecSourceLeaf.decode(&reader, tag: UInt8(truncatingIfNeeded: (frame.hdr >> 0) & 0x1))"
+            "CodecSourceLeaf.decode(&reader, tag: UInt8(truncatingIfNeeded: (hdr >> 0) & 0x1))"
         ),
         "the tag is the bit of the carrier's flag: {code}"
     );
@@ -1558,11 +1560,11 @@ fn a_gated_field_of_an_enum_is_read_and_written_in_turn_where_its_flag_is_set() 
             "a gated enum field is optional",
         ),
         (
-            "frame.code = try EnumUdsNrc.fromUnderlying(reader.readInteger(UInt8.self, .big))",
+            "let code = try EnumUdsNrc.fromUnderlying(reader.readInteger(UInt8.self, .big))",
             "a frame read field by field reads the carrier from the cursor",
         ),
         (
-            "if (frame.flags & 0x1) != 0 {\n            frame.state = try declaredEnumValue(EnumSessionState.fromUnderlying(reader.readInteger(UInt8.self, .big)))\n        }",
+            "if (flags & 0x1) != 0 {\n            state = try declaredEnumValue(EnumSessionState.fromUnderlying(reader.readInteger(UInt8.self, .big)))\n        }",
             "the gated field is read where its flag is set, and refused for an undeclared number",
         ),
         (
@@ -1588,7 +1590,7 @@ fn an_arm_under_a_feature_is_a_case_of_the_build_that_has_it_and_its_tag_is_refu
             "the arm's case is declared unless the build sets the condition",
         ),
         (
-            "        #if !SCE_FEATURE_GATED_ARM_OFF\n        case 0x2:\n            frame.body = .codecDefaultMarkerArmB(try ",
+            "        #if !SCE_FEATURE_GATED_ARM_OFF\n        case 0x2:\n            body = .codecDefaultMarkerArmB(try ",
             "the decode reads the arm in the build that has it",
         ),
         (
@@ -1634,7 +1636,7 @@ fn a_field_of_fewer_whole_bytes_than_its_type_is_read_and_written_as_those_bytes
     .expect("whole bytes fewer than the type's are written in a frame read field by field");
     for (expected, why) in [
         (
-            "frame.n = try reader.readInteger(UInt32.self, bytes: 3, .big)",
+            "let n = try reader.readInteger(UInt32.self, bytes: 3, .big)",
             "the decode reads the three bytes the field has and no fourth",
         ),
         (

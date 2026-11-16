@@ -55,7 +55,9 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// The bytes of one frame.
 {% endif %}
     public static let frameLength = {{ frame_length }}
-{% for f in fields %}
+{# An element the encode derives is no member of a value printed from its plan (docs/adr/0081
+   §3): the decode reads it into a local, and the encode computes it. #}
+{% for f in fields if not f.derived %}
 
 {% if f.present %}
     /// On the wire only when `{{ f.present.encode | replace("self.", "") }}`; `nil` when it is not. An encode
@@ -149,9 +151,9 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-{% if fields %}
-    public init({% for f in fields %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
-{% for f in fields %}
+{% if fields | rejectattr("derived") | list %}
+    public init({% for f in fields if not f.derived %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for f in fields if not f.derived %}
         self.{{ f.id }} = {{ f.id }}
 {% endfor %}
     }
@@ -172,23 +174,30 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     public static func decode(_ cursor: inout SceCursor{% for input in flag_params %}, {{ input }}: UInt8{% endfor %}{% if caller_tag %}, tag: UInt8{% endif %}) throws(CodecError) -> {{ struct_name }} {
 {% if sequential %}
         var reader = cursor
-        var frame = {{ struct_name }}()
+{# Each field is read into a local named as the field, which a later field's gate, length or
+   count reads, and the value is made of the locals of the elements it presents once the whole
+   frame is read. A local a gate decides is `nil` until its gate holds; a variant's is given by
+   whichever arm its tag selects; every other is bound where it is read. #}
 {% for f in fields %}
 {% set pad = "    " if f.present else "" %}
+{% set bind = "" if (f.present or f.variant) else "let " %}
 {% if f.present %}
+        var {{ f.id }}: {{ f.swift_type }} = nil
         if {{ f.present.decode }} {
+{% elif f.variant %}
+        let {{ f.id }}: {{ f.swift_type }}
 {% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
 {% if f.variable.text %}
-{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = try reader.readString(reader.remaining)
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = try reader.readString(reader.remaining)
 {% else %}
-{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = Array(try reader.readSlice(reader.remaining))
 {% endif %}
 {% elif f.variable %}
 {% if f.variable.text %}
-{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = try reader.readString(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %})
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = try reader.readString(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %})
 {% else %}
-{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
 {% endif %}
 {% elif f.variant %}
 {{ pad }}        let {{ f.variant.local }} = {{ f.variant.tag }}
@@ -198,7 +207,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}        #if !{{ c.off }}
 {% endif %}
 {{ pad }}        {{ c.label }}
-{{ pad }}            frame.{{ f.id }} = {{ c.value }}
+{{ pad }}            {{ bind }}{{ f.id }} = {{ c.value }}
 {% if c.off %}
 {{ pad }}        #else
 {{ pad }}        {{ c.label }}
@@ -233,7 +242,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.items }}
 {% elif f.chain %}
 {{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {% if f.chain.max_depth is none %}
@@ -253,28 +262,28 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.items }}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
-{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&{{ f.embed.inner }}{{ f.embed.decode_args }})
+{{ pad }}        {{ bind }}{{ f.id }} = try {{ f.embed.element }}.decode(&{{ f.embed.inner }}{{ f.embed.decode_args }})
 {{ pad }}        try reader.advance({{ f.embed.inner }}_length)
 {% elif f.embed %}
-{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&reader{{ f.embed.decode_args }})
+{{ pad }}        {{ bind }}{{ f.id }} = try {{ f.embed.element }}.decode(&reader{{ f.embed.decode_args }})
 {% elif f.list and f.list.kind == "count" %}
 {{ pad }}        {{ f.list.guard }}var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
 {{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.items }}
 {% elif f.list %}
 {{ pad }}        var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        while reader.remaining > 0 {
 {{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.items }}
 {% else %}
-{{ pad }}        frame.{{ f.id }} = {{ f.read }}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.read }}
 {% endif %}
 {% if f.present %}
         }
@@ -286,7 +295,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% endif %}
 {% endfor %}
         cursor = reader
-        return frame
+        return {{ struct_name }}({% for f in fields if not f.derived %}{{ f.id }}: {{ f.id }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% else %}
         _ = try cursor.peekSlice(frameLength)
         let frame = {{ struct_name }}(

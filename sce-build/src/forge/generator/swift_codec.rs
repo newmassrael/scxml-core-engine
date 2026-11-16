@@ -545,19 +545,25 @@ fn is_sequential(m: &CodecModel) -> bool {
 /// an earlier carrier names is set, or the flag input the codec is given (or clear, for a negated
 /// clause), or an entry of a chain the codec holds has a given identifier (or none does, for a
 /// negated clause), and any clause of a disjunction holds. `holder` names the value whose carriers
-/// are read: the frame being decoded, or `self` when it is encoded; an input is a parameter of both,
-/// and a chain's answer is the boolean the codec binds beside the chain ([`chain_has_lines`]). The
-/// mask is the one every backend tests, from the shared resolution of the predicate. The carrier a
-/// local clause names, and its flag, exist and are unsigned integers, and an input a clause names is
-/// one the codec declares: validation has refused a codec where they do not.
-fn present_if_condition(m: &CodecModel, predicate: &PresentIfPredicate, holder: &str) -> String {
+/// are read, `self` when it is encoded; `None` reads the local a decode has read each carrier into
+/// ([`decoded`]). An input is a parameter of both, and a chain's answer is the boolean the codec
+/// binds beside the chain ([`chain_has_lines`]). The mask is the one every backend tests, from the
+/// shared resolution of the predicate. The carrier a local clause names, and its flag, exist and
+/// are unsigned integers, and an input a clause names is one the codec declares: validation has
+/// refused a codec where they do not.
+fn present_if_condition(
+    m: &CodecModel,
+    predicate: &PresentIfPredicate,
+    holder: Option<&str>,
+) -> String {
     let test = if predicate.scope == PresentIfScope::Chain {
         present_if_chain_clause(predicate, Language::Swift)
     } else {
         let (mask, _, carrier) = present_if_carrier_info(&m.fields, predicate);
-        let operand = match carrier {
-            PresentIfCarrier::Local(carrier) => format!("{holder}.{}", carrier.id),
-            PresentIfCarrier::Input => predicate.flag_name.clone(),
+        let operand = match (carrier, holder) {
+            (PresentIfCarrier::Local(carrier), Some(holder)) => format!("{holder}.{}", carrier.id),
+            (PresentIfCarrier::Local(carrier), None) => decoded(&carrier.id),
+            (PresentIfCarrier::Input, _) => predicate.flag_name.clone(),
         };
         format!(
             "({operand} & 0x{mask:X}) {} 0",
@@ -568,6 +574,13 @@ fn present_if_condition(m: &CodecModel, predicate: &PresentIfPredicate, holder: 
         Some(rest) => format!("{test} || {}", present_if_condition(m, rest, holder)),
         None => test,
     }
+}
+
+/// The local a decode reads the field `id` into, which a later field's gate, length, count or tag
+/// reads: the field's own name. The decode makes the value of these locals once the whole frame is
+/// read, so an element the encode derives (docs/adr/0081 §3) is read and is no member of it.
+pub(super) fn decoded(id: &str) -> String {
+    id.to_string()
 }
 
 /// What of the variable-length integer `f` the Swift codec does not lower yet; `None` for one it
@@ -649,15 +662,15 @@ fn carried_length_expr(m: &CodecModel, name: &str) -> String {
     // The bits of a flag of a carrier the frame has read, shifted down and masked.
     if let Some((carrier, flag)) = dotted_length_field(name) {
         let (shift, mask) = dotted_length_resolve(carrier, flag, &m.fields);
-        return format!("((frame.{carrier} >> {shift}) & 0x{mask:X})");
+        return format!("(({} >> {shift}) & 0x{mask:X})", decoded(carrier));
     }
     if m.fields
         .iter()
         .any(|g| g.id == name && g.present_if.is_some())
     {
-        format!("(frame.{name} ?? 0)")
+        format!("({} ?? 0)", decoded(name))
     } else {
-        format!("frame.{name}")
+        decoded(name)
     }
 }
 
@@ -844,7 +857,7 @@ fn presence_mismatch_checks(
         if !checks.iter().any(|check| check.field == field.id) {
             continue;
         }
-        let test = present_if_condition(m, predicate, "self");
+        let test = present_if_condition(m, predicate, Some("self"));
         let refuse = "throw CodecError.presentIfMismatch";
         lines.push(format!("if {test} {{"));
         lines.push(format!("    if self.{} == nil {{", field.id));
@@ -944,11 +957,11 @@ fn variant_context(
                     (1u64 << width) - 1
                 };
                 (
-                    format!("(frame.{tag_field} >> {}) & 0x{mask:X}", flag.bit),
+                    format!("({} >> {}) & 0x{mask:X}", decoded(tag_field), flag.bit),
                     smallest_unsigned(width),
                 )
             }
-            None => (format!("frame.{tag_field}"), carrier_type),
+            None => (decoded(tag_field), carrier_type),
         }
     };
     let local = format!("{VARIANT_FIELD}_tag");
@@ -1296,8 +1309,8 @@ pub(super) fn render(
             // field is optional, `nil` when it is not on the wire.
             let present = f.present_if.as_ref().map(|p| {
                 serde_json::json!({
-                    "decode": present_if_condition(m, p, "frame"),
-                    "encode": present_if_condition(m, p, "self"),
+                    "decode": present_if_condition(m, p, None),
+                    "encode": present_if_condition(m, p, Some("self")),
                 })
             });
             let optional = if present.is_some() { "?" } else { "" };
@@ -1314,7 +1327,7 @@ pub(super) fn render(
                 let length = f
                     .embed_length_from
                     .as_deref()
-                    .map(|name| format!("Int(clamping: frame.{name})"));
+                    .map(|name| format!("Int(clamping: {})", decoded(name)));
                 // The tag a variant takes from its caller is a flag of this frame when the import
                 // declares which, and so is handed to the decode after the flag inputs.
                 let embed_args = embed_parent_flags_thread_args(
@@ -1607,7 +1620,18 @@ pub(super) fn render(
             })
         })
         .collect();
+    // The encode printed from the codec's plan where the Swift printer lowers every form the plan
+    // holds (docs/adr/0081 step 5), with the protocol the value presents its elements through; the
+    // template's own encode where it does not yet (§6), never both. A value printed from its plan
+    // holds no element the encode derives (§3): the decode reads it into a local alone.
+    let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
+    let prints = source::unlowered_positional(&plan).is_none();
     let mut fields = fields;
+    for field in &mut fields {
+        let id = field["id"].as_str().unwrap_or_default();
+        let derived = prints && !plan.elements.iter().any(|e| e.field.id == id);
+        field["derived"] = derived.into();
+    }
     let mut ctx = l.base_context(&m.name);
     // The arm a tag selects is the last of the fields, and its enum is declared before the struct.
     if let Some(variant) = &m.variant {
@@ -1681,13 +1705,7 @@ pub(super) fn render(
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.
     ctx.insert("sequential".into(), sequential.into());
-    // The encode printed from the codec's plan where the Swift printer lowers every form the plan
-    // holds (docs/adr/0081 step 5), with the protocol the value presents its elements through; the
-    // template's own encode where it does not yet (§6), never both.
-    let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
-    let printed = source::unlowered_positional(&plan)
-        .is_none()
-        .then(|| source::context(&l, &plan, &carriers));
+    let printed = prints.then(|| source::context(&l, &plan, &carriers));
     ctx.insert("printed".into(), printed.into());
     l.render(env, "codec", ctx)
 }
