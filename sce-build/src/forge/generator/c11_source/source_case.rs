@@ -65,15 +65,36 @@ pub(crate) fn source_case(
                     prints no codec that holds one"
             .to_string());
     }
+    let mut case = SourceCase {
+        statements: Vec::new(),
+        checks: Vec::new(),
+    };
+    members(plan, source, "", "", held, &mut case)?;
+    Ok(case)
+}
+
+/// Into `case`, the statements that set each element of `source`, a value of
+/// the codec `plan` held at the member path `at` of the case's value (`""`
+/// for the value itself, `"body."` or `"body.value."` for a body it holds),
+/// and the check of each, by its id after `id_at`. A body is set member by
+/// member in turn, as the struct holds it.
+fn members(
+    plan: &EncodePlan<'_>,
+    source: &serde_json::Value,
+    at: &str,
+    id_at: &str,
+    held: &mut dyn HeldCodecs,
+    case: &mut SourceCase,
+) -> Result<(), String> {
     let object = source_members(plan, source)?;
     let l = LangCtx::new(crate::generator::Language::C11, &[]);
-    let mut statements = Vec::new();
-    let mut checks = Vec::new();
+    let SourceCase { statements, checks } = case;
     for element in &plan.elements {
-        let id = &element.field.id;
-        let member = l.codec_field_id(id);
+        let declared = &element.field.id;
+        let id = format!("{id_at}{declared}");
+        let member = format!("{at}{}", l.codec_field_id(declared));
         let json = object
-            .get(id)
+            .get(declared)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
         // One a gate decides is held in the optional value of what it holds:
         // absent as the zeroed value is, or present with its value set.
@@ -136,6 +157,30 @@ pub(crate) fn source_case(
                     )),
                 ));
             }
+            // The members of the body the struct holds, as its codec's own
+            // case sets them, under the member that holds it.
+            Value::Body { codec } => {
+                let inner_at = if gated {
+                    format!("{member}.value.")
+                } else {
+                    format!("{member}.")
+                };
+                let inner_id = format!("{id}.");
+                let mut body = SourceCase {
+                    statements: Vec::new(),
+                    checks: Vec::new(),
+                };
+                held.read(codec, &mut |body_plan, _path, held| {
+                    members(body_plan, json, &inner_at, &inner_id, held, &mut body)
+                        .map(|()| String::new())
+                })
+                .map_err(|e| format!("`{id}`: {e}"))?;
+                if gated {
+                    checks.push((id.clone(), format!("{DECODED}.{member}.present")));
+                }
+                statements.extend(body.statements);
+                checks.extend(body.checks);
+            }
             _ => {
                 let literal = member_literal(&element.value, json, held)
                     .map_err(|e| format!("`{id}`: {e}"))?;
@@ -147,7 +192,7 @@ pub(crate) fn source_case(
             }
         }
     }
-    Ok(SourceCase { statements, checks })
+    Ok(())
 }
 
 /// One value of the abstract type `value`, as a C expression a member of the
@@ -180,9 +225,10 @@ fn member_literal(
         Value::Bytes(_) | Value::Text(_) => {
             unreachable!("a byte string or a text is set by statements of its own")
         }
-        Value::Body { .. } | Value::List { .. } => Err(
-            "a body or a list is not spelled as a C11 literal yet: the C11 printer prints no \
-             codec that holds one"
+        Value::Body { .. } => unreachable!("a body is set member by member"),
+        Value::List { .. } => Err(
+            "a list is not spelled as a C11 literal yet: the C11 printer prints no codec that \
+             holds one"
                 .into(),
         ),
     }
