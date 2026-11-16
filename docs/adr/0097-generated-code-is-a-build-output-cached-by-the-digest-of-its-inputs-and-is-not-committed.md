@@ -702,6 +702,52 @@ tree has to be reachable from that directory.
 directory now holds a generated directory beside the hand-written headers, and a reader of it has to name the
 hand-written ones.
 
+## Amendment (2026-11-16): every test tree is declared
+
+Decided under the owner's standing rule (the most long-term correct structure, without asking), and
+recorded here because each changes what a manifest is.
+
+1. **A static datamodel tree is the import closure of its machines.** The Rust, Go, Kotlin and Python
+   static datamodel trees (`tools/codegen/trees/<language>-static-datamodel.toml`) are one
+   `generate --with-imports` per machine: the machines are every `datamodel="sce-static"` statechart of
+   the fixture directory (and, for Go and Python, of `tests/integration`) that the backend does not
+   refuse by name (`skip_unsupported`), and what each imports, to any depth, is the generator's walk
+   (`sce_build::import_closure`), not a list. The hand lists of the retired scripts became roots only
+   where no machine reaches a document: the test profile's templates, components and suites, the
+   scenario's standard statechart, and four standard rules Rust holds to its compiler. A document a
+   hybrid `<invoke>` declares in `sce:candidates` is no member of its own (`except`): it is generated
+   as the child of the machine that starts it, in that machine's action, as the walk generates it.
+   The trees now also hold the event schemas a machine imports directly, which the scripts left out;
+   the closure is what a build of the design needs, and the first regeneration shows them.
+2. **Swift lowers the model in part, so its static tree is a sweep, not a closure.** A machine is
+   generated alone, since a unit it imports that Swift does not lower yet would take the machine out
+   with it, and the units are swept for what they are (`each` over files, paths under `stdlib` and the
+   fixture catalog, holding any of the kinds Swift writes as a file). The broadcast logs, bounded
+   collections and queues are document sets compiled together (`set`). A Swift forge unit is placed
+   at the root of the run (`forge_unit_dir`), beside the module that calls it, which a
+   `--with-imports` run of the test profile needs.
+3. **One mechanism for every integration tree.** The Swift and Python integration trees are declared
+   (`swift-integration.toml`, `python-integration.toml`, `--children`), `generate-integration` is
+   removed, and with it its `--script-engine` and the shell shim that carried the selection to the
+   per-stem scripts. A script-engine variant is `materialize <tree> --script-engine <language>` only,
+   judged per generation by the generator (`Language::supports_script_engine_target`);
+   the w3c-kotlin gate writes its overlay from the Kotlin trees that way, and the producer loop that
+   found trees by what scripts wrote, with `SCE_KOTLIN_GENERATED_ROOT`, is gone.
+4. **A tree that is not committed says so** (`committed = false`): the Python trees are build outputs
+   written by the lane that runs them. The bridge test skips them; the determinism test holds them.
+5. **A manifest's vocabulary grew by what the scripts did and nothing more**: `paths` (members by
+   path, below an optional `under`), `catalog` (the documents a fixture catalog lists), `containing`
+   as any of several texts, `set` (documents one generation compiles together), and `except` read as
+   a pattern, so a tree whose root is a wildcard leaves out what another tree owns beneath it. An index
+   names the modules a materialization placed, not what a directory holds, so a file an older copy
+   left is no module of the new tree.
+
+Still owed, in order: landing 1 (the Rust test trees built by `build.rs` into `OUT_DIR`, the W3C tests
+one target), the `generated-diff` job and the `generated-deterministic` gate of section 5, then the
+release pipeline. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
+`sce_build::action::store` already speaks (an `ActionResult` per action key, SHA-256 digests) and a
+store configured to the site's instance in place of `LocalStore`.
+
 ## References
 
 - `scripts/regen_all_committed_trees.sh`, `scripts/lib/sce_generated_tree.sh`, `bx.toml` `[actions.regen-*]` and
