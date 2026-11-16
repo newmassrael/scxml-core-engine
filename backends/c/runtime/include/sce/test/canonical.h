@@ -25,14 +25,17 @@
  *     `sce_jcs_key` that no value follows);
  *   - a list is an array of its elements in order, an element of
  *     `optional<T>` that is absent `null`, the one value no other form takes
- *     (`sce_test_canonical_absent_element`).
+ *     (`sce_test_canonical_absent_element`);
+ *   - a value of a union is an object of one member, named by its case's
+ *     variant, whose value is the case's record, or the empty object for a
+ *     case that holds none (`sce_test_canonical_begin_union_case`).
  *
  * The generated unit of a test template over a record writes its
  * `<name>_canonical` with these, by the types its document declares
  * (`forge/c/test_template.h.jinja2`): a C type alone does not say which form a
  * value takes. A byte string, of one entry or inside a list, is held with its
- * length, which `sce_test_canonical_bytes` is given. C11 lowers no union, so no
- * form of one is written here. The C11 port of `sce/include/test/Canonical.h` and
+ * length, which `sce_test_canonical_bytes` is given. The C11 port of
+ * `sce/include/test/Canonical.h` and
  * `sce_rust_runtime::test::canonical`. Header-only and allocation-free.
  */
 
@@ -168,6 +171,34 @@ static inline void sce_test_canonical_open_enumerated_(sce_jcs_t *jcs, const cha
  *  only a native log holds this form. `value` is read three times. */
 #define SCE_TEST_CANONICAL_OPEN_ENUMERATED(jcs, declared, value)                                                       \
     sce_test_canonical_open_enumerated_((jcs), (declared), (value) > 0, (uint64_t)(value), (int64_t)(value))
+
+/* A value of a union: an object of one member, named by the variant of its case, whose value the
+   statements that follow write, the case's record, before `sce_test_canonical_end_union_case`
+   closes the object. */
+static inline void sce_test_canonical_begin_union_case(sce_jcs_t *jcs, const char *variant) {
+    sce_jcs_begin_object(jcs);
+    sce_jcs_key(jcs, variant);
+}
+
+/* The end of the object `sce_test_canonical_begin_union_case` began. */
+static inline void sce_test_canonical_end_union_case(sce_jcs_t *jcs) {
+    sce_jcs_end_object(jcs);
+}
+
+/* A value of a union in a case that holds no record: the object of one member, named by the
+   variant of its case, whose value is the empty object. */
+static inline void sce_test_canonical_empty_union_case(sce_jcs_t *jcs, const char *variant) {
+    sce_test_canonical_begin_union_case(jcs, variant);
+    sce_jcs_begin_object(jcs);
+    sce_jcs_end_object(jcs);
+    sce_test_canonical_end_union_case(jcs);
+}
+
+/* A value of a union whose tag names none of its cases, which no constructor of its case builds,
+   has no canonical form. */
+static inline void sce_test_canonical_caseless_union(sce_jcs_t *jcs) {
+    sce_jcs_refuse(jcs, "a value of a union whose tag names none of its cases has no canonical form");
+}
 
 #ifdef __cplusplus
 }

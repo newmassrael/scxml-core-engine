@@ -232,8 +232,8 @@ fn a_configuration_reads_the_inputs_of_its_system_ports() {
 /// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
 /// record of every form C11 holds generates a reader and a writer of each,
 /// which `backends/c/tests/integration/test_a_record_reads_back_the_form_it_writes.c`
-/// compiles and round-trips; the one whose record holds a union, which C11 does
-/// not lower, is refused by name.
+/// compiles and round-trips; the one whose record holds a union reads and
+/// writes the union a case at a time.
 #[test]
 fn a_configuration_reads_a_record_of_every_form_it_holds() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -290,12 +290,32 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
         "no record a C11 configuration reads holds a union:\n{readers}"
     );
 
+    // docs/adr/0092: the configuration whose record holds a union reads it by
+    // the index of the variant read, each case's record into its member of
+    // `as` and the tag set to the case, and writes it by the branch its tag
+    // chooses.
     let union = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
-    let Err(err) = generate(&union) else {
-        panic!("a configuration whose record holds a union generated on C11");
-    };
-    assert!(format!("{err:?}").contains("union"), "{err:?}");
+    let files = generate(&union)
+        .unwrap_or_else(|e| panic!("the configuration with a union generates on C11: {e:?}"));
+    let with_union = &files[0].1;
+    for needle in [
+        "static const char *const sce_variants_1[] = {\"card\", \"cash\", \"voucher\"};",
+        "sce_test_from_canonical_union_case(sce_field_0_payment, sce_variants_1, 3u, \
+         \"order_placed.payment\", &sce_index_1, &sce_case_1, err)",
+        "if (sce_index_1 == 0u) {",
+        "sce_test_from_canonical_record(sce_case_1, sce_fields_2, 2u, \"order_placed.payment\", \
+         err)",
+        "(*out).payment.as.card.amount = (uint32_t)sce_held;",
+        "(*out).payment.tag = PAYMENT_KIND_CARD;",
+        "} else if (sce_index_1 == 1u) {",
+        "sce_test_from_canonical_no_record(sce_case_1, \"order_placed.payment.cash\", err)",
+        "(*out).payment.tag = PAYMENT_KIND_CASH;",
+        "const order_payment_t *const sce_case_0 = &(*value).payment;",
+        "sce_test_canonical_empty_union_case(jcs, \"cash\");",
+    ] {
+        assert!(with_union.contains(needle), "`{needle}` in\n{with_union}");
+    }
 }
 
 /// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports

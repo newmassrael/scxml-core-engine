@@ -502,6 +502,53 @@ static void the_canonical_readers_read_a_list_within_its_bounds(void) {
           "%s", err.message);
 }
 
+// A value of a union is one member named by its case, written and read back; a
+// case that holds no record is the empty object, and a variant no case declares,
+// an object of another count of members and a record where none is held are
+// refused by name.
+static void the_canonical_readers_read_a_union_as_one_member_named_by_its_case(void) {
+    static const char *const VARIANTS[] = {"card", "cash"};
+    char card_text[64];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, card_text, sizeof(card_text));
+    sce_test_canonical_begin_union_case(&jcs, "card");
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "amount");
+    SCE_TEST_CANONICAL_INTEGER(&jcs, 5u);
+    sce_jcs_end_object(&jcs);
+    sce_test_canonical_end_union_case(&jcs);
+    CHECK(sce_jcs_finish(&jcs) && strcmp(card_text, "{\"card\":{\"amount\":\"5\"}}") == 0, "written as %s", card_text);
+    char cash_text[32];
+    sce_jcs_init(&jcs, cash_text, sizeof(cash_text));
+    sce_test_canonical_empty_union_case(&jcs, "cash");
+    CHECK(sce_jcs_finish(&jcs) && strcmp(cash_text, "{\"cash\":{}}") == 0, "written as %s", cash_text);
+
+    sce_saved_error_t err;
+    err.message[0] = '\0';
+    size_t index = 9u;
+    sce_jv_t held;
+    CHECK(sce_test_from_canonical_union_case(judged(card_text), VARIANTS, 2u, "p", &index, &held, &err) && index == 0u,
+          "%s", err.message);
+    static const char *const FIELDS[] = {"amount"};
+    CHECK(sce_test_from_canonical_record(held, FIELDS, 1u, "p", &err), "%s", err.message);
+    CHECK(!sce_test_from_canonical_no_record(held, "p.card", &err) &&
+              strcmp(err.message, "p.card: a case that holds no record is the empty object") == 0,
+          "%s", err.message);
+    CHECK(sce_test_from_canonical_union_case(judged(cash_text), VARIANTS, 2u, "p", &index, &held, &err) &&
+              index == 1u && sce_test_from_canonical_no_record(held, "p.cash", &err),
+          "%s", err.message);
+    CHECK(!sce_test_from_canonical_union_case(judged("{\"cheque\":{}}"), VARIANTS, 2u, "p", &index, &held, &err) &&
+              strcmp(err.message, "p: 'cheque' names no case of its union") == 0,
+          "%s", err.message);
+    CHECK(!sce_test_from_canonical_union_case(judged("{\"card\":{},\"cash\":{}}"), VARIANTS, 2u, "p", &index, &held,
+                                              &err) &&
+              strcmp(err.message, "p: a value of a union is an object of one member, and this one has 2") == 0,
+          "%s", err.message);
+    CHECK(!sce_test_from_canonical_union_case(judged("\"card\""), VARIANTS, 2u, "p", &index, &held, &err) &&
+              strcmp(err.message, "p: a text is not a value of a union, which is an object of one member") == 0,
+          "%s", err.message);
+}
+
 int main(void) {
     the_trace_the_schema_file_declares_the_status_this_runtime_does();
     the_trace_is_read_from_its_canonical_text_and_written_back();
@@ -516,6 +563,7 @@ int main(void) {
     the_canonical_readers_read_an_enum_by_its_declared_name();
     the_canonical_readers_read_a_record_of_its_declared_fields();
     the_canonical_readers_read_a_list_within_its_bounds();
+    the_canonical_readers_read_a_union_as_one_member_named_by_its_case();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

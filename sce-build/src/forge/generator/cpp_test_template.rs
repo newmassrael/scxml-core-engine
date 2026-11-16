@@ -225,7 +225,7 @@ impl CanonicalSpelling for CppCanonical {
 
     /// The arm of the visitor binds the alternative of its case, which holds
     /// the case's record as its `value`.
-    fn case_record(&self, bound: CppCanonicalAt) -> CppCanonicalAt {
+    fn case_record(&self, bound: CppCanonicalAt, _variant: &str) -> CppCanonicalAt {
         CppCanonicalAt {
             base: format!("{}.{CPP_CASE_VALUE}", bound.base),
             depth: bound.depth,

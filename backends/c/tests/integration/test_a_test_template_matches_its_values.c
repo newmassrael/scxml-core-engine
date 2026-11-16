@@ -31,6 +31,7 @@
 #include "order_line_bounded.h"
 #include "order_line_exact.h"
 #include "report_within.h"
+#include "shape_is_circle.h"
 #include "voucher_is.h"
 
 static int failures = 0;
@@ -365,6 +366,19 @@ static void a_byte_string_literal_is_its_octets(void) {
     CHECK(strcmp(written, "{\"voucher_code\":\"00FF10A0\"}") == 0, "wrote %s", written);
 }
 
+// docs/adr/0092, section 7: a union-match holds the case it names, whatever the
+// record the case holds where its matcher takes any, and no other case. Each value
+// is built by the constructor of its case, as the union's unit builds one.
+static void a_union_match_holds_the_case_it_names_and_no_other(void) {
+    ShapeRadiusMinimalPayload_t radius;
+    memset(&radius, 0, sizeof(radius));
+    radius.radius = 3u;
+    const union_shape_minimal_t circle = union_shape_minimal_case_circle(radius);
+    CHECK(shape_is_circle_matches(&circle), "a circle matches");
+    const union_shape_minimal_t dot = union_shape_minimal_case_dot();
+    CHECK(!shape_is_circle_matches(&dot), "a dot does not match");
+}
+
 int main(void) {
     matches_a_status_each_of_whose_fields_its_matcher_holds();
     a_value_list_matches_any_of_its_items_and_a_range_holds_its_bounds();
@@ -381,6 +395,7 @@ int main(void) {
     a_records_canonical_form_is_written_by_the_types_its_document_declares();
     an_enum_is_written_by_its_declared_name_and_a_text_as_it_is();
     a_byte_string_literal_is_its_octets();
+    a_union_match_holds_the_case_it_names_and_no_other();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

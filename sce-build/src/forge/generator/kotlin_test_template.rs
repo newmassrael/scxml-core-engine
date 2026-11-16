@@ -176,7 +176,7 @@ impl CanonicalSpelling for KotlinCanonical {
 
     /// The `when` binds the union itself, which each arm reads smart-cast to
     /// its case's class, whose record is its `value`.
-    fn case_record(&self, bound: CanonicalAt) -> CanonicalAt {
+    fn case_record(&self, bound: CanonicalAt, _variant: &str) -> CanonicalAt {
         CanonicalAt {
             expr: format!("{}.value", bound.expr),
             depth: bound.depth,

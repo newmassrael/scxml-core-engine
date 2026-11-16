@@ -52,9 +52,15 @@
 //! configuration reads the values of a recorded input trace with it
 //! (docs/SCE_TTCN3_LANE.md §10.5).
 //!
-//! What C11 refuses by name: a union, which its test profile matches nowhere
-//! yet ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), by the walk before
-//! anything is spelled; and a reference, inside a list, to a template of an
+//! A union is held in the struct its unit declares (docs/adr/0092, section 7,
+//! the C11 row; [`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]):
+//! a case is told apart by its `tag`, compared with the constant of the tag's
+//! enum that names the case, its record read as the case's member of `as`
+//! where that test proved it, a value built by the constructor of its case
+//! (`<union>_case_<case>`), and its form written and read a case at a time,
+//! chosen by the tag and by the variant read.
+//!
+//! What C11 refuses by name: a reference, inside a list, to a template of an
 //! optional type, whose value the list holds in its own optional type rather
 //! than the one the referenced template takes.
 
@@ -62,11 +68,12 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
-    Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk,
-    Use,
+    hex_octets, integer_literal, negate, unimported, CanonicalCase, CanonicalForm,
+    CanonicalSpelling, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
+    TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
+use crate::forge::composed_lowering::{c11_case_ident, C11_UNION_CASES, C11_UNION_TAG};
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
 use crate::forge::static_lowering::{
     c_bytes_storage_def, c_bytes_storage_type, c_string_storage_def, c_string_storage_of,
@@ -169,8 +176,8 @@ pub(super) fn render_test_template_c11(
         serde_json::json!(log_type.map(|name| format!("\"{}\"", filters::escape_c(name)))),
     );
     ctx.insert("canonical_header".into(), CANONICAL_HEADER.into());
-    // The record, enum and referenced templates' units, each as the import
-    // names it ([`forge_import_identity`]); a union was refused above.
+    // The record, enum, union and referenced templates' units, each as the
+    // import names it ([`forge_import_identity`]).
     let type_includes: Vec<String> = imports.iter().map(|i| i.include_stmt.clone()).collect();
     ctx.insert("type_includes".into(), serde_json::json!(type_includes));
     // The runtime's length of a text is included where a matcher counts one,
@@ -224,6 +231,24 @@ pub(super) fn render_test_template_c11(
 /// unit it includes, or a keyword of the language.
 fn c_parameter(id: &str) -> String {
     format!("param_{id}")
+}
+
+/// The constant of the tag's enum that names the case `variant` of the union
+/// `union`, which the union's `tag` holds where the value is in that case, as
+/// the union's unit compares it (docs/adr/0092, section 7, the C11 row).
+/// Refused where the union's scope reads no tag enum, which the reading of the
+/// union refuses first.
+fn c11_tag_constant(union: &ScopedUnion, variant: &str) -> Result<String, String> {
+    let tag = union
+        .scope
+        .enums
+        .get(&union.tag_enum)
+        .ok_or_else(|| unimported("enum", &union.tag_enum))?;
+    Ok(crate::forge::enum_naming::variant_ident(
+        Language::C11,
+        &tag.name,
+        variant,
+    ))
 }
 
 /// The initializer of a byte string of the octets `data`, `len` their count:
@@ -454,21 +479,37 @@ impl JoinSpelling for CSpelling {
         }
     }
 
-    /// Never asked: C11's test profile matches no union yet, and the walk
-    /// refuses a `union-match` on such a backend before it builds the test of
-    /// a case (`TemplateWalk::union_case`).
+    /// The union's `tag` compared with the constant that names the case (`!=`
+    /// where `negated`); where the case's matcher reads its record, joined in
+    /// one conjunction with the test of the record, which reads the case's
+    /// member of `as` ([`TemplateSpelling::case`]): `&&` reads it only where
+    /// the tag holds the case. The conjunction is in parentheses, so `!`
+    /// before it negates it whole.
     fn case_test(
         &self,
-        _at: &CAt,
+        at: &CAt,
         union: &ScopedUnion,
-        _variant: &str,
-        _record: CaseTest<'_, '_, CAt>,
-        _negated: bool,
+        variant: &str,
+        record: CaseTest<'_, '_, CAt>,
+        negated: bool,
     ) -> String {
-        unreachable!(
-            "the walk refuses the union `{}` on C11 before it asks for the test of a case",
-            union.name
-        )
+        let tag = c11_tag_constant(union, variant).unwrap_or_else(|why| {
+            self.refuse(why);
+            String::new()
+        });
+        let held = format!("{}.{C11_UNION_TAG}", at.expr);
+        match record {
+            CaseTest::Empty | CaseTest::AnyRecord => {
+                format!("{held} {} {tag}", Op::Eq.spelled(negated))
+            }
+            CaseTest::Holds { then, .. } => negate(
+                format!(
+                    "({held} == {tag} && {})",
+                    self.join(then, false, Stands::Conjunct)
+                ),
+                negated,
+            ),
+        }
     }
 }
 
@@ -513,6 +554,16 @@ impl TemplateSpelling for CSpelling {
             ),
             composed: false,
         }
+    }
+
+    /// The record of the case, the case's member of the union's `as`, read
+    /// where the test of the tag ([`JoinSpelling::case_test`]) proved the
+    /// value is in it; held in its record's own type, as a field is.
+    fn case(&self, at: &CAt, _union: &ScopedUnion, variant: &str) -> Result<CAt, String> {
+        Ok(CAt {
+            expr: format!("{}.{C11_UNION_CASES}.{}", at.expr, c11_case_ident(variant)),
+            composed: false,
+        })
     }
 
     /// The parameter as it is, but for a text, which is compared by its bytes
@@ -690,6 +741,50 @@ impl TemplateSpelling for CSpelling {
             elements.join(", ")
         )
     }
+
+    /// The call of the constructor of the case the union's unit declares
+    /// ([`algorithm_union_case`]), the only way the unit builds a value, given
+    /// the case's record as a compound literal of the record's type, since C
+    /// passes no initializer as an argument, or nothing.
+    fn case_value(
+        &self,
+        _at: &Position<'_, CAt>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        let record = match record {
+            Some(initializer) => {
+                let alias = union
+                    .cases
+                    .iter()
+                    .find(|case| case.variant.name == variant)
+                    .and_then(|case| case.record.as_deref())
+                    .ok_or_else(|| {
+                        format!(
+                            "the case `{variant}` of `union:{}` holds no record",
+                            union.name
+                        )
+                    })?;
+                let declared = union
+                    .scope
+                    .records
+                    .get(alias)
+                    .ok_or_else(|| unimported("record", alias))?;
+                Some(format!(
+                    "({}){initializer}",
+                    event_schema_payload_type(&declared.name, Language::C11)
+                ))
+            }
+            None => None,
+        };
+        Ok(algorithm_union_case(
+            Language::C11,
+            &union_unit_type(&union.name, Language::C11),
+            variant,
+            record.as_deref(),
+        ))
+    }
 }
 
 /// `text`, each line of it one level further in, as the statements of a block.
@@ -734,9 +829,11 @@ pub(super) struct C11CanonicalAt {
 /// and an integer of any width through the runtime's macro, since C has no
 /// overload by the width and signedness of a field. A byte string, of one entry or inside a
 /// list, holds its octets in `data` and their count in `len`, which its form
-/// reads alike. C11's test profile matches no union yet, so the walk's refusal
-/// of one stands. The unit of a test configuration writes its records' forms
-/// with it too, beside their readers ([`C11Reading`]).
+/// reads alike. A union is bound by a pointer to it and written by the branch
+/// its `tag` chooses, each case's record read as its member of `as`
+/// ([`CanonicalSpelling::case_record`]). The unit of a test configuration
+/// writes its records' forms with it too, beside their readers
+/// ([`C11Reading`]).
 pub(super) struct C11Canonical;
 
 impl CanonicalSpelling for C11Canonical {
@@ -771,6 +868,19 @@ impl CanonicalSpelling for C11Canonical {
             depth: at.depth + 1,
         };
         (name, bound)
+    }
+
+    /// The case's member of `as` of the union the binding points to
+    /// ([`Self::union`]).
+    fn case_record(&self, bound: C11CanonicalAt, variant: &str) -> C11CanonicalAt {
+        C11CanonicalAt {
+            expr: format!(
+                "(*{}).{C11_UNION_CASES}.{}",
+                bound.expr,
+                c11_case_ident(variant)
+            ),
+            depth: bound.depth,
+        }
     }
 
     /// The element the loop's index names.
@@ -883,6 +993,47 @@ impl CanonicalSpelling for C11Canonical {
         written.push_str(&format!("sce_jcs_end_object({C_JCS});"));
         written
     }
+
+    /// A block that binds a pointer to the union, which every branch reads its
+    /// `tag` through, then one branch per case, chosen by the tag: the object
+    /// of one member the runtime begins for the case's variant, holding the
+    /// form of the case's record, or the empty object for a case that holds
+    /// none. A tag that names no case, which no constructor of the union's unit
+    /// builds, refuses the form, as a closed enum's undeclared value does.
+    fn union(
+        &self,
+        at: &C11CanonicalAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let (binding, _) = self.bound(at, "case");
+        let mut branches = Vec::with_capacity(cases.len());
+        for (variant, case) in cases {
+            let tag = c11_tag_constant(union, &variant)?;
+            let name = c_literal(&variant);
+            let body = match case {
+                Some((_, written)) => format!(
+                    "sce_test_canonical_begin_union_case({C_JCS}, {name});\n{written}\n\
+                     sce_test_canonical_end_union_case({C_JCS});"
+                ),
+                None => format!("sce_test_canonical_empty_union_case({C_JCS}, {name});"),
+            };
+            branches.push(format!(
+                "if ((*{binding}).{C11_UNION_TAG} == {tag}) {{\n{}\n}}",
+                indented(&body)
+            ));
+        }
+        let chain = format!(
+            "{} else {{\n    sce_test_canonical_caseless_union({C_JCS});\n}}",
+            branches.join(" else ")
+        );
+        Ok(format!(
+            "{{\n    const {} *const {binding} = &{};\n{}\n}}",
+            union_unit_type(&union.name, Language::C11),
+            at.expr,
+            indented(&chain)
+        ))
+    }
 }
 
 /// `text` as a C string literal.
@@ -944,8 +1095,14 @@ pub(super) struct C11ReadingAt {
 /// is read behind the test of its presence, which sets its `present`. An integer
 /// is read through the runtime's widest integer of its signedness, held to its
 /// type's range and narrowed to it; a value of an enum by the names its document
-/// declares, beside the constants or the numbers they stand for. C11 lowers no
-/// union, so the walk's refusal of one stands.
+/// declares, beside the constants or the numbers they stand for. A union is
+/// read by the runtime's `sce_test_from_canonical_union_case`, which answers
+/// the index of the variant read and the case's value, then by the branch that
+/// index chooses: the case's record read into its member of `as`, or, for a
+/// case that holds none, the empty object it is read; then the `tag` set to
+/// the case. The place is zeroed, so the union holds what the constructor of
+/// its case builds (`<union>_case_<case>`: the value zeroed, its tag and its
+/// record).
 pub(super) struct C11Reading {
     /// What the value read is named in a refusal: its record's type name.
     pub(super) what: String,
@@ -1000,8 +1157,18 @@ impl CanonicalForm for C11Reading {
         (name, bound)
     }
 
-    fn case_record(&self, bound: C11ReadingAt, _variant: &str, _record: &str) -> C11ReadingAt {
-        bound
+    /// The case's value the union's reader binds, read into the case's member
+    /// of the union's `as`, which holds its record in the record's own type.
+    fn case_record(&self, bound: C11ReadingAt, variant: &str, _record: &str) -> C11ReadingAt {
+        C11ReadingAt {
+            place: format!(
+                "{}.{C11_UNION_CASES}.{}",
+                bound.place,
+                c11_case_ident(variant)
+            ),
+            composed: false,
+            ..bound
+        }
     }
 
     /// The element the loop over the list binds, read into the place its
@@ -1293,12 +1460,50 @@ impl CanonicalForm for C11Reading {
         read
     }
 
+    /// A block that reads the variant of the case by its index among the
+    /// variants the union declares and binds the case's value, then one
+    /// branch per index: the case's record read, or the empty object a case
+    /// that holds none is, then the `tag` set to the case. The runtime refused
+    /// every other variant, so no index is left without a branch.
     fn union(
         &self,
-        _at: &C11ReadingAt,
+        at: &C11ReadingAt,
         union: &ScopedUnion,
-        _cases: Vec<CanonicalCase>,
+        cases: Vec<CanonicalCase>,
     ) -> Result<String, String> {
-        Err(crate::forge::value_type::union_unlowered(&union.name))
+        let (binding, _) = self.bound(at, "case");
+        let variants = format!("sce_variants_{}", at.depth);
+        let index = format!("sce_index_{}", at.depth);
+        let names: Vec<String> = cases.iter().map(|(name, _)| c_literal(name)).collect();
+        let read = c_read(&format!(
+            "sce_test_from_canonical_union_case({}, {variants}, {}u, {}, &{index}, &{binding}, \
+             err)",
+            at.json,
+            names.len(),
+            c_literal(&at.what)
+        ));
+        let mut branches = Vec::with_capacity(cases.len());
+        for (position, (variant, held)) in cases.into_iter().enumerate() {
+            let tag = c11_tag_constant(union, &variant)?;
+            let body = match held {
+                Some((_, written)) => written,
+                None => c_read(&format!(
+                    "sce_test_from_canonical_no_record({binding}, {}, err)",
+                    c_literal(&format!("{}.{variant}", at.what))
+                )),
+            };
+            branches.push(format!(
+                "if ({index} == {position}u) {{\n{}\n    {}.{C11_UNION_TAG} = {tag};\n}}",
+                indented(&body),
+                at.place
+            ));
+        }
+        Ok(format!(
+            "{{\n    static const char *const {variants}[] = {{{}}};\n    size_t {index} = 0u;\n    \
+             sce_jv_t {binding};\n{}\n{}\n}}",
+            names.join(", "),
+            indented(&read),
+            indented(&branches.join(" else "))
+        ))
     }
 }

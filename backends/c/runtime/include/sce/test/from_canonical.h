@@ -21,7 +21,10 @@
  *   - a record is an object of its fields by their declared ids, an absent field
  *     omitted, no field it does not declare;
  *   - a list is an array of its elements within its bounds, an absent element of
- *     a list of `optional<T>` `null`.
+ *     a list of `optional<T>` `null`;
+ *   - a value of a union is an object of one member, named by its case's
+ *     variant, whose value is the case's record, or the empty object for a case
+ *     that holds none.
  *
  * A value is a span of a text `sce_json_parse` judged (`sce_jv_t`,
  * sce/saved_json.h). One that does not belong to its type is refused, never
@@ -34,9 +37,7 @@
  * unit of a test configuration) calls these by the walk its canonical writer is
  * spelled by (`forge::generator::test_template_walk::canonical_form`), and
  * writes each value read into the place the record's unit holds it in. The C11
- * port of `sce/include/test/FromCanonical.h`. C11's test profile matches no
- * union yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so no form of one
- * is read here.
+ * port of `sce/include/test/FromCanonical.h`.
  *
  * What is C's own: a value is read into storage the caller places, and a text
  * into the buffer of its bound, which ends at its first U+0000, so a text that
@@ -521,6 +522,49 @@ static inline bool sce_test_from_canonical_elements(sce_jv_t value, size_t min, 
  *  which the canonical form writes in the place of an absent element. */
 static inline bool sce_test_from_canonical_present(sce_jv_t value) {
     return !sce_jv_is_null(value);
+}
+
+/**
+ * A value of a union whose cases are the `count` variants `variants`: an object
+ * of one member, named by one of them. The index in `variants` of the variant of
+ * its case in `*index`, and the case's value in `*case_value`. A variant no case
+ * declares is refused here, so a reader that chooses by the index read has a
+ * branch for each declared case and needs none for another.
+ */
+static inline bool sce_test_from_canonical_union_case(sce_jv_t value, const char *const *variants, size_t count,
+                                                      const char *what, size_t *index, sce_jv_t *case_value,
+                                                      sce_saved_error_t *err) {
+    if (sce_jv_kind(value) != SCE_JSON_OBJECT) {
+        return sce_test_canonical_not_a_(value, what, "a value of a union, which is an object of one member", err);
+    }
+    const size_t members = sce_jv_count(value);
+    if (members != 1u) {
+        return sce_saved_refuse(err, "%s: a value of a union is an object of one member, and this one has %lu", what,
+                                (unsigned long)members);
+    }
+    /* The one member, which the count above proved the walk holds. */
+    sce_jiter_t walk;
+    sce_jv_t key = value;
+    *case_value = value;
+    (void)sce_jv_iter(value, &walk);
+    (void)sce_jiter_member(&walk, &key, case_value);
+    for (size_t i = 0u; i < count; ++i) {
+        if (sce_jv_string_is(key, variants[i])) {
+            *index = i;
+            return true;
+        }
+    }
+    char name[SCE_SAVED_ERROR_LEN];
+    sce_test_canonical_spelled_(key, name, sizeof(name), NULL);
+    return sce_saved_refuse(err, "%s: '%s' names no case of its union", what, name);
+}
+
+/** The value of a case of a union that holds no record: the empty object. */
+static inline bool sce_test_from_canonical_no_record(sce_jv_t value, const char *what, sce_saved_error_t *err) {
+    if (sce_jv_kind(value) != SCE_JSON_OBJECT || sce_jv_count(value) != 0u) {
+        return sce_saved_refuse(err, "%s: a case that holds no record is the empty object", what);
+    }
+    return true;
 }
 
 #ifdef __cplusplus

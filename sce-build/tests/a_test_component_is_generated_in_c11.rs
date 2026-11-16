@@ -26,8 +26,7 @@
 //! read from the run as a saved value of its type is read back, between the
 //! construction of the machine and the entry into its initial configuration.
 //! What C11 refuses is held here too: a component that declares
-//! `<sce:action>`, and one whose template reaches a union, which C11's test
-//! profile does not match yet.
+//! `<sce:action>`.
 //!
 //! What the generated components do when they run is held by
 //! `backends/c/tests/integration/test_a_test_component_runs_through_its_doors.c`,
@@ -38,7 +37,6 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 
 /// The directory of the components the runtime's end-to-end test runs.
@@ -1078,10 +1076,11 @@ fn a_component_that_declares_a_host_action_is_refused_on_c11() {
 }
 
 /// docs/adr/0092, section 7: a component whose template reaches a union is
-/// refused on C11, which generates no unit of that template, by the union's
-/// own refusal, as on C++, Go and Python.
+/// generated on C11, whose test profile matches a union
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): its branch matches through
+/// the template's unit, as one over a record of entries does.
 #[test]
-fn a_component_whose_template_reaches_a_union_is_refused_on_c11() {
+fn a_component_whose_template_reaches_a_union_is_generated_on_c11() {
     let dir = tempfile::tempdir().expect("a directory");
     let imports = imports_dir();
     let port = format!(
@@ -1117,9 +1116,14 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_c11() {
     std::fs::write(dir.path().join("order_port.scxml"), port).expect("the port type is written");
     let path = dir.path().join("order_watcher.scxml");
     std::fs::write(&path, component).expect("the component is written");
-    let detail = refused(&path, "order_watcher");
-    assert!(detail.contains("`union:Payment`: "), "{detail}");
-    assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
+    let code = text_at(&path);
+    assert!(
+        code.contains(
+            "return order_placed_match_matches((const order_placed_match_value_t *)value, \
+             sm->policy.v_limit);"
+        ),
+        "{code}"
+    );
 }
 
 /// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads

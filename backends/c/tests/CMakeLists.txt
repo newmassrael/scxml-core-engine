@@ -4582,15 +4582,25 @@ set_tests_properties(c11_integration_forge_bounded_collection PROPERTIES
 # ATestTemplateMatchesItsValuesTest). `voucher_is` and its record hold a byte
 # string of one entry, which the event schema unit holds in the buffer of its
 # bound beside its length (`sce/forge/bytes.h` the view it is filled through).
+# The two over a union (shape_is_circle, order_placed_match) are generated beside
+# the unions their headers name, the tags' enums and the cases' records, and the
+# record order_placed holds beside its union (order_customer).
 set(_TP_FIXTURE_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile")
 set(_TP_HEADERS "")
-foreach(_TP_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+foreach(_TP_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of report_within
+                     shape_is_circle)
     sce_c_integration_generation(_TP_${_TP_DOCUMENT} "${_TP_FIXTURE_DIR}/${_TP_DOCUMENT}.scxml")
     list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
 endforeach()
 foreach(_TP_DOCUMENT paint_color order_line quantity_two quantity_at_most order_line_exact
-                     order_line_bounded card_payment card_within voucher_payment voucher_is)
+                     order_line_bounded card_payment card_within voucher_payment voucher_is
+                     order_customer payment_kind order_payment order_placed order_placed_match)
     sce_c_integration_generation(_TP_${_TP_DOCUMENT} "${_TP_FIXTURE_DIR}/imports/${_TP_DOCUMENT}.scxml")
+    list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
+endforeach()
+foreach(_TP_DOCUMENT shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
+    sce_c_integration_generation(_TP_${_TP_DOCUMENT}
+        "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/union/${_TP_DOCUMENT}.scxml")
     list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
 endforeach()
 
@@ -4741,14 +4751,15 @@ set_tests_properties(c11_integration_a_test_suite_runs_through_its_runner PROPER
 # canonical value C11 holds, so its header's reader and writer of each form are
 # compiled (integration/test_a_record_reads_back_the_form_it_writes.c, the twin
 # of the C++ ARecordReadsBackTheFormItWritesTest): order_taken, job_status
-# (generated above for the templates) and form_extras, the record and the enum
-# they hold that nothing above generates, the listener's machine and the test
-# case. The port type writes no file. The Rust twin's configuration takes
-# order_placed, whose union C11 does not lower, in order_taken's place.
+# (generated above for the templates) and form_extras, the enum it holds that
+# nothing above generates, the listener's machine and the test case; the record
+# order_taken holds beside its lines is generated above too. The port type
+# writes no file. The Rust twin's configuration takes order_placed in
+# order_taken's place; C11 reads and writes order_placed's union through the
+# corpus's orders_configuration, whose traces orders_suite replays.
 set(_TF_FIXTURE_DIR "${_TP_FIXTURE_DIR}/trace_forms")
-sce_c_integration_generation(_TF_order_customer "${_TP_FIXTURE_DIR}/imports/order_customer.scxml")
 sce_c_integration_generation(_TF_shape_kind_open "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/union/shape_kind_open.scxml")
-set(_TF_HEADERS ${_TP_HEADERS} ${_TF_order_customer_HEADERS} ${_TF_shape_kind_open_HEADERS})
+set(_TF_HEADERS ${_TP_HEADERS} ${_TF_shape_kind_open_HEADERS})
 set(_TF_SOURCES "")
 foreach(_TF_DOCUMENT order_taken form_extras unionless_forms_listener unionless_forms_configuration
                      replays_every_unionless_form)
@@ -4873,11 +4884,11 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
     # to its expected logs (integration/test_a_corpus_suite_replays_to_its_expected_logs.c,
     # the twin of the Rust `the_corpus_replays_to_its_expected_logs.rs`). Its
     # documents import the runtime's from `../runtime/`, so they are read under the
-    # profile's fixture directory. orders_suite and nested_suite are not generated
-    # here: their mapped record holds a union, which C11's test profile matches no
-    # value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is, its
-    # tester's receive branch reading a message whose record holds a list of
-    # numbers, which the C11 machine makes its value of. The program
+    # profile's fixture directory. job_suite is generated too, its tester's receive
+    # branch reading a message whose record holds a list of numbers, which the C11
+    # machine makes its value of; and orders_suite and nested_suite, their
+    # components' machines and their tables, beside the records, the union and the
+    # templates generated above for the template test. The program
     # makes the directory of its logs through `sce_directory_make`, so it is built
     # where the POSIX tier is, as the runner program is.
     set(_CS_FIXTURE_DIR "${_TP_FIXTURE_DIR}/boundary")
@@ -4903,6 +4914,13 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
     list(APPEND _CS_HEADERS ${_CS_job_completed_HEADERS})
     foreach(_CS_DOCUMENT job_tester helper tester_and_helper completes_in_time job_suite)
         sce_c_integration_generation(_CS_${_CS_DOCUMENT} "${_TP_FIXTURE_DIR}/${_CS_DOCUMENT}.scxml")
+        list(APPEND _CS_HEADERS ${_CS_${_CS_DOCUMENT}_HEADERS})
+        list(APPEND _CS_SOURCES ${_CS_${_CS_DOCUMENT}_SOURCES})
+    endforeach()
+    foreach(_CS_DOCUMENT orders_tester orders_configuration orders_case orders_suite
+                         nested_tester nested_configuration nested_case nested_suite)
+        sce_c_integration_generation(_CS_${_CS_DOCUMENT}
+            "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/ttcn3_export/${_CS_DOCUMENT}.scxml")
         list(APPEND _CS_HEADERS ${_CS_${_CS_DOCUMENT}_HEADERS})
         list(APPEND _CS_SOURCES ${_CS_${_CS_DOCUMENT}_SOURCES})
     endforeach()

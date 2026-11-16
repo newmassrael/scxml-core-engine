@@ -1273,12 +1273,13 @@ pub(super) trait CanonicalSpelling {
     /// to, numbered by how many bindings `at` stands inside after `prefix`,
     /// and the value it binds.
     fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
-    /// The place that holds a union case's record, once the walk has bound the
-    /// case as `bound` ([`Self::bound`] with the prefix `case`). The bound value
-    /// itself by default, where a pattern binds the case's record; a backend
-    /// whose binding holds the union, read as the case's class, names the
-    /// record within it.
-    fn case_record(&self, bound: Self::At) -> Self::At {
+    /// The place that holds the record of the union's case `variant`, once the
+    /// walk has bound the case as `bound` ([`Self::bound`] with the prefix
+    /// `case`). The bound value itself by default, where a pattern binds the
+    /// case's record; a backend whose binding holds the union, read as the
+    /// case's class or as the union whose member the case is, names the record
+    /// within it.
+    fn case_record(&self, bound: Self::At, _variant: &str) -> Self::At {
         bound
     }
     /// The place that holds an element of the list at `list`, once the walk
@@ -1467,8 +1468,8 @@ impl<S: CanonicalSpelling> CanonicalForm for Writing<'_, S> {
     fn bound(&self, at: &S::At, prefix: &str) -> (String, S::At) {
         self.0.bound(at, prefix)
     }
-    fn case_record(&self, bound: S::At, _variant: &str, _record: &str) -> S::At {
-        self.0.case_record(bound)
+    fn case_record(&self, bound: S::At, variant: &str, _record: &str) -> S::At {
+        self.0.case_record(bound, variant)
     }
     fn list_element(&self, list: &S::At, bound: S::At) -> S::At {
         self.0.list_element(list, bound)
@@ -1837,7 +1838,7 @@ mod tests {
     fn a_case_record_is_the_bound_value_by_default() {
         let (binding, bound) = Plain.bound(&Plain.root(), "case");
         assert_eq!(binding, "case_of_value");
-        assert_eq!(Plain.case_record(bound.clone()), bound);
+        assert_eq!(Plain.case_record(bound.clone(), "card"), bound);
     }
 
     /// The element of a bound list and the value of a bound optional field

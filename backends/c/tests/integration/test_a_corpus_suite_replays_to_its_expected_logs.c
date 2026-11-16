@@ -13,9 +13,6 @@
 // reviewed run of the Rust runner wrote. Each case is the twin of the Rust case
 // of the same name in
 // backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
-// orders_suite and nested_suite are not replayed here: their mapped record holds
-// a union, which C11's test profile matches no value of
-// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS).
 
 #include <dirent.h>
 #include <stdbool.h>
@@ -31,6 +28,8 @@
 
 #include "boundary_suite.h"
 #include "job_suite.h"
+#include "nested_suite.h"
+#include "orders_suite.h"
 
 // After the runtime's headers, one of which names a function-pointer parameter
 // `read`, which `-Wshadow` would read as hiding the `read` this declares.
@@ -247,6 +246,8 @@ static void replays(const char *name, const sce_test_suite_t *suite, sce_test_pa
 
 static boundary_suite_storage_t boundary_storage;
 static job_suite_storage_t job_storage;
+static orders_suite_storage_t orders_storage;
+static nested_suite_storage_t nested_storage;
 
 // docs/SCE_TTCN3_LANE.md §12.2: signed and 64-bit integers in a message, the
 // verdicts `fail` and `none`, the two ways to `error` a document leads a run to,
@@ -267,9 +268,28 @@ static void the_job_suite_replays_to_its_expected_logs(void) {
             "completes_in_time pass\n");
 }
 
+// docs/SCE_TEST_PROFILE.md §9.5: an order of two lines, a customer and a card,
+// which `order_placed_match` accepts over its union, its list of records and its
+// template references, at 1 ms.
+static void the_orders_suite_replays_to_its_expected_logs(void) {
+    replays("orders_suite", orders_suite_suite(&orders_storage), orders_suite_module_parameter, "",
+            "orders_case pass\n");
+}
+
+// docs/SCE_TEST_PROFILE.md §4.5 (P5), §4.7 (P7): an order at 100 ms, which the
+// atomic state's own targetless branch takes before its ancestor's, and one at
+// 500 ms, which the ancestor's internal branch takes, restarting the running
+// timer; the inner timer then runs out twice and the tester passes at 1250 ms.
+static void the_nested_suite_replays_to_its_expected_logs(void) {
+    replays("nested_suite", nested_suite_suite(&nested_storage), nested_suite_module_parameter, "",
+            "nested_case pass\n");
+}
+
 int main(void) {
     the_boundary_suite_replays_to_its_expected_logs();
     the_job_suite_replays_to_its_expected_logs();
+    the_orders_suite_replays_to_its_expected_logs();
+    the_nested_suite_replays_to_its_expected_logs();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

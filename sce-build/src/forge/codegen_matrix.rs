@@ -434,6 +434,7 @@ pub const TEST_PROFILE_UNION_BACKENDS: &[Language] = &[
     Language::Swift,
     Language::Python,
     Language::Cpp,
+    Language::C11,
 ];
 
 /// The backends that lower an algorithm over a union (docs/adr/0092, Landing
@@ -1328,8 +1329,8 @@ mod tests {
 
     /// docs/adr/0092, section 7, last paragraph: a backend's test profile
     /// matches a union only where the backend generates the union's unit the
-    /// template names, and names it once. C11 generates the unit and does not
-    /// match one in a template yet.
+    /// template names, and names it once. Every backend that generates a
+    /// template matches a union in one, so the test profile is whole on each.
     #[test]
     fn a_test_profile_matches_a_union_only_where_its_unit_is_generated() {
         for &lang in TEST_PROFILE_UNION_BACKENDS {
@@ -1340,8 +1341,9 @@ mod tests {
                 .count();
             assert_eq!(times, 1, "{lang:?}");
         }
-        assert!(UNION_BACKENDS.contains(&Language::C11));
-        assert!(!TEST_PROFILE_UNION_BACKENDS.contains(&Language::C11));
+        for lang in TEST_TEMPLATE_BACKENDS {
+            assert!(TEST_PROFILE_UNION_BACKENDS.contains(lang), "{lang:?}");
+        }
     }
 
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a

@@ -15,9 +15,9 @@
 //! is compared by its two parts; a value is built as the initializer of its
 //! variable. A byte string is held in the buffer of its bound beside its
 //! length, of one entry as inside a list, so it is compared, counted, built and
-//! written in the test log by its length and its octets. C11's test profile
-//! matches no union yet (docs/adr/0092, `TEST_PROFILE_UNION_BACKENDS`), so a
-//! template whose type reaches one is refused as C++ refuses it.
+//! written in the test log by its length and its octets. A union is told apart
+//! by its `tag` and its case's record read as the case's member of `as`
+//! (docs/adr/0092, `TEST_PROFILE_UNION_BACKENDS`).
 //!
 //! What the generated units do when they run is held by
 //! `backends/c/tests/integration/test_a_test_template_matches_its_values.c`,
@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -71,8 +70,8 @@ fn holds_each(text: &str, parts: &[&str]) {
 
 /// Every accepted template the profile's fixtures hold that C11 generates: its
 /// document, its name, and whether it is specific (docs/SCE_TEST_PROFILE.md
-/// §6.2). The two over a union are refused
-/// ([`a_template_that_reaches_a_union_is_refused_on_c11`]).
+/// §6.2). The two over a union are held apart
+/// ([`a_template_that_reaches_a_union_is_generated_on_c11`]).
 fn templates() -> Vec<(PathBuf, &'static str, bool)> {
     let at = |dir: PathBuf, name: &'static str| dir.join(format!("{name}.scxml"));
     vec![
@@ -360,23 +359,42 @@ fn refused(path: &Path) -> String {
     unsupported(name, err)
 }
 
-/// A template whose type reaches a union, in itself or below a field, is
-/// refused on C11 by the union's own refusal: C11 generates a union's unit,
-/// and its test profile matches no union yet.
+/// docs/adr/0092, section 7: a template whose type reaches a union, in itself
+/// or below a field, is generated on C11, whose test profile matches a union
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart by the
+/// union's `tag`, compared with the constant of the tag's enum, its record read
+/// as the case's member of `as` only where `&&` has proved the tag; a value's
+/// form is written through a pointer to the union by the branch its tag
+/// chooses, a case that holds no record as the empty object, a tag that names
+/// no case refused.
 #[test]
-fn a_template_that_reaches_a_union_is_refused_on_c11() {
-    for (path, alias) in [
-        (profile_dir().join("shape_is_circle.scxml"), "Shape"),
-        (imports_dir().join("order_placed_match.scxml"), "Payment"),
-    ] {
-        let name = path.file_stem().and_then(|s| s.to_str()).expect("a stem");
-        let detail = refused(&path);
-        assert!(
-            detail.starts_with(&format!("test-template '{name}': `union:{alias}`: ")),
-            "{detail}"
-        );
-        assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
-    }
+fn a_template_that_reaches_a_union_is_generated_on_c11() {
+    let circle = unit_of(&profile_dir(), "shape_is_circle");
+    holds_each(
+        &circle,
+        &[
+            "typedef union_shape_minimal_t shape_is_circle_value_t;",
+            "(*value).tag == SHAPE_KIND_CIRCLE",
+        ],
+    );
+    let order = unit_of(&imports_dir(), "order_placed_match");
+    holds_each(
+        &order,
+        &[
+            "((*value).payment.tag == PAYMENT_KIND_CARD && ",
+            "sce_test_text_length((*value).payment.as.card.last4.data) >= 4u",
+            "(*value).payment.as.card.amount >= ",
+            "(*value).payment.tag == PAYMENT_KIND_CASH",
+            "const order_payment_t *const sce_case_0 = &(*value).payment;",
+            "if ((*sce_case_0).tag == PAYMENT_KIND_CARD) {",
+            "sce_test_canonical_begin_union_case(jcs, \"card\");",
+            "sce_test_canonical_text(jcs, (*sce_case_0).as.card.last4.data);",
+            "sce_test_canonical_end_union_case(jcs);",
+            "} else if ((*sce_case_0).tag == PAYMENT_KIND_CASH) {",
+            "sce_test_canonical_empty_union_case(jcs, \"cash\");",
+            "sce_test_canonical_caseless_union(jcs);",
+        ],
+    );
 }
 
 /// The schema of a record that holds a byte string of one entry and a list of
