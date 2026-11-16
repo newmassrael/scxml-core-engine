@@ -1922,6 +1922,18 @@ old encode, the old encode and its templates are removed in the same landing.
    lengths it carries, which its decode reads through a statement for each field, wait for their own landing. The C11
    harness sets a byte string's array and length by statements, and its `cases` and the test-vector sidecar
    neither set nor read back an element the encode derives.
+
+   *The third C11 landing, 2026-11-16:* the byte strings and texts of a streamed layout, written whole from the view
+   the source presents, and the lengths the frame carries in a fixed field or a variable-length integer of their
+   own. A streamed decode reads each field by a statement of its own, which wrote each into the struct and read a
+   length off it; it now reads a number the encode derives into a local, `_d_<field>`, declared before the block
+   that reads it so that the field it measures reads it there. Which numbers those are is one value the decode's
+   helpers are handed, `c11_source::Derived`, read off the plan once: the length a field is cut by
+   (`carried_length`) is that local where the value holds no member of it, in the streamed decode as in the bound
+   check of the positional one, so no helper asks the plan again. The view's maker asks the runtime's
+   `sce_forge_length_within_bound` for its most, as the value's encode does, and compares no bound where it is
+   written: a bound of 2^32 - 1 bytes is a comparison a 32-bit `size_t` decides, a warning under `-Wtype-limits` on
+   the MCU targets of docs/adr/0057.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
