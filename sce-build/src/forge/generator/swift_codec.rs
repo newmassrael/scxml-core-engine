@@ -1789,7 +1789,13 @@ pub(super) fn render(
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.
     ctx.insert("sequential".into(), sequential.into());
-    let printed = prints.then(|| source::context(&l, &plan, &carriers, &element_types));
+    // The struct of each arm's codec, in the plan's order.
+    let arm_types = plan
+        .arms
+        .iter()
+        .map(|arm| resolve_repeat_body_type(&m.name, arm.codec, imports, Language::Swift))
+        .collect::<Result<Vec<_>, _>>()?;
+    let printed = prints.then(|| source::context(&l, &plan, &carriers, &element_types, &arm_types));
     ctx.insert("printed".into(), printed.into());
     l.render(env, "codec", ctx)
 }

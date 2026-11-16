@@ -46,6 +46,14 @@
 //! a chain that ends on its entries' flag sets that flag on every entry but the last through the
 //! entry codec's `Overrides` (§6 R7), whatever the entry presents; an input every entry says that
 //! the parent hands them from elsewhere is held to it entry by entry before the first byte.
+//!
+//! A variant every arm of which is a codec the Swift printer prints is presented as the generic
+//! enum `{Codec}Arms` over a source of each arm's codec, an associated type of the protocol each,
+//! which the generated value binds to the arm codecs' own values. The enum's `tag` is the one table
+//! of the arms' tags: the encode derives the tag field or flag from it, and a parent the bits a
+//! body's arm fills. The arm is written by its codec's encode, handed what its import binds; an
+//! input every arm says, or some arm, is read off the arm the value holds (docs/adr/0065 §6 R4d,
+//! R4e), and one the parent hands an arm that says it is held to it before the first byte.
 
 use super::*;
 use crate::forge::codec_roles::{ElementId, InputSource};
@@ -131,13 +139,33 @@ fn entry_identifier(plan: &EncodePlan<'_>, chain: &str, entry: &str) -> String {
     }
 }
 
+/// Whether the codec of `plan` hands its flag input `name`, which its value says, to a codec it
+/// holds, or holds a codec it holds to it, so that the encode reads it off the value.
+fn handed_on(plan: &EncodePlan<'_>, name: &str) -> bool {
+    plan.handed.values().flatten().any(
+        |handed| matches!(&handed.from, Some(HandedFrom::Input { name: from }) if from == name),
+    ) || plan
+        .input_checks
+        .iter()
+        .any(|check| matches!(&check.against, Against::Input { name: from } if from == name))
+}
+
 /// [`unlowered`] of a positional codec's plan.
 pub(crate) fn unlowered_positional(
     plan: &EncodePlan<'_>,
     imports: &[ImportContext],
 ) -> Option<String> {
-    if plan.model.variant.is_some() {
-        return Some("a `<sce:variant>`".to_string());
+    // An arm is written by its own codec's printed encode, so the Swift printer prints the codec of
+    // every arm first.
+    if let Some(arm) = plan
+        .arms
+        .iter()
+        .find(|arm| !import_of(imports, arm.codec).is_some_and(|import| import.swift_printed))
+    {
+        return Some(format!(
+            "the arm `{}` of the variant, which the Swift printer does not print",
+            arm.codec
+        ));
     }
     if let Some(group) = plan.groups().first() {
         return Some(format!(
@@ -216,21 +244,36 @@ pub(crate) fn unlowered_positional(
         }
         _ => false,
     };
+    // The tag of the arm the value holds, and the bits of a carrier the arm of an embedded body's
+    // variant fills, are read off the arm through the arms enum's `tag`.
+    let tagged = |derived: &&Derived<'_>| {
+        matches!(
+            (&derived.element, &derived.by),
+            (
+                ElementId::Field(_) | ElementId::Flag { .. },
+                Derive::VariantTag
+            ) | (ElementId::Flag { .. }, Derive::ParentTag(_))
+        )
+    };
     if let Some(derived) = plan.derivations.iter().find(|derived| {
         let presence = presence_flag(&derived.element, &derived.by)
             .is_some_and(|(_, _, presence)| readable(presence));
-        !presence && printed_number(&derived.element, &derived.by).is_none() && !continued(derived)
+        !presence
+            && printed_number(&derived.element, &derived.by).is_none()
+            && !continued(derived)
+            && !tagged(derived)
     }) {
         return Some(format!("`{}`, which the encode derives", derived.element));
     }
     // A body that says an input in some of its values only says nothing in the others.
     if let Some(derived) = plan.derivations.iter().find(|derived| {
         printed_number(&derived.element, &derived.by).is_some_and(|number| {
-            number.measures.iter().any(|measure| {
-                matches!(
-                    &measure.of,
-                    Measured::Says { codec, input, .. } if says_partly(imports, codec, input)
-                )
+            number.measures.iter().any(|measure| match &measure.of {
+                Measured::Says { codec, input, .. } => says_partly(imports, codec, input),
+                Measured::ArmSays { arms } => arms
+                    .iter()
+                    .any(|arm| says_partly(imports, &arm.codec, &arm.input)),
+                _ => false,
             })
         })
     }) {
@@ -239,28 +282,24 @@ pub(crate) fn unlowered_positional(
             derived.element
         ));
     }
-    // An input the value says is read off the field gated on it alone, or off the body always
-    // there that it hands it on to and that says it in every value; one a group, a list or an arm
-    // says waits for the form that holds it.
-    if let Some(said) = plan.said.iter().find(|said| {
-        !matches!(
-            plan.roles.inputs[&said.input.name],
-            InputSource::Gate { .. } | InputSource::Forward { partly: false, .. }
-        )
-    }) {
+    // An input the value says is read off the field gated on it alone, off the body always there
+    // that it hands it on to and that says it in every value, or off the arm the value holds; one
+    // a group or a list says waits for the form that holds it. One some arms say only is said in
+    // some values only, and no encode reads it (docs/adr/0065 §6 R4e): only a parent asks for it.
+    if let Some(said) = plan
+        .said
+        .iter()
+        .find(|said| match &plan.roles.inputs[&said.input.name] {
+            InputSource::Gate { .. }
+            | InputSource::Forward { partly: false, .. }
+            | InputSource::EveryArm { .. } => false,
+            InputSource::SomeArms { .. } => said.read || handed_on(plan, &said.input.name),
+            _ => true,
+        })
+    {
         return Some(format!(
             "the flag input `{}`, which the value says by what it holds",
             said.input.name
-        ));
-    }
-    if let Some(check) = plan
-        .input_checks
-        .iter()
-        .find(|check| !matches!(check.site, CheckSite::Embed { .. } | CheckSite::List { .. }))
-    {
-        return Some(format!(
-            "the input `{}` the held codec `{}` says",
-            check.input, check.codec
         ));
     }
     if let Some(field) = plan.gate_checks.iter().find(|field| {
@@ -334,7 +373,8 @@ pub(crate) fn unlowered_positional(
         Write::Streamed { field, .. } => {
             Some(format!("field '{}': a field written in turn", field.id))
         }
-        Write::Variant => Some("a variant's arm".to_string()),
+        // The arm the value holds, written by its codec's printed encode.
+        Write::Variant => None,
     })
 }
 
@@ -354,6 +394,7 @@ fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<
             Measured::Bytes { .. }
                 | Measured::Entries { .. }
                 | Measured::Says { .. }
+                | Measured::ArmSays { .. }
                 | Measured::Encoded { .. }
         )
     });
@@ -406,10 +447,7 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
     match kind {
         RefusalKind::PresentIfMismatch => {
             plan.gate_checks.iter().any(|f| f.id == element)
-                || plan.input_checks.iter().any(|check| {
-                    check.at == element
-                        && matches!(check.site, CheckSite::Embed { .. } | CheckSite::List { .. })
-                })
+                || plan.input_checks.iter().any(|check| check.at == element)
         }
         RefusalKind::InconsistentSource => {
             plan.derivations.iter().filter(derived_at).any(|derived| {
@@ -438,9 +476,11 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
             });
             past_its_field || below_its_arithmetic
         }),
-        RefusalKind::Child => plan.elements.iter().any(|e| {
-            e.field.id == element && matches!(e.value, Value::Body { .. } | Value::List { .. })
-        }),
+        RefusalKind::Child => {
+            plan.elements.iter().any(|e| {
+                e.field.id == element && matches!(e.value, Value::Body { .. } | Value::List { .. })
+            }) || plan.arms.iter().any(|arm| arm.codec == element)
+        }
         _ => false,
     }
 }
@@ -491,14 +531,49 @@ fn said_input(plan: &EncodePlan<'_>, held: &HeldTypes, input: &str, source: &str
                 .expect("an input forwarded from a body is said by a body the codec holds");
             format!("{child}.{}({source}.{embed})", said_reader(input))
         }
+        // What the arm the value holds says, read through the codec's own reader of it, which
+        // [`said_lines`] writes as a switch over the arms.
+        InputSource::EveryArm { .. } => format!("Self.{}({source})", said_reader(input)),
         InputSource::Forward { partly: true, .. }
         | InputSource::Group
-        | InputSource::EveryArm { .. }
         | InputSource::SomeArms { .. }
         | InputSource::List { .. } => {
-            unreachable!("`unlowered` refuses an input a group, a list or an arm says")
+            unreachable!("`unlowered` refuses an input a group or a list says, or one some arms say that the encode reads")
         }
     }
+}
+
+/// The statements of the function that reads the flag input `input` the value says off a source
+/// of the codec of `plan` (docs/adr/0065 §6 R4a): what the arm the value holds says, read through
+/// the arm's codec, and, where some arms do not read it, nothing for those (§6 R4e); or the one
+/// expression [`said_input`] reads it by. `arms` are the variant's arms as the printer spells them.
+fn said_lines(
+    plan: &EncodePlan<'_>,
+    held: &HeldTypes,
+    arms: &[ArmText],
+    input: &str,
+) -> Vec<String> {
+    let (bound, every) = match &plan.roles.inputs[input] {
+        InputSource::EveryArm { arms } => (arms, true),
+        InputSource::SomeArms { arms } => (arms, false),
+        _ => return vec![said_input(plan, held, input, SOURCE)],
+    };
+    let mut lines = vec![format!("switch {SOURCE}.{} {{", super::VARIANT_FIELD)];
+    for (arm, text) in plan.arms.iter().zip(arms) {
+        let line = match bound.get(arm.codec) {
+            Some(said) => format!(
+                "case {}: return {}.{}(arm)",
+                text.pattern("arm"),
+                text.child,
+                said_reader(said)
+            ),
+            None if every => unreachable!("every arm says an input every arm says"),
+            None => format!("case {}: return nil", text.bare()),
+        };
+        lines.extend(text.guarded(vec![line]));
+    }
+    lines.push("}".to_string());
+    lines
 }
 
 /// The name a printed encode gives the source it writes.
@@ -728,14 +803,18 @@ fn field_number(
 /// handed, and the statements of `encodeSource`: each carrier with the flags the encode derives or
 /// a parent sets folded in, each body encoded into bytes of its own, the checks the value is held
 /// to, and the writes of the plan's program, one after another, into a frame written in one write.
-/// `held` is the Swift struct of each body by its field.
+/// `held` is the Swift struct of each body by its field, and `arm_types` that of each arm of the
+/// variant, in the plan's order.
 pub(super) fn context(
     l: &LangCtx,
     plan: &EncodePlan<'_>,
     carriers: &std::collections::HashMap<String, Carrier>,
     held: &HeldTypes,
+    arm_types: &[String],
 ) -> serde_json::Value {
-    let requirements: Vec<serde_json::Value> = plan
+    let struct_name = filters::to_pascal_case(plan.model.name.clone());
+    let arms = arm_texts(plan, arm_types);
+    let mut requirements: Vec<serde_json::Value> = plan
         .elements
         .iter()
         .map(|element| {
@@ -745,6 +824,17 @@ pub(super) fn context(
             })
         })
         .collect();
+    // The variant, last of the elements, as the arms enum of the sources each arm's body is.
+    if !arms.is_empty() {
+        requirements.push(serde_json::json!({
+            "name": super::VARIANT_FIELD,
+            "type": format!(
+                "{}<{}>",
+                arms_enum(&struct_name),
+                arms.iter().map(|a| a.assoc.as_str()).collect::<Vec<_>>().join(", ")
+            ),
+        }));
+    }
     let held_of = |f: &CodecField| {
         held.get(&f.id)
             .expect("every body the printer writes holds a codec of the module")
@@ -819,18 +909,10 @@ pub(super) fn context(
     // Each input the value says (docs/adr/0065 §6 R4a) that a gate of the codec reads, or that the
     // codec hands a body or holds a body to, read off what the value holds under the name the gate
     // reads it by; one nothing reads is left to the parent that asks for it.
-    let handed_on = |name: &str| {
-        plan.handed.values().flatten().any(
-            |handed| matches!(&handed.from, Some(HandedFrom::Input { name: from }) if from == name),
-        ) || plan
-            .input_checks
-            .iter()
-            .any(|check| matches!(&check.against, Against::Input { name: from } if from == name))
-    };
     for said in plan
         .said
         .iter()
-        .filter(|said| said.read || handed_on(&said.input.name))
+        .filter(|said| said.read || handed_on(plan, &said.input.name))
     {
         body.push(format!(
             "let {}: UInt8 = {}",
@@ -946,6 +1028,28 @@ pub(super) fn context(
                         }
                     }
                 }
+                // The input the arm the value holds says, read through the arm's codec off the
+                // source the arm presents its body as; nothing where the value holds an arm that
+                // does not say it (docs/adr/0065 §6 R4a).
+                Measured::ArmSays { arms: saying } => {
+                    let said = format!("{}_said{}", derived_local(&derived.element), measure.at);
+                    body.push(format!("var {said}: Int? = nil"));
+                    for arm_input in saying {
+                        let text = &arms[arm_input.arm];
+                        body.extend(text.guarded(vec![format!(
+                            "if case {} = {SOURCE}.{} {{ {said} = Int({}.{}(arm)) }}",
+                            text.pattern("arm"),
+                            super::VARIANT_FIELD,
+                            text.child,
+                            said_reader(&arm_input.input)
+                        )]));
+                    }
+                    MeasureText {
+                        size: format!("({said} ?? 0)"),
+                        present: measure.gated.then(|| format!("{said} != nil")),
+                        gated: measure.gated,
+                    }
+                }
                 _ => unreachable!(
                     "`printed_number` holds bytes, entries, inputs and encoded lengths alone"
                 ),
@@ -1043,6 +1147,92 @@ pub(super) fn context(
             says(first)
         ));
     }
+    // The statement that sets the bits of the flag `flag` of the carrier `carrier`, folded into
+    // `local`, to the number `value`, keeping the carrier's other bits.
+    let flag_set = |carrier: &str, flag: &str, local: &str, value: &str| {
+        let def = field_of(carrier)
+            .flags
+            .iter()
+            .find(|def| def.name == flag)
+            .expect("the parser found the flag a tag fills");
+        let width = def.width.max(1);
+        let bits = if width >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        let carrier_type = &carrier_of(field_of(carrier)).integer;
+        format!(
+            "{local} = ({local} & ~0x{:X}) | (({carrier_type}(truncatingIfNeeded: {value}) & 0x{bits:X}) << {})",
+            bits << def.bit,
+            def.bit
+        )
+    };
+    // The tag of the arm the value holds, read off it through the arms enum's `tag`: into the
+    // field the tag is, or into the bits of the flag it is (docs/adr/0081 §3).
+    for derived in &plan.derivations {
+        if !matches!(derived.by, Derive::VariantTag) {
+            continue;
+        }
+        let tag = format!("{SOURCE}.{}.tag", super::VARIANT_FIELD);
+        match &derived.element {
+            ElementId::Field(id) => {
+                let ty = l.type_name(&field_of(id).sce_type).into_owned();
+                body.push(format!(
+                    "let {}: {ty} = {ty}(truncatingIfNeeded: {tag})",
+                    derived_local(&derived.element)
+                ));
+                derived_fields.insert(id.clone());
+            }
+            ElementId::Flag { field, flag } => {
+                let carrier = fold(field, &mut body);
+                body.push(flag_set(field, flag, &carrier, &tag));
+            }
+            ElementId::Variant => {
+                unreachable!(
+                    "a variant whose caller hands its tag derives none: the caller writes it"
+                )
+            }
+        }
+    }
+    // The bits of a carrier the arm of each embedded body's variant fills: the tag of the arm the
+    // body holds, masked to the bits, joined bit by bit; nothing where a gate leaves the body out.
+    for derived in &plan.derivations {
+        let (ElementId::Flag { field, flag }, Derive::ParentTag(parent)) =
+            (&derived.element, &derived.by)
+        else {
+            continue;
+        };
+        let local = format!("{field}_{flag}_filled");
+        body.push(format!("var {local}: UInt64 = 0"));
+        for term in &parent.terms {
+            let id = &term.body.id;
+            let gated = plan
+                .elements
+                .iter()
+                .find(|e| e.field.id == *id)
+                .expect("a parent tag is filled by a body the value presents")
+                .presence
+                .optional();
+            let fill = |body: &str| {
+                format!(
+                    "{local} |= UInt64({body}.{}.tag) & 0x{:X}",
+                    super::VARIANT_FIELD,
+                    term.mask
+                )
+            };
+            if gated {
+                body.push(format!(
+                    "if let {HELD} = {SOURCE}.{id} {{ {} }}",
+                    fill(HELD)
+                ));
+            } else {
+                body.push(fill(&format!("{SOURCE}.{id}")));
+            }
+        }
+        let carrier = fold(field, &mut body);
+        body.push(flag_set(field, flag, &carrier, &local));
+    }
     // The one-bit flags a parent may set in place of the ones the value presents (the flag a chain's
     // entries end on), each a member of `Overrides`: what the parent says is what the wire holds.
     let mut overrides = Vec::new();
@@ -1071,7 +1261,7 @@ pub(super) fn context(
     // held to what the parent hands them, before the first byte (docs/adr/0065 §6 R4a): a value
     // whose body or entry says otherwise has no frame.
     for check in &plan.input_checks {
-        body.extend(input_check(plan, held, check, &carrier_read));
+        body.extend(input_check(plan, held, &arms, check, &carrier_read));
     }
     // The arguments the codec imported as `codec` is handed after the sink, one for each input it
     // takes and does not say, in the order it declares them: the bits of a carrier as the encode
@@ -1241,7 +1431,7 @@ pub(super) fn context(
     let streamed = plan
         .program
         .iter()
-        .any(|write| matches!(write, Write::Streamed { .. }));
+        .any(|write| matches!(write, Write::Streamed { .. } | Write::Variant));
     let fixed_end = plan
         .program
         .iter()
@@ -1382,8 +1572,29 @@ pub(super) fn context(
                 }
                 body.push(format!("{SOURCE}.{}.append(to: &frame)", f.id));
             }
+            // The arm the value holds, written by its codec's encode over the source its body is
+            // presented as, handed what the arm's import binds; the catch-all, over its body.
             Write::Variant => {
-                unreachable!("`unlowered` refuses every other write before the printer runs")
+                let written = format!("{}_arm", super::VARIANT_FIELD);
+                body.push(format!("var {written} = BytesSink()"));
+                body.push(format!("switch {SOURCE}.{} {{", super::VARIANT_FIELD));
+                for (arm, text) in plan.arms.iter().zip(&arms) {
+                    // An arm whose codec refuses a value throws its refusal, which this encode
+                    // passes on.
+                    if plan.totality.refuses(RefusalKind::Child, arm.codec) {
+                        plan.totality.require(RefusalKind::Child, arm.codec);
+                    }
+                    body.extend(text.guarded(vec![
+                        format!("case {}:", text.pattern("arm")),
+                        format!(
+                            "    try {}.encodeSource(arm, into: &{written}{})",
+                            text.child,
+                            handed_arguments(arm.codec, &|_| None)
+                        ),
+                    ]));
+                }
+                body.push("}".to_string());
+                body.push(format!("frame += {written}.bytes"));
             }
         }
     }
@@ -1398,7 +1609,24 @@ pub(super) fn context(
             serde_json::json!({
                 "input": said.input.name,
                 "reader": said_reader(&said.input.name),
-                "expr": said_input(plan, held, &said.input.name, SOURCE),
+                "lines": said_lines(plan, held, &arms, &said.input.name),
+                "partly": plan.roles.says_input_partly(&said.input.name),
+            })
+        })
+        .collect();
+    // The arms of the variant, each the generic parameter of the arms enum its body is, bound by
+    // the protocol to a source of the arm's codec (docs/adr/0058 §1).
+    let arms_json: Vec<serde_json::Value> = arms
+        .iter()
+        .map(|arm| {
+            serde_json::json!({
+                "case": arm.case,
+                "generic": arm.generic,
+                "assoc": arm.assoc,
+                "protocol": format!("{}Source", arm.child),
+                "type": arm.child,
+                "off": arm.off,
+                "tag": arm.tag.map(|tag| format!("0x{tag:X}")),
             })
         })
         .collect();
@@ -1413,6 +1641,12 @@ pub(super) fn context(
         "bounds": bounds,
         "body": body,
         "overrides": overrides,
+        "arms": arms_json,
+        "arms_enum": arms_enum(&struct_name),
+        "unknown_tag": super::unknown_tag_type(&plan.model.name),
+        "tag_type": l
+            .type_name(&crate::forge::codec_totality::tag_type(plan.model))
+            .into_owned(),
     })
 }
 
@@ -1425,19 +1659,54 @@ pub(super) fn context(
 fn input_check(
     plan: &EncodePlan<'_>,
     held: &HeldTypes,
+    arms: &[ArmText],
     check: &InputCheck<'_>,
     carrier_read: &dyn Fn(&CodecField) -> String,
 ) -> Vec<String> {
+    let reader = said_reader(&check.input);
+    let says_otherwise = |child: &str, value: &str| {
+        if check.partly {
+            format!("({child}.{reader}({value}).map {{ ($0 != 0) != handed }} ?? false)")
+        } else {
+            format!("(({child}.{reader}({value}) != 0) != handed)")
+        }
+    };
+    let refuse = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
     let holder = match &check.site {
         CheckSite::Embed { body } => *body,
         CheckSite::List { list } => *list,
-        CheckSite::Arm { .. } => {
-            unreachable!("`unlowered` refuses a check of an input an arm says")
+        // The arm the value holds, where it is one of the arms whose codec says the input.
+        CheckSite::Arm { arms: checked } => {
+            let handed = match &check.against {
+                Against::Carrier { carrier, bit } => {
+                    format!("(({} >> {bit}) & 1) != 0", carrier_read(carrier))
+                }
+                Against::Input { name } => format!("{name} != 0"),
+                Against::PreviousEntry { .. } => {
+                    unreachable!("an arm is handed no entry of a chain")
+                }
+            };
+            let mut lines = vec![
+                "do {".to_string(),
+                format!("    let handed: Bool = {handed}"),
+            ];
+            for &i in checked {
+                let text = &arms[i];
+                lines.extend(text.guarded(vec![format!(
+                    "    if case {} = {SOURCE}.{}, {} {{ {refuse} }}",
+                    text.pattern("arm"),
+                    super::VARIANT_FIELD,
+                    says_otherwise(&text.child, "arm")
+                )]));
+            }
+            lines.push("}".to_string());
+            return lines;
         }
     };
     let child = held
         .get(&holder.id)
         .expect("a body or a list whose input is checked holds a codec of the module");
+    let says_otherwise = |value: &str| says_otherwise(child, value);
     let before = format!("{}_before", holder.id);
     let handed = match &check.against {
         Against::Carrier { carrier, bit } => {
@@ -1446,15 +1715,6 @@ fn input_check(
         Against::Input { name } => format!("{name} != 0"),
         Against::PreviousEntry { id } => format!("{before} == 0x{id:X}"),
     };
-    let reader = said_reader(&check.input);
-    let says_otherwise = |value: &str| {
-        if check.partly {
-            format!("({child}.{reader}({value}).map {{ ($0 != 0) != handed }} ?? false)")
-        } else {
-            format!("(({child}.{reader}({value}) != 0) != handed)")
-        }
-    };
-    let refuse = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
     let gated = holder.present_if.is_some();
     let content = if gated {
         HELD.to_string()
@@ -1562,6 +1822,90 @@ fn list_write(
     lines.push("}".to_string());
     lines.push(format!("frame += {written}.bytes"));
     lines
+}
+
+/// One arm of a printed codec's variant, as the Swift printer spells it.
+pub(super) struct ArmText {
+    /// The case of the arms enum: the arm codec's alias in lower camel case, as the decode names
+    /// it; unused for the catch-all, whose case is `default`.
+    case: String,
+    /// The Swift struct of the arm's codec.
+    child: String,
+    /// The associated type of the protocol the arm's body is a source of: the alias in upper camel
+    /// case and `_Arm`, or `Default_Arm` for the catch-all. The `_` is in no codec's type name, so
+    /// it hides none.
+    assoc: String,
+    /// The generic parameter of the arms enum the arm's body is: `A` and the arm's place, or `D`
+    /// for the catch-all.
+    generic: String,
+    /// The condition a build leaves the arm out by, for an arm under a build feature
+    /// (docs/adr/0072).
+    off: Option<String>,
+    /// The arm's tag, or `None` for the catch-all.
+    tag: Option<u64>,
+}
+
+impl ArmText {
+    /// The pattern that binds the body of this arm as `bound`.
+    fn pattern(&self, bound: &str) -> String {
+        match self.tag {
+            Some(_) => format!(".{}(let {bound})", self.case),
+            None => format!(".default(_, let {bound})"),
+        }
+    }
+
+    /// The pattern that matches this arm and binds nothing.
+    fn bare(&self) -> String {
+        match self.tag {
+            Some(_) => format!(".{}", self.case),
+            None => ".default".to_string(),
+        }
+    }
+
+    /// `lines` in the build that holds this arm: inside its condition where a feature decides it.
+    fn guarded(&self, lines: Vec<String>) -> Vec<String> {
+        match &self.off {
+            None => lines,
+            Some(off) => std::iter::once(format!("#if !{off}"))
+                .chain(lines)
+                .chain(std::iter::once("#endif".to_string()))
+                .collect(),
+        }
+    }
+}
+
+/// The arms of the variant of `plan`, in the plan's order, the struct of each arm's codec in
+/// `arm_types` at the same place.
+pub(super) fn arm_texts(plan: &EncodePlan<'_>, arm_types: &[String]) -> Vec<ArmText> {
+    plan.arms
+        .iter()
+        .zip(arm_types)
+        .enumerate()
+        .map(|(i, (arm, child))| {
+            let known = arm.tag.is_some();
+            ArmText {
+                case: filters::to_camel_case(arm.codec.to_string()),
+                child: child.clone(),
+                assoc: if known {
+                    format!("{}_Arm", filters::to_pascal_case(arm.codec.to_string()))
+                } else {
+                    "Default_Arm".to_string()
+                },
+                generic: if known {
+                    format!("A{i}")
+                } else {
+                    "D".to_string()
+                },
+                off: arm.feature.map(super::feature_off_condition),
+                tag: arm.tag,
+            }
+        })
+        .collect()
+}
+
+/// The generic enum of the arms a printed codec named `struct_name` presents its variant as.
+fn arms_enum(struct_name: &str) -> String {
+    format!("{struct_name}Arms")
 }
 
 /// The member of a printed codec's `Overrides` that sets the flag `flag` of the carrier `carrier`:

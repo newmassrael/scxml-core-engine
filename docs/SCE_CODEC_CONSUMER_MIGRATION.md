@@ -2230,4 +2230,17 @@ Landing: the commit that adds this section, and each later one that names a form
   iterating the list, or as `.entries`; an array literal compared with the list compares with `.entries`. A call
   site moves from `CodecRepeatBasic(num_frags: 2, frags: [a, b])` to `CodecRepeatBasic(frags: BoundedList([a, b])!)`.
   A list held to the law of the inputs its entries say, or held by a gate group, keeps its template's encode.
+- The catch-all arm of every Swift variant holds its tag as `{Codec}UnknownTag` (docs/adr/0065 §6 R3), printed or
+  not: `{Codec}UnknownTag(n)` answers `nil` for a tag an arm names or one past the tag's bits, and `.value` is the
+  number. A call site moves from `.default(tag: 9, body: b)` to
+  `.default(tag: CodecVariantDispatchUnknownTag(9)!, body: b)`, and a read of the tag from `tag` to `tag.value`.
+- A variant every arm of which is a codec the printer prints is printed. The value's `body` is
+  `{Codec}Variant`, now a typealias of the generic `{Codec}Arms<..>` bound to the arm codecs' values, with the
+  same case names, so a pattern or a value made of the arm structs is unchanged. The protocol requires each arm
+  as a source of its codec (`associatedtype {Arm}_Arm`, `Default_Arm` for the catch-all), so a host's type
+  presents a `{Codec}Arms` of its own arm types. The tag field or flag is derived from the arm: a tag field is no
+  member of the value and no parameter of its initializer, and a flag the tag fills keeps the carrier's other bits.
+  Read a value's tag as `body.tag`. A call site moves from `CodecVariantDispatch(msg_id: 1, body: .x(a))` to
+  `CodecVariantDispatch(body: .x(a))`. A parent that embeds such a variant derives the flag it dispatches it by
+  from `body.tag`, as before from the arm.
 

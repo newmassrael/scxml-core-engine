@@ -12,7 +12,8 @@
 //! lower, as a case of a shape no printer spells is refused by name.
 
 use super::super::rust_source::{
-    case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
+    case_inputs, case_tag, enum_variant, integer_value, source_members, variant_choice, HeldCodecs,
+    CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::*;
 use crate::forge::encode_plan::{Element, EncodePlan, Law, Value};
@@ -54,8 +55,7 @@ pub(crate) fn source_case(
     let literal = value_literal(plan, type_name, source, held, &mut bindings)?;
     // The decode is handed every flag input, in the order the codec declares them, by its label;
     // the encode the ones the value does not say, and the value is held to saying each other one
-    // as the case hands it, through the input's own function (docs/adr/0065 §6 R4a). A printed
-    // codec's variant, which it has none of, takes no tag.
+    // as the case hands it, through the input's own function (docs/adr/0065 §6 R4a).
     let mut decode_inputs = Vec::new();
     let mut encode_inputs = Vec::new();
     let mut said = Vec::new();
@@ -65,20 +65,29 @@ pub(crate) fn source_case(
         if given {
             encode_inputs.push(argument);
         } else {
-            said.push((
-                format!("flag input {}", input.name),
-                format!(
-                    "{type_name}.{}({VALUE}) == {value}",
-                    super::source::said_reader(&input.name)
-                ),
-            ));
+            let says = format!(
+                "{type_name}.{}({VALUE})",
+                super::source::said_reader(&input.name)
+            );
+            // A value that says nothing of the input contradicts no value of it (docs/adr/0065
+            // §6 R4e).
+            let holds = if plan.roles.says_input_partly(&input.name) {
+                format!("({says}.map {{ $0 == {value} }} ?? true)")
+            } else {
+                format!("{says} == {value}")
+            };
+            said.push((format!("flag input {}", input.name), holds));
         }
     }
-    if case_tag(plan, source, tag)?.is_some() {
-        return Err("a case hands a tag to a codec whose variant takes none".to_string());
+    // A variant whose caller hands its tag is handed the tag of the arm the source holds, after
+    // the flag inputs, and the value made and the value decoded both answer it.
+    let caller_tag = case_tag(plan, source, tag)?;
+    if let Some(tag) = caller_tag {
+        decode_inputs.push(format!("tag: {tag}"));
     }
     // A decode presents each element as the value holds it, and every value the Swift printer
-    // prints is `Equatable`, a body's down into its own elements: one comparison an element.
+    // prints is `Equatable`, a body's down into its own elements and a variant's into the body of
+    // the arm it holds: one comparison an element.
     let mut checks: Vec<(String, String)> = plan
         .elements
         .iter()
@@ -87,6 +96,20 @@ pub(crate) fn source_case(
             (id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}"))
         })
         .collect();
+    if plan.model.variant.is_some() {
+        checks.push((
+            VARIANT_MEMBER.to_string(),
+            format!("{DECODED}.{VARIANT_MEMBER} == {VALUE}.{VARIANT_MEMBER}"),
+        ));
+    }
+    if let Some(tag) = caller_tag {
+        checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!(
+                "{DECODED}.{VARIANT_MEMBER}.tag == {tag} && {VALUE}.{VARIANT_MEMBER}.tag == {tag}"
+            ),
+        ));
+    }
     checks.extend(said);
     Ok(SourceCase {
         bindings,
@@ -101,8 +124,9 @@ pub(crate) fn source_case(
 /// its initializer, each element in declaration order: a byte string or a text through its bound's
 /// one door, bound first in `bindings`, which the harness requires to answer; a body by the
 /// initializer of its own codec's value; a list of entries each made so, through its count bound's
-/// door; a number as a literal. An element a gate leaves out is `nil`. A shape the Swift printer
-/// does not print (a group, a variant, a list held to its law) is refused by name,
+/// door; a number as a literal; the variant's arm as [`variant_literal`] makes it, last. An element
+/// a gate leaves out is `nil`. A shape the Swift printer does not print (a group, a list held to
+/// its law) is refused by name,
 /// and so is a source that states an element the value does not present or leaves out one it does.
 fn value_literal(
     plan: &EncodePlan<'_>,
@@ -111,10 +135,10 @@ fn value_literal(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    if plan.model.variant.is_some() || !plan.groups().is_empty() {
+    if !plan.groups().is_empty() {
         return Err(format!(
-            "the Swift printer does not print `{}`, which holds a variant or a gate group, so no \
-             value of it is made from a case",
+            "the Swift printer does not print `{}`, which holds a gate group, so no value of it \
+             is made from a case",
             plan.model.name
         ));
     }
@@ -151,7 +175,48 @@ fn value_literal(
         };
         arguments.push(format!("{id}: {spelled}"));
     }
+    // The variant, last: the arm the source holds, its body made by its own codec's initializer.
+    if plan.model.variant.is_some() {
+        let stated = object
+            .get(VARIANT_MEMBER)
+            .ok_or_else(|| format!("the source states no `{VARIANT_MEMBER}`, the variant's arm"))?;
+        let arm = variant_literal(plan, type_name, stated, held, bindings)
+            .map_err(|e| format!("`{VARIANT_MEMBER}`: {e}"))?;
+        arguments.push(format!("{VARIANT_MEMBER}: {arm}"));
+    }
     Ok(format!("{type_name}({})", arguments.join(", ")))
+}
+
+/// The arm of the variant of the codec `plan`, whose Swift type is `type_name`, that `json` states
+/// (`rust_source::variant_choice`): the case of the arm, its body made by its codec's initializer,
+/// and for the catch-all the tag it holds, made through its type's one door (docs/adr/0065 §6 R3),
+/// bound first in `bindings`, which the harness requires to answer.
+fn variant_literal(
+    plan: &EncodePlan<'_>,
+    type_name: &str,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let (arm, body) = variant_choice(plan, json)?;
+    let literal = held.read(arm.codec, &mut |plan, _, held| {
+        let type_name = filters::to_pascal_case(plan.model.name.clone());
+        value_literal(plan, &type_name, body, held, bindings)
+    })?;
+    Ok(match arm.default_tag {
+        None => format!(
+            ".{}({literal})",
+            filters::to_camel_case(arm.codec.to_string())
+        ),
+        Some(tag) => {
+            // Numbered, as a byte string's door is bound.
+            let local = format!("bound{}", bindings.len());
+            bindings.push(format!(
+                "let {local} = try #require({type_name}UnknownTag(0x{tag:X}))"
+            ));
+            format!(".default(tag: {local}, body: {literal})")
+        }
+    })
 }
 
 /// The list or chain `element` of the codec whose Swift type is `type_name`, its entries of the

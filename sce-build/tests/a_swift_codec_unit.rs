@@ -587,7 +587,7 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
     let code = swift_of("tests/forge/resources/codec_variant_dispatch.scxml")
         .expect("a variant over a field is written");
     assert!(
-        code.contains("public enum CodecVariantDispatchVariant: Equatable, Sendable {\n    case codecVariantSessionOpen(CodecVariantSessionOpen)\n    case codecVariantSessionClose(CodecVariantSessionClose)\n    case `default`(tag: CodecVariantDispatchUnknownTag, body: CodecVariantSessionClose)\n}"),
+        code.contains("    case codecVariantSessionOpen(A0)\n    case codecVariantSessionClose(A1)\n    case `default`(tag: CodecVariantDispatchUnknownTag, body: D)\n"),
         "{code}"
     );
     // docs/adr/0065 §6 R3: the catch-all's tag admits no tag an arm names; a whole byte holds no
@@ -612,9 +612,25 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
         code.contains("        default:\n            body = .default(tag: CodecVariantDispatchUnknownTag(admitted: body_tag), body: try CodecVariantSessionClose.decode(&reader))"),
         "{code}"
     );
+    // Printed from its plan (docs/adr/0081 §3): the tag is derived from the arm the value holds,
+    // and the arm is written by its own codec's encode over the source its body is.
     assert!(
-        code.contains("case .default(_, let arm):\n                try arm.encode(into: &piece)"),
+        code.contains(
+            "        let msg_id_derived: UInt8 = UInt8(truncatingIfNeeded: source.body.tag)\n"
+        ),
+        "the encode derives the tag from the arm: {code}"
+    );
+    assert!(
+        code.contains("        case .default(_, let arm):\n            try CodecVariantSessionClose.encodeSource(arm, into: &body_arm)\n"),
         "an encode writes the arm that is held: {code}"
+    );
+    assert!(
+        code.contains(
+            "public enum CodecVariantDispatchArms<A0: CodecVariantSessionOpenSource, A1: CodecVariantSessionCloseSource, D: CodecVariantSessionCloseSource> {"
+        ) && code.contains(
+            "public typealias CodecVariantDispatchVariant = CodecVariantDispatchArms<CodecVariantSessionOpen, CodecVariantSessionClose, CodecVariantSessionClose>"
+        ),
+        "a source presents each arm's body as a source of the arm's codec: {code}"
     );
     assert!(
         code.contains("public static let frameLength = 1 + Swift.min(CodecVariantSessionOpen.frameLength, CodecVariantSessionClose.frameLength)"),
@@ -669,11 +685,13 @@ fn an_embedded_variant_whose_arm_the_embedder_drives_is_written_both_ways() {
     let code = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
         .expect("an embed whose arm is driven into a flag is written");
     assert!(
-        code.contains("switch self.body.body {"),
-        "the held arm is read by a switch over the arms of the child: {code}"
+        code.contains("        hdr_kind_filled |= UInt64(source.body.body.tag) & 0x3\n"),
+        "the held arm's tag is read off the child's arms enum: {code}"
     );
     assert!(
-        code.contains("appendInteger((self.hdr & 0xFC) | derived_tag_0, to: &frame, .big)"),
+        code.contains(
+            "        hdr_folded = (hdr_folded & ~0x3) | ((UInt8(truncatingIfNeeded: hdr_kind_filled) & 0x3) << 0)\n"
+        ),
         "the encode writes the held arm's tag into the flag: {code}"
     );
 }
@@ -761,11 +779,19 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
         ),
         "{forwarded}"
     );
-    // A codec still of its template's encode hands a printed arm no input the arm says.
+    // A variant every arm of which says the input its holder binds (docs/adr/0065 §6 R4d) says it
+    // by the arm it holds, read through the arm's codec, and hands the arm's encode nothing.
     let arms = swift_of("tests/forge/resources/codec_every_arm_says.scxml")
         .expect("a variant whose arms say their inputs is written");
     assert!(
-        arms.contains("try arm.encode(into: &piece)\n") && !arms.contains("encode(into: &piece, "),
+        arms.contains("    try CodecEveryArmSaysFar.encodeSource(arm, into: &body_arm)\n")
+            && arms.contains("    try CodecEveryArmSaysNear.encodeSource(arm, into: &body_arm)\n"),
+        "{arms}"
+    );
+    assert!(
+        arms.contains(
+            "public static func inputN<Source: CodecEveryArmSaysSource>(_ source: Source) -> UInt8 {\n        switch source.body {\n        case .codecEveryArmSaysFar(let arm): return CodecEveryArmSaysFar.inputBare(arm)\n        case .codecEveryArmSaysNear(let arm): return CodecEveryArmSaysNear.inputN(arm)\n        }\n    }"
+        ),
         "{arms}"
     );
     let carrier = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
@@ -1715,13 +1741,23 @@ fn an_embedded_variant_is_handed_its_tag_by_a_flag_of_the_embedding_codec() {
         ),
         "the tag is the bit of the carrier's flag: {code}"
     );
+    // The encode derives the flag from the tag of the arm the body holds, read off the body's arms
+    // enum, which names each arm's tag once.
     assert!(
-        code.contains("appendInteger((self.hdr & 0xFE) | derived_tag_0, to: &frame, .big)"),
+        code.contains("        hdr_kind_filled |= UInt64(source.body.body.tag) & 0x1\n"),
         "the encode derives the flag from the arm that is held: {code}"
     );
     assert!(
-        code.contains("case .codecVariantSessionClose: derived_tag_0 = 0x01"),
-        "an arm names the tag it is chosen by: {code}"
+        code.contains(
+            "        hdr_folded = (hdr_folded & ~0x1) | ((UInt8(truncatingIfNeeded: hdr_kind_filled) & 0x1) << 0)\n"
+        ),
+        "the flag keeps the carrier's other bits: {code}"
+    );
+    let leaf = swift_of("tests/forge/resources/codec_source_leaf.scxml")
+        .expect("a variant whose caller hands its tag is written");
+    assert!(
+        leaf.contains("        case .codecVariantSessionClose: return 0x1\n"),
+        "an arm names the tag it is chosen by: {leaf}"
     );
 }
 
@@ -1846,6 +1882,29 @@ fn a_gated_field_of_an_enum_is_read_and_written_in_turn_where_its_flag_is_set() 
     }
 }
 
+/// docs/adr/0065 §6 R4e: an input one arm of two says is said by that arm and by nothing in the
+/// other, so its reader answers `nil` there; the parent that hands it a bit of its own carrier holds
+/// the arm to that bit where the arm says it, and refuses nothing where it says nothing.
+#[test]
+fn an_input_some_arms_say_is_said_by_the_arm_that_says_it_and_held_where_it_is() {
+    let code = swift_of("tests/forge/resources/codec_some_arms_say.scxml")
+        .expect("a variant one arm of which says its input is written");
+    assert!(
+        code.contains(
+            "public static func inputN<Source: CodecSomeArmsSaySource>(_ source: Source) -> UInt8? {\n        switch source.body {\n        case .codecSomeArmsSayPlain: return nil\n        case .codecEveryArmSaysNear(let arm): return CodecEveryArmSaysNear.inputN(arm)\n        }\n    }"
+        ),
+        "{code}"
+    );
+    let parent = swift_of("tests/forge/resources/codec_some_arms_say_parent.scxml")
+        .expect("a codec that hands a bit to a body that says it in some values is written");
+    assert!(
+        parent.contains(
+            "    if (CodecSomeArmsSay.inputN(source.body).map { ($0 != 0) != handed } ?? false) { throw CodecError.presentIfMismatch }"
+        ),
+        "{parent}"
+    );
+}
+
 #[test]
 fn an_arm_under_a_feature_is_a_case_of_the_build_that_has_it_and_its_tag_is_refused_elsewhere() {
     let code = swift_of("backends/rust/forge-conformance/fixtures/codec_feature_gated_arm.scxml")
@@ -1864,8 +1923,12 @@ fn an_arm_under_a_feature_is_a_case_of_the_build_that_has_it_and_its_tag_is_refu
             "and refuses its tag in the build that leaves it out, not reading it as the catch-all",
         ),
         (
-            "            #if !SCE_FEATURE_GATED_ARM_OFF\n            case .codecDefaultMarkerArmB(let arm):",
-            "the encode writes the arm in the build that has it",
+            "        #if !SCE_FEATURE_GATED_ARM_OFF\n        case .codecDefaultMarkerArmB(let arm):\n            try CodecDefaultMarkerArmB.encodeSource(arm, into: &body_arm)\n        #endif",
+            "the printed encode writes the arm in the build that has it",
+        ),
+        (
+            "        #if !SCE_FEATURE_GATED_ARM_OFF\n        case .codecDefaultMarkerArmB: return 0x2\n        #endif",
+            "the arms enum names the arm's tag in the build that has it",
         ),
         (
             "public var body: CodecFeatureGatedArmVariant = .codecDefaultMarkerArmA(",

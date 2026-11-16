@@ -9,14 +9,15 @@ import XCTest
 // A codec whose tail is one of several codecs, selected by a tag it has already read
 // (`tests/forge/resources/codec_variant_dispatch.scxml`: the whole of a field; `codec_zenoh_push_body.scxml`:
 // the low five bits of a flags carrier, whose other bits are not part of the tag). The fixtures hold no
-// numerical oracle, so this is where the behaviour is held: the tag picks the arm, a tag no arm names
-// takes the catch-all and is kept, an encode writes the tag field as it stands and then the arm
-// held, and a frame that is refused consumes nothing.
+// byte cases of the catalog (`numerical_reference.json` `sources`) hold the frames each arm and the
+// catch-all write and read back, the tag derived from the arm (docs/adr/0081 §3); what is held here
+// is what no case states: the decode leaves what follows the arm to its caller, a tag no arm names
+// is kept by the catch-all within its bits, and a frame that is refused consumes nothing.
 final class CodecVariantUnitTests: XCTestCase {
     func testTheTagPicksTheArmItNames() throws {
         var open = SceCursor([0x01, 0x00, 0x05])
         let first = try CodecVariantDispatch.decode(&open)
-        XCTAssertEqual(first.msg_id, 1)
+        XCTAssertEqual(first.body.tag, 1)
         XCTAssertEqual(first.body, .codecVariantSessionOpen(CodecVariantSessionOpen(version: 5)))
         var close = SceCursor([0x02, 0x07, 0xEE])
         let second = try CodecVariantDispatch.decode(&close)
@@ -27,7 +28,7 @@ final class CodecVariantUnitTests: XCTestCase {
     func testATagNoArmNamesTakesTheCatchAllAndIsKept() throws {
         var cursor = SceCursor([0x09, 0x03])
         let frame = try CodecVariantDispatch.decode(&cursor)
-        XCTAssertEqual(frame.msg_id, 9)
+        XCTAssertEqual(frame.body.tag, 9)
         let tag = try XCTUnwrap(CodecVariantDispatchUnknownTag(9))
         XCTAssertEqual(frame.body, .default(tag: tag, body: CodecVariantSessionClose(reason: 3)))
     }
@@ -48,20 +49,6 @@ final class CodecVariantUnitTests: XCTestCase {
             XCTAssertEqual(error as? CodecError, .needMoreBytes)
         }
         XCTAssertEqual(cursor.remaining, 2)
-    }
-
-    func testAnEncodeWritesTheTagFieldAsItStandsAndThenTheArm() throws {
-        var sink = BytesSink()
-        try CodecVariantDispatch(
-            msg_id: 1, body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 5))
-        ).encode(into: &sink)
-        XCTAssertEqual(sink.bytes, [0x01, 0x00, 0x05])
-        var caught = BytesSink()
-        let tag = try XCTUnwrap(CodecVariantDispatchUnknownTag(9))
-        try CodecVariantDispatch(
-            msg_id: 9, body: .default(tag: tag, body: CodecVariantSessionClose(reason: 3))
-        ).encode(into: &caught)
-        XCTAssertEqual(caught.bytes, [0x09, 0x03])
     }
 
     func testAValueThatHasReadNoFrameHoldsTheArmTheDocumentMarksAsItsDefault() {

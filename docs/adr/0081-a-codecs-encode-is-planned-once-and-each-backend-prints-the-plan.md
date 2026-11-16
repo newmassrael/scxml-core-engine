@@ -1371,6 +1371,28 @@ old encode, the old encode and its templates are removed in the same landing.
    decode makes the list through `init(decoding:)` after its read has refused an entry past the bound as before. A
    list held to its law (R8), a chain of slots or one a group holds (R6), and two lists of one count (R5) wait for
    the forms that hold them.
+   *Variants, 2026-11-16:* a variant every arm of which is a codec the Swift printer prints is printed, its tag a
+   field, a flag, a peeked byte or the caller's. Two decisions are recorded here. First, the variant is presented as
+   a generic enum over the arms (`{Codec}Arms<A0, .., D>`, each parameter bound to a source of its arm's codec),
+   which the protocol binds to an associated type for each arm (`{Arm}_Arm`, `Default_Arm`) and the generated value
+   to the arm codecs' own values (`typealias {Codec}Variant`), and not as a concrete enum of the arm codecs' values:
+   a concrete enum would make a host copy each arm into the generated value, which the presented bodies and entries
+   do not ask, and Rust's `{Codec}VariantSource` is generic over its arms for the same reason. A Swift generic
+   parameter may go unused, so an arm under a build feature keeps its parameter and its associated type in every
+   build and only its case is under the condition (docs/adr/0072), which no Rust-like split per build needs. The
+   enum's `tag` is the one table of the arms' tags: the encode derives the tag field or flag from it, a parent
+   derives the carrier bits a body's arm fills (`ParentTag`) from the body's, and a case reads a caller's tag from
+   it. Second, the catch-all holds its tag in `{Codec}UnknownTag` (§6 R3), for every Swift variant, printed or
+   not: a failable initializer that refuses a tag an arm names or one past the tag's bits is the one door, the
+   decode, which reaches the catch-all only with an unnamed tag, makes it through a file-private one, and a
+   template parent reads the bits it derives off its `value`. An input every arm says (R4d) is read off the arm the
+   value holds through the arm codec's reader; one some arms say (R4e) answers `nil` for an arm that does not, and
+   is printed only where no gate or held codec of the codec reads it; a flag bound to an input the arm says
+   (`ArmSays`) is derived from it, and one the parent hands an arm that says it is held to it before the first
+   byte (`InputCheck` at an arm). The case printer states the arm as the arm's value, the catch-all's tag
+   through its door, hands a caller's tag to the decode and holds both values to it, and compares the variant
+   whole. The hand tests the catalog's cases now state are gone (`CodecVariantUnitTests`' encode of a stored
+   tag field); what stays holds what no case can state.
 
 ## Consequences
 

@@ -10,7 +10,59 @@
 
 import SceForgeRuntime
 
-{% if variant_enum %}
+{% if printed and printed.arms %}
+/// The arm of `{{ struct_name }}`'s variant a value holds, each arm's body a source of the arm's
+/// codec (docs/adr/0058 §1): a host's type is written with no copy into the arm's own value. The
+/// tag is no member: the encode derives it from the arm, and the catch-all holds the tag no arm
+/// names.
+{# docs/adr/0072: an arm under a build feature is a case of the build that has it, left out where
+   the build sets the condition `off` names; its tag is then refused by the decode. A Swift
+   generic parameter may go unused, so each arm's is declared in every build. #}
+public enum {{ printed.arms_enum }}<{% for a in printed.arms %}{{ a.generic }}: {{ a.protocol }}{% if not loop.last %}, {% endif %}{% endfor %}> {
+{% for a in printed.arms %}
+{% if a.off %}
+#if !{{ a.off }}
+{% endif %}
+{% if a.tag is none %}
+    case `default`(tag: {{ printed.unknown_tag }}, body: {{ a.generic }})
+{% else %}
+    case {{ a.case }}({{ a.generic }})
+{% endif %}
+{% if a.off %}
+#endif
+{% endif %}
+{% endfor %}
+
+    /// The tag of the arm this is: the one the document gives a named arm, and the one the
+    /// catch-all holds. It is the tag the encode writes, or the one a caller hands the decode of a
+    /// variant whose frame carries none.
+    public var tag: {{ printed.tag_type }} {
+        switch self {
+{% for a in printed.arms %}
+{% if a.off %}
+        #if !{{ a.off }}
+{% endif %}
+{% if a.tag is none %}
+        case .default(let tag, _): return tag.value
+{% else %}
+        case .{{ a.case }}: return {{ a.tag }}
+{% endif %}
+{% if a.off %}
+        #endif
+{% endif %}
+{% endfor %}
+        }
+    }
+}
+
+extension {{ printed.arms_enum }}: Equatable where {% for a in printed.arms %}{{ a.generic }}: Equatable{% if not loop.last %}, {% endif %}{% endfor %} {}
+
+extension {{ printed.arms_enum }}: Sendable where {% for a in printed.arms %}{{ a.generic }}: Sendable{% if not loop.last %}, {% endif %}{% endfor %} {}
+
+/// The arm a value of `{{ struct_name }}` holds, each arm the value of its own codec.
+public typealias {{ variant_enum.name }} = {{ printed.arms_enum }}<{% for a in printed.arms %}{{ a.type }}{% if not loop.last %}, {% endif %}{% endfor %}>
+
+{% elif variant_enum %}
 /// The arm of `{{ struct_name }}` the tag of a frame selects: the struct of the entry codec the arm names.
 {% if variant_enum.default %}
 /// The catch-all holds the tag it was read for, as no arm names it.
@@ -83,6 +135,10 @@ public protocol {{ printed.protocol }} {
     /// What each entry of `{{ e.field }}` is presented as: a source of `{{ e.type }}`, written by its encode.
     associatedtype {{ e.name }}: {{ e.protocol }}
 {% endfor %}
+{% for a in printed.arms %}
+    /// What the body of the arm `{{ a.case }}` is presented as: a source of `{{ a.type }}`, written by its encode.
+    associatedtype {{ a.assoc }}: {{ a.protocol }}
+{% endfor %}
 {% for r in printed.requirements %}
     var {{ r.name }}: {{ r.type }} { get }
 {% endfor %}
@@ -123,6 +179,11 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 
     /// The value presents each entry of `{{ e.field }}` as a value of its own codec.
     public typealias {{ e.name }} = {{ e.type }}
+{% endfor %}
+{% for a in printed.arms %}
+
+    /// The value presents the body of the arm `{{ a.case }}` as a value of its own codec.
+    public typealias {{ a.assoc }} = {{ a.type }}
 {% endfor %}
 {% endif %}
 {# An element the encode derives is no member of a value printed from its plan (docs/adr/0081
@@ -418,10 +479,12 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 
 {% for s in printed.said %}
     /// The flag input `{{ s.input }}` that `source` says, which the encode is not handed
-    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// (docs/adr/0065 §6 R4a): 1 or 0{% if s.partly %}, and `nil` where the value says nothing of it (§6 R4e){% endif %}. A parent hands the decode this bit, and derives it from
     /// here for the encode.
-    public static func {{ s.reader }}<Source: {{ printed.protocol }}>(_ source: Source) -> UInt8 {
-        {{ s.expr }}
+    public static func {{ s.reader }}<Source: {{ printed.protocol }}>(_ source: Source) -> UInt8{% if s.partly %}?{% endif %} {
+{% for line in s.lines %}
+        {{ line }}
+{% endfor %}
     }
 
 {% endfor %}
