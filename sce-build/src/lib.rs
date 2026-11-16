@@ -7666,12 +7666,21 @@ fn validate_and_enrich_imports(
                 }
                 // docs/adr/0081 step 4: whether the Go backend prints the
                 // import from its plan, so a parent, a procedure or a
-                // validator reads its elements through methods and makes a
-                // value of it by its `Make{Codec}`. Read as the import is
+                // validator reads its elements through methods, reads an
+                // element its encode derives from what it measures, and makes
+                // a value of it by its `Make{Codec}`. Read as the import is
                 // generated, its own imports resolved.
                 if matches!(language, generator::Language::Go) {
-                    ctx.go_printed =
-                        go_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                    ctx.go_printed = read_codec_file_as(
+                        &source.path,
+                        &[],
+                        options,
+                        generator::Language::Go,
+                        |model, imports, _| {
+                            forge::generator::go_codec_printed_reads(&model, imports)
+                        },
+                    )?
+                    .flatten();
                 }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.

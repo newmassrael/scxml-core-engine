@@ -36,6 +36,11 @@ import (
 {% if uses_scealgorithm %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
+{# `uses_forge_codec`: an assign makes the bounded value of a printed codec's
+   byte string or text by the runtime's `codec` package (docs/adr/0081). #}
+{% if uses_forge_codec %}
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{% endif %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 
@@ -231,6 +236,15 @@ func (p *policy) ExecuteTransitionActions(source int, trIndex int) (int, bool) {
 					return eventErrorExecution, true
 				}
 				{{ a.location }} = scopeTmp
+			}
+{% elif a.made %}
+			{
+				{{ a.made_from_local }} := {{ a.made_from }}
+				{{ a.made_local }}, err := {{ a.made }}
+				if err != nil {
+					return eventErrorExecution, true
+				}
+				{{ a.location }} = {{ a.expr }}
 			}
 {% else %}
 			{{ a.location }} = {{ a.expr }}

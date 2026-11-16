@@ -336,14 +336,19 @@ pub(crate) struct GoRebuild {
     /// The call of `Make{Codec}`.
     pub(crate) value: String,
     /// The fallible call that makes the assigned element's bounded value,
-    /// which `value` reads as [`GO_REBUILT_ELEMENT`]; `None` where the element
-    /// is handed as it is.
-    pub(crate) made: Option<String>,
+    /// which `value` reads as [`GO_REBUILT_ELEMENT`], and the value assigned,
+    /// which is held as [`GO_REBUILT_VALUE`] first and which the call reads
+    /// there; `None` where the element is handed as it is.
+    pub(crate) made: Option<(String, String)>,
 }
 
 /// The local a rebuild reads a bounded element it made through
 /// [`GoRebuild::made`] from.
 pub(crate) const GO_REBUILT_ELEMENT: &str = "sceMade";
+
+/// The local a rebuild holds the value assigned to a byte string or a text
+/// in, which the call of [`GoRebuild::made`] makes the bounded value of.
+pub(crate) const GO_REBUILT_VALUE: &str = "sceValue";
 
 impl GoPrinted {
     /// What a reader outside its package knows of the codec `plan`, whose
@@ -439,7 +444,10 @@ impl GoPrinted {
                 Some(package) => format!("{package}.{bound}"),
                 None => bound.clone(),
             };
-            format!("codec.{constructor}[{bound}]({value})")
+            (
+                format!("codec.{constructor}[{bound}]({GO_REBUILT_VALUE})"),
+                value.to_string(),
+            )
         });
         let arguments: Vec<String> = self
             .presented

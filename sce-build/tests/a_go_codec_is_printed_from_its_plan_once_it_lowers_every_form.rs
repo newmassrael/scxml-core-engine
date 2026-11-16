@@ -30,12 +30,18 @@ fn resources() -> PathBuf {
 fn go_of(name: &str) -> Result<String, String> {
     let text = std::fs::read_to_string(resources().join(format!("{name}.scxml")))
         .map_err(|e| format!("read {name}.scxml: {e}"))?;
+    go_of_document(name, &text)
+}
+
+/// The Go file the document `text`, named `name` and importing from the
+/// resources, generates as its own, or why it does not.
+fn go_of_document(name: &str, text: &str) -> Result<String, String> {
     let options = ForgeCompileOptions {
         go_module_prefix: Some("example.com/sce-forge".to_string()),
         ..ForgeCompileOptions::default()
     };
     let output = compile_forge_with_imports(
-        &text,
+        text,
         DocumentLabel::symmetric(name),
         Language::Go,
         &resources(),
@@ -273,6 +279,144 @@ fn a_procedure_makes_a_printed_codec_again_and_a_validator_reads_it_by_method() 
         &validator,
         &["sceSelf.Frame.MsgId() == msgId"],
     );
+}
+
+/// A procedure over `codec_length_ref` that assigns `location` from `expr`,
+/// its input `blob` a byte string of at most 32 bytes and `n` an integer.
+fn length_ref_procedure(location: &str, expr: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="start" version="1.0">
+  <sce:import src="codec_length_ref.scxml" kind="codec" as="frame"/>
+  <datamodel>
+    <data id="blob" sce:type="bytes" sce:direction="in" sce:max-size="32"/>
+    <data id="n" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+  <state id="start">
+    <transition target="done">
+      <assign location="{location}" expr="{expr}"/>
+    </transition>
+  </state>
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+</scxml>
+"#
+    )
+}
+
+/// A procedure that assigns a byte string of a printed codec makes its
+/// bounded value by the runtime's constructor first, raising
+/// `error.execution` where the constructor refuses it, and makes the value
+/// again from the elements it presents alone: the length the encode derives
+/// is no argument of `Make{Codec}`.
+///
+/// Turns red where `go_source::GoPrinted::rebuilt` hands `Make{Codec}` every
+/// field the codec declares (the length among them), where it hands the
+/// assigned slice without `codec.MakeBytes`, where the template drops the
+/// `a.made` branch, or where `render_procedure_go` stops setting
+/// `uses_forge_codec`, which leaves the `codec` package unimported.
+#[test]
+fn a_procedure_makes_a_byte_string_of_a_printed_codec_within_its_bound() {
+    assert!(unlowered("codec_length_ref").is_empty());
+    let name = "go_procedure_assigns_printed_bytes";
+    let procedure = go_of_document(name, &length_ref_procedure("frame.payload", "blob"))
+        .unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &procedure,
+        &[
+            "\t\"github.com/newmassrael/sce-forge-runtime/codec\"\n",
+            "sceValue := p.blob\n",
+            "sceMade, err := codec.MakeBytes[codec_length_ref.CodecLengthRefPayloadBound](sceValue)\n",
+            "\t\t\t\tif err != nil {\n\t\t\t\t\treturn eventErrorExecution, true\n\t\t\t\t}\n",
+            "p.Frame = codec_length_ref.MakeCodecLengthRef(p.Frame.MsgId(), sceMade)\n",
+        ],
+    );
+    holds_none(
+        name,
+        &procedure,
+        &["p.Frame.Len()", "p.Frame.Payload =", "p.Frame.Len ="],
+    );
+}
+
+/// A procedure that assigns an integer of a printed codec whose value holds
+/// no byte string it assigns hands the integer as it is and imports no
+/// `codec` package.
+///
+/// Turns red where `go_source::GoPrinted::rebuilt` makes a bounded value of
+/// an element that is no byte string or text, or where `uses_forge_codec` is
+/// set without a rebuild that makes one.
+#[test]
+fn a_procedure_hands_an_integer_of_a_printed_codec_as_it_is() {
+    let name = "go_procedure_assigns_printed_integer";
+    let procedure = go_of_document(name, &length_ref_procedure("frame.msgId", "n"))
+        .unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &procedure,
+        &["p.Frame = codec_length_ref.MakeCodecLengthRef(p.n, p.Frame.Payload())\n"],
+    );
+    holds_none(
+        name,
+        &procedure,
+        &[
+            "sceMade",
+            "sceValue",
+            "\"github.com/newmassrael/sce-forge-runtime/codec\"",
+        ],
+    );
+}
+
+/// An assign to a length the encode of a printed codec derives is refused:
+/// the value holds no such element, as the encode derives it from the bytes
+/// it measures (docs/adr/0081 §3).
+///
+/// Turns red where `rebuilt_element_assign` answers `None` for an element
+/// `GoPrinted::rebuilt` does not find, which leaves the assign as a write of
+/// a field the value does not have.
+#[test]
+fn a_procedure_cannot_assign_a_length_a_printed_codec_derives() {
+    let name = "go_procedure_assigns_derived_length";
+    let refusal = go_of_document(name, &length_ref_procedure("frame.len", "n"))
+        .expect_err("an assign to a derived length is refused");
+    assert!(
+        refusal.contains("InvalidLvalue") && refusal.contains("derives `len`"),
+        "the refusal names the derived element: {refusal}"
+    );
+}
+
+/// A validator reads a length the encode of a printed codec derives as the
+/// encode derives it, from the bytes the value presents, and reads the byte
+/// string as the slice its bounded value holds.
+///
+/// Turns red where `GoPrinted::read` reads a derived element by a method the
+/// value does not have, or where `stateful_import_field_renames` stops
+/// reading a printed codec's element through `GoPrinted::read`.
+#[test]
+fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures() {
+    let name = "go_validator_reads_printed_length";
+    let validator = go_of_document(
+        name,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="codec_length_ref.scxml" kind="codec" as="frame"/>
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="32"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="frame.len === n"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(name, &validator, &["uint8(sceSelf.Frame.Payload().Len())"]);
+    holds_none(name, &validator, &["sceSelf.Frame.Len"]);
 }
 
 /// A codec of a form the Go printer does not lower keeps the template's
