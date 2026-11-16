@@ -102,7 +102,9 @@ struct Reached {
     types: Vec<String>,
     type_names: BTreeSet<String>,
     types_taken: usize,
-    /// Each reader function, by its name, with its definition.
+    /// Each reader function, and each function that makes a machine's value
+    /// of a received message's part from its unit's
+    /// ([`C11Composed::made_by`]), by its name, with its definition.
     readers: Vec<String>,
     reader_names: BTreeSet<String>,
     readers_taken: usize,
@@ -146,7 +148,9 @@ impl<'a> C11Composed<'a> {
     }
 
     /// The reader functions the walks reached since the last call, a reader of
-    /// a part before the reader of the value that holds it.
+    /// a part before the reader of the value that holds it, and the functions
+    /// that make a machine's value from a unit's, a part's before the one of
+    /// the value that holds it.
     pub fn take_readers(&self) -> Vec<String> {
         let mut reached = self.reached.borrow_mut();
         let taken = reached.readers_taken;
@@ -180,23 +184,51 @@ impl<'a> C11Composed<'a> {
         body: impl FnOnce() -> String,
     ) -> String {
         let function = format!("sce_composed_read_{name}");
-        if !self.reached.borrow().reader_names.contains(&function) {
-            let guard = function.to_uppercase();
-            let def = format!(
-                "#ifndef {guard}\n#define {guard}\n\
-                 /* docs/adr/0086, section 4: a value of `{ty}` read out of the text at `sce_value`\n   \
+        self.define(&function, || {
+            format!(
+                "/* docs/adr/0086, section 4: a value of `{ty}` read out of the text at `sce_value`\n   \
                  into `sce_out`, refused whole, its path left in `{C11_PATH}` and the bound it broke\n   \
                  in `*{C11_BOUND}`, when it is outside its type. */\n\
                  SCE_C_UNUSED static const char *{function}(const char *sce_value, {ty} *sce_out, char \
                  *{C11_PATH},\n        size_t {C11_PATH_CAP}, uint32_t *{C11_BOUND}) {{\n    \
-                 (void){C11_PATH};\n    (void){C11_PATH_CAP};\n    (void){C11_BOUND};\n{}}}\n#endif\n",
+                 (void){C11_PATH};\n    (void){C11_PATH_CAP};\n    (void){C11_BOUND};\n{}}}",
                 body()
-            );
-            let mut reached = self.reached.borrow_mut();
-            reached.reader_names.insert(function.clone());
-            reached.readers.push(def);
-        }
+            )
+        });
         format!("{function}({value}, {C11_INTO}, {C11_PATH}, {C11_PATH_CAP}, {C11_BOUND})")
+    }
+
+    /// Note the function `function`, defined by `def`, once, under a guard of
+    /// its name, as a reader is ([`Self::reader_of`]), among the functions
+    /// [`Self::take_readers`] answers.
+    fn define(&self, function: &str, def: impl FnOnce() -> String) {
+        if self.reached.borrow().reader_names.contains(function) {
+            return;
+        }
+        let guard = function.to_uppercase();
+        let def = format!("#ifndef {guard}\n#define {guard}\n{}\n#endif\n", def());
+        let mut reached = self.reached.borrow_mut();
+        reached.reader_names.insert(function.to_string());
+        reached.readers.push(def);
+    }
+
+    /// The call of the function that makes a value of the machine's `to_ty`
+    /// from `held`, a value of `from_ty` as a unit declares it, defined once
+    /// by `def` over the function's name (docs/SCE_TEST_PROFILE.md §12.3): C
+    /// has no closure to make a part by where its value is read, so a part
+    /// that is made part by part is made by a function of the machine
+    /// ([`ComposedSpelling::take_functions`]), named by the two types, which
+    /// say all it does.
+    fn made_by(
+        &self,
+        to_ty: &str,
+        from_ty: &str,
+        held: &Held,
+        def: impl FnOnce(&str) -> String,
+    ) -> String {
+        let function = format!("{}_from_{}", stem(to_ty), stem(from_ty));
+        self.define(&function, || def(&function));
+        format!("{function}({})", value_of(held))
     }
 
     /// The statement that writes the JSON value `value`, a `sce_forge_wire_value_t`,
@@ -214,6 +246,15 @@ fn value_of(held: &Held) -> String {
     } else {
         format!("({})", held.text)
     }
+}
+
+/// Whether `elem`, the copy of an element or a present value the walk spelled,
+/// is the value bound to [`C11_COPY_BINDING`] as it is: a part the machine
+/// holds in the type the value it is copied from holds it in.
+fn copied_as_it_is(elem: &str) -> bool {
+    elem.strip_prefix("(*")
+        .and_then(|rest| rest.strip_suffix(')'))
+        == Some(C11_COPY_BINDING)
 }
 
 /// `name` without the `_t` its type name ends in: what the name of a function
@@ -454,6 +495,144 @@ pub(crate) fn c11_path_len(
             longest
         }
     })
+}
+
+/// The C11 function `name` that maps a value of the union `from_ty` into a
+/// value of the union `to_ty` case by case, opening with the sentence `why`:
+/// the machine's own struct and the one the union's unit declares, each of
+/// which answers the declared name of the case a value is in
+/// (`<stem>_variant`), the name its tag is written as (docs/adr/0092, section
+/// 7, the C11 row). One arm per case of `arms`, which binds the case's record
+/// of the leaving value where the case holds one, as `binding` says (a copy
+/// of it to a place, a pointer to it to a reference), and answers the arm's
+/// value, the case the value arrives as. C checks no case analysis for
+/// exhaustiveness, so the property that a case either side gains is a build
+/// error is the function's regeneration with the document, which writes one
+/// arm per case of the union as the statechart imports it; a value in no case,
+/// which no constructor builds, ends the process rather than cross as the
+/// zeroed struct, as Go's adapter panics. What an adapter maps a union across
+/// a call by, and what a received message's union is made by
+/// ([`ComposedSpelling::unit_union`]).
+pub(crate) fn c11_union_crossing(
+    name: &str,
+    from_ty: &str,
+    to_ty: &str,
+    why: &str,
+    binding: &Held,
+    arms: &[UnitUnionArm],
+) -> String {
+    let arms: String = arms
+        .iter()
+        .map(|arm| {
+            let bound = if arm.holds_record {
+                let member = format!("value.{C11_UNION_CASES}.{}", c11_case_ident(&arm.variant));
+                if binding.by_reference {
+                    format!(
+                        "        const __typeof__({member}) *const {} = &{member};\n",
+                        binding.text
+                    )
+                } else {
+                    format!(
+                        "        const __typeof__({member}) {} = {member};\n",
+                        binding.text
+                    )
+                }
+            } else {
+                String::new()
+            };
+            format!(
+                "    if (strcmp(variant, \"{}\") == 0) {{\n{bound}        return {};\n    }}\n",
+                crate::filters::escape_c(arm.variant.clone()),
+                arm.value
+            )
+        })
+        .collect();
+    format!(
+        "/* {why} */\n\
+         static inline {to_ty} {name}({from_ty} value) {{\n    \
+         const char *const variant = {}_variant(&value);\n    \
+         if (variant == NULL) {{\n        abort();\n    }}\n{arms}    abort();\n}}",
+        stem(from_ty)
+    )
+}
+
+/// What a C11 unit names from outside the type of the part `part`
+/// ([`crate::forge::schema_unit_type::UnitNames`]), as the event schema's unit
+/// that holds it names it (`SchemaUnitNames` of the generator): a number and a
+/// `bool` as every field of a unit spells them, an enum as the typedef its
+/// document's header declares, a record as the payload type its event
+/// schema's header declares, a union as the typedef its document's header
+/// declares, each found in the scope the part is written in.
+struct C11UnitNames<'p> {
+    part: &'p UnitPart<'p>,
+}
+
+impl C11UnitNames<'_> {
+    /// The document of the enum the statechart holds as `alias`, or the alias
+    /// itself for one it holds no document of.
+    fn document(&self, alias: &str) -> String {
+        self.part
+            .documents
+            .get(alias)
+            .cloned()
+            .unwrap_or_else(|| alias.to_string())
+    }
+}
+
+impl crate::forge::schema_unit_type::UnitNames for C11UnitNames<'_> {
+    fn scalar(&self, ty: &SceType) -> String {
+        match ty {
+            SceType::Enum(reference) => crate::forge::generator::enum_qualified_type(
+                &self.document(&reference.alias),
+                crate::generator::Language::C11,
+            ),
+            other => crate::forge::generator::c_type(other).to_string(),
+        }
+    }
+    fn record(&self, alias: &str) -> Option<String> {
+        let held = self.part.records.record(self.part.within, alias).ok()?;
+        Some(crate::forge::generator::event_schema_payload_type(
+            &held.schema.name,
+            crate::generator::Language::C11,
+        ))
+    }
+    fn union(&self, alias: &str) -> Option<String> {
+        let held = self.part.records.union(self.part.within, alias).ok()?;
+        Some(crate::forge::generator::union_unit_type(
+            &held.union.name,
+            crate::generator::Language::C11,
+        ))
+    }
+    fn enum_mangle(&self, alias: &str) -> String {
+        crate::filters::to_snake_case(self.document(alias))
+    }
+}
+
+/// The type the C11 unit of a record holds the part `part` in: a field of one
+/// entry that may be absent, of an enum, in the optional value named by the
+/// enum's document (`sce_optional_enum_<document>_t`), as the unit spells
+/// every field of one entry ([`UnitPart::entry`]) and a machine holds the same
+/// value; every other part in the composition's own type, named by its
+/// structure ([`crate::forge::schema_unit_type::unit_type`]), which the unit
+/// declares. `Err` names a part whose type names a record or a union the scope
+/// does not hold.
+fn c11_unit_type(part: &UnitPart<'_>) -> Result<String, String> {
+    use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
+    let names = C11UnitNames { part };
+    if let (true, ValueType::Optional { elem }) = (part.entry, part.ty) {
+        if let ValueType::Scalar(SceType::Enum(reference)) = &**elem {
+            return Ok(format!(
+                "sce_optional_enum_{}_t",
+                names.enum_mangle(&reference.alias)
+            ));
+        }
+    }
+    unit_type(
+        crate::generator::Language::C11,
+        part.ty,
+        &names,
+        &mut C11Declarations::default(),
+    )
 }
 
 impl ComposedSpelling for C11Composed<'_> {
@@ -851,10 +1030,11 @@ impl ComposedSpelling for C11Composed<'_> {
     // unit in the types the machine holds them in (the runtime's optional, the
     // buffer of a text's bound) and copied by assignment; a byte string a
     // composition holds is filled into the machine's buffer of its bound from
-    // the view of the unit's, and a list of numbers or `bool`s into the
-    // machine's list of its bound from the unit's elements, the unit's list
-    // being a struct of its own whose elements are `items`. Every other part,
-    // an optional list or a list of texts among them, has no conversion here,
+    // the view of the unit's, and a list of numbers, `bool`s or texts into
+    // the machine's list of its bound from the unit's elements, which are of
+    // the machine's element type, the unit's list being a struct of its own
+    // whose elements are `items`. Every other part, an optional list, a list
+    // of byte strings and a list of lists among them, has no conversion here,
     // and the walk refuses it by name.
     fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
         match ty {
@@ -865,23 +1045,150 @@ impl ComposedSpelling for C11Composed<'_> {
                 Some(value_of(held))
             }
             ValueType::Bytes { max } => Some(self.copy_bytes(max.max, held)),
-            ValueType::List { elem, max } => match &**elem {
-                ValueType::Scalar(scalar) => {
-                    let list = self.list_type(&self.scalar_type(scalar), max.max);
-                    let value = value_of(held);
-                    Some(format!("{}_of({value}.items, {value}.len)", stem(&list)))
-                }
-                _ => None,
-            },
+            ValueType::List { elem, max } => {
+                let elem = match &**elem {
+                    ValueType::Scalar(scalar) => self.scalar_type(scalar),
+                    ValueType::Text { max } => self.text_type(max.max),
+                    _ => return None,
+                };
+                let list = self.list_type(&elem, max.max);
+                let value = value_of(held);
+                Some(format!("{}_of({value}.items, {value}.len)", stem(&list)))
+            }
             _ => None,
         }
     }
-    // A C11 enum is held in the enum unit's own type by a machine and a unit
-    // alike, but a value of one inside a composition crosses through the
-    // copies of its constructors, which C11 spells for no mapped part, so the
-    // walk refuses such a message by name rather than half make it.
-    fn unit_enum(&self, _machine: &MachineEnum, _document: &str, _held: &Held) -> Option<String> {
-        None
+    // A C11 machine holds an enum in the type its document's own header
+    // declares, under the machine's alias of it (`StaticTarget::enum_type`),
+    // so a value crosses as it is. One held in a type of its own crosses by
+    // the declared name of its variant, through a function of the machine
+    // whose conditional answers the last variant for every value the others
+    // do not, as C++'s does.
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        use crate::generator::Language;
+        if machine.ty == crate::forge::static_lowering::c11_enum_type(document) {
+            return Some(value_of(held));
+        }
+        let unit = crate::forge::generator::enum_qualified_type(document, Language::C11);
+        let mut arms: Vec<(String, &str)> = machine
+            .variants
+            .iter()
+            .map(|(declared, ident)| {
+                (
+                    crate::forge::enum_naming::variant_ident(Language::C11, document, declared),
+                    ident.as_str(),
+                )
+            })
+            .collect();
+        let (_, last) = arms.pop()?;
+        let chosen: String = arms
+            .iter()
+            .map(|(from, to)| format!("value == {from} ? {to} : "))
+            .collect();
+        let ty = &machine.ty;
+        Some(self.made_by(ty, &unit, held, |function| {
+            format!(
+                "/* docs/SCE_TEST_PROFILE.md §12.3: a value of `{document}` as its unit declares \
+                 it, made into the\n   machine's `{ty}` by the declared name of its variant. */\n\
+                 static inline {ty} {function}({unit} value) {{\n    return {chosen}{last};\n}}"
+            )
+        }))
+    }
+    // A compound literal of the machine's struct, each field designated by
+    // its id, as the machine's struct names it (`StaticTarget::record_field`)
+    // and an adapter builds a record across a call: C hands a value no
+    // initializer list.
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let fields: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!(".{id} = {value}"))
+            .collect();
+        Some(format!("({ty}){{ {} }}", fields.join(", ")))
+    }
+    // C has no expression that binds the record of a case, so the union is
+    // made by a function of the machine, one arm per case binding a pointer
+    // to the unit's record of the case, as an adapter maps a union across a
+    // call ([`c11_union_crossing`]).
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        let unit =
+            crate::forge::generator::union_unit_type(document, crate::generator::Language::C11);
+        let ty = self.union_type(document);
+        Some(self.made_by(&ty, &unit, held, |function| {
+            c11_union_crossing(
+                function,
+                &unit,
+                &ty,
+                &format!(
+                    "docs/SCE_TEST_PROFILE.md §12.3: a value of `{document}` as its unit \
+                     declares it, made into the\n   machine's own case by case."
+                ),
+                &Held::reference(C11_COPY_BINDING),
+                arms,
+            )
+        }))
+    }
+    // The elements as they are where the machine holds them in the unit's
+    // type (an enum, whose type is its document's), by the constructor of the
+    // machine's list; otherwise a function of the machine over the unit's list
+    // type, which makes each element bound by a pointer to it.
+    fn unit_list(
+        &self,
+        held: &Held,
+        unit: &UnitPart<'_>,
+        elem: &str,
+        _elem_ty: &str,
+        list_ty: &str,
+    ) -> Option<String> {
+        let ValueType::List { max, .. } = unit.ty else {
+            return None;
+        };
+        if copied_as_it_is(elem) {
+            let value = value_of(held);
+            return Some(format!("{}_of({value}.items, {value}.len)", stem(list_ty)));
+        }
+        let from = c11_unit_type(unit).ok()?;
+        let capacity = max.max;
+        Some(self.made_by(list_ty, &from, held, |function| {
+            format!(
+                "/* docs/SCE_TEST_PROFILE.md §12.3: a list of `{from}` made into the machine's \
+                 `{list_ty}`, element by\n   element. */\n\
+                 static inline {list_ty} {function}({from} value) {{\n    \
+                 {list_ty} made = {{ .len = 0u }};\n    \
+                 for (uint32_t i = 0u; i < value.len && i < {capacity}u; ++i) {{\n        \
+                 const __typeof__(value.items[i]) *const {C11_COPY_BINDING} = &value.items[i];\n        \
+                 made.data[i] = {elem};\n    }}\n    \
+                 made.len = value.len < {capacity}u ? value.len : {capacity}u;\n    \
+                 return made;\n}}"
+            )
+        }))
+    }
+    // The value as it is where the unit holds it in the machine's type (a
+    // record's field of one entry that may be absent, of an enum); otherwise a
+    // function of the machine over the unit's type, which makes the present
+    // value bound by a pointer to it.
+    fn unit_optional(
+        &self,
+        held: &Held,
+        unit: &UnitPart<'_>,
+        elem: &str,
+        elem_ty: &str,
+    ) -> Option<String> {
+        let optional = self.optional_type(elem_ty);
+        let from = c11_unit_type(unit).ok()?;
+        if copied_as_it_is(elem) && from == optional {
+            return Some(value_of(held));
+        }
+        let name = crate::forge::static_lowering::c11_optional_elem(elem_ty)?;
+        Some(self.made_by(&optional, &from, held, |function| {
+            format!(
+                "/* docs/SCE_TEST_PROFILE.md §12.3: a value of `{from}` that may be absent made \
+                 into the machine's\n   `{optional}`. */\n\
+                 static inline {optional} {function}({from} value) {{\n    \
+                 if (!value.present) {{\n        return sce_optional_{name}_none();\n    }}\n    \
+                 const __typeof__(value.value) *const {C11_COPY_BINDING} = &value.value;\n    \
+                 return sce_optional_{name}_some({elem});\n}}"
+            )
+        }))
     }
     // The buffer of the larger bound, filled from the text, which fits it.
     fn copy_text(&self, max: u32, held: &Held) -> String {
@@ -929,11 +1236,7 @@ impl ComposedSpelling for C11Composed<'_> {
     // constructor its declaration holds (`c11_list_def`): the elements are of
     // one type on both sides.
     fn copy_list_into(&self, held: &Held, elem: &str, _elem_ty: &str, list_ty: &str) -> String {
-        let as_it_is = elem
-            .strip_prefix("(*")
-            .and_then(|rest| rest.strip_suffix(')'))
-            == Some(C11_COPY_BINDING);
-        if !as_it_is {
+        if !copied_as_it_is(elem) {
             unreachable!("{C11_COPIES_ELEMENTS_AS_THEY_ARE}: `{elem}`")
         }
         let value = value_of(held);
@@ -2241,16 +2544,18 @@ mod tests {
         );
     }
 
-    /// A part C11 has no conversion of, a list of texts, an optional list or a
-    /// value of an enum inside a composition, is refused by name, so no
-    /// message is half made.
+    /// A part C11 has no conversion of, an optional list, a list of lists or
+    /// a list of byte strings, whose unit's type is a struct of its own the
+    /// machine's is not, is refused by name, so no message is half made: a
+    /// record whose records and enums all convert is refused at the one field
+    /// that does not.
     #[test]
     fn a_c11_message_with_a_part_it_does_not_convert_is_refused_by_name() {
         let c11 = c11();
         for text in [
-            "list<string[8]>[4]",
             "optional<list<uint8>[2]>",
             "list<list<uint8>[2]>[2]",
+            "list<bytes[4]>[2]",
         ] {
             let refused = from_unit(
                 &ty(text),
@@ -2281,9 +2586,180 @@ mod tests {
                 &Held::reference("r")
             ),
             Err(
-                "`enum:Level` has no machine's value made from its unit's on this backend"
+                "`list<list<uint8>[2]>[2]` has no machine's value made from its unit's on this \
+                 backend"
                     .to_string()
             )
+        );
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: a record inside a message is a
+    /// compound literal of the machine's struct, each field designated by its
+    /// id; a list of records is made by a function of the machine over the
+    /// unit's list type, each element bound by a pointer to it; an enum the
+    /// machine holds in its document's own type is assigned as it is, and a
+    /// list of texts is made into the machine's list from the unit's `items`.
+    #[test]
+    fn a_c11_list_of_records_is_made_by_a_function_of_the_machine() {
+        let c11 = c11();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let made = from_unit(
+            &ty("list<record:Item>[3]"),
+            None,
+            &held(),
+            &c11_enums(),
+            &documents,
+            &c11,
+            &Held::place("(*r).items"),
+        )
+        .expect("a list of records converts");
+        let function = "m_record_item_list_3_from_sce_list_3_record_ItemPayload";
+        assert_eq!(made, format!("{function}(((*r).items))"));
+        let functions = c11.take_functions().join("\n");
+        for fragment in [
+            format!("#ifndef {}\n", function.to_uppercase()),
+            format!(
+                "static inline m_record_item_list_3_t {function}(sce_list_3_record_ItemPayload_t \
+                 value) {{\n    m_record_item_list_3_t made = {{ .len = 0u }};\n    \
+                 for (uint32_t i = 0u; i < value.len && i < 3u; ++i) {{\n        \
+                 const __typeof__(value.items[i]) *const sce_copied = &value.items[i];\n        \
+                 made.data[i] = (m_record_item_t){{ .id = ((*sce_copied).id), .level = \
+                 ((*sce_copied).level), .due = ((*sce_copied).due), "
+            ),
+            ".tags = sce_static_string_8_list_4_of(((*sce_copied).tags).items, \
+             ((*sce_copied).tags).len) };\n    }\n    \
+             made.len = value.len < 3u ? value.len : 3u;\n    return made;\n}\n#endif\n"
+                .to_string(),
+        ] {
+            assert!(
+                functions.contains(&fragment),
+                "`{fragment}` in:\n{functions}"
+            );
+        }
+        assert!(
+            c11.take_functions().is_empty(),
+            "what was taken is not taken again"
+        );
+    }
+
+    /// An enum the machine holds in a type of its own crosses by the declared
+    /// name of its variant, through a function of the machine whose last
+    /// variant answers every value the others do not.
+    #[test]
+    fn a_c11_enum_of_a_type_of_the_machines_own_crosses_by_its_declared_name() {
+        let c11 = c11();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let made = from_unit(
+            &ty("enum:Level"),
+            None,
+            &held(),
+            &enums(),
+            &documents,
+            &c11,
+            &Held::place("(*r).level"),
+        )
+        .expect("the enum converts");
+        assert_eq!(made, "MLevelEnum_from_Level(((*r).level))");
+        let functions = c11.take_functions().join("\n");
+        let low = crate::forge::enum_naming::variant_ident(
+            crate::generator::Language::C11,
+            "level",
+            "low",
+        );
+        assert!(
+            functions.contains(&format!(
+                "static inline MLevelEnum MLevelEnum_from_Level(Level_t value) {{\n    \
+                 return value == {low} ? Low : High;\n}}"
+            )),
+            "{functions}"
+        );
+        // The machine's own type of the document crosses as it is.
+        let as_it_is = from_unit(
+            &ty("enum:Level"),
+            None,
+            &held(),
+            &c11_enums(),
+            &documents,
+            &c11,
+            &Held::place("(*r).level"),
+        );
+        assert_eq!(as_it_is, Ok("((*r).level)".to_string()));
+    }
+
+    /// docs/adr/0092, section 7: C has no expression that binds a case's
+    /// record, so a union inside a message is made by a function of the
+    /// machine named by the machine's union and the unit's, one arm per case,
+    /// each binding a pointer to the unit's record of its case and answering
+    /// the machine's case built from it; a value in no case ends the process.
+    #[test]
+    fn a_c11_union_is_made_from_its_units_value_by_a_function_of_the_machine() {
+        let shapes = shapes();
+        let c11 = c11();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &c11,
+            &Held::place("(*r).shape"),
+        )
+        .expect("the union is made");
+        assert_eq!(made, "m_union_shape_from_shape(((*r).shape))");
+        let functions = c11.take_functions().join("\n");
+        for fragment in [
+            "#ifndef M_UNION_SHAPE_FROM_SHAPE\n#define M_UNION_SHAPE_FROM_SHAPE\n",
+            "static inline m_union_shape_t m_union_shape_from_shape(shape_t value) {\n    \
+             const char *const variant = shape_variant(&value);\n    \
+             if (variant == NULL) {\n        abort();\n    }\n",
+            "    if (strcmp(variant, \"dot\") == 0) {\n        \
+             return m_union_shape_case_dot();\n    }\n",
+            "    if (strcmp(variant, \"circle\") == 0) {\n        \
+             const __typeof__(value.as.circle) *const sce_copied = &value.as.circle;\n        \
+             return m_union_shape_case_circle((m_record_radius_t){ .radius = \
+             ((*sce_copied).radius) });\n    }\n",
+            "    abort();\n}\n#endif\n",
+        ] {
+            assert!(
+                functions.contains(fragment),
+                "`{fragment}` in:\n{functions}"
+            );
+        }
+    }
+
+    /// A value that may be absent of a record is made by a function of the
+    /// machine over the unit's optional type: the machine's absent value for
+    /// an absent one, and the present value made from a pointer to the unit's.
+    #[test]
+    fn a_c11_optional_record_is_made_by_a_function_of_the_machine() {
+        let c11 = c11();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let made = from_unit(
+            &ty("optional<record:Item>"),
+            None,
+            &held(),
+            &c11_enums(),
+            &documents,
+            &c11,
+            &Held::place("(*r).maybe"),
+        )
+        .expect("an optional record converts");
+        let function = "sce_optional_record_m_record_item_from_sce_opt_record_ItemPayload";
+        assert_eq!(made, format!("{function}(((*r).maybe))"));
+        let functions = c11.take_functions().join("\n");
+        assert!(
+            functions.contains(&format!(
+                "static inline sce_optional_record_m_record_item_t {function}(\
+                 sce_opt_record_ItemPayload_t value) {{\n    if (!value.present) {{\n        \
+                 return sce_optional_record_m_record_item_none();\n    }}\n    \
+                 const __typeof__(value.value) *const sce_copied = &value.value;\n    \
+                 return sce_optional_record_m_record_item_some((m_record_item_t){{ .id = \
+                 ((*sce_copied).id), "
+            )),
+            "{functions}"
         );
     }
 }

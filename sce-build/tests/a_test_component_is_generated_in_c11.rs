@@ -21,7 +21,9 @@
 //! being storage its factory owns. C11 holds a number, a `bool`, a text, a
 //! byte string and an enum of a received message as the record's unit does, a
 //! byte string's bytes and length copied into the array of the machine's
-//! channel. A module
+//! channel; a union, a list of records and a record that may be absent inside
+//! a message are made by functions of the machine, since C has no closure to
+//! bind a case's record or an element by. A module
 //! parameter starts at its type's zero, or its enum's first variant, and is
 //! read from the run as a saved value of its type is read back, between the
 //! construction of the machine and the entry into its initial configuration.
@@ -1154,4 +1156,114 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_c11() 
         assert!(code.contains(copy), "{copy}:\n{code}");
     }
     assert!(checked < first, "{code}");
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.3, docs/adr/0092 section 7: a receive branch
+/// whose content reads a message that holds a union (`order_placed`'s
+/// `payment`), a record within the record (`customer`) and a list of records
+/// holding an enum (`lines`) takes it into the machine's types. C has no
+/// expression that binds the record of a case, so the union is made by a
+/// function of the machine named by the machine's union and the unit's, one
+/// arm per case binding a pointer to the unit's record of its case and
+/// answering the machine's case built from it, defined before the statement
+/// that takes the branch calls it; the list is made by a function of the
+/// machine over the unit's list type, and the record within it and the one
+/// within the message are compound literals of the machine's structs.
+#[test]
+fn a_message_holding_a_union_its_content_reads_is_made_by_functions_on_c11() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let imports = imports_dir();
+    let port = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="order_port">
+  <sce:import kind="event-schema" src="{imports}/order_placed.scxml" as="OrderPlaced"/>
+  <sce:message type="OrderPlaced" direction="in"/>
+</scxml>
+"#,
+        imports = imports.display()
+    );
+    let component = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="payment_reader"
+       datamodel="sce-static" initial="watching">
+  <sce:import kind="test-port-type" src="order_port.scxml" as="OrderPort"/>
+  <sce:import kind="test-template" src="{imports}/order_placed_match.scxml" as="OrderPlacedMatch"/>
+  <sce:import kind="event-schema" src="{imports}/order_placed.scxml" as="OrderPlaced"/>
+  <sce:import kind="event-schema" src="{imports}/order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="{imports}/order_customer.scxml" as="Customer"/>
+  <sce:import kind="event-schema" src="{imports}/card_payment.scxml" as="Card"/>
+  <sce:import kind="event-schema" src="{imports}/voucher_payment.scxml" as="Voucher"/>
+  <sce:import kind="union" src="{imports}/order_payment.scxml" as="Payment"/>
+  <sce:import kind="enum" src="{imports}/payment_kind.scxml" as="PaymentKind"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-port id="sut" type="OrderPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint16" expr="3"/>
+    <data id="paid_by" sce:type="enum:PaymentKind" expr="PaymentKind.cash"/>
+  </datamodel>
+  <state id="watching">
+    <transition sce:receive="sut" sce:test-template="OrderPlacedMatch"
+                sce:template-args="limit" target="done">
+      <assign location="paid_by" expr="_event.data.payment.kind"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports.display()
+    );
+    std::fs::write(dir.path().join("order_port.scxml"), port).expect("the port type is written");
+    let path = dir.path().join("payment_reader.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    let crossing = "payment_reader_union_order_payment_from_order_payment";
+    let defined = at(
+        &code,
+        &format!(
+            "static inline payment_reader_union_order_payment_t {crossing}(order_payment_t value) \
+             {{\n    const char *const variant = order_payment_variant(&value);\n"
+        ),
+    );
+    let called = at(
+        &code,
+        &format!(
+            " sm->pending_payload.as.order_placed.payment = \
+             {crossing}(((*sce_test_received_).payment));"
+        ),
+    );
+    assert!(defined < called, "{code}");
+    assert!(
+        code.contains(&format!("#ifndef {}\n", crossing.to_uppercase())),
+        "the crossing stands under the guard of its name:\n{code}"
+    );
+    for arm in [
+        "    if (strcmp(variant, \"card\") == 0) {\n        \
+         const __typeof__(value.as.card) *const sce_copied = &value.as.card;\n        \
+         return payment_reader_union_order_payment_case_card((payment_reader_record_card_t){ \
+         .last4 = ((*sce_copied).last4), .amount = ((*sce_copied).amount) });\n    }\n",
+        "    if (strcmp(variant, \"cash\") == 0) {\n        \
+         return payment_reader_union_order_payment_case_cash();\n    }\n",
+        "    if (strcmp(variant, \"voucher\") == 0) {\n        \
+         const __typeof__(value.as.voucher) *const sce_copied = &value.as.voucher;\n        \
+         return payment_reader_union_order_payment_case_voucher(\
+         (payment_reader_record_voucher_t){ .voucher_code = sce_static_bytes_4_of(\
+         (sce_forge_bytes_view_t){ ((*sce_copied).voucher_code).data, \
+         ((*sce_copied).voucher_code).len }) });\n    }\n",
+    ] {
+        assert!(code.contains(arm), "`{arm}` in:\n{code}");
+    }
+    for made in [
+        " sm->pending_payload.as.order_placed.lines = \
+         payment_reader_record_line_list_4_from_sce_list_4_record_OrderLinePayload(\
+         ((*sce_test_received_).lines));",
+        "made.data[i] = (payment_reader_record_line_t){ .sku = ((*sce_copied).sku), \
+         .quantity = ((*sce_copied).quantity), .color = ((*sce_copied).color) };",
+        " sm->pending_payload.as.order_placed.customer = (payment_reader_record_customer_t){ \
+         .full_name = (((*sce_test_received_).customer).full_name), \
+         .vip = (((*sce_test_received_).customer).vip) };",
+    ] {
+        assert!(code.contains(made), "`{made}` in:\n{code}");
+    }
 }

@@ -7593,8 +7593,9 @@ pub fn lower(
     let type_defs = declarations.type_defs;
     let mut adapter_defs = Vec::new();
     // The types and the reader functions a lift of a value read whole reached,
-    // declared before any statement that calls them (docs/adr/0092, section 6.1
-    // item 5).
+    // and the functions a received message is made by, declared before any
+    // statement that calls them (docs/adr/0092, section 6.1 item 5;
+    // docs/SCE_TEST_PROFILE.md §12.3).
     adapter_defs.extend(rewrites.composed_defs.take());
     let mut imports: BTreeSet<String> = imports.into_iter().collect();
     // A host operation that takes an argument that may be absent names the runtime's
@@ -9243,7 +9244,9 @@ struct Rewrites<'m> {
     /// What a statement's walk over a composed value reached that the machine
     /// declares outside the statement, in the order it reached them: the
     /// types and reader functions of a `<sce:lift>` that reads a value whole,
-    /// for a target whose reader of a part is a function of the machine
+    /// and the functions that make the message a receive branch takes
+    /// ([`received_composed`]), for a target whose reader of a part is a
+    /// function of the machine
     /// ([`crate::forge::composed_lowering::ComposedSpelling::take_functions`]).
     /// Each is guarded by its name, so one reached twice is declared once.
     composed_defs: std::cell::RefCell<Vec<String>>,
@@ -14699,6 +14702,14 @@ pub(crate) fn c11_list_def(elem: &str, capacity: u32, what: &str) -> String {
     )
 }
 
+/// The C11 type a machine holds a value of the enum document `document` in
+/// ([`StaticTarget::enum_type`]): the document's own, an alias of the typedef
+/// its header declares, so a value crosses between the machine and the
+/// enum's unit as the value it is.
+pub(crate) fn c11_enum_type(document: &str) -> String {
+    format!("{}_enum_t", filters::to_snake_case(document.to_string()))
+}
+
 /// The C11 type a machine `machine` holds a record of the schema the
 /// statechart imports as `alias` in: the machine's own, named by its symbol
 /// (its suite prefix included), whether a variable or a composed value holds
@@ -15146,7 +15157,7 @@ impl StaticTarget for CTarget {
         let mut prelude = String::new();
         let mut arguments = Vec::new();
         // The functions that map a union across the call, case by case, declared
-        // before the adapter that calls them ([`c11_union_crossing`]).
+        // before the adapter that calls them ([`c11_call_union_crossing`]).
         let mut helpers: Vec<String> = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let p = format!("p{index}");
@@ -15170,7 +15181,7 @@ impl StaticTarget for CTarget {
                     let unit =
                         crate::forge::generator::union_unit_type(&union.document, Language::C11);
                     let map = format!("{name}_union_in{index}");
-                    helpers.push(c11_union_crossing(
+                    helpers.push(c11_call_union_crossing(
                         &map,
                         &machine,
                         &unit,
@@ -15363,7 +15374,7 @@ impl StaticTarget for CTarget {
                 )?;
                 let unit = crate::forge::generator::union_unit_type(&union.document, Language::C11);
                 let map = format!("{name}_union_out");
-                helpers.push(c11_union_crossing(
+                helpers.push(c11_call_union_crossing(
                     &map,
                     &unit,
                     &machine,
@@ -15763,10 +15774,7 @@ impl StaticTarget for CTarget {
     // The type is the document's, shared by every machine that imports the
     // enum: one declaration, guarded, in each machine's header ([`Self::enum_def`]).
     fn enum_type(&self, _machine: &str, alias: &str) -> Option<String> {
-        Some(format!(
-            "{}_enum_t",
-            filters::to_snake_case(self.enum_document_name(alias))
-        ))
+        Some(c11_enum_type(&self.enum_document_name(alias)))
     }
     // C has no namespace, so the constant carries the document's name — the one
     // spelling the enum kind's own C artifact declares, and a reference to a
@@ -17344,54 +17352,43 @@ fn c11_adapter_storage_type(machine: &str, adapter: &str) -> String {
 }
 
 /// The record of the case a C11 adapter's arm is handed while it maps a union
-/// across a call ([`c11_union_crossing`]), which each case's record is copied
+/// across a call ([`c11_call_union_crossing`]), which each case's record is copied
 /// from.
 const C11_CROSSED_CASE: &str = "sce_case";
 
 /// The C11 function `name` that maps a value of the union `from_ty` across a
-/// call into a value of `to_ty` (docs/adr/0092, section 6.1 item 7): the
-/// machine's own struct and the one the union's unit declares, each of which
-/// answers the declared name of the case a value is in (`<stem>_variant`), the
-/// name its tag is written as. One arm per case, which binds the case's record
-/// of the leaving value to [`C11_CROSSED_CASE`] where the case holds one and
-/// answers the case the value arrives as, its record copied as a record
-/// argument is. C checks no case analysis for exhaustiveness, so the property
-/// that a case either side gains is a build error is the adapter's
-/// regeneration with the document, which writes one arm per case of the
-/// union as the statechart imports it; a value in no case, which no
-/// constructor builds, ends the process rather than cross as the zeroed
-/// struct, as Go's adapter panics.
-fn c11_union_crossing(
+/// call into a value of `to_ty` (docs/adr/0092, section 6.1 item 7), the
+/// machine's own struct and the one the union's unit declares, by
+/// [`crate::forge::composed_lowering::c11_union_crossing`]: one arm per case,
+/// which binds the case's record of the leaving value to [`C11_CROSSED_CASE`]
+/// where the case holds one and answers the case the value arrives as, its
+/// record copied as a record argument is.
+fn c11_call_union_crossing(
     name: &str,
     from_ty: &str,
     to_ty: &str,
     document: &str,
     cases: &[CrossedCase],
 ) -> String {
-    use crate::forge::composed_lowering::{c11_case_ident, C11_UNION_CASES};
-    let arms: String = cases
+    use crate::forge::composed_lowering::{Held, UnitUnionArm};
+    let arms: Vec<UnitUnionArm> = cases
         .iter()
-        .map(|case| {
-            let bound = if case.holds_record {
-                let member = format!("value.{C11_UNION_CASES}.{}", c11_case_ident(&case.variant));
-                format!("        const __typeof__({member}) {C11_CROSSED_CASE} = {member};\n")
-            } else {
-                String::new()
-            };
-            format!(
-                "    if (strcmp(variant, \"{}\") == 0) {{\n{bound}        return {};\n    }}\n",
-                filters::escape_c(case.variant.clone()),
-                case.to
-            )
+        .map(|case| UnitUnionArm {
+            variant: case.variant.clone(),
+            holds_record: case.holds_record,
+            value: case.to.clone(),
         })
         .collect();
-    format!(
-        "/* docs/adr/0092, section 6.1 item 7: a value of `{document}` mapped across the call \
-         case by case. */\n\
-         static inline {to_ty} {name}({from_ty} value) {{\n    \
-         const char *const variant = {}_variant(&value);\n    \
-         if (variant == NULL) {{\n        abort();\n    }}\n{arms}    abort();\n}}",
-        from_ty.trim_end_matches("_t")
+    crate::forge::composed_lowering::c11_union_crossing(
+        name,
+        from_ty,
+        to_ty,
+        &format!(
+            "docs/adr/0092, section 6.1 item 7: a value of `{document}` mapped across the call \
+             case by case."
+        ),
+        &Held::place(C11_CROSSED_CASE),
+        &arms,
     )
 }
 
@@ -19725,6 +19722,14 @@ fn received_composed(
         &*spelling,
         &composed::Held::reference(binding),
     )?;
+    // A target that makes a part by a function of the machine, as C has no
+    // closure to make it by where it is read (C11), declares the functions the
+    // walk reached beside the machine's statements, each once under the guard
+    // of its name, as a lift's readers are ([`Rewrites::composed_defs`]).
+    rewrites
+        .composed_defs
+        .borrow_mut()
+        .extend(spelling.take_functions());
     if !spelling.unit_values_name_their_units() {
         return Ok(members);
     }

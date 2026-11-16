@@ -69,9 +69,9 @@ pub use rust::{RustCarrier, RustComposed};
 pub use swift::{SwiftCarrier, SwiftComposed};
 
 pub(crate) use c11::{
-    c11_case_ident, c11_pairs, c11_path_len, c11_shared_union_read, c11_union_member,
-    c11_unit_union_read, C11_BOUND, C11_INTO, C11_PATH, C11_PATH_CAP, C11_UNION_CASES,
-    C11_UNION_TAG, C11_WIRE,
+    c11_case_ident, c11_pairs, c11_path_len, c11_shared_union_read, c11_union_crossing,
+    c11_union_member, c11_unit_union_read, C11_BOUND, C11_INTO, C11_PATH, C11_PATH_CAP,
+    C11_UNION_CASES, C11_UNION_TAG, C11_WIRE,
 };
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_case_ident, cpp_case_read, cpp_raise_checks,
@@ -576,6 +576,40 @@ pub trait ComposedSpelling {
     fn unit_entry_bytes(&self, _max: u32, held: &Held) -> String {
         self.copy_whole(held, false)
     }
+    /// The machine's list held in `list_ty` made from `held`, a list of the
+    /// type `unit` names as a record's unit declares it, `elem` the machine's
+    /// value of an element, made from the one bound to
+    /// [`Self::copy_binding`], held in `elem_ty`: [`Self::copy_list_into`],
+    /// the default, for a backend that copies an element of a unit's list as
+    /// it copies one of the machine's. A backend whose unit holds a list in a
+    /// type of its own and that has no closure to make an element by (C11)
+    /// makes it by a function of the machine over the unit's type, which
+    /// `unit` names. `None` as for [`Self::unit_field`].
+    fn unit_list(
+        &self,
+        held: &Held,
+        _unit: &UnitPart<'_>,
+        elem: &str,
+        elem_ty: &str,
+        list_ty: &str,
+    ) -> Option<String> {
+        Some(self.copy_list_into(held, elem, elem_ty, list_ty))
+    }
+    /// The machine's value that may be absent made from `held`, a value of the
+    /// type `unit` names as a record's unit declares it, `elem` the machine's
+    /// value of its present value, made from the one bound to
+    /// [`Self::copy_binding`], held in `elem_ty`: [`Self::copy_optional`], the
+    /// default. A backend as [`Self::unit_list`]'s makes it by a function of
+    /// the machine. `None` as for [`Self::unit_field`].
+    fn unit_optional(
+        &self,
+        held: &Held,
+        _unit: &UnitPart<'_>,
+        elem: &str,
+        elem_ty: &str,
+    ) -> Option<String> {
+        Some(self.copy_optional(held, elem, elem_ty))
+    }
     /// The machine's value of the enum `machine` names, made from `held`, a
     /// value of the type the enum document named `document` declares in its
     /// own unit: the variant of the same declared name. `None` as for
@@ -585,7 +619,9 @@ pub trait ComposedSpelling {
     }
     /// The machine's value of a union made from `held`, a value of the type
     /// the union document named `document` declares in its own unit, by the
-    /// arm of the case it is in. `None` as for [`Self::unit_field`].
+    /// arm of the case it is in. A backend that binds a case's record in no
+    /// expression (C11) makes it by a function of the machine, which
+    /// [`Self::take_functions`] answers. `None` as for [`Self::unit_field`].
     fn unit_union(&self, _held: &Held, _document: &str, _arms: &[UnitUnionArm]) -> Option<String> {
         None
     }
@@ -644,8 +680,10 @@ pub trait ComposedSpelling {
     /// call that the machine declares outside the expression a walk spelled,
     /// each under the guard of its name: a backend whose reader of a part is a
     /// function of the machine, as C has no closure (C11), answers the types
-    /// and the readers a statement's reader names; every other backend spells
-    /// its readers where they are read, and answers none.
+    /// and the readers a statement's reader names, and the functions that make
+    /// the machine's value of a received message's part from its unit's
+    /// ([`fields_from_unit`]); every other backend spells its readers where
+    /// they are read, and answers none.
     fn take_functions(&self) -> Vec<String> {
         Vec::new()
     }
@@ -976,6 +1014,27 @@ pub struct UnitUnionArm {
     pub variant: String,
     pub holds_record: bool,
     pub value: String,
+}
+
+/// A part of a value as a record's unit declares it, which the machine's value
+/// is made from ([`from_unit`]): its type, written in the scope `within`
+/// names, with what names the types the unit holds it in, the statechart's
+/// records and the document of each enum by the alias the machine holds it
+/// by. What a backend that names the unit's own type of a part reads
+/// ([`ComposedSpelling::unit_list`], [`ComposedSpelling::unit_optional`]).
+#[derive(Clone, Copy)]
+pub struct UnitPart<'u> {
+    pub ty: &'u ValueType,
+    pub within: Option<&'u str>,
+    pub records: &'u dyn RecordEnv,
+    pub documents: &'u BTreeMap<String, String>,
+    /// Whether the part is a field of its record itself, which the unit
+    /// spells as it spells every field of one entry where its type is one
+    /// (a number, a `bool`, an enum, a bounded text or byte string, or an
+    /// optional one of them), and as a composition otherwise
+    /// ([`crate::forge::schema_unit_type`]); a part inside a field is a
+    /// composition's.
+    pub entry: bool,
 }
 
 /// The type `field` has in every case of `union` that declares it, where two
@@ -1651,8 +1710,8 @@ fn unmade(what: &str) -> String {
 /// union document's (docs/SCE_TEST_PROFILE.md §12.3: the message a test
 /// component's receive branch takes, which its template's unit matched). Each
 /// record, enum and union is made case by case at any depth, the parts of a
-/// list and of a present value through the copy's own map of them
-/// ([`ComposedSpelling::copy_list_into`], [`ComposedSpelling::copy_optional`]);
+/// list and of a present value through the map of them from the unit's
+/// ([`ComposedSpelling::unit_list`], [`ComposedSpelling::unit_optional`]);
 /// a value that names none of them is one type in the unit and the machine
 /// ([`ComposedSpelling::unit_field`]) and is copied whole, but a byte string
 /// that is one entry of a record, which the record's own walk makes
@@ -1669,6 +1728,31 @@ fn from_unit(
     spelling: &dyn ComposedSpelling,
     held: &Held,
 ) -> Result<String, String> {
+    let unit = UnitPart {
+        ty,
+        within,
+        records,
+        documents,
+        entry: false,
+    };
+    part_from_unit(&unit, enums, spelling, held)
+}
+
+/// [`from_unit`] of the part `unit` names, which says whether the part is one
+/// entry of a record ([`UnitPart::entry`]); no part inside it is.
+fn part_from_unit(
+    unit: &UnitPart<'_>,
+    enums: &BTreeMap<String, MachineEnum>,
+    spelling: &dyn ComposedSpelling,
+    held: &Held,
+) -> Result<String, String> {
+    let UnitPart {
+        ty,
+        within,
+        records,
+        documents,
+        ..
+    } = *unit;
     let element = Held::reference(spelling.copy_binding());
     // The type the machine holds a part in, which a backend whose function
     // literals name their types spells the copy of the part with.
@@ -1677,12 +1761,18 @@ fn from_unit(
         from_unit(part, within, records, enums, documents, spelling, held)
     };
     match ty {
-        ValueType::Optional { elem } if names_a_declared_type(elem) => {
-            Ok(spelling.copy_optional(held, &part(elem, &element)?, &typed(elem)?))
-        }
-        ValueType::List { elem, .. } if names_a_declared_type(elem) => {
-            Ok(spelling.copy_list_into(held, &part(elem, &element)?, &typed(elem)?, &typed(ty)?))
-        }
+        ValueType::Optional { elem } if names_a_declared_type(elem) => spelling
+            .unit_optional(held, unit, &part(elem, &element)?, &typed(elem)?)
+            .ok_or_else(|| unmade(&format!("`{ty}`"))),
+        ValueType::List { elem, .. } if names_a_declared_type(elem) => spelling
+            .unit_list(
+                held,
+                unit,
+                &part(elem, &element)?,
+                &typed(elem)?,
+                &typed(ty)?,
+            )
+            .ok_or_else(|| unmade(&format!("`{ty}`"))),
         ValueType::Scalar(SceType::Enum(reference)) => {
             let machine = machine_enum(enums, &reference.alias)?;
             let document = documents.get(&reference.alias).ok_or_else(|| {
@@ -1806,6 +1896,13 @@ fn field_from_unit(
     spelling: &dyn ComposedSpelling,
     held: &Held,
 ) -> Result<String, String> {
+    let field = UnitPart {
+        ty,
+        within,
+        records,
+        documents,
+        entry: true,
+    };
     match ty {
         ValueType::Bytes { max } => Ok(spelling.unit_entry_bytes(max.max, held)),
         ValueType::Optional { elem } => match &**elem {
@@ -1816,9 +1913,9 @@ fn field_from_unit(
                     &machine_type(elem, within, records, enums, spelling)?,
                 )
                 .ok_or_else(|| unmade(&format!("`{ty}`"))),
-            _ => from_unit(ty, within, records, enums, documents, spelling, held),
+            _ => part_from_unit(&field, enums, spelling, held),
         },
-        _ => from_unit(ty, within, records, enums, documents, spelling, held),
+        _ => part_from_unit(&field, enums, spelling, held),
     }
 }
 
