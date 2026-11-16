@@ -6427,8 +6427,15 @@ pub enum ImportError {
 /// Errors from manifest building and topological sort.
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
-    /// A cycle in the import dependency graph.
-    #[error("circular dependency detected among: {}", .0.join(", "))]
+    /// A cycle in the import dependency graph: the documents on one
+    /// cycle, by their paths in the directory, in import order, the first
+    /// written again at the end (`a.scxml → b.scxml → a.scxml`).
+    ///
+    /// ⚠ One cycle, not what the sort left: every document that imports a
+    /// document on a cycle is left unsorted too, and naming them all as
+    /// "among" the cycle sent the author to imports that were not part of
+    /// it.
+    #[error("circular <sce:import> dependency: {}", .0.join(" → "))]
     CircularDependency(Vec<String>),
 
     /// Filesystem error during directory scan.

@@ -1324,7 +1324,12 @@ Optional attribute:
   `import/kind-mismatch`.
 
 Circular imports across the manifest graph are rejected as
-`manifest/circular-dependency`.
+`manifest/circular-dependency`. The record names one cycle, its
+documents alone in import order (`a.scxml → b.scxml → a.scxml`, begun
+at the least path), not every document that imports into it; it stands
+on the import that leaves the cycle's first document, `actual` being
+that import's `src`, and each other import on the cycle is an
+`also-refused` site (SCE_ERROR_CONTRACT §2.4).
 
 The documents built together — every input of one `orchestrate` run, or
 of one `check` over a document set — share one namespace. Two of them

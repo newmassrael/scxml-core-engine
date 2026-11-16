@@ -12022,11 +12022,14 @@ fn import_fields(e: &ImportError) -> DiagnosticPayload {
 
 fn manifest_fields(e: &ManifestError) -> DiagnosticPayload {
     match e {
+        // The record stands on the import that leaves the cycle's first
+        // document, whose `src` is the second document as written; the
+        // other imports on the cycle are its `also-refused` sites.
         ManifestError::CircularDependency(cycle) => DiagnosticPayload {
             code: DiagnosticCode::ManifestCircularDependency,
             stage: Stage::Manifest,
             expected: None,
-            actual: None,
+            actual: cycle.get(1).cloned(),
             fix: None,
             key_fragments: cycle.clone(),
         },
@@ -16466,7 +16469,7 @@ mod tests {
                     "a.scxml".into(),
                 ])
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f8d8d18f937c5411","code":"manifest/circular-dependency","stage":"manifest","message":"circular dependency detected among: a.scxml, b.scxml, a.scxml"}"#,
+                r#"{"v":1,"id":"fnv1a:f8d8d18f937c5411","code":"manifest/circular-dependency","stage":"manifest","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml","actual":"b.scxml"}"#,
             ),
             (
                 "forge/manifest-io",

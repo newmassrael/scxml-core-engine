@@ -9,7 +9,9 @@
 // Usage:
 //   sce-codegen manifest <dir>
 
-use crate::forge::error::{ForgeError, Located, ManifestError};
+use crate::forge::error::{
+    ForgeError, Located, ManifestError, RelatedRole, RelatedSite, SourceLocation,
+};
 use crate::forge::model::{ForgeManifest, ManifestEntry};
 use crate::forge::parser;
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,12 +90,59 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, Located<ForgeError>> 
     }
 
     // Topological sort
-    let build_order = topological_sort(&entries).map_err(|e| locate_at_dir(dir, e))?;
+    let build_order =
+        topological_sort(&entries).map_err(|e| locate_sort_refusal(dir, &entries, e))?;
 
     Ok(ForgeManifest {
         entries,
         build_order,
     })
+}
+
+/// Place a refusal of the sort. A cycle stands on the import that leaves
+/// its first document, in that document's file, and every other import on
+/// it is an `also-refused` site (SCE_ERROR_CONTRACT.md §2.4): removing any
+/// one of them breaks the cycle. Anything else stands at the directory.
+fn locate_sort_refusal(
+    dir: &Path,
+    entries: &[ManifestEntry],
+    err: ManifestError,
+) -> Located<ForgeError> {
+    let ManifestError::CircularDependency(cycle) = &err else {
+        return locate_at_dir(dir, err);
+    };
+    // Each import on the cycle: where it is written, and the `src` it
+    // writes.
+    let imports: Vec<(SourceLocation, String)> = cycle
+        .windows(2)
+        .map(|edge| {
+            let line = entries
+                .iter()
+                .find(|entry| entry.src == edge[0])
+                .and_then(|entry| entry.imports.iter().find(|imp| imp.src == edge[1]))
+                .and_then(|imp| imp.line);
+            let site = SourceLocation {
+                file: dir.join(&edge[0]).display().to_string(),
+                line,
+                col: None,
+            };
+            (site, edge[1].clone())
+        })
+        .collect();
+    let mut imports = imports.into_iter();
+    let Some((first, _)) = imports.next() else {
+        return locate_at_dir(dir, err);
+    };
+    imports.fold(
+        Located::new(err.into(), first.file, first.line, None),
+        |located, (location, src)| {
+            located.related_to(RelatedSite {
+                role: RelatedRole::AlsoRefused,
+                location,
+                actual: Some(src),
+            })
+        },
+    )
 }
 
 /// Collect all .scxml files in a directory (non-recursive, single level only).
@@ -185,15 +234,61 @@ fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, ManifestEr
 
     if result.len() != src_set.len() {
         let processed: BTreeSet<&str> = result.iter().map(|s| s.as_str()).collect();
-        let remaining: Vec<String> = src_set
+        let remaining: BTreeSet<&str> = src_set
             .iter()
-            .filter(|s| !processed.contains(**s))
-            .map(|s| s.to_string())
+            .copied()
+            .filter(|s| !processed.contains(s))
             .collect();
-        return Err(ManifestError::CircularDependency(remaining));
+        return Err(ManifestError::CircularDependency(one_cycle(
+            entries, &remaining,
+        )));
     }
 
     Ok(result)
+}
+
+/// One cycle among the documents the sort left, closed: its first document
+/// written again at the end, and rotated to begin at its least path so the
+/// same cycle is named the same way whichever document the walk met first.
+///
+/// What the sort leaves is every document on a cycle and every document
+/// that imports one, so each document left imports another one left (the
+/// import that kept its count above zero). Following, from the least
+/// document left, its least import among those left therefore reaches a
+/// document already on the walk, and the walk from there is a cycle.
+fn one_cycle(entries: &[ManifestEntry], remaining: &BTreeSet<&str>) -> Vec<String> {
+    let next = |src: &str| -> Option<String> {
+        entries
+            .iter()
+            .find(|entry| entry.src == src)?
+            .imports
+            .iter()
+            .map(|imp| imp.src.as_str())
+            .filter(|dep| remaining.contains(dep))
+            .min()
+            .map(str::to_string)
+    };
+    let mut walk: Vec<String> = Vec::new();
+    let mut at = remaining.iter().next().map(|s| s.to_string());
+    while let Some(src) = at {
+        if let Some(start) = walk.iter().position(|seen| *seen == src) {
+            let mut cycle = walk.split_off(start);
+            let least = cycle
+                .iter()
+                .enumerate()
+                .min_by(|a, b| a.1.cmp(b.1))
+                .map_or(0, |(i, _)| i);
+            cycle.rotate_left(least);
+            let first = cycle[0].clone();
+            cycle.push(first);
+            return cycle;
+        }
+        at = next(&src);
+        walk.push(src);
+    }
+    // Unreachable by the argument above; the walk is still a path through
+    // the documents left, and better named than nothing.
+    walk
 }
 
 #[cfg(test)]
@@ -291,9 +386,80 @@ mod tests {
             },
         ];
         let result = topological_sort(&entries);
-        assert!(matches!(
-            result.unwrap_err(),
-            ManifestError::CircularDependency(_)
-        ));
+        match result.unwrap_err() {
+            ManifestError::CircularDependency(cycle) => {
+                assert_eq!(cycle, vec!["a.scxml", "b.scxml", "a.scxml"]);
+            }
+            other => panic!("expected a cycle, got {other:?}"),
+        }
+    }
+
+    /// An entry importing `imports`, each as a codec.
+    fn entry(src: &str, imports: &[&str]) -> ManifestEntry {
+        ManifestEntry {
+            src: src.to_string(),
+            name: src.trim_end_matches(".scxml").to_string(),
+            kind: ForgeKind::Codec,
+            runtime_dep: RuntimeDep::None,
+            imports: imports
+                .iter()
+                .enumerate()
+                .map(|(i, dep)| ForgeImport {
+                    src: dep.to_string(),
+                    kind: ForgeKind::Codec,
+                    alias: format!("d{i}"),
+                    line: Some(3 + i as u32),
+                    embed_dispatch: None,
+                    flag_binds: Vec::new(),
+                    presence: None,
+                    requires: None,
+                })
+                .collect(),
+        }
+    }
+
+    /// The cycle is its documents alone: `a` imports into `b ↔ c` and is
+    /// left unsorted with them, but is not on the cycle. It was named
+    /// "among" it while the record listed everything the sort left.
+    #[test]
+    fn a_cycle_names_its_documents_and_not_the_ones_that_import_it() {
+        let entries = vec![
+            entry("a.scxml", &["c.scxml"]),
+            entry("b.scxml", &["c.scxml"]),
+            entry("c.scxml", &["b.scxml"]),
+            entry("d.scxml", &[]),
+        ];
+        match topological_sort(&entries).unwrap_err() {
+            ManifestError::CircularDependency(cycle) => {
+                assert_eq!(cycle, vec!["b.scxml", "c.scxml", "b.scxml"]);
+            }
+            other => panic!("expected a cycle, got {other:?}"),
+        }
+    }
+
+    /// The record stands on the import that leaves the cycle's first
+    /// document, and the cycle's other import is an `also-refused` site.
+    #[test]
+    fn a_cycle_stands_on_its_imports() {
+        let entries = vec![
+            entry("b.scxml", &["c.scxml"]),
+            entry("c.scxml", &["x.scxml", "b.scxml"]),
+            entry("x.scxml", &[]),
+        ];
+        let err = topological_sort(&entries).unwrap_err();
+        let located = locate_sort_refusal(Path::new("proj"), &entries, err);
+        assert_eq!(
+            (located.location.file.as_str(), located.location.line),
+            (Path::new("proj").join("b.scxml").to_str().unwrap(), Some(3))
+        );
+        let related = located.related();
+        assert_eq!(related.len(), 1, "{related:?}");
+        assert_eq!(related[0].role, RelatedRole::AlsoRefused);
+        assert_eq!(
+            related[0].location.file,
+            Path::new("proj").join("c.scxml").display().to_string()
+        );
+        assert_eq!(related[0].location.line, Some(4), "c's second import");
+        assert_eq!(related[0].actual.as_deref(), Some("b.scxml"));
     }
 }
