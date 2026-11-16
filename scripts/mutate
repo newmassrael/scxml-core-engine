@@ -24,8 +24,9 @@
 #      --lib FILTER` applies FILTER to every binary, so the integration
 #      binary can run zero tests while its summary still prints `ok`. This
 #      harness resolves the test executables once with `--no-run` and then
-#      runs each binary directly with no shared filter, and it records how
-#      many tests each one ran in the baseline. A case whose run count
+#      runs each binary directly, handing it the selector's filter as cargo
+#      would, and refuses a binary the filter leaves with no test to run. It
+#      records how many tests ran in the baseline, and a case whose run count
 #      differs from the baseline is INCONCLUSIVE.
 #
 # Both checks answer the same question — *did I actually test what I think I
@@ -250,6 +251,9 @@ MUTATION_BUILD_LOG="$WORK/build.log"
 MUTATION_RUNNER=""
 MUTATION_UNDER_MIRI=""
 MUTATION_RUNNER_ARGS=()
+# What a cargo selector hands the test binaries themselves, read out of
+# MUTATION_RUNNER_ARGS by `mutation_cargo_test_args`.
+MUTATION_TEST_ARGS=()
 MUTATION_BUILD_DIR=""
 MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
@@ -457,10 +461,12 @@ mutation_declare_runner() {
     MUTATION_RUNNER_ARGS=("$@")
 }
 
-# Cargo selector for the tests under study. Passed to `cargo test`
-# verbatim. Give it target selectors (`--test`, `--lib`, `-p`), never a
-# bare filter argument — a filter reaches every binary the selector
-# matched, which is failure mode 2 above.
+# Cargo selector for the tests under study, in `cargo test`'s own grammar.
+# Target selectors (`--test`, `--lib`, `-p`) choose the binaries; a test name
+# filter, and what follows `--`, reach every binary chosen, as they do under
+# `cargo test` (`mutation_cargo_test_args`). Choose the binaries so that the
+# filter selects tests in each of them: a binary it selects none in is
+# refused, which is failure mode 2 above.
 mutation_tests() { mutation_declare_runner cargo "$@"; }
 
 # The cargo suite named by `mutation_tests` is judged by Miri, not by its test
@@ -1323,11 +1329,63 @@ mutation_run_diagnostics() {
     mutation_baseline_detail <"$MUTATION_FAILURE_DETAIL" 2>/dev/null || true
 }
 
+# The options of `cargo test` that take their value as the next word. One
+# written `--option=value`, or `-Zflag`, is one word and needs no entry.
+MUTATION_CARGO_VALUE_OPTIONS=(-p --package --exclude --bin --example --test --bench
+    -F --features --target --target-dir --artifact-dir --profile --manifest-path
+    --lockfile-path --message-format --color --config -C -Z -j --jobs)
+
+# The words of a cargo selector (the arguments) that `cargo test` hands its test
+# binaries rather than reads itself, one a line: the test name filter, which is
+# a word that is neither an option nor the value of one, and every word after
+# `--`. This harness runs the binaries itself, so it hands them on the same way.
+#
+# Until 2026-11-16 it handed them nothing, and a casefile's filter narrowed
+# nothing: `mutation_tests -p sce-build --lib forge::composed_lowering` ran all
+# 3356 tests of the library, which take 274 to 332 seconds on a hosted runner,
+# against the 300 a binary may run. Its baseline "did not terminate within
+# 300s", and another casefile's baseline was red with a test of a module it never
+# named (Mutation Rounds jobs 132835284352 and 132835284285).
+#
+# An option missing from the list above would hand its value to the binaries as
+# a filter. The binary would then run no test, which the run refuses, so the
+# omission is reported rather than read as a pass.
+mutation_cargo_test_args() {
+    local -a words=("$@") out=()
+    local i word option takes
+    for ((i = 0; i < ${#words[@]}; i++)); do
+        word="${words[i]}"
+        if [[ "$word" == "--" ]]; then
+            out+=("${words[@]:i+1}")
+            break
+        fi
+        if [[ "$word" == -* ]]; then
+            takes=0
+            for option in "${MUTATION_CARGO_VALUE_OPTIONS[@]}"; do
+                if [[ "$word" == "$option" ]]; then
+                    takes=1
+                    break
+                fi
+            done
+            if (( takes )); then
+                i=$((i + 1))
+            fi
+            continue
+        fi
+        out+=("$word")
+    done
+    if (( ${#out[@]} )); then
+        printf '%s\n' "${out[@]}"
+    fi
+}
+
 # Resolve the test executables the selector names. Doing this once, and
-# then running the binaries directly, is what removes the shared-filter
-# hazard: there is no argument left that could narrow one binary's run.
+# then running the binaries directly, is what lets the run hold each binary
+# to the tests it was meant to run: one that the selector's filter leaves
+# with none is refused instead of reporting `ok`.
 mutation_cargo_resolve() {
     local json
+    mapfile -t MUTATION_TEST_ARGS < <(mutation_cargo_test_args "${MUTATION_RUNNER_ARGS[@]}")
     json="$(cargo test --no-run --message-format=json "${MUTATION_RUNNER_ARGS[@]}" 2>/dev/null)" || {
         red "build failed while resolving test executables"
         cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" 2>&1 | tail -30
@@ -1424,7 +1482,8 @@ mutation_cargo_run() {
         # second forever: without this the round never reaches its next case,
         # and the author reads a hung terminal rather than a verdict.
         rc=0
-        out="$(timeout "$MUTATION_ARTIFACT_TIMEOUT" "$exe" 2>&1)" || rc=$?
+        out="$(timeout "$MUTATION_ARTIFACT_TIMEOUT" "$exe" \
+            ${MUTATION_TEST_ARGS[@]+"${MUTATION_TEST_ARGS[@]}"} 2>&1)" || rc=$?
         if [[ "$rc" == "124" ]]; then
             # Reported as a field rather than a global: this function runs in a
             # command substitution, and a variable set in that subshell never
@@ -1435,6 +1494,14 @@ mutation_cargo_run() {
             continue
         fi
         read -r run failed <<<"$(mutation_cargo_judge_output "$(basename "$exe")" "$rc" "$out")"
+        # Failure mode 2: a binary the filter leaves with no test reports `ok`
+        # for a run that judged nothing. Red, so a baseline that holds one says
+        # which binary and the casefile chooses its binaries again.
+        if [[ ${#MUTATION_TEST_ARGS[@]} -gt 0 && "$rc" == "0" && "${run:-0}" == "0" ]]; then
+            printf '%s (ran no test: the filter `%s` selects none in it)\n' \
+                "$(basename "$exe")" "${MUTATION_TEST_ARGS[*]}" >> "$MUTATION_FAILING"
+            failed=$(( ${failed:-0} + 1 ))
+        fi
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done
