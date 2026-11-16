@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A relay that is not trusted gives a host the commits of the group in whatever order it likes, and it
 // may give ones nobody made, before or after the one the log names for the epoch. The host keeps the

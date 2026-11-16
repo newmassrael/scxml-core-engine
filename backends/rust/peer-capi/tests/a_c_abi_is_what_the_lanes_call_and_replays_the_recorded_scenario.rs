@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // The application lanes that are not Rust reach the peer core through the C ABI. What is asked here:
 // that the header declares exactly what the library exports, with the same numbers; and that the

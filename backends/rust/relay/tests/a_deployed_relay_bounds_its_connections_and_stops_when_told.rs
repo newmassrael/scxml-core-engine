@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // The relay's server as it is deployed (`serve::Server`). It holds no more connections open than its
 // bound and closes the one past it at once; a connection that does not finish its upgrade in time,

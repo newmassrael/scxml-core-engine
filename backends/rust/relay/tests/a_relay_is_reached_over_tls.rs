@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // The relay over `wss://`. The relay's server terminates TLS with a certificate made for the test,
 // and a link that believes the authority behind it exchanges texts with the relay, its token judged

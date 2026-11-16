@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A lane that does not carry the relay's texts itself runs a round over a link the library holds,
 // through the C ABI. What is asked: that a link is made and freed, and the boundary refuses what it

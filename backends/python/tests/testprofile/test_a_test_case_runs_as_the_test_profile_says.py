@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """The test profile's runtime (docs/SCE_TEST_PROFILE.md §12.2), held to the rules
 of §2 to §5 with components written here by hand, before any machine is

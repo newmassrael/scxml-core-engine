@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The footprint probe's machine of a document with neither a `<history>` nor a
@@ -13,7 +13,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "Generated no_std machine without history or parallel, weighed by the footprint probe"
-license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 name = "sce_nostd_plain_machine"

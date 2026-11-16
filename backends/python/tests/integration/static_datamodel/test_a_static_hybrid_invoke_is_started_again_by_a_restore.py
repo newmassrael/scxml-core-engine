@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """SCE Accepted Subset §2.15, "Saving and restoring", for a hybrid ``<invoke>``
 (§2.13). A format-2 saved state records the candidate that was running, with its whole

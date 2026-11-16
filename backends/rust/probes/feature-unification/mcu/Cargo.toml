@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The bare-metal crate of the feature-unification probe: a generated
@@ -11,7 +11,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "Bare-metal half of the feature-unification probe: a --no-std machine in a workspace beside an application crate"
-license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 path = "src/lib.rs"

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+  SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
   SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
   The relay of shared lists as a firewalld service (docs/SCE_RELAY_DEPLOY.md), installed as

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // The group key agreement of a list (MLS, RFC 9420) bound to the list's membership log. What is asked
 // here: that devices the log admitted agree on the key of each epoch and seal and open content under

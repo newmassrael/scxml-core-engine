@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // An administrator's device invites a device that is not in the list's log by the text of a QR code,
 // and the invited device joins under it, through the C ABI alone (ADR 0080 section 4). What is asked

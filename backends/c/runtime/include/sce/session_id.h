@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+ * SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
  * SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
  *
  * The id of a session on the C11 backend: what a host may give the root session

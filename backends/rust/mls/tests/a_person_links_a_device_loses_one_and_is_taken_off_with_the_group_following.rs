@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A person with several devices, and the group that follows the log. Bob has a laptop (node 2) and
 // links a phone (node 5): the log records that bob's device vouched for it, the group adds it, and a new

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // MLS is randomised (key packages, HPKE, the commit's path), so a vector of what it gives cannot be
 // computed from fixed inputs: it is a recorded scenario. One device (bob) is kept as it was before it

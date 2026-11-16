@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // Every place the trust, relay and group key code reads what someone else wrote (the targets of
 // `sce_rust_assurance::targets`) is given what it reads when it is true, and what a seeded mutator makes

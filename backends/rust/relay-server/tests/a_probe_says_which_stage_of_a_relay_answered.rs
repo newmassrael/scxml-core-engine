@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A probe makes the exchange a device makes with a relay and says what it came to (`sce-relay
 // probe`). Against a relay running in this process, over `ws://` and over `wss://`: with a token for

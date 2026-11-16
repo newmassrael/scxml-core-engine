@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+ * SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
  * SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
  *
  * A list of at most N values of a type (docs/adr/0086, section 7.2): the C11 form

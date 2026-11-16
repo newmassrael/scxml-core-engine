@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # SCE Protocol-Synthesis RFC §5.J.2: single-emit portability. ONE `--no-std`
@@ -40,7 +40,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "single-emit portability gate: one --no-std machine on both runtime profiles (SCE Protocol-Synthesis RFC §5.J.2)"
-license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 name = "sce_portable_emit_probe"

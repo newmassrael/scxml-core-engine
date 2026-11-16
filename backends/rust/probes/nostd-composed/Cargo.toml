@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # no_std MCU-target compile gate for a generated machine that holds a composed
@@ -23,7 +23,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "no_std MCU-target compile gate for a generated SCE machine that holds a composed payload (docs/adr/0086)"
-license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 name = "sce_nostd_composed_probe"

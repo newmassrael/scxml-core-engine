@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // The files a relay is deployed with (`deploy/`) are held to the program: the configuration is one the
 // relay takes once the unit has given it its keys; the unit runs `serve` with that configuration, hands

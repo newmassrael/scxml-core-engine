@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """The readers of the canonical form of a value (docs/SCE_TEST_PROFILE.md
 §12.5; docs/SCE_TTCN3_LANE.md §10.3), ``sce_runtime.testprofile.from_canonical``:

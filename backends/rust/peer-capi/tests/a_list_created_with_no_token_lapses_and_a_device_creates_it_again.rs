@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A list created at a relay with no token, its lapse there, and its creation again by a device that
 // holds it, through the C ABI alone (ADR 0080 section 3). What is asked here: that the name the ABI

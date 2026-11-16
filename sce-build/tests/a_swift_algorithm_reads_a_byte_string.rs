@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // A byte string (`bytes`, SCE_FORGE.md §3.4), written for Swift as the `[UInt8]` whose
 // length is `data.count` and whose bytes are read by their index: the parameter of an

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The MCU frame instrument of a codec's lent decode. `nostd-footprint` weighs
@@ -23,7 +23,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 description = "MCU-target frame instrument: the stack frame of a codec's lent decode_into and a reply's encode"
-license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+license = "AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]
 name = "sce_nostd_codec_frame_probe"
