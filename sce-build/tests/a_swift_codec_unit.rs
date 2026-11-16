@@ -203,7 +203,7 @@ fn a_codec_of_integers_is_a_struct_with_a_decode_and_an_encode() {
         "one read-only property per element, in the document's order: {code}"
     );
     assert!(
-        code.contains("public static func encodeSource<S: CodecSimpleFrameSource, Sink: SceSink>(_ source: S, into sink: inout Sink) throws(CodecError) {"),
+        code.contains("public static func encodeSource<Source: CodecSimpleFrameSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {"),
         "the encode is printed over any source of the elements: {code}"
     );
     assert!(
@@ -254,10 +254,13 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_scout_zid_body.scxml",
         "tests/forge/resources/codec_zenoh_locator.scxml",
         "tests/forge/resources/codec_present_if_string.scxml",
+        "tests/forge/resources/codec_zenoh_wireexpr.scxml",
+        "tests/forge/resources/codec_zenoh_open_body.scxml",
+        "tests/forge/resources/codec_init_cookie_body.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
-            code.contains("public static func encodeSource<S: ")
+            code.contains("public static func encodeSource<Source: ")
                 && code.contains("public protocol "),
             "{printed} is printed from its plan: {code}"
         );
@@ -662,24 +665,52 @@ fn a_flag_input_is_a_parameter_of_decode_and_encode_that_a_gate_reads() {
         "{code}"
     );
     assert!(
-        code.contains(
-            "public func encode<Sink: SceSink>(into sink: inout Sink, N: UInt8) throws(CodecError)"
-        ),
-        "{code}"
-    );
-    assert!(
         code.contains("        if (N & 0x1) != 0 {\n            suffix_len = "),
         "a decode reads a field gated by the input only when the input is set: {code}"
+    );
+    // An input the value does not say is a parameter of the encode too.
+    let given = swift_of("tests/forge/resources/codec_chain_handed_entry.scxml")
+        .expect("a codec handed an input its value does not say is written");
+    assert!(
+        given.contains("into sink: inout Sink, after_marker: UInt8")
+            && given.contains(
+                "public func encode<Sink: SceSink>(into sink: inout Sink, after_marker: UInt8) throws(CodecError)"
+            ),
+        "{given}"
     );
 }
 
 #[test]
-fn an_encode_refuses_a_field_and_an_input_that_contradict_each_other_before_a_byte() {
+fn an_input_the_value_says_is_read_off_it_and_is_no_parameter_of_the_encode() {
+    // docs/adr/0065 §6 R4a: `suffix` is gated on `N` alone, so the value says `N` by holding it or
+    // not, and the encode reads it off the value where a gate reads it; no value contradicts it, so
+    // nothing is refused for it. A parent or a log reads it through `inputN(_:)`.
     let code = swift_of("tests/forge/resources/codec_zenoh_wireexpr.scxml")
-        .expect("a codec with a flag input is written");
+        .expect("a codec whose value says its input is written");
     assert!(
-        code.contains("if (N & 0x1) != 0 {\n            if self.suffix == nil {\n                throw CodecError.presentIfMismatch\n            }\n        } else if self.suffix != nil {\n            throw CodecError.presentIfMismatch\n        }\n"),
-        "{code}"
+        code.contains(
+            "public static func encodeSource<Source: CodecZenohWireexprSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {"
+        ) && code.contains(
+            "public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError)"
+        ),
+        "the encode is handed no input the value says: {code}"
+    );
+    let said = code
+        .find("let N: UInt8 = source.suffix != nil ? 1 : 0")
+        .unwrap_or_else(|| panic!("the encode reads the input off the value: {code}"));
+    let gated = code.find("if N != 0 {").unwrap_or_else(|| {
+        panic!("the length gated on the input is written where it holds: {code}")
+    });
+    assert!(said < gated, "the input is read before the gate: {code}");
+    assert!(
+        code.contains(
+            "public static func inputN<Source: CodecZenohWireexprSource>(_ source: Source) -> UInt8 {\n        source.suffix != nil ? 1 : 0\n    }"
+        ),
+        "a parent reads the input off a source: {code}"
+    );
+    assert!(
+        !code.contains("presentIfMismatch") && !code.contains("suffix_len: suffix_len"),
+        "no value contradicts the input, and the value holds no length: {code}"
     );
 }
 
@@ -691,8 +722,10 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
         forwarded.contains("try CodecZenohWireexpr.decode(&reader, N: N)"),
         "{forwarded}"
     );
+    // The body is printed from its plan and says `N` itself (docs/adr/0065 §6 R4a), so its encode
+    // is handed nothing; its decode is still handed the bit.
     assert!(
-        forwarded.contains("try self.wireexpr.encode(into: &piece, N: N)"),
+        forwarded.contains("try self.wireexpr.encode(into: &piece)\n"),
         "{forwarded}"
     );
     let carrier = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")

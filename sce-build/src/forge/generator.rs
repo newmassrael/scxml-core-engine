@@ -509,6 +509,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub python_unlowered: Option<String>,
 
+    /// docs/adr/0081 step 5: `true` when the Swift backend prints the imported
+    /// codec from its plan (`forge::generator::swift_codec_printed`), read as
+    /// the codec is generated, its own imports resolved: its value presents
+    /// its elements through the protocol `{Codec}Source`, holds no element its
+    /// encode derives, and its encode takes no input its value says
+    /// (docs/adr/0065 §6 R4a). `false` on every other backend and for
+    /// non-codec imports.
+    #[serde(skip)]
+    pub swift_printed: bool,
+
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
     /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
@@ -1583,6 +1593,7 @@ fn resolve_single_import(
         cpp_unlowered: None,
         python_printed: false,
         python_unlowered: None,
+        swift_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -19433,16 +19444,15 @@ fn embed_flag_bind_thread_args_supplying(
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
-        // A C++ codec is printed from its plan, and so is a Python codec the
-        // Python printer lowers; neither is handed, on encode, an input its
-        // value says (docs/adr/0065 §6 R4a): its encode reads it off the
-        // value. Its decode is handed every input.
+        // A C++ codec is printed from its plan, and so is a Python or a Swift
+        // codec its language's printer lowers; none is handed, on encode, an
+        // input its value says (docs/adr/0065 §6 R4a): its encode reads it off
+        // the value. Its decode is handed every input.
         let printed = match lang {
             Language::Cpp => true,
             Language::Python => imp.python_printed,
-            Language::Rust | Language::Kotlin | Language::Go | Language::C11 | Language::Swift => {
-                false
-            }
+            Language::Swift => imp.swift_printed,
+            Language::Rust | Language::Kotlin | Language::Go | Language::C11 => false,
         };
         let encode_hands = !(printed && imp.codec_says_inputs.contains(&input.name));
         if let Some(arg) = supplied(&input.name) {
@@ -29084,8 +29094,9 @@ struct BroadcastLogRenderInputs {
 ///   the first context word, so the slot index is `1 + word`; `said` is whether
 ///   the element's value says it, ADR 0065 §6 R4a, and the language's encode of
 ///   the element reads it off the value, `encode_reads_said`: the Rust encode
-///   always does, a C++ one once the element is printed from its plan
-///   (docs/adr/0081 §6), and every other encode takes each flag from its caller);
+///   always does, a C++ or a Swift one once the element is printed from its
+///   plan (docs/adr/0081 §6), and every other encode takes each flag from its
+///   caller);
 /// * `said_flags` and `given_flags`: whether some flag input is said, and
 ///   whether some is not;
 /// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
@@ -29696,6 +29707,10 @@ fn render_broadcast_log_swift(
         .at_line(m.element_type_line));
     }
 
+    let element_printed = options
+        .element_type_swift_printed
+        .as_ref()
+        .is_some_and(|printed| printed.contains(&filters::to_snake_case(m.element_type.clone())));
     let tmpl = env
         .get_template("broadcast_log.swift.jinja2")
         .map_err(|e| {
@@ -29713,8 +29728,10 @@ fn render_broadcast_log_swift(
         declared_progress => inputs.declared_progress,
         runtime_dep => "SceForgeRuntime",
         // What the element's codec asks its caller for, which an entry stores beside the bytes,
-        // in the 64-bit words of the runtime's slots.
-        context => broadcast_log_context_value(&inputs.element, 64, false),
+        // in the 64-bit words of the runtime's slots. A printed element's encode reads the flags
+        // its value says off the value (docs/adr/0081 §6), so `publish` derives those and hands
+        // the codec the rest.
+        context => broadcast_log_context_value(&inputs.element, 64, element_printed),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -48546,6 +48563,7 @@ mod tests {
             cpp_unlowered: None,
             python_printed: false,
             python_unlowered: None,
+            swift_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49476,6 +49494,7 @@ mod tests {
                 cpp_unlowered: None,
                 python_printed: false,
                 python_unlowered: None,
+                swift_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49549,6 +49568,7 @@ mod tests {
                 cpp_unlowered: None,
                 python_printed: false,
                 python_unlowered: None,
+                swift_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

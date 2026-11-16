@@ -6438,9 +6438,11 @@ fn swift_stores_the_tag_of_a_variant_element_beside_its_bytes() {
 
 #[test]
 fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
-    // The codec `event_record` takes the flag input `S` from its caller. The log stores it as
-    // one bit of a context word, takes it on `publish`, encodes under it, and gives it back with
-    // the item so that every reader decodes the entry under what it was published under.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, and its
+    // value says it (ADR 0065 §6 R4a), which the encode Swift prints from its plan reads off the
+    // value (docs/adr/0081 §6). The log stores it as one bit of a context word, reads it off the
+    // element on `publish` instead of taking it, and gives it back with the item so that every
+    // reader decodes the entry under what it was published under.
     let xml = event_ring();
     let codec = flag_input_codec();
     let outputs = compile_documents(
@@ -6455,8 +6457,9 @@ fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
             "public struct Flags: Equatable, Sendable {",
             "public var S: Bool",
             "public static let contextWords: Int = 1",
-            "_ element: EventRecord, flags: Flags\n    ) -> Publish {",
-            "try element.encode(into: &sink, S: flagInput(flags.S))",
+            "_ element: EventRecord\n    ) -> Publish {",
+            "        let flags = Flags(\n            S: EventRecord.inputS(element) != 0\n        )",
+            "try element.encode(into: &sink)\n",
             "entry[1 + 0] |= UInt64(1) << UInt64(0)",
             "S: ((entry[1 + 0] >> UInt64(0)) & 1) == 1",
             "EventRecord.decode(&cursor, S: flagInput(flags.S))",
@@ -6464,8 +6467,26 @@ fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
         ],
     );
     assert!(
+        !code.contains("flags: Flags\n    ) -> Publish") && !code.contains("GivenFlags"),
+        "`publish` takes no flag the element says:\n{code}"
+    );
+    assert!(
         !code.contains("element.tag"),
         "an element with no caller's tag stores none:\n{code}"
+    );
+    let record = generated_file(
+        compile_documents(
+            Language::Swift,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("swift writes the element"),
+        "EventRecord.swift",
+    );
+    assert!(
+        record.contains(
+            "public static func inputS<Source: EventRecordSource>(_ source: Source) -> UInt8 {\n        source.detail != nil ? 1 : 0\n    }"
+        ),
+        "the element reads the input off a source of it:\n{record}"
     );
 }
 

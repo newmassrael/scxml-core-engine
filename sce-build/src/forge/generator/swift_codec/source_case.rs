@@ -57,20 +57,26 @@ pub(crate) fn source_case(
     }
     let object = source_members(plan, source)?;
     // The decode is handed every flag input, in the order the codec declares them, by its label;
-    // the encode the ones the value does not say. A printed codec's variant, which it has none of,
-    // takes no tag.
+    // the encode the ones the value does not say, and the value is held to saying each other one
+    // as the case hands it, through the input's own function (docs/adr/0065 §6 R4a). A printed
+    // codec's variant, which it has none of, takes no tag.
     let mut decode_inputs = Vec::new();
     let mut encode_inputs = Vec::new();
+    let mut said = Vec::new();
     for (input, value, given) in case_inputs(plan, inputs)? {
         let argument = format!("{}: {value}", input.name);
-        if !given {
-            return Err(format!(
-                "the Swift printer does not print the flag input `{}`, which the value says",
-                input.name
+        decode_inputs.push(argument.clone());
+        if given {
+            encode_inputs.push(argument);
+        } else {
+            said.push((
+                format!("flag input {}", input.name),
+                format!(
+                    "{type_name}.{}({VALUE}) == {value}",
+                    super::source::said_reader(&input.name)
+                ),
             ));
         }
-        decode_inputs.push(argument.clone());
-        encode_inputs.push(argument);
     }
     if case_tag(plan, source, tag)?.is_some() {
         return Err("a case hands a tag to a codec whose variant takes none".to_string());
@@ -102,6 +108,7 @@ pub(crate) fn source_case(
         arguments.push(format!("{id}: {spelled}"));
         checks.push((id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}")));
     }
+    checks.extend(said);
     Ok(SourceCase {
         bindings,
         literal: format!("{type_name}({})", arguments.join(", ")),

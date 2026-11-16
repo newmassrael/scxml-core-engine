@@ -11,9 +11,9 @@ import XCTest
 // when the input `N` is set; `codec_chain_flag_entry.scxml`: a short value when `wide` is clear and a
 // long one when it is set; `codec_zenoh_decl_kexpr.scxml`, which hands its own input on;
 // `codec_repeat_flag_carrier.scxml`, which hands each entry a bit of its own header). The fixtures hold
-// no numerical oracle, so this is where the behaviour is held: the input is a parameter of both
-// `decode` and `encode`, a gate reads it, an encode refuses a value that contradicts it before a
-// byte is written, and what embeds a codec hands it the input it was bound to.
+// no numerical oracle, so this is where the behaviour is held: the input is a parameter of
+// `decode`, a gate reads it, an encode reads an input the value says off the value, and what
+// embeds a codec hands it the input it was bound to.
 final class CodecFlagInputUnitTests: XCTestCase {
     func testAFieldGatedByTheInputIsReadOnlyWhenTheInputIsSet() throws {
         var clear = SceCursor([0x05, 0x77])
@@ -23,34 +23,27 @@ final class CodecFlagInputUnitTests: XCTestCase {
         XCTAssertEqual(clear.remaining, 1, "what follows the codec is the caller's")
         var set = SceCursor([0x05, 0x02, 0x68, 0x69])
         let named = try CodecZenohWireexpr.decode(&set, N: 1)
-        XCTAssertEqual(named.suffix, "hi")
+        XCTAssertEqual(named.suffix?.text, "hi")
         XCTAssertEqual(set.remaining, 0)
     }
 
-    func testAnEncodeWritesTheGatedFieldsWhenTheValueHoldsThemAndTheInputIsSet() throws {
+    // The suffix is gated on `N` alone, so the value says `N` by holding the suffix or not
+    // (docs/adr/0065 §6 R4a): the encode is handed no input and derives the length, and no value
+    // contradicts the input.
+    func testAnEncodeWritesTheGatedFieldsWhereTheValueHoldsThemAndDerivesTheLength() throws {
+        let suffix = try XCTUnwrap(BoundedText<CodecZenohWireexpr.SuffixBound>("hi"))
         var sink = BytesSink()
-        try CodecZenohWireexpr(id: 5, suffix_len: 2, suffix: "hi").encode(into: &sink, N: 1)
+        try CodecZenohWireexpr(id: 5, suffix: suffix).encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x05, 0x02, 0x68, 0x69])
         var bare = BytesSink()
-        try CodecZenohWireexpr(id: 5, suffix_len: nil, suffix: nil).encode(into: &bare, N: 0)
+        try CodecZenohWireexpr(id: 5, suffix: nil).encode(into: &bare)
         XCTAssertEqual(bare.bytes, [0x05])
     }
 
-    func testAnEncodeRefusesAValueThatContradictsTheInputAndWritesNothing() {
-        var absent = BytesSink()
-        XCTAssertThrowsError(
-            try CodecZenohWireexpr(id: 5, suffix_len: nil, suffix: nil).encode(into: &absent, N: 1)
-        ) { error in
-            XCTAssertEqual(error as? CodecError, .presentIfMismatch, "the input says it, the value lacks it")
-        }
-        XCTAssertEqual(absent.bytes, [])
-        var present = BytesSink()
-        XCTAssertThrowsError(
-            try CodecZenohWireexpr(id: 5, suffix_len: 2, suffix: "hi").encode(into: &present, N: 0)
-        ) { error in
-            XCTAssertEqual(error as? CodecError, .presentIfMismatch, "the value holds it, the input denies it")
-        }
-        XCTAssertEqual(present.bytes, [])
+    func testTheValueSaysTheInputItsDecodeIsHanded() throws {
+        let suffix = try XCTUnwrap(BoundedText<CodecZenohWireexpr.SuffixBound>("hi"))
+        XCTAssertEqual(CodecZenohWireexpr.inputN(CodecZenohWireexpr(id: 5, suffix: suffix)), 1)
+        XCTAssertEqual(CodecZenohWireexpr.inputN(CodecZenohWireexpr(id: 5, suffix: nil)), 0)
     }
 
     func testANegatedGateReadsTheInputTheOtherWay() throws {
@@ -69,7 +62,7 @@ final class CodecFlagInputUnitTests: XCTestCase {
         let frame = try CodecZenohDeclKexpr.decode(&cursor, N: 1)
         XCTAssertEqual(frame.id, 3)
         XCTAssertEqual(frame.wireexpr.id, 9)
-        XCTAssertEqual(frame.wireexpr.suffix, "ab")
+        XCTAssertEqual(frame.wireexpr.suffix?.text, "ab")
         var plain = SceCursor([0x03, 0x09])
         XCTAssertNil(try CodecZenohDeclKexpr.decode(&plain, N: 0).wireexpr.suffix)
     }

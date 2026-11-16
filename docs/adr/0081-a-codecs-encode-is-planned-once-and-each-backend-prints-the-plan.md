@@ -1325,6 +1325,18 @@ old encode, the old encode and its templates are removed in the same landing.
    counting of ADR 0058 §3 without a second pass. The harness folds `sources` and `refused`
    of every printed codec, the refusal named by the runtime's case (`EncodeFailure::symbol`), and its `cases`
    fragment makes a printed value without a derived element, each byte string through its bound's door.
+   *Inputs the value says, 2026-11-16:* a flag input the value says by the one field gated on it alone (docs/adr/0065
+   §6 R4a, `InputSource::Gate`) is printed. The encode is not handed it: where a gate reads it, the encode reads it
+   off the value into a local of the input's name before any gate, and `{Codec}.input{Name}(_:)` reads it off any
+   source, which is what a parent derives a flag it binds to the input from and what a log stores. The decode is
+   still handed it. Whether an import is printed is a fact of the import (`ImportContext::swift_printed`, read as
+   the codec is generated, its own imports resolved, as `cpp_printed` is), and a template parent hands a printed
+   child's encode no input the child says, as every C++ parent does; a Swift broadcast log over a printed element
+   reads each such flag off the element (`ForgeCompileOptions::element_type_swift_printed`). An input a held codec
+   or a group says, and the checks of an input a held codec says (`input_checks`), enter with the form that holds
+   the codec. The case printer hands the decode every input and holds the value to saying each said one through
+   its reader. The generic parameter of `encodeSource` is named `Source`, since a flag input is often one capital
+   letter and a local of its name would hide a parameter `S`.
 
 ## Consequences
 

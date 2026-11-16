@@ -20,7 +20,7 @@
 // from a buffer only that read holds.
 //
 // Operations (from `{{ runtime_dep }}`, typed here over the element):
-//   {{ pascal }}.publish(publisher, element{% if context.flags %}, flags: flags{% endif %}) -> {{ pascal }}.Publish
+//   {{ pascal }}.publish(publisher, element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given: given{% else %}flags: flags{% endif %}{% endif %}) -> {{ pascal }}.Publish
 //       wait-free; the entry's sequence number, or why the element was refused
 //   {{ pascal }}.read(log, &reader) -> {{ pascal }}.Read
 //       wait-free; an item, nothing new, how many were missed, or an entry that does not decode
@@ -34,7 +34,15 @@
 // bytes, so every reader decodes an entry under what it was published under (ADR 0062
 // section 4).
 {% if context.flags %}
-// `publish` takes the flags and an `item` returns them.
+{% if context.given_flags %}
+// `publish` takes the flags{% if context.said_flags %} the element's value does not say{% endif %}, and an `item` returns them{% if context.said_flags %} all{% endif %}.
+{% else %}
+// An `item` returns the flags.
+{% endif %}
+{% endif %}
+{% if context.said_flags %}
+// A flag input the element's value says is not taken: `publish` reads it off the
+// element, as its encode does (ADR 0065 section 6, R4a).
 {% endif %}
 {% if context.has_tag %}
 // The tag is not given: it is a function of the element, which `publish` reads off it
@@ -106,6 +114,22 @@ public enum {{ pascal }} {
 {% endfor %}
         }
     }
+{% if context.said_flags and context.given_flags %}
+
+    /// The flag inputs `publish` takes from its caller: those the element's value does not
+    /// say. The log reads the others off the element (ADR 0065 section 6, R4a).
+    public struct GivenFlags: Equatable, Sendable {
+{% for flag in context.flags if not flag.said %}
+        public var {{ flag.camel }}: Bool
+{% endfor %}
+
+        public init({% for flag in context.flags if not flag.said %}{{ flag.camel }}: Bool{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for flag in context.flags if not flag.said %}
+            self.{{ flag.camel }} = {{ flag.camel }}
+{% endfor %}
+        }
+    }
+{% endif %}
 {% endif %}
 
     /// What a typed publish did.
@@ -156,11 +180,20 @@ public enum {{ pascal }} {
     /// the runtime stops the program, which no run reaches in practice.
 {% if context.flags %}
     ///
+{% if context.said_flags %}
+    /// The flag inputs the element's codec takes from its caller are stored in the entry's
+    /// context words, so that every reader decodes the entry under what it was published
+    /// under. A flag the element's value says is read off `element` and stored as it says
+    /// it, so no entry is stored under a flag its bytes disagree with{% if context.given_flags %}. `given` holds the
+    /// others, encoded under here; the log does not check that they agree with `element`, the
+    /// publisher gives what it knows, as every caller of this codec does{% endif %}.
+{% else %}
     /// `flags` are what the element's codec takes from its caller as flag inputs: they are
     /// encoded under here and stored in the entry's context words, so that every reader
     /// decodes the entry under what it was published under. The log does not check that the
     /// flags agree with `element`; the publisher gives what it knows, as every caller of this
     /// codec does.
+{% endif %}
 {% endif %}
 {% if context.has_tag %}
     ///
@@ -170,11 +203,24 @@ public enum {{ pascal }} {
     /// every reader decodes the entry under the arm it was published as.
 {% endif %}
     public static func publish(
-        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: {{ element_pascal }}{% if context.flags %}, flags: Flags{% endif %}{{ '' }}
+        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: {{ element_pascal }}{% if context.flags and context.given_flags %}, {% if context.said_flags %}given: GivenFlags{% else %}flags: Flags{% endif %}{% endif %}{{ '' }}
     ) -> Publish {
+{# A flag the element's value says is read off it by the input's own function, which the
+   printed codec declares (`input` and the input's name, docs/adr/0065 §6 R4a). #}
+{% if context.said_flags %}
+        let flags = Flags(
+{% for flag in context.flags %}
+{% if flag.said %}
+            {{ flag.camel }}: {{ element_pascal }}.input{{ flag.pascal }}(element) != 0{% if not loop.last %},{% endif %}
+{% else %}
+            {{ flag.camel }}: given.{{ flag.camel }}{% if not loop.last %},{% endif %}
+{% endif %}
+{% endfor %}
+        )
+{% endif %}
         var sink = BoundedSink(capacity: maxEncodedBytes)
         do throws(CodecError) {
-            try element.encode(into: &sink{% for flag in context.flags %}, {{ flag.name }}: flagInput(flags.{{ flag.camel }}){% endfor %})
+            try element.encode(into: &sink{% for flag in context.flags if not flag.said %}, {{ flag.name }}: flagInput(flags.{{ flag.camel }}){% endfor %})
         } catch {
             return .refused(error)
         }

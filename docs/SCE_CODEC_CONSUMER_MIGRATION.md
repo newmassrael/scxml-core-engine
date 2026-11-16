@@ -2203,4 +2203,13 @@ Landing: the commit that adds this section, and each later one that names a form
   `CodecLengthRef(msgId: 7, len: 2, payload: [0x10, 0x20])` to
   `CodecLengthRef(msgId: 7, payload: BoundedBytes([0x10, 0x20])!)`, or binds the bounded value with a check of its
   own first.
+- A flag input the value of a printed codec says by the field gated on it alone (docs/adr/0065 §6 R4a; the Zenoh
+  wire expression's `N`, the open body's `A`) is no parameter of `encodeSource` and `encode(into:)`: the encode reads
+  it off the value, so no value contradicts it and no `presentIfMismatch` is thrown for it. `decode` still takes it.
+  `{Codec}.input{Name}(_:)` answers it, 1 or 0, off any source. A call site moves from
+  `CodecZenohWireexpr(id: 5, suffix_len: 2, suffix: "hi").encode(into: &sink, N: 1)` to
+  `CodecZenohWireexpr(id: 5, suffix: BoundedText("hi")!).encode(into: &sink)`. A codec of the template's encode that
+  holds a printed one hands it no such input. A Swift broadcast log over such an element reads the flag off the
+  element: `publish` takes `given: GivenFlags` of the others, or nothing where the element says every one, and an
+  item still holds them all in `Flags`. The generic parameter of `encodeSource` is now named `Source`.
 

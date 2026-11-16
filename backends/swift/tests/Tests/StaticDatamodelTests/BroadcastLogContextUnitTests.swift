@@ -65,7 +65,8 @@ final class BroadcastLogContextUnitTests: XCTestCase {
     private typealias Flagged = BroadcastLogConformanceFlagged
     private typealias Event = BroadcastLogConformanceFlaggedEvent
 
-    /// The one flag input the element's codec takes, as the log names it.
+    /// The one flag input the element's codec takes, as the log names it. The element's value says
+    /// it (ADR 0065 section 6, R4a), so `publish` reads it off the element and a read gives it back.
     private func flags(_ hasValue: Bool) -> Flagged.Flags {
         Flagged.Flags(hasValue: hasValue)
     }
@@ -81,7 +82,7 @@ final class BroadcastLogContextUnitTests: XCTestCase {
         let publisher = try XCTUnwrap(log.publisher())
         var reader = log.readerOldest()
         let element = Event(sensor_id: 9, value: 0x1234)
-        XCTAssertEqual(Flagged.publish(publisher, element, flags: flags(true)), .published(seq: 0))
+        XCTAssertEqual(Flagged.publish(publisher, element), .published(seq: 0))
         XCTAssertEqual(Flagged.read(log, &reader), .item(seq: 0, element: element, flags: flags(true)))
     }
 
@@ -90,7 +91,7 @@ final class BroadcastLogContextUnitTests: XCTestCase {
         let publisher = try XCTUnwrap(log.publisher())
         var reader = log.readerOldest()
         let element = Event(sensor_id: 9, value: nil)
-        XCTAssertEqual(Flagged.publish(publisher, element, flags: flags(false)), .published(seq: 0))
+        XCTAssertEqual(Flagged.publish(publisher, element), .published(seq: 0))
         XCTAssertEqual(Flagged.read(log, &reader), .item(seq: 0, element: element, flags: flags(false)))
     }
 
@@ -98,7 +99,7 @@ final class BroadcastLogContextUnitTests: XCTestCase {
         let log = Flagged.makeLog()
         let publisher = try XCTUnwrap(log.publisher())
         let element = Event(sensor_id: 9, value: 0x1234)
-        XCTAssertEqual(Flagged.publish(publisher, element, flags: flags(true)), .published(seq: 0))
+        XCTAssertEqual(Flagged.publish(publisher, element), .published(seq: 0))
         var raw = log.readerOldest()
         var words = [UInt64](repeating: 0, count: log.words)
         XCTAssertEqual(log.read(&raw, into: &words), .item(seq: 0))
@@ -114,8 +115,8 @@ final class BroadcastLogContextUnitTests: XCTestCase {
         var reader = log.readerOldest()
         let with = Event(sensor_id: 1, value: 2)
         let without = Event(sensor_id: 3, value: nil)
-        _ = Flagged.publish(publisher, with, flags: flags(true))
-        _ = Flagged.publish(publisher, without, flags: flags(false))
+        _ = Flagged.publish(publisher, with)
+        _ = Flagged.publish(publisher, without)
         XCTAssertEqual(Flagged.read(log, &reader), .item(seq: 0, element: with, flags: flags(true)))
         XCTAssertEqual(Flagged.read(log, &reader), .item(seq: 1, element: without, flags: flags(false)))
     }

@@ -349,13 +349,22 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// byte is written, with the `CodecError` the codec's totality names.{% else %} It refuses
     /// nothing.{% endif %} A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public static func encodeSource<S: {{ printed.protocol }}, Sink: SceSink>(_ source: S, into sink: inout Sink{% for input in printed.given %}, {{ input }}: UInt8{% endfor %}{% if printed.overrides %}, overrides: Overrides = Overrides(){% endif %}) throws(CodecError) {
+    public static func encodeSource<Source: {{ printed.protocol }}, Sink: SceSink>(_ source: Source, into sink: inout Sink{% for input in printed.given %}, {{ input }}: UInt8{% endfor %}{% if printed.overrides %}, overrides: Overrides = Overrides(){% endif %}) throws(CodecError) {
 {% for line in printed.body %}
         {{ line }}
 {% endfor %}
         try sink.writeBytes(frame)
     }
 
+{% for s in printed.said %}
+    /// The flag input `{{ s.input }}` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func {{ s.reader }}<Source: {{ printed.protocol }}>(_ source: Source) -> UInt8 {
+        {{ s.expr }}
+    }
+
+{% endfor %}
     /// Writes the frame of this value to `sink`: `encodeSource` of itself.
     public func encode<Sink: SceSink>(into sink: inout Sink{% for input in printed.given %}, {{ input }}: UInt8{% endfor %}) throws(CodecError) {
         try Self.encodeSource(self, into: &sink{% for input in printed.given %}, {{ input }}: {{ input }}{% endfor %})

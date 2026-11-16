@@ -22,12 +22,15 @@
 //! value does not say is a parameter of the encode, as it is of the decode, and a gate on it, which
 //! the encode cannot derive, is a check the value is held to before the first byte
 //! (`presentIfMismatch`); fields that each say one flag must say the same (`inconsistentSource`).
+//! A flag input the value says by the field gated on it alone (docs/adr/0065 §6 R4a) is no
+//! parameter of the encode: the encode reads it off the value, and so does a parent or a log
+//! through the codec's `input{Name}(_:)`; the decode is still handed it.
 //! A one-bit flag a parent may set in place of the one the value presents
 //! (`EncodePlan::overridable`) is a member of the codec's `Overrides`, which the encode is handed
 //! and folds into its carrier.
 
 use super::*;
-use crate::forge::codec_roles::ElementId;
+use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Bound, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, Measured, Narrow, Number,
@@ -91,9 +94,16 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
     }) {
         return Some(format!("`{}`, which the encode derives", derived.element));
     }
-    if let Some(said) = plan.said.first() {
+    // An input the value says is read off the field gated on it alone; one a held codec or a
+    // group says waits for the form that holds it.
+    if let Some(said) = plan.said.iter().find(|said| {
+        !matches!(
+            plan.roles.inputs[&said.input.name],
+            InputSource::Gate { .. }
+        )
+    }) {
         return Some(format!(
-            "the flag input `{}`, which the value says",
+            "the flag input `{}`, which the value says by what it holds",
             said.input.name
         ));
     }
@@ -249,6 +259,31 @@ fn is_number(t: &SceType) -> bool {
 /// The protocol a value of the codec `codec` presents its elements through.
 pub(crate) fn source_protocol(codec: &str) -> String {
     format!("{}Source", filters::to_pascal_case(codec.to_string()))
+}
+
+/// The static function of a printed codec that reads the flag input `input` off a source of it
+/// (docs/adr/0065 §6 R4a): `input` and the input's name in upper camel case.
+pub(crate) fn said_reader(input: &str) -> String {
+    format!("input{}", filters::to_pascal_case(input.to_string()))
+}
+
+/// The `UInt8` the flag input `input` that the value says holds, read off `source`, a source of
+/// the codec of `plan`: set exactly where the field gated on it alone is present (absent, for a
+/// field gated on its clear state). [`unlowered`] refuses every other way a value says one.
+fn said_input(plan: &EncodePlan<'_>, input: &str, source: &str) -> String {
+    match &plan.roles.inputs[input] {
+        InputSource::Gate { field, when_clear } => {
+            let test = if *when_clear { "==" } else { "!=" };
+            format!("{source}.{field} {test} nil ? 1 : 0")
+        }
+        InputSource::Forward { .. }
+        | InputSource::Group
+        | InputSource::EveryArm { .. }
+        | InputSource::SomeArms { .. }
+        | InputSource::List { .. } => {
+            unreachable!("`unlowered` refuses an input a held codec or a group says")
+        }
+    }
 }
 
 /// The name a printed encode gives the source it writes.
@@ -451,6 +486,16 @@ pub(super) fn context(
             .expect("a derived flag is a flag of a field of the codec")
     };
     let mut body: Vec<String> = Vec::new();
+    // Each input the value says (docs/adr/0065 §6 R4a) that a gate of the codec reads, read off
+    // what the value holds under the name the gate reads it by; one no gate reads is left to the
+    // parent that asks for it.
+    for said in plan.said.iter().filter(|said| said.read) {
+        body.push(format!(
+            "let {}: UInt8 = {}",
+            said.input.name,
+            said_input(plan, &said.input.name, SOURCE)
+        ));
+    }
     // Each carrier the encode writes otherwise than the value presents it, folded into a local
     // first: the flags its presence derives, then those a parent sets in place of the value's own.
     let mut folded: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -790,9 +835,24 @@ pub(super) fn context(
         }
     }
     plan.totality.assert_all_written(&plan.model.name);
+    // Each input the value says, read off any source of it by a function of its own: what a
+    // parent that holds this codec derives the flag it binds to the input from, and what a log
+    // over it stores (docs/adr/0065 §6 R4a).
+    let said: Vec<serde_json::Value> = plan
+        .said
+        .iter()
+        .map(|said| {
+            serde_json::json!({
+                "input": said.input.name,
+                "reader": said_reader(&said.input.name),
+                "expr": said_input(plan, &said.input.name, SOURCE),
+            })
+        })
+        .collect();
     serde_json::json!({
         "protocol": source_protocol(&plan.model.name),
         "requirements": requirements,
+        "said": said,
         "given": plan.given.iter().map(|input| input.name.clone()).collect::<Vec<_>>(),
         "refuses": !plan.totality.is_total(),
         "bounds": bounds,

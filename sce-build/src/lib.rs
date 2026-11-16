@@ -4536,6 +4536,13 @@ pub struct ForgeCompileOptions {
     /// C++ compile only; `None` elsewhere, where no field is read by call.
     pub element_type_cpp_printed: Option<std::collections::HashSet<String>>,
 
+    /// docs/adr/0081 step 5: the element-type candidates the Swift backend
+    /// prints from their encode plan (`swift_codec_printed_file`), by the snake
+    /// element name. Such an element's encode takes no flag input its value
+    /// says (docs/adr/0065 §6 R4a), so a broadcast log over it reads that flag
+    /// off the element. Populated on a Swift compile only; `None` elsewhere.
+    pub element_type_swift_printed: Option<std::collections::HashSet<String>>,
+
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
     /// codec emit uses, so a bounded-collection storing the element names the
@@ -5554,6 +5561,11 @@ fn compile_document_set(
     // its accessor (docs/adr/0081 step 4). Decided by the same predicate the
     // codec emit uses, on a C++ compile only.
     let mut element_type_cpp_printed: HashSet<String> = HashSet::new();
+    // Those the Swift backend prints from their plan: a log over such an
+    // element reads each flag input its value says off it (docs/adr/0081 step
+    // 5). Decided by the same predicate the codec emit uses, on a Swift
+    // compile only.
+    let mut element_type_swift_printed: HashSet<String> = HashSet::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5703,6 +5715,11 @@ fn compile_document_set(
                         && cpp_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
                     {
                         element_type_cpp_printed.insert(filters::to_snake_case(key.clone()));
+                    }
+                    if language == generator::Language::Swift
+                        && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_swift_printed.insert(filters::to_snake_case(key.clone()));
                     }
                 }
                 element_type_candidates.insert(key, doc);
@@ -6270,6 +6287,7 @@ fn compile_document_set(
         || listener_links_override.is_some()
         || !element_type_field_schemas.is_empty()
         || !element_type_cpp_printed.is_empty()
+        || !element_type_swift_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
         || broadcast_log_resolutions_override.is_some();
@@ -6294,6 +6312,9 @@ fn compile_document_set(
         }
         if !element_type_cpp_printed.is_empty() {
             overridden.element_type_cpp_printed = Some(element_type_cpp_printed);
+        }
+        if !element_type_swift_printed.is_empty() {
+            overridden.element_type_swift_printed = Some(element_type_swift_printed);
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);
@@ -7469,6 +7490,13 @@ fn validate_and_enrich_imports(
                     let unlowered = python_codec_unlowered_file(&source.path, &[], options)?;
                     ctx.python_printed = unlowered.as_ref().is_some_and(Vec::is_empty);
                     ctx.python_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
+                }
+                // docs/adr/0081 step 5: whether the Swift backend prints the
+                // import from its plan, so a parent hands its encode no input
+                // its value says and makes and reads it through its protocol.
+                if matches!(language, generator::Language::Swift) {
+                    ctx.swift_printed =
+                        swift_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
                 }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.
