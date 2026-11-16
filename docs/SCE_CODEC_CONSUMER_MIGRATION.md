@@ -3056,3 +3056,20 @@ hold lists, and chains that end with their scope, of printed codecs handed no fl
 - The header gains `{codec}_value_{list}_begin` and `{codec}_value_{list}_next`, the walk of the value's own array;
   a name of yours that collides with one of them, or with `{codec}_{list}_list_make`, now collides with the header.
 
+## A printed C11 codec takes the flags a parent sets, and a chain sets the flag its entries end on (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the codecs
+whose one-bit flags a value presents (`codec_flags_basic`, `codec_chain_depth_entry` among the resources), and by
+the chains closed by an entry flag of printed entries (`codec_chain_depth_plain`, `codec_chain_depth_gated`).
+
+- A codec with one-bit flags declares `{codec}_overrides_t`, one `sce_optional_bool_t` for each flag
+  (`header_z`), `{codec}_overrides_none()` and `{codec}_encode_source_overriding(src, ctx, w, overrides)`, which
+  writes a flag the overrides hold in place of the value's. `{codec}_encode_source(src, ctx, w)` and
+  `{codec}_encode` are unchanged and set none. A name of yours that collides with these now collides with the header.
+- A chain closed by an entry flag writes that flag itself: set on every entry but the last, clear on the last. The
+  flag each entry of your value holds is no longer what the wire carries; a value whose entries said otherwise now
+  writes a chain its decode reads back whole.
+- A chain closed by an entry flag holds one entry or more: `{codec}_{chain}_list_make` answers
+  `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` for an empty one, and `{codec}_encode` refuses a value whose `{chain}_len` is
+  zero with the same status before the first byte.
+
