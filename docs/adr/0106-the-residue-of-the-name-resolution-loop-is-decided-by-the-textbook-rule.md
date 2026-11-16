@@ -1,10 +1,9 @@
-# ADR 0105 — The residue of the name-resolution loop is decided by the textbook rule
+# ADR 0106 — The residue of the name-resolution loop is decided by the textbook rule
 
 - Status: Accepted (2026-11-16). Written and accepted under the owner's standing rule (the most long-term correct
   structure, textbook in its foundations; decided, not asked), which the owner extended on 2026-11-16 to the items
-  the enum and forge name-resolution loop had left as "owner decisions" when it stopped on 2026-09-25. Numbered as
-  the next free one after 0104 on `origin/main` as fetched on 2026-11-16; a branch landing another 0105 first
-  renumbers this one.
+  the enum and forge name-resolution loop had left as "owner decisions" when it stopped on 2026-09-25. Written as
+  0105 and renumbered 0106 the same day, 0105 being promised to the tlv-chain record that keeps ids.
 - Date: 2026-11-16
 - Scope: the decisions only, item by item, each with the evidence of the tree as it stood on 2026-11-16, what was
   implemented with this ADR, and what is left and whose it is. The items keep the numbers of the loop's defect

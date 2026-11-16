@@ -29,7 +29,7 @@
 //! parse ends (`crate::read_ledger`, `validation/sce-attribute-unread`), so
 //! a `sce:req` where this module reads none is now refused, not dropped.
 //!
-//! The decided next step (docs/adr/0105, item G3) is that the root of
+//! The decided next step (docs/adr/0106, item G3) is that the root of
 //! every forge document is a claim site: a forge document is one artifact,
 //! the root is the one node every kind has, and so every kind answers with
 //! at least the root's row. [`ReviewScope::NoAnnotationSite`] and
