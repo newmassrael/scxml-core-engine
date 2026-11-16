@@ -46,7 +46,7 @@ mutation_tests -p sce-build --features cli --lib --test host_processor_declarati
 # `mutation_compiled_targets` skips run-time files.
 mutation_targets sce-build/src/host_processor_analyzer.rs \
     sce-build/src/generator.rs \
-    sce-build/src/bin/sce_codegen.rs
+    sce-build/src/cli/mod.rs
 # The templates are the genuine run-time entries: codegen opens them while
 # generating, so they are read fresh on every run and no binary carries them.
 mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
@@ -146,7 +146,7 @@ PY
 # check the pair instead of meeting the mismatch as a runtime error.
 
 mutation_case "the manifest does not report what was declared" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """        report
             .host_processor_types
             .clone_from(&model.host_processor_types);""",
@@ -244,7 +244,7 @@ PY
 # declaration, so the route stopped conflicting and only `--forge` — a
 # document set with no `<send>` for a processor to serve — still does.
 mutation_case "check cannot be told about a declared processor" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """    #[arg(
         long = "host-processor",
         value_name = "TYPE",
@@ -268,7 +268,7 @@ PY
 # earlier form deleted the call at `check`'s site and no longer has one to
 # delete.
 mutation_case "check accepts the declaration and never applies it" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """                parent_template: false,
                 host_processor: &host_processor,
                 host_invoker: &host_invoker,""",
@@ -278,7 +278,7 @@ edit("sce-build/src/bin/sce_codegen.rs",
 PY
 
 mutation_case "check does not publish what it was told" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """            report
                 .host_processor_types
                 .clone_from(&model.host_processor_types);""",

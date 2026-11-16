@@ -31,10 +31,10 @@ mutation_tests -p sce-build --features cli --test path_naming_parity
 # from it — and because `mutation_compiled_targets` skips run-time files, the
 # reach check was not consulted at all for the cases below.
 mutation_targets sce-build/tests/path_naming_parity.rs \
-                 sce-build/src/bin/sce_codegen.rs
+                 sce-build/src/cli/mod.rs
 
 mutation_case "generate infers its source-set root lexically again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        None => containing_dir(Path::new(scxml_path)),",
      """        None => Path::new(scxml_path)
             .parent()
@@ -54,13 +54,13 @@ PY
 # directory", and neither the argument's reference depth nor the column it
 # is indented to is part of that.
 mutation_case "orchestrate infers its source-set root lexically again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      ".map(|p| containing_dir(p))",
      ".and_then(|p| p.parent().map(|x| x.to_path_buf()))")
 PY
 
 mutation_case "generate-conformance derives resources lexically again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """    let resource_dir = sibling_of_containing_dir(Path::new(manifest_path), "resources");""",
      """    let resource_dir = Path::new(manifest_path)
         .parent()
@@ -84,7 +84,7 @@ PY
 # aims at the filter; the anchor's 4-space indent is what distinguishes it
 # from its 8-space twin.
 mutation_case "list-fixtures derives its filter's resources lexically again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """    let resource_root_for_filter: std::path::PathBuf = match resource_dir {
         Some(rd) => std::path::PathBuf::from(rd),
         None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
@@ -102,7 +102,7 @@ edit("sce-build/src/bin/sce_codegen.rs",
 PY
 
 mutation_case "the containing directory of a bare filename becomes the empty path" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         // Either `path` is a bare filename (`Some(\"\")`) or it is a root""",
      """        Some(parent) => parent.to_path_buf(),

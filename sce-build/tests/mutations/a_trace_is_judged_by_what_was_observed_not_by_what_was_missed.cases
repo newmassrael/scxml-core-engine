@@ -16,7 +16,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test scenario_judge_command
-mutation_targets sce-build/src/scenario_judge.rs sce-build/src/scenario_set.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/scenario_judge.rs sce-build/src/scenario_set.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/src/scenario_judge.rs sce-build/tests/scenario_judge_command.rs
 
 # ── A gap is let through as a pass ──────────────────────────────────
@@ -153,13 +153,13 @@ PY
 # be read as having said `design`.
 
 mutation_case "a refusal's cause is dropped from the verdict record" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        if let Some(cause) = verdict.cause {",
      "        if let Some(cause) = verdict.cause.filter(|_| false) {")
 PY
 
 mutation_case "a refusal's cause is dropped from the gap record" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        if let Some(cause) = gap.cause {",
      "        if let Some(cause) = gap.cause.filter(|_| false) {")
 PY
@@ -173,13 +173,13 @@ PY
 # ── The bounds a verdict was made under are not repeated ────────────
 
 mutation_case "the limits are not repeated in the summary" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    if let Some(limits) = &trace.limits {",
      "    if let Some(limits) = trace.limits.as_ref().filter(|_| false) {")
 PY
 
 mutation_case "the isolation is not repeated in the summary" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    if let Some(isolation) = &trace.isolation {",
      "    if let Some(isolation) = trace.isolation.as_ref().filter(|_| false) {")
 PY
@@ -187,7 +187,7 @@ PY
 # ── The command reports something other than what was found ─────────
 
 mutation_case "the summary counts a not-judged scenario as a pass" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        \"not-judged\": judgement.count(Verdict::NotJudged),",
      "        \"not-judged\": 0,")
 PY

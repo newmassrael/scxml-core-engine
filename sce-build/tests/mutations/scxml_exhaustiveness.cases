@@ -29,7 +29,7 @@ mutation_tests -p sce-build --features cli --test scxml_exhaustiveness --lib \
 # from it and which switched the reach check off entirely.
 mutation_targets sce-build/src/scxml_exhaustiveness.rs \
     sce-build/src/parser.rs \
-    sce-build/src/bin/sce_codegen.rs
+    sce-build/src/cli/mod.rs
 mutation_oracles sce-build/tests/cli_lint_parity.rs
 
 # ── The grain of the exemption ─────────────────────────────────────
@@ -198,9 +198,9 @@ PY
 # happen if someone added the check to one command and forgot the other.
 
 mutation_case "check stops judging declarations without the flag" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """            error_format.emit_all_and_exit(
-                &sce_build::unhandled_declaration_findings(&model, scxml_path),
+                &crate::unhandled_declaration_findings(&model, scxml_path),
                 "",
             );""",
      "")

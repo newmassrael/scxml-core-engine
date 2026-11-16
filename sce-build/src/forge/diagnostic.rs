@@ -22036,9 +22036,9 @@ mod tests {
 
     /// Every code classified as `FixCarriesCandidates` must emit a
     /// `ReplaceOneOf` or `AddOneOf` fix with no `expected`. CLI codes
-    /// live in the binary so they are covered structurally by the
+    /// live in the command line so they are covered structurally by the
     /// `Diagnostic { expected: None, ... }` literal in
-    /// `bin/sce_codegen.rs` — runtime spawning happens in
+    /// `cli/mod.rs` — runtime spawning happens in
     /// `tests/error_format_json.rs`.
     #[test]
     fn fix_carries_candidates_emitters_obey_non_overlap() {

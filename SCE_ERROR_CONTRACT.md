@@ -1456,7 +1456,7 @@ and flip-to-`stable` procedure for every wire surface.
 - CLI integration: `sce-build/tests/error_format_json.rs` (forge/CLI
   boundary) and `sce-build/tests/mesh_error_format_json.rs` (mesh
   codegen via `--deploy`).
-- Emitter: `sce-build/src/bin/sce_codegen.rs` →
+- Emitter: `sce-build/src/cli/mod.rs` →
   `ErrorFormat::emit_and_exit` and `cli_exit`.
 - Flag naming rationale: `docs/adr/0001-error-format-flag-naming.md`
   documents the alternatives considered for the `--error-format`
@@ -1545,7 +1545,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
   They live in the library rather than beside the CLI so the
   schema-lockstep guards run where the cross-surface registry test can
   reach them.
-- Emitter: `build_manifest` in `sce-build/src/bin/sce_codegen.rs`, the
+- Emitter: `build_manifest` in `sce-build/src/cli/mod.rs`, the
   single construction point for both subcommands, reached from
   `emit_generate_manifest` at every `cmd_generate` exit and from
   `cmd_check` / `cmd_check_document_set`.
@@ -1780,7 +1780,7 @@ mandated for). Both are refused at parse time with the recognized names
 in the diagnostic — vocabulary validation, not adjudication of the
 claim.
 
-Producer: `DeployInfo::from_facts` in `sce-build/src/bin/sce_codegen.rs`,
+Producer: `DeployInfo::from_facts` in `sce-build/src/cli/mod.rs`,
 fed by `sce_build::DeployFacts` from `apply_deploy_model_mutations`.
 Tests: `tests/deploy_static_analyzer.rs` — each recognized value is
 asserted to reach the manifest *and* to differ from the other, so a

@@ -468,16 +468,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_list_fixtures",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/conformance.rs",
           "symbol": "CanonicalType",
           "kind": "implements"
@@ -1682,11 +1672,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "ListFixturesArgs",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "insert_c_codec_symbols",
           "kind": "implements"
@@ -1712,6 +1697,21 @@
           "file": "backends/go/forge-runtime/codec/codec.go",
           "symbol": "ErrTooManyElements",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_list_fixtures",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "ListFixturesArgs",
+          "kind": "implements"
         }
       ]
     },
@@ -2016,11 +2016,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/codegen_matrix.rs",
           "symbol": "kind_class",
           "kind": "implements"
@@ -2272,6 +2267,11 @@
         {
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
           "kind": "implements"
         }
       ]
@@ -2693,11 +2693,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "GenerateArgs",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/const_fold.rs",
           "symbol": "Budget",
           "kind": "implements"
@@ -2795,11 +2790,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "OrchestrateArgs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/const_fold.rs",
           "symbol": "iter_var_type",
           "kind": "implements"
@@ -2837,6 +2827,16 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "type_ctx",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "OrchestrateArgs",
+          "kind": "references"
         }
       ]
     },
@@ -3354,16 +3354,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "GenerateArgs",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_generate",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "ALL_DIAGNOSTIC_CODES",
           "kind": "implements"
@@ -3479,6 +3469,16 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "populate_event_queue_capacity_from_deploy",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
         }
       ]
     },
@@ -3495,11 +3495,6 @@
       "parent_section": "synth-5-J",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_list_fixtures",
-          "kind": "implements"
-        },
         {
           "file": "sce-build/src/conformance.rs",
           "symbol": "render_harness",
@@ -3612,6 +3607,11 @@
         {
           "file": "sce-build/src/forge/codegen_matrix.rs",
           "symbol": "lookup",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_list_fixtures",
           "kind": "implements"
         }
       ]
@@ -3767,16 +3767,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_orchestrate",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "ALL_DIAGNOSTIC_CODES",
           "kind": "implements"
@@ -3931,16 +3921,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "OrchestrateArgs",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_check_document_set",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/parser.rs",
           "symbol": "parse_buffer_pool",
           "kind": "implements"
@@ -4013,6 +3993,26 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_scheduler_session_runtime",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "OrchestrateArgs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_check_document_set",
           "kind": "implements"
         }
       ]
@@ -4348,16 +4348,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_orchestrate",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "ALL_DIAGNOSTIC_CODES",
           "kind": "implements"
@@ -4525,16 +4515,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "OrchestrateArgs",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_check_document_set",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "check_reassembly_peer_id_zid_invariant_c11",
           "kind": "implements"
@@ -4562,6 +4542,26 @@
         {
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "OrchestrateArgs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_check_document_set",
           "kind": "implements"
         }
       ]
@@ -4681,31 +4681,6 @@
       "parent_section": "synth-5",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_generate",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "finalize",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "generate_w3c_unified",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "post_write_parent",
-          "kind": "implements"
-        },
         {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "ALL_DIAGNOSTIC_CODES",
@@ -5029,18 +5004,8 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_check",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_global_scripts",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "SymbolAccumulator",
           "kind": "implements"
         },
         {
@@ -5056,6 +5021,41 @@
         {
           "file": "sce-build/src/lib.rs",
           "symbol": "judge_statechart",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "finalize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "generate_w3c_unified",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "post_write_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_check",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "SymbolAccumulator",
           "kind": "implements"
         }
       ]
@@ -5253,10 +5253,6 @@
         {
           "file": "sce-build/src/queue_history.rs",
           "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
         },
         {
           "file": "sce-build/tests/queue_history_format.rs",
@@ -5589,6 +5585,10 @@
         {
           "file": "sce-build/src/history_common.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ]
     },
@@ -5779,10 +5779,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "schemas/sce-forge-ext.xsd",
           "kind": "references"
         },
@@ -5921,6 +5917,10 @@
         {
           "file": "tests/forge/conformance/check_broadcast_histories.cmake",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ]
     },
@@ -5997,56 +5997,6 @@
       "parent_section": "synth-6.2",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Cli",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "Commands",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "GenerateArgs",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_generate",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_generate_conformance",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_orchestrate",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "finalize",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "generate_w3c_unified",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "post_write_parent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "process_child",
-          "kind": "implements"
-        },
         {
           "file": "sce-build/src/cli_error.rs",
           "symbol": "CliError",
@@ -6171,31 +6121,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "SymbolAccumulator",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "apply_drift_header",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "drift_hash_failure",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "locate_workspace_root",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "write_drift_aware",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "generate_headered_rust",
           "kind": "references"
@@ -6249,6 +6174,81 @@
         {
           "file": "tools/codegen/templates/utility_methods.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Cli",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_generate_conformance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "finalize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "generate_w3c_unified",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "post_write_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "process_child",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "SymbolAccumulator",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "apply_drift_header",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "drift_hash_failure",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "locate_workspace_root",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "write_drift_aware",
+          "kind": "implements"
         }
       ]
     },
@@ -7650,6 +7650,252 @@
       "target_kind": "section",
       "target_id": "synth-6.2.6",
       "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-D",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-F",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-F",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-2",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-2",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-4",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-M",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-M",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-M",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-M",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-O",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-P",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
     }
   ],
   "frames": {},

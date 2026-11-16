@@ -7878,10 +7878,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "kind": "references"
         },
@@ -7974,6 +7970,10 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeScript",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8714,10 +8714,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/model.rs",
           "kind": "references"
         },
@@ -9285,6 +9281,10 @@
         },
         {
           "file": "sce/include/common/ThreadSupport.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
         }
       ],
@@ -10018,10 +10018,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "HostSendRequest",
           "kind": "references"
@@ -10165,6 +10161,10 @@
         },
         {
           "file": "backends/c/runtime/include/sce/saved_state.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
         }
       ],
@@ -10810,10 +10810,6 @@
         },
         {
           "file": "sce-build/src/analyzer.rs",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
           "kind": "references"
         },
         {
@@ -11951,6 +11947,10 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setupJSEnvironment",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12133,10 +12133,6 @@
         },
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/src/bin/sce_codegen.rs",
           "kind": "references"
         },
         {
@@ -12509,6 +12505,10 @@
         {
           "file": "sce/include/core/HostInvokeLedger.h",
           "symbol": "startRun",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
           "kind": "references"
         }
       ],
@@ -15550,10 +15550,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/error.rs",
           "kind": "references"
         },
@@ -15873,6 +15869,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "HttpSendOutcome",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -16001,10 +16001,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "kind": "references"
-        },
-        {
           "file": "backends/c/runtime/include/sce/types.h",
           "kind": "references"
         },
@@ -16052,6 +16048,10 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "setup_system_variables",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -22764,6 +22764,48 @@
       "target_kind": "section",
       "target_id": "scxml-6.2.4",
       "reason": "renamed to errorReasonForFailedSend: the failed send's reading now answers its 10.7.1 code (docs/adr/0106 #111)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.8",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.5",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
     }
   ],
   "frames": {},

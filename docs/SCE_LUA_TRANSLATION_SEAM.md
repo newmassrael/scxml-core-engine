@@ -140,7 +140,7 @@ exists because "a consumer reading only the flag, and the document's
 (`sce-build/src/manifest.rs:199`).
 
 It is derived from the flag alone
-(`sce-build/src/bin/sce_codegen.rs:782`) and the constant is hard-coded
+(`sce-build/src/cli/mod.rs`, then `src/bin/sce_codegen.rs`) and the constant is hard-coded
 `"lua"` (`manifest.rs:45`), justified by a claim this table refutes: *"Not
 per-backend: the lowering happens in `sce-build`, before any backend renders,
 so every language's generated machine evaluates the same Lua."* That holds for

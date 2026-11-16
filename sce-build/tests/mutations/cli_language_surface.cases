@@ -30,7 +30,7 @@ mutation_tests -p sce-build --features cli --test cli_language_surface
 # reach check was not consulted at all for the dispatcher cases below.
 mutation_targets sce-build/src/cli_language.rs \
                  sce-build/tests/cli_language_surface.rs \
-                 sce-build/src/bin/sce_codegen.rs
+                 sce-build/src/cli/mod.rs
 
 # Re-aimed 2026-11-01: Swift is served by the batch suite now, so the filter leaves out C11 alone;
 # the mutant still lets C11 back into the batch suite while its reason stays written.

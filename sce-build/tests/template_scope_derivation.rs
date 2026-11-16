@@ -120,9 +120,9 @@ fn foreign_prefixes_cover_every_other_backend() {
 #[test]
 fn depfile_writer_holds_no_hand_kept_language_list() {
     let src = std::fs::read_to_string(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/bin/sce_codegen.rs"),
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/cli/mod.rs"),
     )
-    .expect("sce_codegen.rs is readable");
+    .expect("the command line's source is readable");
 
     // The writer writes what one generation contributes, which `depfile_entry`
     // computes, the exclusion with it, so both functions are read.

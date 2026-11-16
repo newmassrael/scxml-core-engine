@@ -35,28 +35,28 @@ mutation_tests -p sce-build --features cli --test conformance_suite_standalone
 # same four reported CAUGHT locally off that suffix, on a toolchain one patch
 # release apart.
 mutation_targets sce-build/src/w3c_suite.rs
-mutation_targets sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/cli/mod.rs
 
 mutation_case "the generated Rust test names this repository's crate again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        let suite = self.suite.rust_module_path();",
      "        let suite = \"sce_rust_tests\".to_string();")
 PY
 
 mutation_case "the emitted Rust suite ships no manifest" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      '(root.join("Cargo.toml"), self.cargo_manifest(standalone))',
      '(root.join("Cargo.toml.unused"), self.cargo_manifest(standalone))')
 PY
 
 mutation_case "the emitted Rust suite ships no harness" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                root.join(\"src/harness.rs\"),",
      "                root.join(\"src/harness.rs.unused\"),")
 PY
 
 mutation_case "the emitted crate root declares a module it does not carry" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'             pub mod harness;\n",',
      r'             pub mod harness_absent;\n",')
 PY
@@ -67,7 +67,7 @@ PY
 # file, which is a fact about document order rather than about this suite.
 # The Rust one is the site the neighbouring cases mutate.
 mutation_case "a single-fixture Rust suite is emitted without its module index" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        format!(\"test_{test_id}.rs\")\n    }\n\n"
      "    fn is_standalone_suite(&self) -> bool {\n        self.standalone.is_some()\n    }",
      "        format!(\"test_{test_id}.rs\")\n    }\n\n"
@@ -75,13 +75,13 @@ edit("sce-build/src/bin/sce_codegen.rs",
 PY
 
 mutation_case "the emitted Go test imports this repository's harness module" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        let harness_import = format!(\"{}/harness\", self.suite.go_module_path());",
      "        let harness_import = \"github.com/newmassrael/sce-go-tests/harness\".to_string();")
 PY
 
 mutation_case "the emitted Go module carries no checksums" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                root.join(\"go.sum\"),",
      "                root.join(\"go.sum.unused\"),")
 PY
@@ -99,7 +99,7 @@ edit("sce-build/src/w3c_suite.rs",
 PY
 
 mutation_case "the emitted Kotlin settings reach the SCE projects by name only" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'             includeBuild(\"{sce}\")\n",',
      r'             // vendored at {sce}\n",')
 PY
@@ -111,13 +111,13 @@ edit("sce-build/src/w3c_suite.rs",
 PY
 
 mutation_case "the Python wrapper computes the runtime path from its own depth" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'sys.path.insert(0, str(_HERE))\n',
      r'sys.path.insert(0, str(_HERE.parents[2] / \"runtime\"))\n')
 PY
 
 mutation_case "renaming the suite inside this repository is quietly accepted" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "            if !standalone {",
      "            if false {")
 PY

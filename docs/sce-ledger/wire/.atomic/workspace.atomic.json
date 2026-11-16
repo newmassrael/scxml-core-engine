@@ -329,11 +329,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/bin/sce_codegen.rs",
-          "symbol": "cmd_generate",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "DiagnosticCode",
           "kind": "implements"
@@ -372,6 +367,11 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "guard_static_generatable",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli/mod.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
         }
       ]
     }
@@ -385,6 +385,12 @@
       "target_kind": "section",
       "target_id": "wire-W4",
       "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the <finalize> parse whose typed ParseXmlFailed this section covers moved out of processEvent into StateMachine::applyFinalize, the preliminary step every external event gets; processEvent no longer carries the citation"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "wire-W5",
+      "reason": "the commands moved from the sce-codegen binary into the library module sce_build::cli (ADR 0097)"
     }
   ],
   "frames": {},

@@ -20,7 +20,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test an_authoring_profile_holds_a_design_to_what_its_owner_asked
-mutation_targets sce-build/src/authoring_profile.rs sce-build/src/authoring_profile/names.rs sce-build/src/unresolved_check.rs sce-build/src/open_matters.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/authoring_profile.rs sce-build/src/authoring_profile/names.rs sce-build/src/unresolved_check.rs sce-build/src/open_matters.rs sce-build/src/cli/mod.rs
 
 # A name is never found out of style: every spelling is accepted.
 mutation_case "a name is never out of its style" <<'PY'
@@ -86,7 +86,7 @@ PY
 # An event-schema document stops being reached by the names setting, so the
 # events an interface is made of are outside the profile again.
 mutation_case "an event-schema is no longer reached by the names setting" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'''                if profile.judges_forge(parsed.document.kind()) {''',
      r'''                if profile.judges_forge(parsed.document.kind()) && false {''')
 PY
@@ -111,7 +111,7 @@ PY
 # house rules and guidance alone reports one document judged, which reads as a
 # constraint held that nothing enforced.
 mutation_case "a statechart the profile asks nothing of counts as judged" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'''                if profile.judges_statecharts() {''',
      r'''                if profile.judges_statecharts() || true {''')
 PY

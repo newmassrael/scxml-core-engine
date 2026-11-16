@@ -24,11 +24,11 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test cli_acceptance_record_wire
-mutation_targets sce-build/src/acceptance_record.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/tests/cli_acceptance_record_wire.rs
 
 mutation_case "the command line drops the channel before the record is written" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    .stated_by(channel);",
      "    .stated_by(channel.filter(|_| false));")
 PY

@@ -27,7 +27,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test scenario_judge_command --test a_statechart_says_what_it_presents
-mutation_targets sce-build/src/design_surface.rs sce-build/src/scenario_judge.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/design_surface.rs sce-build/src/scenario_judge.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/src/design_surface.rs sce-build/src/scenario_judge.rs sce-build/tests/scenario_judge_command.rs sce-build/tests/a_statechart_says_what_it_presents.rs
 
 # ── What the design presents ────────────────────────────────────────
@@ -113,13 +113,13 @@ edit("sce-build/src/scenario_judge.rs",
 PY
 
 mutation_case "a trace with no surface is reported as a comparison that was made" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                \"checked\": false,",
      "                \"checked\": true,")
 PY
 
 mutation_case "the manifest never carries the surface" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        surface: report.surface.as_ref(),",
      "        surface: report.surface.as_ref().filter(|_| false),")
 PY

@@ -17,7 +17,7 @@
 //
 // The boundary is the generator's, not a naming convention: this module is
 // exactly what `generate-w3c -l kotlin` writes (`KotlinBackend::RELATIVE_ROOT`
-// in `sce-build/src/bin/sce_codegen.rs`), and nothing else is. `com.sce.generated`
+// in `sce-build/src/cli/mod.rs`), and nothing else is. `com.sce.generated`
 // in `:sce-kotlin-tests` still holds forge helpers and integration fixtures
 // under the same package root, so a pattern over directory names would have
 // split one population across two modules.

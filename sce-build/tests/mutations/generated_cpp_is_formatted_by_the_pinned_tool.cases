@@ -28,7 +28,7 @@
 
 mutation_tests -p sce-build --features cli --test generated_cpp_is_formatted_by_the_pinned_tool
 mutation_targets sce-build/src/formatter.rs
-mutation_targets sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/cli/mod.rs
 mutation_oracles sce-build/tests/generated_cpp_is_formatted_by_the_pinned_tool.rs
 
 mutation_case "an override of another major is accepted" <<'PY'
@@ -38,25 +38,25 @@ edit("sce-build/src/formatter.rs",
 PY
 
 mutation_case "a formatter that cannot serve falls back to unformatted output" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        Err(e) => cli_exit(CliError::FormatterUnavailable {\n            reason: e.to_string(),\n        }),",
      "        Err(_) => None,")
 PY
 
 mutation_case "the formatter is resolved before the document is read" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    // shaped something, which each exit below reads from `used()`.\n    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);\n",
      "    // shaped something, which each exit below reads from `used()`.\n    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);\n    cpp_formatter.get();\n")
 PY
 
 mutation_case "orchestrate writes its C++ unformatted" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {",
      "for (file_name, code) in &generated.files {")
 PY
 
 mutation_case "the manifest no longer names the formatter that shaped the run" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    report.formatter = cpp_formatter.used();\n    report\n}",
      "    report\n}")
 PY

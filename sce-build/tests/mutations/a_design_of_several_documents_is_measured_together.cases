@@ -17,7 +17,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_design_of_several_documents_is_measured_together
-mutation_targets sce-build/src/requirement_manifest.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/requirement_manifest.rs sce-build/src/cli/mod.rs
 
 # ── The documents are not read together ─────────────────────────────
 
@@ -28,7 +28,7 @@ edit("sce-build/src/requirement_manifest.rs",
 PY
 
 mutation_case "several documents are routed to the one-document path" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    if scxml.len() > 1 {\n        cmd_requirements_of_design(",
      "    if scxml.len() > 8 {\n        cmd_requirements_of_design(")
 PY
@@ -73,7 +73,7 @@ PY
 # ── The refusal stops naming what to give ───────────────────────────
 
 mutation_case "the refusal no longer says which flag to give" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                     requirement set: give `--manifest`\"",
      "                     requirement set: give one\"")
 PY

@@ -149,7 +149,7 @@ const FIXED_VOCABULARY: &[Fixed] = &[
                  reals and bools only, so the constant is never a `String`",
     },
     Fixed {
-        file: "sce-build/src/bin/sce_codegen.rs",
+        file: "sce-build/src/cli/mod.rs",
         name: "DisplayName",
         attribute: Attribute::Annotation,
         reason: "the Kotlin W3C test class's name for JUnit: a W3C test number \
@@ -161,7 +161,7 @@ const FIXED_VOCABULARY: &[Fixed] = &[
 /// writes instead: the scan reads every format string of the generator, and
 /// an annotation's spelling is shared with languages no JVM compiles.
 const NOT_KOTLIN: &[Fixed] = &[Fixed {
-    file: "sce-build/src/bin/sce_codegen.rs",
+    file: "sce-build/src/cli/mod.rs",
     name: "Test",
     attribute: Attribute::Annotation,
     reason: "a Swift Testing attribute, written by the Swift W3C test writer; \

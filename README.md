@@ -717,7 +717,8 @@ sce/
 #   sce_runtime   → + Parser, StateMachine (full interpreter)
 
 sce-build/               # Code generator (Rust + minijinja)
-├── src/bin/sce_codegen.rs  # CLI binary (generate, generate-w3c, orchestrate, check)
+├── src/cli/mod.rs          # CLI commands (generate, generate-w3c, orchestrate, check)
+├── src/bin/sce_codegen.rs  # The `sce-codegen` binary over them
 ├── src/lib.rs              # Library API (SCXML parser + model)
 ├── src/generator.rs        # Multi-language code generation engine
 └── src/filters.rs          # minijinja filters for all languages
