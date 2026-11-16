@@ -245,6 +245,7 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_zenoh_keep_alive.scxml",
         "tests/forge/resources/codec_flags_basic.scxml",
         "tests/forge/resources/codec_optional_field_attributes.scxml",
+        "tests/forge/resources/codec_vle_zint_u64.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -266,10 +267,6 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         (
             "tests/forge/resources/codec_length_ref.scxml",
             "a length the encode derives",
-        ),
-        (
-            "tests/forge/resources/codec_vle_zint_u64.scxml",
-            "a field written in turn",
         ),
     ] {
         let code = swift_of(template).expect("a codec is written");
@@ -388,7 +385,13 @@ fn a_variable_length_integer_is_read_and_written_as_a_chain() {
         code.contains("frame.value = try reader.readVle(UInt64.self)"),
         "{code}"
     );
-    assert!(code.contains("appendVle(self.value, to: &frame)"), "{code}");
+    // A number written in turn is printed from the plan (docs/adr/0081 §6): the frame grows as
+    // each field is appended, read off the source.
+    assert!(
+        code.contains("appendVle(source.value, to: &frame)"),
+        "{code}"
+    );
+    assert!(code.contains("var frame: [UInt8] = []"), "{code}");
     assert!(
         code.contains("public static let frameLength = 1"),
         "a chain takes one byte at the least: {code}"

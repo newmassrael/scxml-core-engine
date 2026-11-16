@@ -323,7 +323,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// with no copy into `{{ struct_name }}`. It refuses nothing; a bounded sink that cannot hold
     /// all of the frame answers `bufferOverflow` and holds none of it.
     public static func encodeSource<S: {{ printed.protocol }}, Sink: SceSink>(_ source: S, into sink: inout Sink{% if printed.overrides %}, overrides: Overrides = Overrides(){% endif %}) throws(CodecError) {
-        {{ "var" if printed.writes else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
+        {{ printed.frame }}
 {% for line in printed.writes %}
         {{ line }}
 {% endfor %}

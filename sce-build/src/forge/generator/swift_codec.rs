@@ -797,6 +797,37 @@ fn whole_write(
         .collect()
 }
 
+/// The statement that appends `value`, the value of the number field `f` as the encode reads it, to
+/// a frame written field by field: a variable-length integer as its chain, and a fixed field as the
+/// bytes of its carrier in its byte order, as many as the field spans where they are fewer than its
+/// carrier has. `filled` is where an embedded variant's arm fills flags of the carrier (ADR 0058):
+/// the bits of the value it keeps and the locals that hold the arm's bits, or'ed in.
+fn streamed_append(
+    l: &LangCtx,
+    f: &CodecField,
+    carrier: &Carrier,
+    value: &str,
+    default_endian: Endian,
+    filled: Option<(&str, &str)>,
+) -> String {
+    let held = carrier.to_wire(l, value);
+    if f.is_vle() {
+        return format!("appendVle({held}, to: &frame)");
+    }
+    let order = order_of(f.effective_endian(default_endian));
+    let wire = match filled {
+        Some((keep, terms)) => format!("({held} & {keep}) | {terms}"),
+        None => held,
+    };
+    match BitSpan::of(f, default_endian).filter(|s| 8 * s.bytes != carrier.width) {
+        Some(span) => format!(
+            "appendInteger({wire}, bytes: {}, to: &frame, .{order})",
+            span.bytes
+        ),
+        None => format!("appendInteger({wire}, to: &frame, .{order})"),
+    }
+}
+
 /// The refusals, at the top of an encode, of a value whose gated field and whose gate contradict each
 /// other: the field is held by the value when the gate is clear, or is not when it is set. They are
 /// made for the fields `checks` names, which are the ones whose gate the value does not carry (a flag
@@ -1522,23 +1553,14 @@ pub(super) fn render(
             // frame written field by field: the carrier of a value the field holds, with the bits a
             // parent derives in a byte of it where an embedded variant fills flags of it (ADR 0058).
             let derived = parent_tag_derived(&derivations, &f.id);
-            let append = |value: &str| {
-                let held = carrier.to_wire(&l, value);
-                if f.is_vle() {
-                    return format!("appendVle({held}, to: &frame)");
+            let filled = match (&derived["keep"], &derived["terms"]) {
+                (serde_json::Value::String(keep), serde_json::Value::String(terms)) => {
+                    Some((keep.as_str(), terms.as_str()))
                 }
-                let wire = match (&derived["keep"], &derived["terms"]) {
-                    (serde_json::Value::String(keep), serde_json::Value::String(terms)) => {
-                        format!("({held} & {keep}) | {terms}")
-                    }
-                    _ => held,
-                };
-                if let Some(bytes) = narrow_bytes {
-                    format!("appendInteger({wire}, bytes: {bytes}, to: &frame, .{order})")
-                } else {
-                    format!("appendInteger({wire}, to: &frame, .{order})")
-                }
+                _ => None,
             };
+            let append =
+                |value: &str| streamed_append(&l, f, carrier, value, m.default_endian, filled);
             // The decode of the field at its byte in a frame laid out by byte: the whole of its
             // carrier, or the bits of the word its bytes make.
             let word = positional.map(|s| {

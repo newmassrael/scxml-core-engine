@@ -12,14 +12,15 @@
 //!
 //! The printer lowers the plan's forms one at a time (docs/adr/0081 §6). A codec whose plan uses a
 //! form it does not lower yet keeps the encode of its template, and [`unlowered`] names that form,
-//! so no codec has two encodes. The forms printed are a positional frame laid out by byte, of
-//! numbers each always there (an integer, a flag set presented whole, a value of an imported enum),
+//! so no codec has two encodes. The forms printed are a positional frame laid out by byte or
+//! written in turn (a fixed number's bytes, a variable-length integer's chain), of numbers each
+//! always there (an integer, a flag set presented whole, a value of an imported enum),
 //! none derived, with no flag input and an encode that refuses nothing; a one-bit flag a parent may
 //! set in place of the one the value presents (`EncodePlan::overridable`) is a member of the
 //! codec's `Overrides`, which the encode is handed and folds into its carrier.
 
 use super::*;
-use crate::forge::encode_plan::{CodecPlan, EncodePlan, Presence, Value, Write};
+use crate::forge::encode_plan::{CodecPlan, EncodePlan, Guard, Presence, Value, Write};
 
 /// The first form of `plan` the Swift printer does not lower yet, described for a reader; `None`
 /// where it prints the codec whole.
@@ -79,6 +80,12 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
     }
     plan.program.iter().find_map(|write| match write {
         Write::Whole(_) | Write::Byte { .. } => None,
+        // A number in turn, always there: the bytes of its carrier or its chain.
+        Write::Streamed {
+            field,
+            guard: Guard::Always,
+            list: None,
+        } if matches!(field.bit_size, BitSize::Fixed { .. } | BitSize::Vle { .. }) => None,
         Write::Tail { field, .. } | Write::Streamed { field, .. } => {
             Some(format!("field '{}': a field written in turn", field.id))
         }
@@ -169,14 +176,36 @@ pub(super) fn context(
                     writes.push(piece_write(l, carrier_of(f), &read(f), at, piece));
                 }
             }
-            Write::Tail { .. } | Write::Streamed { .. } | Write::Variant => {
+            Write::Streamed { field: f, .. } => writes.push(super::streamed_append(
+                l,
+                f,
+                carrier_of(f),
+                &read(f),
+                plan.model.default_endian,
+                None,
+            )),
+            Write::Tail { .. } | Write::Variant => {
                 unreachable!("`unlowered` refuses every other write before the printer runs")
             }
         }
     }
+    // A frame laid out by byte is written into zeros of its length; one written in turn grows as
+    // each field is appended.
+    let streamed = plan
+        .program
+        .iter()
+        .any(|write| matches!(write, Write::Streamed { .. } | Write::Tail { .. }));
+    let frame = if streamed {
+        "var frame: [UInt8] = []"
+    } else if writes.is_empty() {
+        "let frame = [UInt8](repeating: 0, count: Self.frameLength)"
+    } else {
+        "var frame = [UInt8](repeating: 0, count: Self.frameLength)"
+    };
     serde_json::json!({
         "protocol": source_protocol(&plan.model.name),
         "requirements": requirements,
+        "frame": frame,
         "writes": writes,
         "overrides": overrides,
     })
