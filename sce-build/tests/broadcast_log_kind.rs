@@ -6225,7 +6225,7 @@ fn swift_generates_a_log_over_the_runtime_sized_from_its_element() {
         .map(|(_, code)| code.clone())
         .expect("the set generated the element's unit");
     assert!(
-        element.contains("public struct EventRecord: Equatable, Sendable {"),
+        element.contains("public struct EventRecord: Equatable, Sendable, EventRecordSource {"),
         "the log names the struct the codec's unit declares:\n{element}"
     );
     let code = generated_file(outputs, "EventRing.swift");

@@ -90,6 +90,19 @@ pub(crate) use python_source::content_line::source_case as python_content_line_s
 pub(crate) use rust_source::cbor::source_case as rust_cbor_source_case;
 pub(crate) use rust_source::content_line::source_case as rust_content_line_source_case;
 
+/// A byte case of the Swift conformance harness, its source a value the printed codec's
+/// initializer makes (docs/adr/0081 §5). See [`swift_codec::source_case::source_case`].
+pub(crate) use swift_codec::source_case::{
+    source_case as swift_source_case, SourceCase as SwiftSourceCase,
+};
+
+/// Whether the Swift backend prints the encode of the codec `plan` from the plan (docs/adr/0081
+/// step 5), and not from its template: the codecs whose byte cases the Swift harness runs as the
+/// value its printer presents.
+pub(crate) fn swift_codec_printed(plan: &crate::forge::encode_plan::CodecPlan<'_>) -> bool {
+    swift_codec::source::unlowered(plan).is_none()
+}
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(

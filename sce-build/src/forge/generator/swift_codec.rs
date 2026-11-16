@@ -16,6 +16,11 @@
 use super::*;
 use crate::generator::Language;
 
+/// The Swift printer of a codec's encode plan (docs/adr/0081 step 5).
+pub(super) mod source;
+/// A byte case of the Swift conformance harness, its value a printed codec's (docs/adr/0081 §5).
+pub(super) mod source_case;
+
 /// The Swift spelling of a native-width integer type, and its width in bits: the one set of types a
 /// field may have.
 fn integer(sce_type: &SceType) -> Option<(&'static str, u32)> {
@@ -699,11 +704,19 @@ fn bits_of_word(span: &BitSpan, swift_type: &str) -> String {
     }
 }
 
-/// The statement that ors the piece `piece` of the field `f` into byte `at` of the frame
+/// The statement that ors the piece `piece` of the field `f` of `holder` (the value an encode
+/// writes: `self`, or the source a printed encode is handed) into byte `at` of the frame
 /// (docs/adr/0095 §2): the value moved down to the piece's first bit and masked, narrowed to a
 /// byte where the field is wider than one, and moved up to where the piece lands in the byte.
-fn piece_write(l: &LangCtx, f: &CodecField, carrier: &Carrier, at: u32, piece: Piece) -> String {
-    let value = carrier.to_wire(l, &format!("self.{}", f.id));
+fn piece_write(
+    l: &LangCtx,
+    f: &CodecField,
+    carrier: &Carrier,
+    holder: &str,
+    at: u32,
+    piece: Piece,
+) -> String {
+    let value = carrier.to_wire(l, &format!("{holder}.{}", f.id));
     let down = if piece.from == 0 {
         value
     } else {
@@ -741,29 +754,43 @@ fn fixed_writes(
     for slot in crate::forge::bit_layout::slots(&m.fields, m.default_endian) {
         match slot {
             Slot::Whole(f) => {
-                let span = BitSpan::of(f, m.default_endian).expect("a fixed field");
-                let carrier = carrier_of(f);
-                if whole_of_its_type(&span, carrier.width) {
-                    let order = order_of(span.endian);
-                    lines.push(format!(
-                        "storeInteger({}, into: &frame, at: {}, .{order})",
-                        carrier.to_wire(l, &format!("self.{}", f.id)),
-                        span.byte
-                    ));
-                } else {
-                    for at in span.byte..span.end() {
-                        lines.extend(span.piece(at).map(|p| piece_write(l, f, carrier, at, p)));
-                    }
-                }
+                lines.extend(whole_write(l, f, carrier_of(f), "self", m.default_endian));
             }
             Slot::Byte { at, pieces } => {
                 for (f, piece) in pieces {
-                    lines.push(piece_write(l, f, carrier_of(f), at, piece));
+                    lines.push(piece_write(l, f, carrier_of(f), "self", at, piece));
                 }
             }
         }
     }
     lines
+}
+
+/// The statements that write the field `f` of `holder`, a fixed field that shares none of its
+/// bytes, into a frame of zeros (docs/adr/0095 §2): stored as its bytes in its byte order where it
+/// is the whole of its carrier, and else by the piece it holds in each of its bytes.
+fn whole_write(
+    l: &LangCtx,
+    f: &CodecField,
+    carrier: &Carrier,
+    holder: &str,
+    default_endian: Endian,
+) -> Vec<String> {
+    let span = BitSpan::of(f, default_endian).expect("a fixed field");
+    if whole_of_its_type(&span, carrier.width) {
+        return vec![format!(
+            "storeInteger({}, into: &frame, at: {}, .{})",
+            carrier.to_wire(l, &format!("{holder}.{}", f.id)),
+            span.byte,
+            order_of(span.endian)
+        )];
+    }
+    (span.byte..span.end())
+        .filter_map(|at| {
+            span.piece(at)
+                .map(|p| piece_write(l, f, carrier, holder, at, p))
+        })
+        .collect()
 }
 
 /// The refusals, at the top of an encode, of a value whose gated field and whose gate contradict each
@@ -1628,5 +1655,13 @@ pub(super) fn render(
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.
     ctx.insert("sequential".into(), sequential.into());
+    // The encode printed from the codec's plan where the Swift printer lowers every form the plan
+    // holds (docs/adr/0081 step 5), with the protocol the value presents its elements through; the
+    // template's own encode where it does not yet (§6), never both.
+    let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
+    let printed = source::unlowered_positional(&plan)
+        .is_none()
+        .then(|| source::context(&l, &plan, &carriers));
+    ctx.insert("printed".into(), printed.into());
     l.render(env, "codec", ctx)
 }

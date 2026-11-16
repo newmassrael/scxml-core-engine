@@ -2167,3 +2167,16 @@ refused by name.
   entries. The flag bound to every entry is derived from that list's start: the value's own bit there is not
   written.
 
+## A Swift codec's encode is printed from its plan, one form at a time (docs/adr/0081 step 5)
+
+Landing: the commit that adds this section, and each later one that names a form below.
+
+- A Swift codec the printer prints declares `public protocol {Codec}Source`, one read-only property per element
+  the value presents, and `{Codec}.encodeSource(_:into:)` over any type that conforms. The generated struct conforms,
+  and its `encode(into:)` is `encodeSource` of itself, so a call site that encodes the struct is unchanged. A host
+  type that declares the properties is encoded with no copy into the struct. A type of the consumer's own module
+  named `{Codec}Source` is renamed.
+- The forms printed so far: a frame laid out by byte of numbers each always there (an integer, a flag set presented
+  whole, a value of an imported enum), none derived, with no flag input and no one-bit flag a parent sets. A codec
+  that holds another form keeps its template's encode, unchanged, until a later landing names it here.
+

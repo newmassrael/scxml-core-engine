@@ -174,8 +174,22 @@ fn a_codec_of_integers_is_a_struct_with_a_decode_and_an_encode() {
     let code = swift_of("tests/forge/resources/codec_simple_frame.scxml")
         .expect("a codec of integers is written");
     assert!(
-        code.contains("public struct CodecSimpleFrame: Equatable, Sendable {"),
-        "{code}"
+        code.contains(
+            "public struct CodecSimpleFrame: Equatable, Sendable, CodecSimpleFrameSource {"
+        ),
+        "the value presents its elements through the protocol its encode reads: {code}"
+    );
+    assert!(
+        code.contains("public protocol CodecSimpleFrameSource {\n    var msgId: UInt8 { get }\n    var length: UInt8 { get }\n    var payload: UInt16 { get }\n}"),
+        "one read-only property per element, in the document's order: {code}"
+    );
+    assert!(
+        code.contains("public static func encodeSource<S: CodecSimpleFrameSource, Sink: SceSink>(_ source: S, into sink: inout Sink) throws(CodecError) {"),
+        "the encode is printed over any source of the elements: {code}"
+    );
+    assert!(
+        code.contains("        try Self.encodeSource(self, into: &sink)\n"),
+        "the value's own encode is that of itself: {code}"
     );
     assert!(code.contains("public static let frameLength = 4"), "{code}");
     assert!(code.contains("public var msgId: UInt8"), "{code}");
@@ -196,9 +210,53 @@ fn a_codec_of_integers_is_a_struct_with_a_decode_and_an_encode() {
         "a field is read at its byte offset in the document's byte order: {code}"
     );
     assert!(
-        code.contains("storeInteger(self.payload, into: &frame, at: 2, .big)"),
+        code.contains("storeInteger(source.payload, into: &frame, at: 2, .big)"),
         "and written at the same place: {code}"
     );
+}
+
+#[test]
+fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else_by_its_template() {
+    // docs/adr/0081 §6: the printer lowers the plan's forms one at a time, and a codec whose plan
+    // holds a form it does not lower keeps its template's encode whole.
+    for printed in [
+        "tests/forge/resources/codec_simple_frame.scxml",
+        "tests/forge/resources/codec_subbyte.scxml",
+        "tests/forge/resources/codec_enum_fields.scxml",
+        "tests/forge/resources/codec_zenoh_keep_alive.scxml",
+    ] {
+        let code = swift_of(printed).expect("a codec is written");
+        assert!(
+            code.contains("public static func encodeSource<S: ")
+                && code.contains("public protocol "),
+            "{printed} is printed from its plan: {code}"
+        );
+        assert_eq!(
+            code.matches("public func encode<Sink: SceSink>").count(),
+            1,
+            "{printed} has one encode: {code}"
+        );
+    }
+    for (template, why) in [
+        (
+            "tests/forge/resources/codec_flags_basic.scxml",
+            "a one-bit flag a parent may set",
+        ),
+        (
+            "tests/forge/resources/codec_length_ref.scxml",
+            "a length the encode derives",
+        ),
+        (
+            "tests/forge/resources/codec_vle_zint_u64.scxml",
+            "a field written in turn",
+        ),
+    ] {
+        let code = swift_of(template).expect("a codec is written");
+        assert!(
+            !code.contains("encodeSource"),
+            "{template} keeps its template's encode until the printer lowers {why}: {code}"
+        );
+    }
 }
 
 #[test]
@@ -206,7 +264,9 @@ fn a_field_is_read_and_written_in_the_documents_byte_order() {
     let code = swift_of("tests/forge/resources/codec_little_endian.scxml")
         .expect("a codec of integers is written");
     assert!(
-        code.contains("public struct CodecLittleEndian: Equatable, Sendable {"),
+        code.contains(
+            "public struct CodecLittleEndian: Equatable, Sendable, CodecLittleEndianSource {"
+        ),
         "{code}"
     );
     assert!(
@@ -214,7 +274,7 @@ fn a_field_is_read_and_written_in_the_documents_byte_order() {
         "{code}"
     );
     assert!(
-        code.contains("storeInteger(self.value, into: &frame, at: 1, .little)"),
+        code.contains("storeInteger(source.value, into: &frame, at: 1, .little)"),
         "{code}"
     );
     assert!(code.contains("public static let frameLength = 4"), "{code}");
@@ -252,9 +312,9 @@ fn a_frame_is_written_in_one_write_so_a_bounded_sink_holds_all_of_it_or_none() {
 }
 
 #[test]
-fn an_encode_reads_a_field_through_self_so_a_local_cannot_hide_it() {
-    // The encode lays the frame out in a local named `frame` and writes to a parameter named
-    // `sink`; a field of either name, read bare, would be read as the local or the parameter.
+fn an_encode_reads_a_field_through_its_source_so_a_local_cannot_hide_it() {
+    // The printed encode lays the frame out in a local named `frame` and writes to a parameter
+    // named `sink`; a field of either name, read bare, would be read as the local or the parameter.
     let code = swift_of_datamodel(
         r#"<sce:field id="frame" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
            <sce:field id="sink" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
@@ -262,14 +322,17 @@ fn an_encode_reads_a_field_through_self_so_a_local_cannot_hide_it() {
     )
     .expect("fields named for the encode's own names are written");
     assert!(
-        code.contains("storeInteger(self.frame, into: &frame, at: 0, .big)"),
+        code.contains("storeInteger(source.frame, into: &frame, at: 0, .big)"),
         "{code}"
     );
     assert!(
-        code.contains("storeInteger(self.sink, into: &frame, at: 1, .big)"),
+        code.contains("storeInteger(source.sink, into: &frame, at: 1, .big)"),
         "{code}"
     );
-    assert!(code.contains("frame[2] |= (self.low & 0xF) << 0"), "{code}");
+    assert!(
+        code.contains("frame[2] |= (source.low & 0xF) << 0"),
+        "{code}"
+    );
 }
 
 #[test]
@@ -657,7 +720,7 @@ fn a_field_of_bits_inside_a_byte_is_cut_and_shifted_into_it() {
         "{code}"
     );
     assert!(
-        code.contains("frame[0] |= (self.channel & 0x7) << 2"),
+        code.contains("frame[0] |= (source.channel & 0x7) << 2"),
         "an encode cuts the value to its width and ors it into the byte: {code}"
     );
     assert!(
@@ -707,11 +770,11 @@ fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
             "a word wider than the field's type is narrowed to it",
         ),
         (
-            "frame[0] |= ((self.past >> 2) & 0x3) << 0",
+            "frame[0] |= ((source.past >> 2) & 0x3) << 0",
             "the high byte of a big-endian word holds the high bits",
         ),
         (
-            "frame[1] |= (self.past & 0x3) << 6",
+            "frame[1] |= (source.past & 0x3) << 6",
             "and the low byte the low bits",
         ),
         (
@@ -719,7 +782,7 @@ fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
             "a word narrower than the field's type is widened to it",
         ),
         (
-            "frame[2] |= UInt8(truncatingIfNeeded: self.wide & 0xF) << 0",
+            "frame[2] |= UInt8(truncatingIfNeeded: source.wide & 0xF) << 0",
             "a piece of a field wider than a byte is narrowed to one",
         ),
         (
@@ -727,11 +790,11 @@ fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
             "a word of three bytes is read by the count of its bytes",
         ),
         (
-            "frame[3] |= UInt8(truncatingIfNeeded: (self.three >> 12) & 0xFF) << 0",
+            "frame[3] |= UInt8(truncatingIfNeeded: (source.three >> 12) & 0xFF) << 0",
             "each byte of the word holds its piece",
         ),
         (
-            "frame[5] |= UInt8(truncatingIfNeeded: self.three & 0xF) << 4",
+            "frame[5] |= UInt8(truncatingIfNeeded: source.three & 0xF) << 4",
             "the low bits of the word are in its last byte",
         ),
         (
@@ -739,7 +802,7 @@ fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
             "whole bytes fewer than the type has are a word of their own",
         ),
         (
-            "frame[6] |= UInt8(truncatingIfNeeded: self.low & 0xFF) << 0",
+            "frame[6] |= UInt8(truncatingIfNeeded: source.low & 0xFF) << 0",
             "and are written by their pieces, not as the type's bytes",
         ),
         (
@@ -784,11 +847,11 @@ fn a_word_in_the_native_byte_order_is_read_and_written_as_a_big_endian_one() {
             "the decode reads the word as big-endian",
         ),
         (
-            "frame[0] |= UInt8(truncatingIfNeeded: (self.past >> 4) & 0xF) << 0",
+            "frame[0] |= UInt8(truncatingIfNeeded: (source.past >> 4) & 0xF) << 0",
             "the first byte of the word is its most significant",
         ),
         (
-            "frame[1] |= UInt8(truncatingIfNeeded: self.past & 0xF) << 4",
+            "frame[1] |= UInt8(truncatingIfNeeded: source.past & 0xF) << 4",
             "and the second its least",
         ),
     ] {
@@ -1398,11 +1461,11 @@ fn a_field_of_an_enum_is_carried_as_the_number_its_variants_declare() {
             "an open enum holds every number its carrier does",
         ),
         (
-            "storeInteger(EnumSessionState.toUnderlying(self.state), into: &frame, at: 0, .big)",
+            "storeInteger(EnumSessionState.toUnderlying(source.state), into: &frame, at: 0, .big)",
             "an encode writes the number the variant declares",
         ),
         (
-            "storeInteger(EnumUdsNrc.toUnderlying(self.code), into: &frame, at: 1, .big)",
+            "storeInteger(EnumUdsNrc.toUnderlying(source.code), into: &frame, at: 1, .big)",
             "an open enum's value is written as its number",
         ),
         (

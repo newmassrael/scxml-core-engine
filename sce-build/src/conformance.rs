@@ -3755,6 +3755,9 @@ fn fold_source_cases(
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
     let (rows, printed) = codec_case_rows(fixture, sources, "sources", &where_)?;
+    if language == Language::Swift && !swift_prints(fixture, resource_dir, &where_)? {
+        return Ok(false);
+    }
     let Some(printer) = CasePrinter::of(printed, language, "sources", &where_)? else {
         return Ok(false);
     };
@@ -3824,6 +3827,9 @@ fn fold_refused_cases(
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
     let (rows, printed) = codec_case_rows(fixture, refused, "refused", &where_)?;
+    if language == Language::Swift && !swift_prints(fixture, resource_dir, &where_)? {
+        return Ok(false);
+    }
     let Some(printer) = CasePrinter::of(printed, language, "refused", &where_)? else {
         return Ok(false);
     };
@@ -3899,15 +3905,35 @@ fn codec_case_rows<'r>(
     Ok((rows.as_slice(), *printed))
 }
 
+/// Whether the Swift backend prints the encode of the codec `fixture` from its plan
+/// (docs/adr/0081 step 5), read from the codec's plan where the generator reads it: the codecs
+/// whose byte cases the Swift harness runs. A codec it does not print yet keeps the encode of its
+/// template, whose value states what the plan derives, and runs its `cases` as before (§5).
+fn swift_prints(fixture: &Fixture, resource_dir: &Path, where_: &str) -> Result<bool, String> {
+    let document = fixture.document_path(resource_dir);
+    let include = [resource_dir.to_path_buf()];
+    crate::encode_plan_file_with_imports(
+        &document,
+        &include,
+        &crate::ForgeCompileOptions::default(),
+        |plan, _| crate::forge::generator::swift_codec_printed(plan),
+    )
+    .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
+    .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))
+}
+
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
 /// whose value is `{Codec}Parts` (docs/adr/0058 §4), the C++ one, whose value
-/// its constructor makes (docs/adr/0081 step 4), or the Python one, whose value
-/// its dataclass's constructor makes.
+/// its constructor makes (docs/adr/0081 step 4), the Python one, whose value
+/// its dataclass's constructor makes, or the Swift one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CasePrinter {
     Rust,
     Cpp,
     Python,
+    /// The Swift one, whose value its initializer makes (docs/adr/0081 step 5), for a codec the
+    /// Swift printer prints ([`swift_prints`]).
+    Swift,
 }
 
 impl CasePrinter {
@@ -3918,7 +3944,9 @@ impl CasePrinter {
     /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
     /// constructor makes from the case. Python prints a codec one landing at a
     /// time (§6): a codec it prints runs its cases as a value of its source,
-    /// and one it does not runs its `cases` on the template's encode.
+    /// and one it does not runs its `cases` on the template's encode. Swift
+    /// prints one form at a time the same way (step 5), and a fold asks only
+    /// for a codec it prints.
     fn of(
         printed: bool,
         language: Language,
@@ -3936,12 +3964,12 @@ impl CasePrinter {
                 ))
             }
             Language::Python if printed => Some(CasePrinter::Python),
+            // The Swift printer prints a codec's encode one form at a time (docs/adr/0081 §6):
+            // the fold of a codec it does not print yet has been left out before this is asked
+            // ([`swift_prints`]).
+            Language::Swift => Some(CasePrinter::Swift),
             // Their encodes do not print the plan: they run the `cases`.
-            Language::Kotlin
-            | Language::Go
-            | Language::Python
-            | Language::C11
-            | Language::Swift => None,
+            Language::Kotlin | Language::Go | Language::Python | Language::C11 => None,
         })
     }
 
@@ -3951,6 +3979,7 @@ impl CasePrinter {
             CasePrinter::Rust => Language::Rust,
             CasePrinter::Cpp => Language::Cpp,
             CasePrinter::Python => Language::Python,
+            CasePrinter::Swift => Language::Swift,
         }
     }
 }
@@ -3990,7 +4019,7 @@ impl PrintedCase {
                 note: crate::filters::escape_cpp(note.to_string()),
                 ..self
             },
-            CasePrinter::Rust | CasePrinter::Python => PrintedCase {
+            CasePrinter::Rust | CasePrinter::Python | CasePrinter::Swift => PrintedCase {
                 note: note.to_string(),
                 ..self
             },
@@ -4038,6 +4067,19 @@ impl From<crate::forge::generator::PythonSourceCase> for PrintedCase {
     }
 }
 
+impl From<crate::forge::generator::SwiftSourceCase> for PrintedCase {
+    fn from(case: crate::forge::generator::SwiftSourceCase) -> Self {
+        PrintedCase {
+            bindings: case.bindings,
+            literal: case.literal,
+            checks: case.checks,
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
+            note: String::new(),
+        }
+    }
+}
+
 /// Each row of a codec fixture's byte cases under `key`, its `source` made into
 /// the value `printer` spells (after the bindings it reads, with its checks and
 /// inputs), read from the codec's plan, and handed with its row and its place
@@ -4071,7 +4113,7 @@ fn fold_case_rows(
                 module: format!("{HARNESS_FIXTURES}::{}", fixture.name),
                 type_name: type_name.clone(),
             };
-            let cpp_path = crate::forge::generator::CppCodecPath::new(type_name);
+            let cpp_path = crate::forge::generator::CppCodecPath::new(type_name.clone());
             let python_path = crate::forge::generator::PythonCodecPath::new(&fixture.name);
             rows.iter()
                 .enumerate()
@@ -4121,6 +4163,12 @@ fn fold_case_rows(
                                     )
                                     .map_err(|e| format!("{at}: {e}"))?,
                                 ),
+                                CasePrinter::Swift => PrintedCase::from(
+                                    crate::forge::generator::swift_source_case(
+                                        plan, &type_name, source, inputs, tag, &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
                             }
                         }
                         // A map and a component take no flag input and no
@@ -4155,6 +4203,15 @@ fn fold_case_rows(
                                 )
                                 .map_err(|e| format!("{at}: {e}"))?,
                             ),
+                            // The Swift printer prints no map
+                            // (`swift_codec::source::unlowered`), so no fold
+                            // of one asks it.
+                            CasePrinter::Swift => {
+                                return Err(format!(
+                                    "{at}: the Swift printer prints no CBOR map, so no \
+                                     value of it is made from a case"
+                                ))
+                            }
                         },
                         CodecPlan::ContentLine(plan) => match printer {
                             CasePrinter::Cpp => PrintedCase::from(
@@ -4177,6 +4234,13 @@ fn fold_case_rows(
                                 )
                                 .map_err(|e| format!("{at}: {e}"))?,
                             ),
+                            // The Swift printer prints no component either.
+                            CasePrinter::Swift => {
+                                return Err(format!(
+                                    "{at}: the Swift printer prints no content-line \
+                                     component, so no value of it is made from a case"
+                                ))
+                            }
                         },
                     };
                     fold_row(codec_plan.totality(), &at, row, case.noted(printer, note))
@@ -5699,6 +5763,67 @@ mod tests {
         let refused = folded_source("codec_cbor_map", handed, Language::Python)
             .expect_err("a map takes no flag input");
         assert!(refused.contains("takes no 'inputs'"), "{refused}");
+    }
+
+    /// The Swift harness runs the byte cases of a codec the Swift printer prints from its plan,
+    /// each a value the printed type's initializer makes, and is handed none of a codec it does not
+    /// print yet, which runs its `cases` on the template's encode (docs/adr/0081 §6).
+    #[test]
+    fn a_source_case_reaches_the_swift_harness_where_its_printer_prints_the_codec() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let reference: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&reference_path).expect("the reference reads"),
+        )
+        .expect("the reference parses");
+        let fixture = |name: &str| {
+            manifest
+                .fixtures
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap_or_else(|| panic!("the catalog holds {name}"))
+        };
+        let printed = fixture("codec_simple_frame");
+        let mut value = serde_json::to_value(printed).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            printed,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a frame of integers");
+        assert!(folded, "the sources of a printed codec are folded");
+        let first = &value["sources"][0];
+        assert_eq!(
+            first["literal"],
+            serde_json::json!("CodecSimpleFrame(msgId: 0, length: 0, payload: 0)")
+        );
+        assert_eq!(
+            first["checks"][2]["holds"],
+            serde_json::json!("decoded.payload == value.payload")
+        );
+        // A one-bit flag a parent may set is a form the printer does not lower yet.
+        let template = fixture("codec_flags_basic");
+        let mut value = serde_json::to_value(template).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            template,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("a codec the Swift printer does not print is handed nothing");
+        assert!(
+            !folded && value.get("sources").is_none(),
+            "a codec on the template's encode runs its cases"
+        );
     }
 
     /// A refused case (docs/adr/0081 §5) reaches the Rust and the C++ harness

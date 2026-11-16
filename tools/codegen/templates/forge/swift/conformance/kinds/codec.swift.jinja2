@@ -54,6 +54,34 @@
     }
 {% endif %}
 
+{# Byte cases stated as the codec's interface presents the value (docs/adr/0081 §5), folded only for
+   a codec the Swift printer prints from its plan: each `source` is a value its initializer makes,
+   written by the case printer from the codec's plan, and its bytes were computed by an independent
+   model. The value is encoded through `encodeSource` and compared with the bytes (law 4 of
+   docs/adr/0058 §5), and the bytes are decoded and what the decode presents compared with the value,
+   element by element (law 1). Independent of `oracle_eligible`, which speaks of the catalog's fields. #}
+{% for s in f.sources %}
+    do {
+{% for b in s.bindings %}
+        {{ b }}
+{% endfor %}
+        let value = {{ s.literal }}
+        var sink = BytesSink()
+        try {{ f.name | to_pascal_case }}.encodeSource(value, into: &sink{% for v in s.encode_inputs %}, {{ v }}{% endfor %})
+        let expected: [UInt8] = [{{ s.encoded | join(", ") }}]
+        #expect(sink.bytes == expected, "{{ f.name }} source {{ loop.index0 }}: {{ s.note }}")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try {{ f.name | to_pascal_case }}.decode(&cursor{% for v in s.inputs %}, {{ v }}{% endfor %})
+        #expect(cursor.remaining == 0, "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread")
+{% for c in s.checks %}
+        #expect({{ c.holds }}, "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}")
+{% endfor %}
+{% if not s.checks %}
+        _ = decoded
+{% endif %}
+    }
+{% endfor %}
+
 {# Decode-rejection vectors (RFC synth-5-B): wire this codec MUST refuse, each paired with the failure
    it must refuse with. Independent of `oracle_eligible`, since a vector carries no field values. The
    decode throws the runtime's typed `CodecError` (docs/adr/0099: a refusal is not a value), so the
