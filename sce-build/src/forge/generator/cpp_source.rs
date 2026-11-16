@@ -37,11 +37,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 
 /// Every form of `plan` the C++ printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole. They are a
-/// number a C++ value has no type for yet (a float or a bool), a list a group
-/// holds always there held to a law, sharing its count with a list a gate
-/// decides ([`grouped_law_forms`]), a chain of slots whose entries are held to an
-/// input, which the Rust printer does not write either, and a codec held that
-/// is refused for one of these.
+/// number a C++ value has no type for yet (a float or a bool), a chain of slots
+/// whose entries are held to an input, which the Rust printer does not write
+/// either, and a codec held that is refused for one of these.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
@@ -108,10 +106,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // bound to every entry from the start of the list the arm the value holds
     // keeps, the value says an input of the codec's own bound to every entry
     // by that start, read off the arm, and the decode holds the list it read
-    // to the law from the start the frame gave, before it makes the arm; a
-    // list a gate decides that shares its count with another is held so in
-    // their `Aligned` ([`grouped_law_forms`] names the list it does not hold
-    // to a law there).
+    // to the law from the start the frame gave, before it makes the arm. Two
+    // lists of one count are held so in their `Aligned`, which counts a
+    // `Lawful` as the list it holds: the one a gate decides, and the one always
+    // there, which every arm holds and whose start derives its flag whichever
+    // arm the value holds.
     // A float and a bool have no C++ type, as an element of one has not.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
@@ -133,9 +132,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 Value::Bytes(_) | Value::Text(_) => {}
                 Value::Body { .. } | Value::List { .. } => {
                     forms.extend(held_codec_forms(imports, id, &value));
-                    if matches!(&value, Value::List { law, .. } if !law.is_none()) {
-                        forms.extend(grouped_law_forms(group, id));
-                    }
                 }
                 Value::Scalar(t) => forms.push(untyped_scalar(id, t)),
             }
@@ -355,34 +351,6 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
             }
         }
         Value::Scalar(_) | Value::Bytes(_) | Value::Text(_) => {}
-    }
-    forms
-}
-
-/// What of `id`, a list `group` holds whose entries say the inputs it hands
-/// them, the printer does not print (docs/adr/0065 §6 R8).
-///
-/// Each arm that holds such a list holds it as the value holds one alone, a
-/// `Lawful` of its law: a flag of the codec's own bound to every entry is
-/// derived from the start of the list the arm the value holds keeps, and is
-/// the bit the value presents where it holds another arm or none; an input of
-/// the codec's own is said by that start, read off the arm the value holds
-/// ([`said_input`]), and by nothing where it holds another arm or none; an
-/// input a chain supplies from the entry before starts fixed. The list a gate
-/// decides that shares its count with a list always there (R5) is held so too,
-/// in the one `Aligned` of the two the arm that holds both holds, which counts
-/// a `Lawful` as the list it holds. The list always there of such two is not
-/// printed held to a law: it is in every arm of the group, a shape no document
-/// uses and no case states (docs/adr/0081 §5), and the Rust printer, whose
-/// encode reads the start of a list no gate decides as always there while the
-/// group binds it as an `Option`, does not write it either.
-fn grouped_law_forms(group: &GateGroup, id: &str) -> Vec<String> {
-    let mut forms = Vec::new();
-    if group.aligned.as_ref().is_some_and(|(first, _)| first == id) {
-        forms.push(format!(
-            "field '{id}': a list always there held to the law its entries say their inputs \
-             by, sharing its count with a list a gate decides, has no C++ lowering"
-        ));
     }
     forms
 }
@@ -5420,6 +5388,42 @@ mod tests {
             &code,
             "CodecRepeatFlagAlignedGroupWeightsLaw>>::make(*_b_links, *_b_weights);\n",
         );
+    }
+
+    /// A list always there that shares its count with a list a gate decides,
+    /// and whose entries say the flag it hands them, is held to its law in
+    /// every arm: as the first list of the `Aligned` the arm where the gate
+    /// holds holds, and alone in the other. The flag is the start of the list
+    /// the encode kept off whichever arm the value holds, and the decode holds
+    /// the list it read to the law from the flag the frame gave before it
+    /// pairs the two.
+    #[test]
+    fn a_list_always_there_held_to_its_law_is_paired_with_a_gated_list() {
+        let stem = "codec_repeat_flag_aligned_always";
+        let code = cpp_of(stem);
+        let law = "using CodecRepeatFlagAlignedAlwaysLinksLaw = ";
+        let pair = "CodecRepeatFlagAlignedAlwaysLinksLaw>, ::SCE::Forge::Bounded<std::vector<";
+        holds(stem, &code, law);
+        holds(stem, &code, pair);
+        holds(stem, &code, " links_weights_{};\n");
+        assert!(
+            code.find(law) < code.find(pair),
+            "{stem}: the law is defined before the arm that holds the pair:\n{code}"
+        );
+        holds(
+            stem,
+            &code,
+            "        if (_r_links.has_value()) {\n\
+             \x20           _f_head = (_f_head & ~0x1ull) | \
+             static_cast<std::uint64_t>(static_cast<std::size_t>((*_r_links).start()));\n\
+             \x20       }\n",
+        );
+        holds(
+            stem,
+            &code,
+            "CodecRepeatFlagAlignedAlwaysLinksLaw>::make((((head >> 0) & 0x1) != 0), *_l_links);\n",
+        );
+        holds(stem, &code, "::make(*_b_links, *_b_weights);\n");
     }
 
     /// A gate on a chain's membership that no group holds is tested on the

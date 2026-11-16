@@ -105,6 +105,7 @@ const PRINTED: &[&str] = &[
     "codec_quantity_temperature",
     "codec_repeat_basic",
     "codec_repeat_elem",
+    "codec_repeat_flag_aligned_always",
     "codec_repeat_flag_aligned_group",
     "codec_repeat_flag_carrier",
     "codec_repeat_flag_forward_group",
@@ -586,37 +587,31 @@ fn a_list_a_gate_decides_held_to_a_law_that_shares_its_count_is_printed() {
     assert_printed(&holder);
 }
 
-/// A list always there, held to a law, that shares its count with a list a
-/// gate decides is refused by the list's field: it is in every arm of the
-/// group, a shape no document uses and no case states (docs/adr/0081 §5).
+/// A codec that holds a list always there, held to a law, that shares its
+/// count with a list a gate decides is printed whole: the form is its own
+/// resource (`codec_repeat_flag_aligned_always`, pinned in [`PRINTED`]), and a
+/// codec that embeds it holds no refused codec.
 #[test]
-fn a_list_always_there_held_to_a_law_that_shares_its_count_is_refused() {
+fn a_codec_holding_a_list_always_there_held_to_a_law_beside_a_gated_one_is_printed() {
     let dir = tempfile::tempdir().expect("tempdir");
-    copy_resources(dir.path(), &["codec_chain_flag_entry", "codec_repeat_elem"]);
+    copy_resources(
+        dir.path(),
+        &[
+            "codec_chain_flag_entry",
+            "codec_repeat_elem",
+            "codec_repeat_flag_aligned_always",
+        ],
+    );
     let holder = dir.path().join("holder.scxml");
     std::fs::write(
         &holder,
         codec_document(
             "holder",
-            r#"<sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
-  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
-    <sce:flag-bind input="wide" source="head.W"/>
-  </sce:import>"#,
-            r#"<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="W" bit="0"/>
-      <sce:flag name="H" bit="1"/>
-    </sce:flags>
-    <sce:field id="links_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
-    <sce:repeat id="links" type="codec_chain_flag_entry" sce:byte="2"
-                count="links_len" max-count="4"/>
-    <sce:repeat id="weights" type="codec_repeat_elem" sce:byte="3"
-                count="links_len" max-count="4" sce:present-if="head.H"/>"#,
+            r#"<sce:import src="codec_repeat_flag_aligned_always.scxml" kind="codec" as="codec_repeat_flag_aligned_always"/>"#,
+            r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="inner" type="codec_repeat_flag_aligned_always" sce:byte="1"/>"#,
         ),
     )
     .expect("write the holding codec");
-    assert_refused_by(
-        &holder,
-        "codec 'holder': field 'links': a list always there held to the law its entries say \
-         their inputs by, sharing its count with a list a gate decides, has no C++ lowering",
-    );
+    assert_printed(&holder);
 }
