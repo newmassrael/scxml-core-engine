@@ -83,7 +83,7 @@ static void a_length_ref_payload_above_its_bound_is_refused(void) {
 
     memset(&v, 0, sizeof v);
     v.msg_id = 3;
-    v.len = (uint8_t)sizeof v.payload;
+    /* The length is no member: the encode derives it from the payload (docs/adr/0081 §3). */
     memset(v.payload, 0x24, sizeof v.payload);
     v.payload_len = sizeof v.payload;
     memset(buf, CANARY, sizeof buf);
