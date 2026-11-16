@@ -1587,15 +1587,13 @@ mod tests {
         );
     }
 
-    /// A backend that makes no machine's value from a unit's (Kotlin, whose
-    /// spelling answers none of the walk's reads of a unit) refuses the walk
-    /// by name, at the first field it would read.
+    /// A spelling that makes no machine's value from a unit's (the ECMAScript
+    /// one, which holds no unit of a record and answers none of the walk's
+    /// reads of one) refuses the walk by name, at the first field it would
+    /// read.
     #[test]
     fn a_backend_that_makes_no_value_from_a_units_refuses_by_name() {
-        let kotlin = crate::forge::composed_lowering::KotlinComposed {
-            machine: "M",
-            carrier: crate::forge::composed_lowering::KotlinCarrier::Json,
-        };
+        let js = crate::forge::composed_lowering::JsComposed;
         let held = held();
         let batch = held.record(None, "Batch").expect("the record");
         assert_eq!(
@@ -1604,7 +1602,7 @@ mod tests {
                 &held,
                 &enums(),
                 &BTreeMap::new(),
-                &kotlin,
+                &js,
                 &Held::reference("sce_value"),
             ),
             Err(
