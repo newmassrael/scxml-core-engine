@@ -18,7 +18,7 @@ use super::super::rust_source::{
     byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
 };
 use super::super::*;
-use crate::forge::encode_plan::{EncodePlan, Presence, Value};
+use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// The name the harness gives the value a case makes.
 const VALUE: &str = "value";
@@ -96,9 +96,12 @@ fn members(
         let json = object
             .get(declared)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
-        // One a gate decides is held in the optional value of what it holds:
-        // absent as the zeroed value is, or present with its value set.
-        let gated = element.presence == Presence::Gated;
+        // One a gate decides, and a number the value states while its content
+        // is absent, is held in the optional value of what it holds: absent as
+        // the zeroed value is, or present with its value set. A decode answers
+        // a stated number present exactly where the content is absent, as
+        // every case states it.
+        let gated = element.presence.optional();
         if json.is_null() {
             if !gated {
                 return Err(format!(
