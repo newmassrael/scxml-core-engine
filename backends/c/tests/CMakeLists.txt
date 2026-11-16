@@ -4754,15 +4754,17 @@ set_tests_properties(c11_integration_a_test_suite_runs_through_its_runner PROPER
 # (generated above for the templates) and form_extras, the enum it holds that
 # nothing above generates, the listener's machine and the test case; the record
 # order_taken holds beside its lines is generated above too. The port type
-# writes no file. The Rust twin's configuration takes order_placed in
-# order_taken's place; C11 reads and writes order_placed's union through the
-# corpus's orders_configuration, whose traces orders_suite replays.
+# writes no file. The Rust twin's configuration, forms_configuration, takes
+# order_placed in order_taken's place, and is generated after it with its
+# listener's machine and its test case, so its header's reader and writer of
+# every case of order_placed's union are compiled; order_placed, the union, its
+# tag's enum and its cases' records are generated above.
 set(_TF_FIXTURE_DIR "${_TP_FIXTURE_DIR}/trace_forms")
 sce_c_integration_generation(_TF_shape_kind_open "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/union/shape_kind_open.scxml")
 set(_TF_HEADERS ${_TP_HEADERS} ${_TF_shape_kind_open_HEADERS})
 set(_TF_SOURCES "")
 foreach(_TF_DOCUMENT order_taken form_extras unionless_forms_listener unionless_forms_configuration
-                     replays_every_unionless_form)
+                     replays_every_unionless_form forms_listener forms_configuration replays_every_form)
     sce_c_integration_generation(_TF_${_TF_DOCUMENT} "${_TF_FIXTURE_DIR}/${_TF_DOCUMENT}.scxml"
         INPUT_ROOT "${_TF_FIXTURE_DIR}")
     list(APPEND _TF_HEADERS ${_TF_${_TF_DOCUMENT}_HEADERS})

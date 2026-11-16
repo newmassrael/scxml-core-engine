@@ -14,12 +14,17 @@
 //
 // The twin of tests/integration/ARecordReadsBackTheFormItWritesTest.cpp, and
 // through it of backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs,
-// with the same values and the same refusals, but for the union the Rust
-// configuration's order_placed holds, which C11 does not lower. A value written
-// by `_canonical_<record>` and read back by `_read_<record>` is the value it
-// was, through the canonical text; each malformed spelling of a form is
-// refused, naming where it stands; and a trace of one record of each type
-// replays to a log that holds each value as the trace does.
+// with the same values and the same refusals. The Rust configuration's
+// order_placed, which holds a union of a case with a record, one with nothing
+// and one with a byte string, is read and written by forms_configuration, the
+// Rust twin's, a value of each case built by the constructor of its case;
+// order_taken holds every other form order_placed does, and a byte string in
+// the union's place, read and written by unionless_forms_configuration. A value
+// written by `_canonical_<record>` and read back by `_read_<record>` is the
+// value it was, through the canonical text; each malformed spelling of a form
+// is refused, naming where it stands; and a trace of one record of each type
+// replays, through either configuration, to a log that holds each value as the
+// trace does.
 //
 // What is C's own: every value, text and run lives in storage of static
 // duration this file places. Nothing here allocates.
@@ -35,6 +40,9 @@
 #include <sce/test/suite.h>
 #include <sce/test/test_case_run.h>
 
+#include "forms_configuration.h"
+#include "order_payment.h"
+#include "replays_every_form.h"
 #include "replays_every_unionless_form.h"
 #include "shape_kind_open.h"
 #include "unionless_forms_configuration.h"
@@ -72,9 +80,14 @@ static bool read_extras(sce_jv_t value, void *out, sce_saved_error_t *err) {
     return unionless_forms_configuration_read_form_extras(value, (FormExtrasPayload_t *)out, err);
 }
 
+static bool read_placed(sce_jv_t value, void *out, sce_saved_error_t *err) {
+    return forms_configuration_read_order_placed(value, (OrderPlacedPayload_t *)out, err);
+}
+
 static const writer_fn WRITE_ORDER = unionless_forms_configuration_canonical_order_taken_lent;
 static const writer_fn WRITE_STATUS = unionless_forms_configuration_canonical_job_status_lent;
 static const writer_fn WRITE_EXTRAS = unionless_forms_configuration_canonical_form_extras_lent;
+static const writer_fn WRITE_PLACED = forms_configuration_canonical_order_placed_lent;
 
 // A line of an order.
 static OrderLinePayload_t line(const char *sku, uint16_t quantity, PaintColor_t color) {
@@ -110,6 +123,46 @@ static OrderTakenPayload_t order(const uint8_t *voucher, size_t count) {
 
 // The voucher the order is paid with: three octets, and none.
 static const uint8_t VOUCHER[] = {0x00u, 0xabu, 0xffu};
+
+// An order placed and paid by `payment`, with the lines, the note, the
+// priority and the customer of `order`.
+static OrderPlacedPayload_t placed(order_payment_t payment) {
+    OrderPlacedPayload_t made;
+    memset(&made, 0, sizeof(made));
+    made.order_id = UINT32_MAX;
+    made.lines.len = 2u;
+    made.lines.items[0] = line("A-1", 2u, PAINT_COLOR_GREEN);
+    made.lines.items[1] = line("\"q\" \xC3\xA9", UINT16_MAX, PAINT_COLOR_BLUE);
+    made.note.present = true;
+    made.note.value = sce_static_string_32_of("ring twice");
+    made.priority.present = false;
+    made.customer.full_name = sce_static_string_24_of("Ada");
+    made.customer.vip = true;
+    made.payment = payment;
+    return made;
+}
+
+// The payment by card, a case that holds a record, built by the constructor
+// of its case.
+static order_payment_t paid_by_card(void) {
+    CardPaymentPayload_t card;
+    memset(&card, 0, sizeof(card));
+    card.last4 = sce_static_string_4_of("4242");
+    card.amount = 1u;
+    return order_payment_case_card(card);
+}
+
+// The payment by the voucher of the three octets of VOUCHER, a case that holds
+// a byte string, built by the constructor of its case.
+static order_payment_t paid_by_voucher(void) {
+    VoucherPaymentPayload_t voucher;
+    memset(&voucher, 0, sizeof(voucher));
+    for (size_t i = 0u; i < sizeof(VOUCHER); ++i) {
+        voucher.voucher_code.data[i] = VOUCHER[i];
+    }
+    voucher.voucher_code.len = sizeof(VOUCHER);
+    return order_payment_case_voucher(voucher);
+}
 
 static JobStatusPayload_t status(bool first) {
     JobStatusPayload_t made;
@@ -207,6 +260,7 @@ static void round_trip(const char *what, const void *value, writer_fn writer, re
 static OrderTakenPayload_t read_order_value;
 static JobStatusPayload_t read_status_value;
 static FormExtrasPayload_t read_extras_value;
+static OrderPlacedPayload_t read_placed_value;
 
 // docs/SCE_TEST_PROFILE.md §12.5: a value of each form reads back from the text
 // its writer gives as the value it was.
@@ -231,6 +285,28 @@ static void a_record_reads_back_a_value_of_each_form_from_its_canonical_text(voi
     CHECK(read_order_value.lines.len == 2u && strcmp(read_order_value.lines.items[1].sku.data, "\"q\" \xC3\xA9") == 0,
           "the second line's sku");
     CHECK(!read_order_value.priority.present, "no priority");
+}
+
+// docs/adr/0092, section 7: a value of each case of a union reads back from
+// the text its writer gives in the case it was written in, holding the record
+// it held.
+static void a_record_reads_back_each_case_of_a_union_in_its_case(void) {
+    const OrderPlacedPayload_t by_card = placed(paid_by_card());
+    const OrderPlacedPayload_t by_cash = placed(order_payment_case_cash());
+    const OrderPlacedPayload_t by_voucher = placed(paid_by_voucher());
+    round_trip("an order paid by card", &by_card, WRITE_PLACED, read_placed, &read_placed_value);
+    CHECK(read_placed_value.payment.tag == PAYMENT_KIND_CARD, "the card reads back as the card");
+    CHECK(read_placed_value.payment.as.card.amount == 1u &&
+              strcmp(read_placed_value.payment.as.card.last4.data, "4242") == 0,
+          "the card's record");
+    round_trip("an order paid in cash", &by_cash, WRITE_PLACED, read_placed, &read_placed_value);
+    CHECK(read_placed_value.payment.tag == PAYMENT_KIND_CASH, "cash reads back as cash");
+    round_trip("an order paid by voucher", &by_voucher, WRITE_PLACED, read_placed, &read_placed_value);
+    CHECK(read_placed_value.payment.tag == PAYMENT_KIND_VOUCHER, "the voucher reads back as the voucher");
+    CHECK(read_placed_value.payment.as.voucher.voucher_code.len == 3u &&
+              memcmp(read_placed_value.payment.as.voucher.voucher_code.data, VOUCHER, 3u) == 0,
+          "the voucher's octets");
+    CHECK(read_placed_value.lines.len == 2u && read_placed_value.customer.vip, "the rest of the order");
 }
 
 // The reason `reader` refuses the canonical text of `value` with `from` replaced
@@ -328,6 +404,33 @@ static void a_record_refuses_a_malformed_spelling_of_each_form_by_name(void) {
     }
     refused(&paid, WRITE_ORDER, read_order, &read_order_value, "\"full_name\":\"Ada\"", long_name,
             "order_taken.customer.full_name: a text of 25 bytes is past the 24 its type holds");
+
+    // A union's value, an object of one member naming one of its cases, by
+    // card (0), in cash (1) and by voucher (2).
+    const OrderPlacedPayload_t paid_by[] = {placed(paid_by_card()), placed(order_payment_case_cash()),
+                                            placed(paid_by_voucher())};
+
+    static const struct {
+        size_t paid_by;
+        const char *from;
+        const char *to;
+        const char *expected;
+    } UNION_CASES[] = {
+        {0u, "{\"card\":", "{\"cheque\":", "order_placed.payment: 'cheque' names no case of its union"},
+        {0u, "\"last4\":\"4242\"}}", "\"last4\":\"4242\"},\"cash\":{}}",
+         "order_placed.payment: a value of a union is an object of one member, and this one has 2"},
+        {1u, "{\"cash\":{}}", "{\"cash\":{\"x\":\"1\"}}",
+         "order_placed.payment.cash: a case that holds no record is the empty object"},
+        {2u, "\"voucher_code\":\"00ABFF\"", "\"voucher_code\":\"00abff\"",
+         "order_placed.payment.voucher_code: '00abff' is not octets in upper-case hex, two digits each"},
+        {2u, "\"voucher_code\":\"00ABFF\"", "\"voucher_code\":\"0011223344\"",
+         "order_placed.payment.voucher_code: a byte string of 5 octets is past the 4 its type holds"},
+    };
+
+    for (size_t i = 0u; i < sizeof(UNION_CASES) / sizeof(UNION_CASES[0]); ++i) {
+        refused(&paid_by[UNION_CASES[i].paid_by], WRITE_PLACED, read_placed, &read_placed_value, UNION_CASES[i].from,
+                UNION_CASES[i].to, UNION_CASES[i].expected);
+    }
 }
 
 // ── The replay ──────────────────────────────────────────────────────────
@@ -369,33 +472,23 @@ static void keep_replayed(void *user_data, const char *test_case, const sce_test
 }
 
 static replays_every_unionless_form_machines_t replay_machines;
+static replays_every_form_machines_t union_replay_machines;
 static sce_test_case_run_t replay_run;
 static sce_test_traces_t replay_traces;
 static replayed_t replayed;
 
-// docs/SCE_TTCN3_LANE.md §10.5: a trace of one record of each type the system
-// port takes, two at the start and one later, replays to the listener, which
-// takes one a round and passes; the log holds each value as the trace does.
-static void a_record_a_trace_of_every_form_replays_to_the_values_it_holds(void) {
-    static char order_text[MAX_TEXT];
-    static char status_text[MAX_TEXT];
-    static char extras_text[MAX_TEXT];
-    const OrderTakenPayload_t paid = order(VOUCHER, sizeof(VOUCHER));
-    const JobStatusPayload_t first_status = status(true);
-    const FormExtrasPayload_t first_extras = extras(true);
-    written(WRITE_ORDER, &paid, order_text);
-    written(WRITE_STATUS, &first_status, status_text);
-    written(WRITE_EXTRAS, &first_extras, extras_text);
+// The trace of the three records of the types `types`, whose canonical texts
+// are `values`, two at the start and one at 250, replayed to the listener of
+// the test case `execute` runs, named `test_case`: it takes one a round and
+// passes, and the log holds each value as the trace does.
+static void replays_to_the_values_it_holds(sce_test_execute_t execute, const char *test_case,
+                                           const char *const types[3], const char *const values[3]) {
     (void)snprintf(trace_text, sizeof(trace_text),
-                   "{\"inputs\":[{\"at\":\"0\",\"port\":\"sut\",\"type\":\"order_taken\",\"value\":%s},"
-                   "{\"at\":\"0\",\"port\":\"sut\",\"type\":\"job_status\",\"value\":%s},"
-                   "{\"at\":\"250\",\"port\":\"sut\",\"type\":\"form_extras\",\"value\":%s}],"
+                   "{\"inputs\":[{\"at\":\"0\",\"port\":\"sut\",\"type\":\"%s\",\"value\":%s},"
+                   "{\"at\":\"0\",\"port\":\"sut\",\"type\":\"%s\",\"value\":%s},"
+                   "{\"at\":\"250\",\"port\":\"sut\",\"type\":\"%s\",\"value\":%s}],"
                    "\"schema\":\"sce-test-trace.v1\",\"suite\":\"forms_suite\",\"test_case\":\"%s\"}",
-                   order_text, status_text, extras_text, REPLAYS_EVERY_UNIONLESS_FORM_NAME);
-    sce_test_execute_t execute;
-    memset(&execute, 0, sizeof(execute));
-    memset(&replay_machines, 0, sizeof(replay_machines));
-    execute.test_case = replays_every_unionless_form_test_case(&replay_machines);
+                   types[0], values[0], types[1], values[1], types[2], values[2], test_case);
     sce_test_suite_t suite;
     memset(&suite, 0, sizeof(suite));
     suite.name = "forms_suite";
@@ -416,8 +509,6 @@ static void a_record_a_trace_of_every_form_replays_to_the_values_it_holds(void) 
     CHECK(replayed.verdict == SCE_TEST_VERDICT_PASS, "verdict %s: %s", sce_test_verdict_name(replayed.verdict),
           replayed.first_line);
     CHECK(replayed.ended_at == 250, "ended at %lld", (long long)replayed.ended_at);
-    const char *const types[] = {"order_taken", "job_status", "form_extras"};
-    const char *const values[] = {order_text, status_text, extras_text};
     for (size_t i = 0u; i < 3u; ++i) {
         static char received[2u * MAX_TEXT];
         (void)snprintf(received, sizeof(received),
@@ -427,10 +518,56 @@ static void a_record_a_trace_of_every_form_replays_to_the_values_it_holds(void) 
     }
 }
 
+// The canonical texts of the status and the extras every trace below holds.
+static char status_text[MAX_TEXT];
+static char extras_text[MAX_TEXT];
+
+// docs/SCE_TTCN3_LANE.md §10.5: a trace of one record of each type the system
+// port takes, two at the start and one later, replays to the listener, which
+// takes one a round and passes; the log holds each value as the trace does.
+static void a_record_a_trace_of_every_form_replays_to_the_values_it_holds(void) {
+    static char order_text[MAX_TEXT];
+    const OrderTakenPayload_t paid = order(VOUCHER, sizeof(VOUCHER));
+    const JobStatusPayload_t first_status = status(true);
+    const FormExtrasPayload_t first_extras = extras(true);
+    written(WRITE_ORDER, &paid, order_text);
+    written(WRITE_STATUS, &first_status, status_text);
+    written(WRITE_EXTRAS, &first_extras, extras_text);
+    sce_test_execute_t execute;
+    memset(&execute, 0, sizeof(execute));
+    memset(&replay_machines, 0, sizeof(replay_machines));
+    execute.test_case = replays_every_unionless_form_test_case(&replay_machines);
+    const char *const types[] = {"order_taken", "job_status", "form_extras"};
+    const char *const values[] = {order_text, status_text, extras_text};
+    replays_to_the_values_it_holds(execute, REPLAYS_EVERY_UNIONLESS_FORM_NAME, types, values);
+}
+
+// docs/SCE_TTCN3_LANE.md §10.5: the Rust twin's trace, an order paid by card
+// in order_taken's place, replays to the listener of the port that takes a
+// union, and the log holds the union's case as the trace does.
+static void a_record_a_trace_of_every_form_with_a_union_replays_to_the_values_it_holds(void) {
+    static char placed_text[MAX_TEXT];
+    const OrderPlacedPayload_t by_card = placed(paid_by_card());
+    const JobStatusPayload_t first_status = status(true);
+    const FormExtrasPayload_t first_extras = extras(true);
+    written(WRITE_PLACED, &by_card, placed_text);
+    written(WRITE_STATUS, &first_status, status_text);
+    written(WRITE_EXTRAS, &first_extras, extras_text);
+    sce_test_execute_t execute;
+    memset(&execute, 0, sizeof(execute));
+    memset(&union_replay_machines, 0, sizeof(union_replay_machines));
+    execute.test_case = replays_every_form_test_case(&union_replay_machines);
+    const char *const types[] = {"order_placed", "job_status", "form_extras"};
+    const char *const values[] = {placed_text, status_text, extras_text};
+    replays_to_the_values_it_holds(execute, REPLAYS_EVERY_FORM_NAME, types, values);
+}
+
 int main(void) {
     a_record_reads_back_a_value_of_each_form_from_its_canonical_text();
+    a_record_reads_back_each_case_of_a_union_in_its_case();
     a_record_refuses_a_malformed_spelling_of_each_form_by_name();
     a_record_a_trace_of_every_form_replays_to_the_values_it_holds();
+    a_record_a_trace_of_every_form_with_a_union_replays_to_the_values_it_holds();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
