@@ -790,7 +790,7 @@ fn verify_passes_on_real_committed_rust_static_datamodel_tree() {
         Some(0),
         "verify must pass on the committed Rust static_datamodel tree. A failure \
          here means a fixture changed without refreshing it. Run \
-         `scripts/regen_static_datamodel_rust.sh` and commit the result. stderr:\n{}",
+         `scripts/materialize.sh rust-static-datamodel` and commit the result. stderr:\n{}",
         String::from_utf8_lossy(&result.stderr),
     );
 }
