@@ -1966,6 +1966,30 @@ old encode, the old encode and its templates are removed in the same landing.
    budgets of docs/adr/0057 could not hold for a body of 64 KiB. The counting sink adds one test of the buffer to the
    runtime's two storing writes and changes nothing a writer over a buffer does. A body whose encode can refuse, a
    length of one in a flag, and a body of a codec the C11 backend does not print stay unlowered and name their form.
+
+   *The sixth C11 landing, 2026-11-16:* the encodes that can refuse a value for what they derive or hold. A number
+   of several measures is printed as the Rust encode's `combine` makes it: the first measure always there fixes it,
+   and every other one there is held to it; where every measure may be absent it is the first one there, kept in a
+   local `_m_<element>` beside the test `_m_<element>_there`. A number the value states while its content is absent
+   (`Presence::Stated`, `Absent::Stated`) is presented and held as the optional number `sce/forge/optional.h`
+   declares, the type a gated number already has, so no new type is made for it; the encode takes it only where no
+   content is there, and holds a stated number beside content to what the content says. The decode reads the number
+   into its local, as it reads every derived number, and sets the member once every field is read
+   (`C11Source::decoded`), present exactly where none of the content was there. A number past what its field or
+   its bits hold, a length its arithmetic takes below zero, two measures that disagree, a stated number beside
+   content that says another, and two elements a presence flag gates apart that disagree are each refused by the
+   status `EncodeFailure::symbol` names for C11 (`SCE_FORGE_CODEC_INCONSISTENT_SOURCE`, which the C runtime gains,
+   and `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`), before the first byte: the derivations come before the writes. A
+   bound is asked of `sce_forge_length_within_bound`, as the view's maker asks it, never compared where it is
+   written. A body whose encode can refuse returns its refusal through the count and the write of it; where the
+   value holds one, `{codec}_encode_source` writes the frame over the counting sink first, by `{codec}_write_source`
+   (the writes alone), and then over `w`, as the C++ `Wire` counts before it writes, so the writer is left at its
+   start by every refusal. Every refusal is written by `Totality::require`, and `render` asserts every one the
+   analysis names was written. A number derived into a flag where a gate leaves its content out keeps the bits the
+   value presents (`Fold::present`). A group's stated length (`Absent::Group`), gates the encode holds a field to
+   rather than derives (`gate_checks`) and inputs a held codec says (`input_checks`) stay unlowered and name their
+   form; a gated body of a printed codec is lowered, and the codecs of the resources that hold one wait only on the
+   lists they hold.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
