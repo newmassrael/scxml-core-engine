@@ -1354,6 +1354,17 @@ old encode, the old encode and its templates are removed in the same landing.
    its codec's data class, written by that codec's own package, and compares it element by element down into the
    codecs it holds, since a data class compares a value class over an array by identity. A body handed flag inputs,
    or whose encode can refuse, stays unlowered, and so does a codec that holds one.
+
+   *The fourth Kotlin landing, 2026-11-16:* a list, and a chain that ends with its scope, of entries of a codec
+   Kotlin prints, handed no flag input and held to no law, and the count of its entries, as the fourth Python
+   landing. The refinement of R2 is a value class `{Codec}{Element}List` over a `List` of the entries' codec's
+   `{Entry}Source`, whose `of` copies the list it is handed, so no list a caller keeps can grow it past its bound
+   after (a Kotlin `List` may be a view of a `MutableList`). The encode derives the count from how many entries the
+   list holds and walks it, each entry written by `{Entry}.encodeSource`; the decode makes the class of the entries
+   it read. A list of a least past zero, and a chain that sets its entries' flag, hands an entry what the one before
+   it was, holds a bare entry's place or is held to a law (R6, R7, R8) stay unlowered. The case printer makes a
+   list by its class's `of` over `listOf` of its entries and compares it by its size and each entry element by
+   element.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

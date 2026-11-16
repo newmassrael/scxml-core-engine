@@ -20,7 +20,7 @@ use super::super::rust_source::{
     CodecPath as RustCodecPath, HeldCodecs,
 };
 use super::super::*;
-use super::refinement_class;
+use super::{list_class, refinement_class};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// Where a codec's Kotlin value is: the package of the document that declares
@@ -162,6 +162,28 @@ fn element_holds(
                 ),
             }
         }
+        // A list by its entries, each compared as a body is.
+        Value::List { codec, .. } => {
+            let (d, v) = (format!("d{depth}"), format!("v{depth}"));
+            if optional {
+                let entries = list_holds(
+                    codec,
+                    &format!("{d}.entries"),
+                    &format!("{v}.entries"),
+                    depth,
+                    held,
+                )?;
+                format!(
+                    "{decoded}.let {{ {d} -> {value}.let {{ {v} -> \
+                     if ({d} == null || {v} == null) {d} == null && {v} == null else {entries} }} }}"
+                )
+            } else {
+                let entries = list_holds(codec, &d, &v, depth, held)?;
+                format!(
+                    "{decoded}.entries.let {{ {d} -> {value}.entries.let {{ {v} -> {entries} }} }}"
+                )
+            }
+        }
         _ => format!("{decoded} == {value}"),
     }))
 }
@@ -267,12 +289,64 @@ fn member_literal(
         Value::Body { codec } => held.read(codec, &mut |plan, held_path, held| {
             value_literal(plan, &held_codec(held_path), json, held)
         }),
+        // Each entry its codec's data class, reached as a body's is, in the
+        // value class of the list's bound, made by its factory.
+        Value::List { codec, law, .. } if law.is_none() => {
+            let entries = json
+                .as_array()
+                .ok_or_else(|| "a list is an array of its entries".to_string())?;
+            let mut items = Vec::new();
+            for entry in entries {
+                items.push(held.read(codec, &mut |plan, held_path, held| {
+                    value_literal(plan, &held_codec(held_path), entry, held)
+                })?);
+            }
+            Ok(format!(
+                "{}.of(listOf({}))!!",
+                path.qualified(&list_class(&path.type_name, &field.id)),
+                items.join(", ")
+            ))
+        }
         Value::List { .. } => Err(
-            "a list is not spelled as a Kotlin literal yet: the Kotlin printer prints no codec \
-             that holds one"
+            "a list held to a law is not spelled as a Kotlin literal yet: the Kotlin printer \
+             prints no codec that holds one"
                 .into(),
         ),
     }
+}
+
+/// A Kotlin `Boolean` expression that holds when the lists `decoded` and
+/// `value`, of sources of the codec imported as `codec`, hold as many entries
+/// and each the same as the other's at its place, compared element by element
+/// through the names `depth` gives them.
+fn list_holds(
+    codec: &str,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let (i, d, v) = (
+        format!("i{depth}"),
+        format!("d{}", depth + 1),
+        format!("v{}", depth + 1),
+    );
+    let inner = held.read(codec, &mut |plan, _, held| {
+        let mut holds = Vec::new();
+        for element in &plan.elements {
+            holds.extend(element_holds(element, &d, &v, depth + 2, held)?);
+        }
+        Ok(holds.join(" && "))
+    })?;
+    let sizes = format!("{decoded}.size == {value}.size");
+    Ok(if inner.is_empty() {
+        sizes
+    } else {
+        format!(
+            "{sizes} && {decoded}.indices.all {{ {i} -> {decoded}[{i}].let {{ {d} -> \
+             {value}[{i}].let {{ {v} -> {inner} }} }} }}"
+        )
+    })
 }
 
 /// `text` as a Kotlin string literal of the same text: a quote, a backslash and

@@ -98,8 +98,25 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.push(format!("field '{id}': a body handed flag inputs"));
                 }
             }
-            Value::List { codec, .. } => {
-                forms.push(format!("field '{id}': a list of `{codec}`"));
+            // A list is walked, each entry written by its codec's own
+            // `encodeSource`, which a codec the Kotlin backend prints has.
+            Value::List { codec, law, bound } => {
+                if bound.least > 0 {
+                    forms.push(format!("field '{id}': a list of a least past zero"));
+                }
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!(
+                        "field '{id}': a list whose entries are handed flag inputs"
+                    ));
+                }
+                if !law.is_none() {
+                    forms.push(format!("field '{id}': a list held to a law"));
+                }
             }
         }
         match element.presence {
@@ -143,8 +160,19 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             }
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                if list.is_some() {
-                    forms.push(format!("field '{}': a walk of a list", field.id));
+                // A walk of each entry in turn; a chain that sets its entries'
+                // flag, hands an entry what the one before it was, holds a
+                // bare entry's place or is held to a law is not printed yet.
+                if list.as_ref().is_some_and(|walk| {
+                    !walk.previous.is_empty()
+                        || walk.slots.is_some()
+                        || walk.ends.is_some()
+                        || walk.lawful
+                }) {
+                    forms.push(format!(
+                        "field '{}': a chain whose walk sets or hands its entries a flag",
+                        field.id
+                    ));
                 }
                 if *guard == Guard::Gate {
                     forms.extend(gate_form(plan, field));
@@ -196,10 +224,7 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             } => forms.push(format!(
                 "element '{element}': a length its arithmetic may take below zero"
             )),
-            Measured::Bytes { .. } => {}
-            Measured::Entries { .. } => {
-                forms.push(format!("element '{element}': a count of a list's entries"));
-            }
+            Measured::Bytes { .. } | Measured::Entries { .. } => {}
             Measured::Encoded { refuses: true, .. } => forms.push(format!(
                 "element '{element}': the encoded length of a body whose encode can refuse"
             )),
@@ -375,16 +400,35 @@ pub(super) fn render(
             presented.insert(id.clone(), optional(format!("{}Source", body_type(import))));
             continue;
         }
-        let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
-            presented.insert(
-                id.clone(),
-                optional(l.type_name(&element.field.sce_type).into_owned()),
-            );
-            continue;
+        let class = match &element.value {
+            Value::Bytes(bound) | Value::Text(bound) => {
+                let class = refinement_class(struct_name, id, &element.field.sce_type);
+                let text = matches!(element.value, Value::Text(_));
+                before.push_str(&bounded_class(struct_name, id, &class, bound, text));
+                class
+            }
+            // A list of sources of its entries' codec, held to its bound.
+            Value::List { codec, bound, .. } => {
+                let import = printed_import(imports, codec)
+                    .expect("`unlowered` prints a list of a printed codec only");
+                let class = list_class(struct_name, id);
+                before.push_str(&bounded_list_class(
+                    struct_name,
+                    id,
+                    &class,
+                    bound,
+                    &format!("{}Source", body_type(import)),
+                ));
+                class
+            }
+            _ => {
+                presented.insert(
+                    id.clone(),
+                    optional(l.type_name(&element.field.sce_type).into_owned()),
+                );
+                continue;
+            }
         };
-        let class = refinement_class(struct_name, id, &element.field.sce_type);
-        let text = matches!(element.value, Value::Text(_));
-        before.push_str(&bounded_class(struct_name, id, &class, bound, text));
         let local = l.codec_field_id(id);
         let (default, made) = if gated {
             (
@@ -433,6 +477,65 @@ pub(super) fn render(
         held,
         inline,
     }
+}
+
+/// The class the Kotlin value of the codec whose data class is `struct_name`
+/// holds its list `id` in, within its bound (docs/adr/0065 §6 R2). The one
+/// place the name is made, as [`refinement_class`] is for a byte string.
+pub(crate) fn list_class(struct_name: &str, id: &str) -> String {
+    format!(
+        "{struct_name}{}List",
+        filters::to_pascal_case(id.to_string())
+    )
+}
+
+/// The value class a list `id` of `struct_name` is held in, `class`, within
+/// `bound`, of sources of its entries' codec, `entry`: a private constructor,
+/// and `of`, which makes a value only of entries within the bound, copied into
+/// a list of its own, so no list it was made of can grow it past its bound
+/// after. A list of a least past zero is not printed, so a value made by
+/// default holds no entry.
+fn bounded_list_class(
+    struct_name: &str,
+    id: &str,
+    class: &str,
+    bound: &Bound,
+    entry: &str,
+) -> String {
+    let (held, most, of) = match bound.most {
+        Some(most) => (
+            format!("0 to {most} entries"),
+            format!(
+                "\n\
+                 \x20       /// The most entries a value holds.\n\
+                 \x20       const val MOST: Int = {most}\n"
+            ),
+            format!(
+                " =\n            if (entries.size <= MOST) {class}(entries.toList()) else null"
+            ),
+        ),
+        None => (
+            "any number of entries, the protocol stating no most".to_string(),
+            String::new(),
+            format!(" = {class}(entries.toList())"),
+        ),
+    };
+    format!(
+        "/// The `{id}` element of [{struct_name}], {held}, held to that bound where a\n\
+         /// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is\n\
+         /// private and [of] makes a value only of entries within the bound, which it\n\
+         /// copies, so no list it was made of can grow it past its bound after.\n\
+         @JvmInline\n\
+         value class {class} private constructor(val entries: List<{entry}>) {{\n\
+         \x20   companion object {{{most}\n\
+         \x20       /// `entries` as a value of the bound, or `null` where they lie outside it.\n\
+         \x20       fun of(entries: List<{entry}>): {class}?{of}\n\
+         \n\
+         \x20       /// No entry: what a value made by default holds.\n\
+         \x20       fun fewest(): {class} = {class}(emptyList())\n\
+         \x20   }}\n\
+         }}\n\n"
+    )
 }
 
 /// The value class a byte string or a text (`text`) `id` of `struct_name` is
@@ -638,10 +741,12 @@ fn encode_source(
     };
     let is_text = |field: &CodecField| field.sce_type == SceType::String;
     // The data class of the codec whose companion's `encodeSource` writes the
-    // body `field`.
+    // body `field`, or each entry of the list `field`.
     let body_writer = |field: &CodecField| -> String {
-        let Some(Value::Body { codec }) = element_of(plan, &field.id).map(|e| &e.value) else {
-            unreachable!("a body is an element the value presents")
+        let Some(Value::Body { codec } | Value::List { codec, .. }) =
+            element_of(plan, &field.id).map(|e| &e.value)
+        else {
+            unreachable!("a body or a list is an element the value presents")
         };
         let import =
             printed_import(imports, codec).expect("`unlowered` prints a body of a printed codec");
@@ -704,7 +809,13 @@ fn encode_source(
                         let count = format!("{buffer}.size");
                         (buffer, count)
                     }
-                    _ => unreachable!("`unlowered` prints a length or an encoded length only"),
+                    // How many entries the list holds, within its bound.
+                    Measured::Entries { list } => {
+                        let content = element(&list.id);
+                        let count = format!("{content}.entries.size");
+                        (content, count)
+                    }
+                    _ => unreachable!("`unlowered` prints a length or a count only"),
                 };
                 let number = int_as(&count, &into.sce_type);
                 // Zero where a gate leaves the content out, beside which the
@@ -854,9 +965,13 @@ fn encode_source(
                         body_writer(field),
                         read(field)
                     )),
-                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        unreachable!("`unlowered` prints no list")
-                    }
+                    // A list or a chain walked entry by entry, each written by
+                    // its codec's encode over the source the list holds.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => format!(
+                        "for (_entry in {}.entries) {{\n    {}}}\n",
+                        read(field),
+                        written(&format!("{}.encodeSource(_entry, w)", body_writer(field)))
+                    ),
                 };
                 // What says whether the value holds the field: the local it
                 // was read into, or the buffer a body was encoded into, which

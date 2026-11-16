@@ -2347,3 +2347,17 @@ codecs that hold a body of a codec Kotlin prints, which is handed no flag input.
   presents it as `{Body}Source`, so a class of yours that implements the parent's interface presents the body as
   any implementation of the body's interface, and `{Codec}.encodeSource` writes it through `{Body}.encodeSource`.
 
+## A printed Kotlin codec holds a list to its bound as a value class and derives its count (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that hold a list, or a chain that ends with its scope, of entries of a codec Kotlin prints, handed no flag
+input and held to no law.
+
+- A list element is a value of `{Codec}{Element}List`, a value class over a `List` of the entries' codec's
+  `{Entry}Source`, where it was a `MutableList` of the entries' data class. `{Codec}{Element}List.of(entries)`
+  makes one of a list within the bound, copying it, and answers `null` past the bound. Replace
+  `msg.items.add(e)` with `msg.items = CodecXItemsList.of(msg.items.entries + e) ?: return ...`, and read
+  `msg.items.entries` where you read `msg.items`; an entry read from it is the entry's `{Entry}Source`, whose
+  properties read as the data class's did.
+- A field that counts a list is gone from the data class: the encode writes how many entries the list holds.
+

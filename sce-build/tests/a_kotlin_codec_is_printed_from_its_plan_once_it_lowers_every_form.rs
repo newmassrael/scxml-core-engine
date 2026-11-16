@@ -296,6 +296,41 @@ fn a_bodys_encoded_length_is_measured_over_the_frame_it_writes() {
     );
 }
 
+/// A list of a printed codec is held to its bound in a value class over a list
+/// of sources of the entries' codec, copied where it is made; its count is
+/// derived from how many entries it holds, and each entry is written by its
+/// codec's own encode.
+///
+/// Turns red where `kotlin_source::encode_source` reads the count off the value
+/// or stops walking the list through its entries' codec, or where
+/// `bounded_list_class` keeps the list it was handed rather than a copy.
+#[test]
+fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
+    assert!(unlowered("codec_repeat_basic").is_empty());
+    let text = resource_file("codec_repeat_basic");
+    holds(
+        "codec_repeat_basic",
+        &text,
+        &[
+            "value class CodecRepeatBasicFragsList private constructor(\
+             val entries: List<CodecRepeatElemSource>) {\n",
+            "        const val MOST: Int = 32\n",
+            "if (entries.size <= MOST) CodecRepeatBasicFragsList(entries.toList()) else null\n",
+            "    val frags: CodecRepeatBasicFragsList\n",
+            "    override var frags: CodecRepeatBasicFragsList = CodecRepeatBasicFragsList.fewest()",
+            "val _d_num_frags = _e_frags.entries.size.toUByte()\n",
+            "for (_entry in _e_frags.entries) {\n",
+            "CodecRepeatElem.encodeSource(_entry, w)?.let { return it }\n",
+            "frags = CodecRepeatBasicFragsList.of(frags) ?: return null",
+        ],
+    );
+    holds_none(
+        "codec_repeat_basic",
+        &text,
+        &["var num_frags: ", "src.num_frags"],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a length the value states
 /// where its gated content is absent each name their form.
