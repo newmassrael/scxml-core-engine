@@ -259,12 +259,43 @@ fn a_bodys_encoded_length_is_measured_over_the_frame_it_writes() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a list and a CBOR map each name their form, and a
-/// length the value states where its gated content is absent names one.
+/// A list of a printed codec is held to its bound in a tuple class, its count
+/// derived from how many entries it holds, and each entry written by its
+/// codec's own encode over the source the list holds it as.
 ///
-/// Turns red where `python_source::positional_forms` stops naming a list or a
-/// stated length, or `unlowered_forms` a CBOR map.
+/// Turns red where `python_source::encode_source` reads the count off the value
+/// or stops walking the list through its entries' module.
+#[test]
+fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
+    assert!(unlowered("codec_repeat_basic").is_empty());
+    let text = resource_module("codec_repeat_basic");
+    holds(
+        "codec_repeat_basic",
+        &text,
+        &[
+            "from sce_forge_runtime.bounded import BoundedTuple\n",
+            "class CodecRepeatBasicFragsList(BoundedTuple):\n",
+            "    LEAST = 0\n    MOST = 32\n",
+            "    frags: CodecRepeatBasicFragsList = CodecRepeatBasicFragsList()\n",
+            "    _d_num_frags = len(src.frags)\n",
+            "    w.write_u8(_d_num_frags & 0xFF)\n",
+            "    for _entry in src.frags:\n        \
+             sce_codec_repeat_elem.encode_source(_entry, w)\n",
+        ],
+    );
+    holds_none(
+        "codec_repeat_basic",
+        &text,
+        &["\n    num_frags: ", "src.num_frags"],
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole: a variant and a CBOR map each name their form, and
+/// a length the value states where its gated content is absent names one.
+///
+/// Turns red where `python_source::positional_forms` stops naming a variant or
+/// a stated length, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     assert!(
@@ -272,7 +303,7 @@ fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
         "a length the value states beside gated content is not printed yet"
     );
     for (name, form) in [
-        ("codec_repeat_basic", "a list of entries"),
+        ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);

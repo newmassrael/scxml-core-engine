@@ -6,8 +6,8 @@ so the encode over it has nothing of the bound to refuse."""
 
 import pytest
 
-from sce_forge_runtime.bounded import BoundedBytes, BoundedText
-from sce_forge_runtime.codec import InvalidUtf8, LengthOutOfRange
+from sce_forge_runtime.bounded import BoundedBytes, BoundedText, BoundedTuple
+from sce_forge_runtime.codec import InvalidUtf8, LengthOutOfRange, TooManyElements
 
 
 class _AtMostThree(BoundedBytes):
@@ -81,3 +81,32 @@ def test_a_text_no_utf8_holds_is_refused_as_invalid():
 def test_a_text_is_made_of_a_text_alone():
     with pytest.raises(TypeError):
         _TextOfFour(b"ab")
+
+
+class _TwoEntries(BoundedTuple):
+    LEAST = 0
+    MOST = 2
+
+
+class _OneEntryOrMore(BoundedTuple):
+    LEAST = 1
+    MOST = None
+
+
+def test_a_list_within_its_bound_is_made_of_any_iterable_and_cannot_grow():
+    held = _TwoEntries([1, 2])
+    assert held == (1, 2)
+    assert not hasattr(held, "append")
+    assert _TwoEntries() == ()
+
+
+def test_a_list_past_its_most_is_refused_as_too_many():
+    with pytest.raises(TooManyElements) as refused:
+        _TwoEntries([1, 2, 3])
+    assert str(refused.value) == "_TwoEntries"
+
+
+def test_a_list_short_of_its_least_is_refused():
+    with pytest.raises(LengthOutOfRange):
+        _OneEntryOrMore([])
+    assert len(_OneEntryOrMore(range(50))) == 50

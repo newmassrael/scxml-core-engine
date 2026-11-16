@@ -94,7 +94,23 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.push(format!("field '{id}': a body handed flag inputs"));
                 }
             }
-            Value::List { .. } => forms.push(format!("field '{id}': a list of entries")),
+            // A list is walked, each entry written by its codec's own
+            // `encode_source`, which a codec the Python backend prints has.
+            Value::List { codec, law, .. } => {
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a list of `{codec}`, which the Python backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!(
+                        "field '{id}': a list whose entries are handed flag inputs"
+                    ));
+                }
+                if !law.is_none() {
+                    forms.push(format!("field '{id}': a list held to a law"));
+                }
+            }
         }
         if element.presence == Presence::Stated {
             forms.push(format!(
@@ -135,8 +151,19 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             }
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                if list.is_some() {
-                    forms.push(format!("field '{}': a walk of a list", field.id));
+                // A walk of each entry in turn; a chain that sets its entries'
+                // flag, hands an entry what the one before it was, holds a
+                // bare entry's place or is held to a law is not printed yet.
+                if list.as_ref().is_some_and(|walk| {
+                    !walk.previous.is_empty()
+                        || walk.slots.is_some()
+                        || walk.ends.is_some()
+                        || walk.lawful
+                }) {
+                    forms.push(format!(
+                        "field '{}': a chain whose walk sets or hands its entries a flag",
+                        field.id
+                    ));
                 }
                 if *guard == Guard::Gate {
                     forms.extend(gate_form(plan, field));
@@ -188,10 +215,7 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             } => forms.push(format!(
                 "element '{element}': a length its arithmetic may take below zero"
             )),
-            Measured::Bytes { .. } => {}
-            Measured::Entries { .. } => {
-                forms.push(format!("element '{element}': a count of entries"));
-            }
+            Measured::Bytes { .. } | Measured::Entries { .. } => {}
             Measured::Encoded { refuses: true, .. } => forms.push(format!(
                 "element '{element}': the encoded length of a body whose encode can refuse"
             )),
@@ -320,14 +344,16 @@ fn body_module(import: &ImportContext) -> (String, &str) {
     (python_module_alias(&import.namespace), &import.type_name)
 }
 
-/// The class a byte string or a text of `struct_name` is held in, the runtime
-/// class it is a subclass of, and a literal of its fewest `least` units.
+/// The class a byte string, a text or a list of `struct_name` is held in, the
+/// runtime class it is a subclass of, what it counts, and a literal of its
+/// fewest `least` units, which a list has none of: a list of a least past zero
+/// is a chain closed by its entries' flag, which the printer does not print.
 fn bounded_class(
     struct_name: &str,
     id: &str,
     value: &Value<'_>,
     least: u64,
-) -> (String, &'static str, String) {
+) -> (String, &'static str, &'static str, String) {
     let pascal = filters::to_pascal_case(id.to_string());
     // The fewest units the class holds, zeros, spelled as a literal: the
     // default is evaluated in the class body, where a field named `bytes`
@@ -336,11 +362,19 @@ fn bounded_class(
         Value::Text(_) => (
             format!("{struct_name}{pascal}Text"),
             "BoundedText",
+            "UTF-8 bytes",
             format!("\"\\x00\" * {least}"),
+        ),
+        Value::List { .. } => (
+            format!("{struct_name}{pascal}List"),
+            "BoundedTuple",
+            "entries",
+            "()".to_string(),
         ),
         _ => (
             format!("{struct_name}{pascal}Bytes"),
             "BoundedBytes",
+            "bytes",
             format!("b\"\\x00\" * {least}"),
         ),
     }
@@ -395,7 +429,8 @@ pub(super) fn render(
             }
             continue;
         }
-        let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
+        let (Value::Bytes(bound) | Value::Text(bound) | Value::List { bound, .. }) = &element.value
+        else {
             let ty = l.type_name(&element.field.sce_type).into_owned();
             presented.insert(
                 id.clone(),
@@ -403,13 +438,17 @@ pub(super) fn render(
             );
             continue;
         };
-        let (class, base, fewest) = bounded_class(struct_name, id, &element.value, bound.least);
+        // A list's entries are written by their codec's module, imported whole
+        // as a body's is.
+        if let Value::List { codec, .. } = &element.value {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a list of a printed codec only");
+            let (alias, _) = body_module(import);
+            modules.insert(format!("from . import {} as {alias}", import.namespace));
+        }
+        let (class, base, unit, fewest) =
+            bounded_class(struct_name, id, &element.value, bound.least);
         runtime.insert(base);
-        let unit = if base == "BoundedText" {
-            "UTF-8 bytes"
-        } else {
-            "bytes"
-        };
         let held = match bound.most {
             Some(most) => format!("{} to {most} {unit}", bound.least),
             None => format!(
@@ -545,16 +584,17 @@ fn encode_source(
          \x20   :class:`BufferOverflow` where it has no room left.\"\"\"\n"
     );
     let source = |id: &str| format!("src.{}", l.codec_field_id(id));
-    // The module whose `encode_source` writes the body `field`.
+    // The `encode_source` of the module that writes the body `field`, or each
+    // entry of the list `field`.
     let body_writer = |field: &CodecField| -> String {
-        let Value::Body { codec } = element_of(plan, &field.id)
+        let (Value::Body { codec } | Value::List { codec, .. }) = element_of(plan, &field.id)
             .map(|e| &e.value)
-            .expect("an embedded field is a body the value presents")
+            .expect("a body or a list is an element the value presents")
         else {
-            unreachable!("an embedded field is a body")
+            unreachable!("the field holds a codec")
         };
         let import =
-            printed_import(imports, codec).expect("`unlowered` prints a body of a printed codec");
+            printed_import(imports, codec).expect("`unlowered` prints a codec it holds printed");
         format!("{}.encode_source", body_module(import).0)
     };
     // The bodies encoded into a buffer first, by field id: those whose length
@@ -601,7 +641,13 @@ fn encode_source(
                         buffered.insert(body.id.clone());
                         (buffer.clone(), format!("len({buffer})"))
                     }
-                    _ => unreachable!("`unlowered` prints a length of bytes, text or a body only"),
+                    // How many entries the list holds, within its bound.
+                    Measured::Entries { list } => {
+                        let content = source(&list.id);
+                        let length = format!("len({content})");
+                        (content, length)
+                    }
+                    _ => unreachable!("`unlowered` prints a length or a count only"),
                 };
                 // Zero where a gate leaves the content out, beside which the
                 // length is gated too and not written.
@@ -735,9 +781,13 @@ fn encode_source(
                     BitSize::Embed => {
                         format!("    {}({}, w)\n", body_writer(field), read(field))
                     }
-                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        unreachable!("`unlowered` prints no list")
-                    }
+                    // A list or a chain walked entry by entry, each written by
+                    // its codec's encode over the source the list holds it as.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => format!(
+                        "    for _entry in {}:\n        {}(_entry, w)\n",
+                        read(field),
+                        body_writer(field)
+                    ),
                 };
                 out.push_str(&match guard {
                     Guard::Always => body,

@@ -1845,3 +1845,17 @@ codecs that hold a body of a codec Python prints, which is handed no flag input.
 - `encode_source` writes a body through `encode_source` of the body's codec's module, so a source of the parent
   presents the body as any source of the body's codec (`{Body}Source`).
 
+## A printed Python codec holds a list to its bound as a tuple and derives its count (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that hold a list, or a chain that ends with its scope, of entries of a codec Python prints, handed no flag
+input and held to no law.
+
+- A list element is a value of `{Codec}{Element}List`, a subclass of `sce_forge_runtime.bounded.BoundedTuple` and so
+  of `tuple`, held to its bound. The value makes it of any iterable you hand it and raises `TooManyElements` past
+  the bound. It cannot grow after: replace `msg.items.append(e)` with `msg.items = [*msg.items, e]`, which the
+  value holds to the bound again.
+- A field that counts a list is gone from the value: the encode writes how many entries the list holds.
+- Each entry is written by `encode_source` of the entries' codec's module, so a source presents the list as any
+  iterable of sources of that codec.
+

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Union
 
-from .codec import InvalidUtf8, LengthOutOfRange
+from .codec import InvalidUtf8, LengthOutOfRange, TooManyElements
 
 
 class BoundedBytes(bytes):
@@ -70,3 +70,27 @@ class BoundedText(str):
         if size < cls.LEAST or (cls.MOST is not None and size > cls.MOST):
             raise LengthOutOfRange(cls.__name__)
         return super().__new__(cls, text)
+
+
+class BoundedTuple(tuple):
+    """A list of entries held to a bound (docs/adr/0065 §6 R2): at least
+    ``LEAST`` entries and at most ``MOST``, ``MOST`` being ``None`` where the
+    protocol states no most (docs/adr/0077 §7). A subclass names the bound of
+    one list by its two class attributes. A tuple, so the list cannot grow past
+    its bound after it is made.
+
+    Raises :class:`TooManyElements`, naming the class, for more entries than
+    the bound holds, and :class:`LengthOutOfRange` for fewer than its least.
+    Mirrors ``Bounded`` of the Rust runtime and ``SCE::Forge::List`` of the C++
+    runtime."""
+
+    LEAST: int = 0
+    MOST: Optional[int] = None
+
+    def __new__(cls, entries: Iterable[object] = ()) -> "BoundedTuple":
+        held = super().__new__(cls, entries)
+        if cls.MOST is not None and len(held) > cls.MOST:
+            raise TooManyElements(cls.__name__)
+        if len(held) < cls.LEAST:
+            raise LengthOutOfRange(cls.__name__)
+        return held

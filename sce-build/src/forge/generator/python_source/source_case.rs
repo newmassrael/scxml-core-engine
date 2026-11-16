@@ -14,7 +14,8 @@
 //! refused by name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
+    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members,
+    CodecPath as RustCodecPath, HeldCodecs,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -41,6 +42,17 @@ impl CodecPath {
     /// The dataclass of its value, as the harness reaches it.
     fn class(&self) -> String {
         format!("{}.{}", self.module, self.type_name)
+    }
+}
+
+/// Where a codec held by the codec at `holder` is, whose Rust path a held
+/// codec's reading names `held`: its module, which the printed holder imports
+/// whole under `sce_<snake>`, reached through the holder's.
+fn held_codec(holder: &CodecPath, held: &RustCodecPath) -> CodecPath {
+    let snake = held.module.rsplit("::").next().unwrap_or(&held.module);
+    CodecPath {
+        module: format!("{}.{}", holder.module, python_module_alias(snake)),
+        type_name: held.type_name.clone(),
     }
 }
 
@@ -149,16 +161,7 @@ fn member_literal(
         // The held codec's dataclass, reached through the module the printed
         // codec imports it under, `sce_<snake>`, as its encode reaches it.
         Value::Body { codec } => held.read(codec, &mut |plan, held_path, held| {
-            let snake = held_path
-                .module
-                .rsplit("::")
-                .next()
-                .unwrap_or(&held_path.module);
-            let path = CodecPath {
-                module: format!("{}.{}", path.module, python_module_alias(snake)),
-                type_name: held_path.type_name.clone(),
-            };
-            value_literal(plan, &path, json, held)
+            value_literal(plan, &held_codec(path, held_path), json, held)
         }),
         Value::Scalar(
             SceType::Uint8
@@ -196,9 +199,23 @@ fn member_literal(
             serde_json::to_string(text).map_err(|e| e.to_string())
         }
         Value::Scalar(_) => Err("a float or a bool is not spelled as a Python literal yet".into()),
+        // Each entry its codec's dataclass, reached as a body's is, in a list
+        // the value holds within its bound where it is made.
+        Value::List { codec, law, .. } if law.is_none() => {
+            let entries = json
+                .as_array()
+                .ok_or_else(|| "a list is an array of its entries".to_string())?;
+            let mut items = Vec::new();
+            for entry in entries {
+                items.push(held.read(codec, &mut |plan, held_path, held| {
+                    value_literal(plan, &held_codec(path, held_path), entry, held)
+                })?);
+            }
+            Ok(format!("[{}]", items.join(", ")))
+        }
         Value::List { .. } => Err(
-            "a list is not spelled as a Python literal yet: the Python printer prints no \
-             codec that holds one"
+            "a list held to a law is not spelled as a Python literal yet: the Python printer \
+             prints no codec that holds one"
                 .into(),
         ),
     }

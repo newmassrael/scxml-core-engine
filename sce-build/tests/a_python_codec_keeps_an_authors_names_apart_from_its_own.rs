@@ -187,7 +187,9 @@ const SHAPES: &[Shape] = &[
     <sce:repeat id="items" type="codec_chain_has_marker_slice" sce:byte="1"
                 count="NAME" max-count="4"/>"#,
         frames: &[&[1, 0, 2, 0xAA, 0xBB], &[0]],
-        check: "{v} == 1",
+        // The count is derived (docs/adr/0081 §3) where the Python backend
+        // prints the codec, and an attribute of the value where it does not.
+        check: "len({value}.items) == 1 and getattr({value}, {name}, 1) == 1",
     },
     Shape {
         id: "repeat_named",

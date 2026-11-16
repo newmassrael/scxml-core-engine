@@ -964,6 +964,14 @@ old encode, the old encode and its templates are removed in the same landing.
    by encoding the body once into a buffer, which is then what is written where the body is: the Python runtime has
    no counting sink, and the one encode both counts and writes. A body handed flag inputs, or whose encode can
    refuse, stays unlowered, and so does a codec that holds one.
+
+   *The fourth Python landing, 2026-11-16:* a list, and a chain that ends with its scope, of entries of a codec
+   Python prints, handed no flag input and held to no law, and the count of its entries. The refinement of R2 is a
+   class `{Codec}{Element}List`, a subclass of the runtime's `BoundedTuple`: a tuple, so a list made within its bound
+   cannot grow past it, which a Python `list` could. The encode derives the count from how many entries the source's
+   list holds and walks it, each entry written by its codec's module's `encode_source`. A chain that sets its
+   entries' flag, hands an entry what the one before it was, holds a bare entry's place or is held to a law (R6, R7,
+   R8) stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
