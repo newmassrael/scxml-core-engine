@@ -1338,7 +1338,10 @@ old encode, the old encode and its templates are removed in the same landing.
    its top bit is a literal, in place of the bit the value presents, and writes it only where it is there. A length
    gated beside it is derived as zero where it is absent and written where its gate holds, tested on the carrier as
    the encode writes it. A length the value states where its content is absent (§4.6 R4b), a group, and a gate on
-   an input or a chain's entries stay unlowered.
+   an input or a chain's entries stay unlowered. An algorithm that iterates a collection of a printed element reads
+   the element's byte string or text out of its value class (`entry.pattern.text`), as the C++ algorithm reads it
+   through the accessor; the document set threads which elements Kotlin prints as `element_type_kotlin_printed`
+   beside the element schemas.
 
    *The third Kotlin landing, 2026-11-16:* a body of a codec Kotlin prints, handed no flag input, and its encoded
    length, as the third Python landing. Whether an import is printed is read as the import is generated

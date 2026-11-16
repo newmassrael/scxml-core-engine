@@ -4582,6 +4582,15 @@ pub struct ForgeCompileOptions {
     /// off the element. Populated on a Swift compile only; `None` elsewhere.
     pub element_type_swift_printed: Option<std::collections::HashSet<String>>,
 
+    /// docs/adr/0081 step 4: the element-type candidates the Kotlin backend
+    /// prints from their encode plan, by the snake element name of
+    /// [`Self::element_type_field_schemas`]. Such an element holds each byte
+    /// string and text in the value class of its bound, so an algorithm
+    /// iterating a collection of it reads `entry.<field>` through the class
+    /// (`.bytes`, `.text`). Populated with the schemas, on a Kotlin compile
+    /// only; `None` elsewhere.
+    pub element_type_kotlin_printed: Option<std::collections::HashSet<String>>,
+
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
     /// codec emit uses, so a bounded-collection storing the element names the
@@ -5612,6 +5621,9 @@ fn compile_document_set(
     // 5). Decided by the same predicate the codec emit uses, on a Swift
     // compile only.
     let mut element_type_swift_printed: HashSet<String> = HashSet::new();
+    // Likewise on a Kotlin compile: a reader of such an element reads each
+    // byte string and text through the value class of its bound.
+    let mut element_type_kotlin_printed: HashSet<String> = HashSet::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5766,6 +5778,11 @@ fn compile_document_set(
                         && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
                     {
                         element_type_swift_printed.insert(filters::to_snake_case(key.clone()));
+                    }
+                    if language == generator::Language::Kotlin
+                        && kotlin_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_kotlin_printed.insert(filters::to_snake_case(key.clone()));
                     }
                 }
                 element_type_candidates.insert(key, doc);
@@ -6334,6 +6351,7 @@ fn compile_document_set(
         || !element_type_field_schemas.is_empty()
         || !element_type_cpp_printed.is_empty()
         || !element_type_swift_printed.is_empty()
+        || !element_type_kotlin_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
         || broadcast_log_resolutions_override.is_some();
@@ -6361,6 +6379,9 @@ fn compile_document_set(
         }
         if !element_type_swift_printed.is_empty() {
             overridden.element_type_swift_printed = Some(element_type_swift_printed);
+        }
+        if !element_type_kotlin_printed.is_empty() {
+            overridden.element_type_kotlin_printed = Some(element_type_kotlin_printed);
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);

@@ -175,11 +175,16 @@ fn python_field_match_projects_string_field_to_bytes() {
     );
 }
 
+/// The element codec is printed from its plan on Kotlin (docs/adr/0081 step
+/// 4), so its text is a value class of its bound, read out of it by `.text`.
+///
+/// Turns red where the Kotlin rename of a printed element's member stops
+/// reading a text through its value class.
 #[test]
 fn kotlin_field_match_projects_string_field_to_byte_array() {
     let code = compile_field_match_for(Language::Kotlin);
     assert!(
-        code.contains("entry.pattern.toByteArray(Charsets.UTF_8)"),
+        code.contains("entry.pattern.text.toByteArray(Charsets.UTF_8)"),
         "Kotlin string-field projection missing; got:\n{code}"
     );
 }
@@ -199,7 +204,7 @@ fn field_match_projects_on_all_six_backends() {
             Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern().data())",
             Language::Go => "[]byte(entry.Pattern)",
             Language::Python => "entry.pattern.encode(\"utf-8\")",
-            Language::Kotlin => "entry.pattern.toByteArray(Charsets.UTF_8)",
+            Language::Kotlin => "entry.pattern.text.toByteArray(Charsets.UTF_8)",
         };
         assert!(
             code.contains(projection_marker),

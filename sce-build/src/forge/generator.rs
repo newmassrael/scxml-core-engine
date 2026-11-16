@@ -45006,8 +45006,9 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// `"<name>.<field>"` for a collection element's fields.
     members: Vec<(String, SceType)>,
     /// `("<name>.<field>", name, field)` for each field of a collection
-    /// element the C++ backend prints from its plan, which C++ reads through
-    /// the element's accessor (docs/adr/0081 step 4).
+    /// element the backend prints from its plan, which C++ reads through the
+    /// element's accessor and Kotlin out of the value class a byte string or
+    /// a text is held in (docs/adr/0081 step 4).
     member_accessors: Vec<(String, String, String)>,
     /// `"<name>.<field>"` for a record's fields, each typed as its schema
     /// declares it — a scalar, or an optional scalar (docs/adr/0055).
@@ -45319,7 +45320,12 @@ impl<'a> AlgorithmTypes<'a> {
                 &m.body,
                 imports,
                 schemas,
-                options.element_type_cpp_printed.as_ref(),
+                // One of the two is populated, for the backend the algorithm
+                // is generated for.
+                options
+                    .element_type_cpp_printed
+                    .as_ref()
+                    .or(options.element_type_kotlin_printed.as_ref()),
                 &mut foreach_members,
             );
         }
@@ -46004,6 +46010,21 @@ fn render_algorithm(
             record_renames.push((
                 path.clone(),
                 format!("{}.{}()", l.local_id(item), l.codec_field_id(field)),
+            ));
+        }
+    }
+    // One the Kotlin backend prints holds a byte string or a text in the value
+    // class of its bound, so the item's field is read out of the class.
+    if matches!(lang, Language::Kotlin) {
+        for (path, item, field) in &types.member_accessors {
+            let held = match types.members.iter().find(|(p, _)| p == path) {
+                Some((_, SceType::Bytes)) => "bytes",
+                Some((_, SceType::String)) => "text",
+                _ => continue,
+            };
+            record_renames.push((
+                path.clone(),
+                format!("{}.{}.{held}", l.local_id(item), l.codec_field_id(field)),
             ));
         }
     }
