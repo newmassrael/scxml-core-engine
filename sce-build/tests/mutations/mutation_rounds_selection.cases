@@ -61,8 +61,8 @@ mutation_runtime_targets scripts/mutate
 
 mutation_case "a changed path matches a declared target by prefix" <<'PY'
 edit("scripts/gates/mutation-rounds.sh",
-     'if [[ "$changed" == "$target" ]]; then',
-     'if [[ "$target" == "$changed"* ]]; then')
+     'if [[ "$changed" == "$target" ]] \\',
+     'if [[ "$target" == "$changed"* ]] \\')
 PY
 
 # ── Everything is selected regardless of the change set ────────────

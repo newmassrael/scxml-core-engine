@@ -17,12 +17,12 @@ C++ AOT, Rust, Go, Kotlin, Python, C11 — and the commitment splits in two.
 
 The sites that GENERATE each channel are loud when they are missing:
 `scripts/regen_<stem>{_kotlin,_python}.sh` (without them
-`regen_all_committed_trees.sh` exits non-zero), the `pub mod <stem>;` in the
-Rust integration tree (`rust-modrs-drift` blocks the push), and the two CMake
+`regen_all_committed_trees.sh` exits non-zero) and the two CMake
 registrations (the build fails). The Rust and Go machines need no site of
 their own: `tools/codegen/trees/rust-integration.toml` and
 `tools/codegen/trees/go-integration.toml` generate every directory of
-`integration_resources/` (ADR 0097).
+`integration_resources/` (ADR 0097), and the Rust crate's build script
+declares a module for each directory it placed.
 
 The sites that ASSERT are silent. Generated code that nobody runs still
 compiles, so a stem can land with a machine in all seven channels and a test
@@ -1268,7 +1268,7 @@ have no Interpreter and the AOT channel is the canonical contract test.
 
 | Backend | Coverage form | Location | Drift-verify CI gate |
 |---|---|---|---|
-| Rust | AOT-generated tree | `backends/rust/tests/src/integration/donedata_local_invoke/` | yes |
+| Rust | AOT build-time tree (ADR 0097) | `rust-integration` tree, `src/integration/donedata_local_invoke/` under the crate's `OUT_DIR/sce-trees` | yes (verified on its materialization) |
 | Kotlin | AOT-generated tree | `backends/kotlin/tests/src/main/kotlin/com/sce/generated/donedata_local_invoke/` | yes |
 | Go | AOT-generated tree | `backends/go/tests/integration/donedata_local_invoke/` | yes |
 | C++ | Interpreter gtest + AOT build-time | Interpreter: `tests/integration/DonedataLocalInvokeTest.cpp`; AOT: `tests/integration/DonedataLocalInvokeAotTest.cpp` against `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/` | n/a (build-time generation, freshness invariant = CMake build) |
@@ -1736,7 +1736,8 @@ When a future SCXML contract requires this layer:
    every declared tree so a template touch lands one coherent commit
    across every drift context.
 4. Register the new sub-module in each backend's integration entry
-   point: Rust `backends/rust/tests/src/integration/mod.rs`, Kotlin
+   point (Rust needs none: its build script declares every directory
+   it placed), Kotlin
    `backends/kotlin/tests/src/main/kotlin/com/sce/integration/package-info.kt`,
    Go `backends/go/tests/integration/doc.go`.
 5. Wire the §6.2.6 drift-verify CI gate to each backend's new

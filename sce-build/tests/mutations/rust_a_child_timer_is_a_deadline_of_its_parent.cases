@@ -18,7 +18,7 @@
 # still armed, which no committed document builds.
 
 mutation_tests -p sce-rust-tests --test a_child_timer_is_a_deadline_of_its_parent
-mutation_targets backends/rust/runtime/src/engine.rs backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs
+mutation_targets backends/rust/runtime/src/engine.rs rust-integration:backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs
 mutation_oracles backends/rust/tests/tests/a_child_timer_is_a_deadline_of_its_parent.rs
 
 # ── The engine answers only its own scheduler ──────────────────────
@@ -36,7 +36,7 @@ PY
 # which reads INCONCLUSIVE rather than as a verdict.
 
 mutation_case "the generated policy counts no running child's timers" <<'PY'
-edit("backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs",
+edit("rust-integration:backends/rust/tests/src/integration/a_child_timer_is_a_deadline_of_its_parent/a_child_timer_is_a_deadline_of_its_parent_sm.rs",
      """if let Some(due) = child.time_until_next_scheduled_ms() {""",
      """if let Some(due) = child.time_until_next_scheduled_ms().filter(|_| false) {""")
 PY

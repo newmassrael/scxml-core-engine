@@ -9,10 +9,16 @@
 # Written into an output root of its own, the run also writes the files that
 # make a suite a package on its own (a manifest, the harness); the
 # repository's are written by hand, so the tree keeps the suite's files alone.
+#
+# Not committed: a build output of sce-rust-tests, whose build script writes
+# it into OUT_DIR and declares `generated` and the modules of the target
+# tests/w3c.rs from what it placed (docs/adr/0097, landing 1). Its bytes are
+# the generator's own, so no formatter runs over it.
 
 [tree]
 name = "rust-w3c"
 roots = ["backends/rust/tests/src/generated", "backends/rust/tests/tests"]
+committed = false
 
 [[generation]]
 arguments = ["generate-w3c", "-l", "rust", "--output-dir", "{out}"]
@@ -22,7 +28,3 @@ keep = [
     "backends/rust/tests/src/generated/*/*",
     "backends/rust/tests/tests/test_*.rs",
 ]
-
-[[format]]
-tool = "rustfmt"
-directories = ["backends/rust/tests/src/generated", "backends/rust/tests/tests"]

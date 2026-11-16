@@ -4,9 +4,9 @@
 #
 # Mirrors: w3c-tests.yml
 #
-# The Rust AOT conformance arm: the W3C cases, each its own integration test
-# binary under `backends/rust/tests/tests/`, plus the hand-written tests beside
-# them in `sce-rust-tests`.
+# The Rust AOT conformance arm: the W3C cases, the modules of the one test
+# target `w3c` (`backends/rust/tests/tests/w3c.rs`), plus the hand-written tests
+# beside them in `sce-rust-tests`.
 #
 # It was the one W3C arm with no gate. The `test-rust` job spelled its
 # generation, its fixture server and its `cargo test` inline, while the Go,
@@ -15,16 +15,13 @@
 # `<family>-<canonical name>`, so a lane with no gate was a row nobody could
 # derive. The job runs this script now, and the commands live here once.
 #
-# The Rust W3C tree is COMMITTED, unlike Go's, so the generation below
-# rewrites tracked files. That is what the lane always did: it judges the
-# generator in the working tree, not an artifact produced earlier. Whether the
-# committed tree is what the generator writes is `regen-reproduces`'s
-# question, not this gate's.
+# The Rust W3C tree is a build output (docs/adr/0097): the crate's build
+# script writes it into OUT_DIR from the generator in the working tree, so the
+# build below judges the generator as it stands, with no generation step here.
 #
 # `--release` and `--no-fail-fast`, as the lane ran it. The same cases also run
-# in the test profile inside `workspace-tests`, over the committed tree and
-# without regenerating it; this is the arm that runs what the generator writes
-# now, optimised, the way the crate's own documentation runs it.
+# in the test profile inside `workspace-tests`; this is the arm that runs them
+# optimised, the way the crate's own documentation runs it.
 #
 # The BasicHTTP fixtures need the echo server, and the harness addresses
 # whatever port `SCE_W3C_HTTP_PORT` names, which the fixture helper exports
@@ -34,36 +31,29 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# No toolchain check of its own: cargo is what `sce_gate_codegen` builds the
-# generator with, so a machine without it stops on the next line, saying so.
-CODEGEN="$(sce_gate_codegen)"
+LOG="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$LOG'"
 
-sce_gate_step "generating the Rust W3C suite"
-"$CODEGEN" generate-w3c -l rust >/dev/null \
-    || sce_gate_fail "Rust W3C generation"
-
-# The population the run is held to, read from what generation left rather
-# than written here. Each W3C case is one file holding one `#[test]` named
-# after it (test_403a.rs holds `fn test_403a`), so the files are the
-# denominator and the passing case lines are the numerator.
+# The population the run is held to, read from what the build placed rather
+# than written here. Each W3C case is one module of the target `w3c` holding
+# one `#[test]` named after it (`test_403a::test_403a`), so the cases the
+# target lists are the denominator and the passing case lines the numerator.
 #
 # The floor under the denominator is the one the Go and Python arms hold, 200,
-# against 202 files in the tree on the day this was written: a generation that
-# emitted nothing would otherwise leave a denominator of whatever happened to
-# be on disk, and a gate that compares a run to an empty set compares nothing.
-shopt -s nullglob
-W3C_CASES=(backends/rust/tests/tests/test_[0-9]*.rs)
-shopt -u nullglob
-expected=${#W3C_CASES[@]}
+# against 202 cases on the day this was written: a generation that emitted
+# nothing would otherwise leave a denominator of whatever the build compiled,
+# and a gate that compares a run to an empty set compares nothing.
+sce_gate_step "listing the Rust W3C suite the build placed"
+cargo test --release -p sce-rust-tests --test w3c -- --list >"$LOG/list.log" 2>&1 \
+    || { cat "$LOG/list.log" >&2; sce_gate_fail "the Rust W3C suite did not build"; }
+expected="$(grep -cE '^test_[0-9]+[a-z]?::test_[0-9]+[a-z]?: test$' "$LOG/list.log" || true)"
 if (( expected < 200 )); then
-    sce_gate_fail "generation left only $expected W3C test file(s) under backends/rust/tests/tests (expected at least 200) — the suite would cover less than its name claims"
+    sce_gate_fail "the build placed only $expected W3C case(s) in the target w3c (expected at least 200) — the suite would cover less than its name claims"
 fi
 
 sce_gate_http_fixture_server
 
 sce_gate_step "running the Rust conformance suite"
-LOG="$(mktemp -d)"
-sce_gate_on_exit "rm -rf '$LOG'"
 
 # The log is printed whole because the lane's summary step reads its
 # `test result:` lines out of what this gate writes.
@@ -78,8 +68,8 @@ fi
 
 # A test binary that compiled no cases, or a target cargo was never asked to
 # build, exits 0 with no case lines at all, which reads as a pass in the
-# status alone. Every file the generator wrote has to answer.
-cases="$(grep -cE '^test test_[0-9]+[a-z]? \.\.\. ok$' "$LOG/rust.log" || true)"
+# status alone. Every case the build placed has to answer.
+cases="$(grep -cE '^test test_[0-9]+[a-z]?::test_[0-9]+[a-z]? \.\.\. ok$' "$LOG/rust.log" || true)"
 if (( cases < expected )); then
     tail -n 20 "$LOG/rust.log" >&2
     sce_gate_fail "only $cases of the $expected W3C case(s) the generator wrote passed — the suite covered less than its name claims"

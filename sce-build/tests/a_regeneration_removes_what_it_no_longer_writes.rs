@@ -507,16 +507,19 @@ fn every_file_of_a_swept_tree_is_generated_or_written_by_hand() {
 
     // The W3C trees hold generator output only, so every committed file there
     // must be recognised, and each kind must be seen at least once: an arm of
-    // the rules that matched nothing would otherwise pass unseen.
+    // the rules that matched nothing would otherwise pass unseen. The Rust W3C
+    // tree is no longer committed (docs/adr/0097), and with it went the one
+    // committed module index; the arm that recognises an index by its first
+    // line is held by the planted repositories above (`module_index`).
     let w3c: Vec<&String> = tracked
         .iter()
         .filter(|rel| {
-            rel.starts_with("backends/rust/tests/src/generated/")
-                || rel.starts_with("backends/kotlin/w3c/src/main/kotlin/com/sce/generated/test")
+            rel.starts_with("backends/kotlin/w3c/src/main/kotlin/com/sce/generated/test")
+                || rel.starts_with("backends/kotlin/w3c/src/test/kotlin/com/sce/w3c/Test")
         })
         .collect();
     assert!(
-        w3c.len() >= 1000,
+        w3c.len() >= 600,
         "only {} committed W3C file(s) were read — the scan is broken, not the tree",
         w3c.len()
     );
@@ -531,7 +534,7 @@ fn every_file_of_a_swept_tree_is_generated_or_written_by_hand() {
     for (kind, suffix) in [
         ("hybrid stub", ".scxml"),
         ("sourcemap", "/sce_sourcemap.json"),
-        ("module index", "/mod.rs"),
+        ("generated test", ".kt"),
     ] {
         assert!(
             w3c.iter().any(|rel| rel.ends_with(suffix)),
@@ -810,8 +813,7 @@ fn every_step_is_the_bx_action_that_runs_it() {
 /// carries back from a build machine like a write; a change outside the
 /// action's declared outputs refuses its whole result. Turns red if a tree is
 /// added to a step in `sce_generated_trees` without an output of its action,
-/// or if an output is narrowed past a generated file (`test_*.rs`,
-/// `Test*.kt`).
+/// or if an output is narrowed past a generated file (`Test*.kt`).
 #[test]
 fn every_generated_file_of_a_step_is_an_output_of_its_action() {
     let root = common::repository::root();

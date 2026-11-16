@@ -788,7 +788,10 @@ GATES: dict[str, dict] = {
         # The cost model, because the gate sizes every job from it and judges
         # every job's duration against it: an edit to a runner's row changes
         # how many jobs the lane schedules and which of them turn red.
-        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh"],
+        #
+        # And the lockfile: a change to it moves every tree a `<tree>:<path>`
+        # target names (docs/adr/0097), so it selects the rounds that mutate one.
+        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
         "cache": False,
@@ -1770,6 +1773,9 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "ci_only": "90s. sce-forge-codec-no-alloc.yml runs it, next to its "
                    "alloc-on sibling.",
+        # The text algorithms it compiles are read from a materialization of
+        # `rust-static-datamodel` (docs/adr/0097), which sce-codegen writes.
+        "deps": ["codegen-build"],
         "cost_s": 90,
         "summary": "generated codecs compile without alloc",
         "cache": True,
@@ -2332,11 +2338,19 @@ GATES: dict[str, dict] = {
                   "sce-build/tests/fixtures/**",
                   # The shared Lua the Lua crate loads, and the shared tables
                   # its readers ask.
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**"],
-        "deps": ["codegen-build"],
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
+                  # What the crate's build script generates its trees from
+                  # (docs/adr/0097): their manifests, the standard library and
+                  # the documents outside the fixture directories.
+                  "tools/codegen/trees/**", "stdlib/**",
+                  "integration_resources/**", "tests/integration/**",
+                  "examples/ai_loop/**"],
+        # No `deps`: the crate's build script is the generator of its own
+        # trees, built from sce-build as a build-dependency, so no gate's
+        # sce-codegen is executed.
         "ci_only": "unmeasured, and the lane it mirrors says why it cannot "
                    "be a push gate: `test-rust` carries a 65-minute timeout, "
-                   "the longest of the W3C jobs, because it links some 200 "
+                   "the longest of the W3C jobs, because it links the "
                    "release test binaries under thin LTO with one codegen "
                    "unit. w3c-tests.yml declares no `paths:` filter, so CI "
                    "runs this arm on every push.",

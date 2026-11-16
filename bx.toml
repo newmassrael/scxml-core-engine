@@ -674,7 +674,7 @@ run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ct
 # what lets the bare `bx --actions` mean "regenerate everything". The one is `capture-cbor-pin` (at
 # the end of the file), which writes its pin once and checks it on every later run, so that running
 # it beside the steps checks that the regeneration moved no pinned CBOR byte; any other action that
-# is not a step would have to come with the list instead (`bx --actions -- regen-rust-tests ...`).
+# is not a step would have to come with the list instead (`bx --actions -- regen-kotlin-tests ...`).
 # One step alone: `bx --action regen-<step>`, e.g. `bx --action regen-embed-manifest` after a public
 # header edit. Measured for the single action this replaced: 341 s on a build machine with nothing
 # left to change, 956-1971 s with changes, against 40-60 min on this machine under load.
@@ -694,10 +694,9 @@ run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ct
 #
 # WHAT IS ONE STEP, AND WHY. A step owns trees, and its parts are one step where a real
 # read-after-write or a shared tree joins them:
-#   - regen-rust-tests: the W3C, integration and static datamodel Rust trees all write into
-#     backends/rust/tests, each a declared tree (tools/codegen/trees/rust-w3c.toml,
-#     rust-integration.toml, rust-static-datamodel.toml) whose integration stems are a directory
-#     each under src/integration, found at run time, so no output can be declared for each.
+#   - The Rust test trees (tools/codegen/trees/rust-w3c.toml, rust-integration.toml,
+#     rust-static-datamodel.toml) are no step: the crates that compile them write them into OUT_DIR
+#     from their build scripts (docs/adr/0097, landing 1), and no checkout holds them.
 #   - regen-kotlin-tests: the static datamodel writes its units as packages under
 #     com/sce/generated of backends/kotlin/tests, and its machines are a directory of their own,
 #     com/sce/integration/static_datamodel, beside the integration stems. The W3C tree is the
@@ -774,11 +773,10 @@ run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ct
 # AddressSanitizer, fails until bx's trace turns leak detection off (the `trace-sanitizers` branch,
 # RFC 0003 section 9a): measured 2026-11-07, five of 1299 such runs failed only for being traced.
 # Turn it on per action once that bx is installed and `bx-fleet action learn` agrees with the inputs
-# below. Three actions need more first, because a cached action may not read what it writes and its
-# outputs are replaced whole: regen-rust-tests reads the crate it writes into (the format pass),
-# regen-runtime-rust runs a generator compiled from the tree it writes, and a directory output that
-# also holds hand-written files (src/integration/mod.rs, the Go `*_test.go` beside the machines) has
-# to name the generated files instead.
+# below. Two actions need more first, because a cached action may not read what it writes and its
+# outputs are replaced whole: regen-runtime-rust runs a generator compiled from the tree it writes,
+# and a directory output that also holds hand-written files (the Go `*_test.go` beside the machines)
+# has to name the generated files instead.
 [actions.regen-runtime-rust]
 run = 'scripts/regen_all_committed_trees.sh runtime-rust'
 inputs = [
@@ -1142,75 +1140,6 @@ inputs = [
     "scripts/regen_all_committed_trees.sh",
 ]
 outputs = ["backends/c/runtime/include/sce/generated/**"]
-
-[actions.regen-rust-tests]
-run = 'scripts/regen_all_committed_trees.sh rust-tests'
-inputs = [
-    ".cargo/**",
-    "Cargo.toml",
-    "Cargo.lock",
-    "rust-toolchain.toml",
-    "backends/rust/*/Cargo.toml",
-    "sce-build-wasm/Cargo.toml",
-    "sce-revision/Cargo.toml",
-    "sce-specs/Cargo.toml",
-    "sce-ttcn3-validator/Cargo.toml",
-    "sce-build/**",
-    "tools/codegen/**",
-    "stdlib/**",
-    "schemas/**",
-    "apis/**",
-    "kind-examples/**",
-    "docs/SCE_ACCEPTED_SUBSET.md",
-    "SCE_ERROR_CONTRACT.md",
-    "SCE_MESH.md",
-    "sce/include/*.h",
-    "sce/include/actions/**",
-    "sce/include/backends/**",
-    "sce/include/common/**",
-    "sce/include/core/**",
-    "sce/include/dispatchers/**",
-    "sce/include/events/**",
-    "sce/include/factory/**",
-    "sce/include/host/**",
-    "sce/include/mesh/**",
-    "sce/include/model/**",
-    "sce/include/parsing/**",
-    "sce/include/runtime/**",
-    "sce/include/saved/**",
-    "sce/include/scripting/**",
-    "sce/include/static/**",
-    "sce/include/test/**",
-    "sce/include/wrappers/**",
-    "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/src/**",
-    "backends/python/runtime/pyproject.toml",
-    "backends/python/runtime/sce_runtime/*.py",
-    "backends/python/runtime/sce_runtime/scripting/**",
-    "backends/python/runtime/sce_runtime/testprofile/**",
-    "backends/rust/tests/src/harness.rs",
-    "backends/go/tests/harness/**",
-    "backends/go/tests/go.sum",
-    "backends/python/tests/conftest.py",
-    "backends/kotlin/test-harness/src/main/**",
-    "tests/fixtures/**",
-    "tests/forge/resources/**",
-    "tests/mesh/**",
-    "scripts/lib/**",
-    "scripts/regen_all_committed_trees.sh",
-    "scripts/regen_*.sh",
-    "resources/**",
-    "tests/w3c/conformance/**",
-    "integration_resources/**",
-    "tests/integration/**",
-    "examples/ai_loop/**",
-    "backends/rust/tests/**",
-]
-outputs = [
-    "backends/rust/tests/src/generated/**",
-    "backends/rust/tests/src/integration/**",
-    "backends/rust/tests/tests/test_*.rs",
-]
 
 [actions.regen-kotlin-tests]
 run = 'scripts/regen_all_committed_trees.sh kotlin-tests'

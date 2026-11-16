@@ -12,12 +12,17 @@
 # or invoker; their test drives that host, so the declaration is the
 # build's and stands here, beside the stems it applies to.
 #
-# Regenerate with `scripts/materialize.sh rust-integration`.
+# Not committed: a build output of sce-rust-tests, whose build script writes
+# it into OUT_DIR and declares a module of src/integration/mod.rs for each
+# directory it placed (docs/adr/0097, landing 1). Its bytes are the
+# generator's own, so no formatter runs over it. `scripts/materialize.sh
+# rust-integration` writes it into the checkout to be read, ignored there.
 
 [tree]
 name = "rust-integration"
 roots = ["backends/rust/tests/src/integration/*"]
 except = ["backends/rust/tests/src/integration/static_datamodel"]
+committed = false
 
 # Every fixture of integration_resources: a directory holding the document of
 # its name.
@@ -154,7 +159,3 @@ entries = [
     { files = "*_sm.rs", line = "mod {module};\npub use {module}::*;\n" },
     { files = "*_transition_function.rs", line = "pub mod {module};\n" },
 ]
-
-[[format]]
-tool = "rustfmt"
-directories = ["backends/rust/tests/src/integration/*"]

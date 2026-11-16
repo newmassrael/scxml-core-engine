@@ -15,11 +15,15 @@
 # `generate` generates it alone. The list of algorithms, records and enums a
 # machine calls is the import closure the generator walks, not a list here.
 #
-# Regenerate with `scripts/materialize.sh rust-static-datamodel`.
+# Not committed: a build output of sce-rust-tests and sce-rust-scenarios,
+# whose build scripts write it into their OUT_DIR and declare the module
+# `static_datamodel` over the index placed here (docs/adr/0097, landing 1).
+# Its bytes are the generator's own, so no formatter runs over it.
 
 [tree]
 name = "rust-static-datamodel"
 roots = ["backends/rust/tests/src/integration/static_datamodel"]
+committed = false
 
 # Every statechart of the fixture directory declared under
 # datamodel="sce-static" that the Rust backend lowers. A construct Rust gains
@@ -116,7 +120,3 @@ directories = "backends/rust/tests/src/integration/static_datamodel"
 file = "mod.rs"
 header = "// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-static-datamodel)\n\n"
 entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
-
-[[format]]
-tool = "rustfmt"
-directories = ["backends/rust/tests/src/integration/static_datamodel"]

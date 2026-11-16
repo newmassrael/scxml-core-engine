@@ -25,8 +25,9 @@
 # bounded text (`sce:std/text/*`, SCE_FORGE.md §4.12): the record's string field is
 # the fixed-capacity `SceString<N>` of `sce-portable-bytes` and the list the
 # algorithm builds is a `SceOwnedList`, so none of them reaches the heap when the
-# `alloc` feature is off. The committed trees the machine scenarios compile are
-# the algorithms' goldens, so a change to how the generator spells that text is
+# `alloc` feature is off. The algorithms are read from the tree the machine
+# scenarios compile, `rust-static-datamodel`, materialized here as its actions
+# write it (docs/adr/0097), so a change to how the generator spells that text is
 # judged here too.
 #
 # Usage (from repo root):  scripts/check_noalloc_codec.sh
@@ -37,7 +38,6 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 EXPECTED="tests/forge/expected"
-ALGORITHM_EXPECTED="backends/rust/tests/src/integration/static_datamodel"
 RUNTIME="$REPO_ROOT/backends/rust/forge-runtime"
 PORTABLE="$REPO_ROOT/backends/rust/portable-bytes"
 
@@ -45,6 +45,14 @@ PORTABLE="$REPO_ROOT/backends/rust/portable-bytes"
 WORK="$REPO_ROOT/target/noalloc_codec_check"
 rm -rf "$WORK"
 mkdir -p "$WORK/src"
+
+# The text algorithms, as the tree's actions write them: no checkout holds the
+# tree, which the test crate's build script writes into its OUT_DIR.
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
+CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
+TREES="$WORK/trees"
+"$CODEGEN" materialize rust-static-datamodel --into "$TREES"
+ALGORITHM_EXPECTED="$TREES/backends/rust/tests/src/integration/static_datamodel"
 
 # List-free borrowed scalar codecs. Each is its own module file loaded
 # via `#[path] mod`, which keeps the golden's leading `#![doc]` inner

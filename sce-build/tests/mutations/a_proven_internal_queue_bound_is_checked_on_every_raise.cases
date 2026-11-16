@@ -14,13 +14,18 @@
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-tests --test test_415
+# The W3C tests are modules of one target, `w3c` (docs/adr/0097), and a round
+# runs a test binary whole, so the round runs every W3C case: the BasicHTTP
+# ones among them need the harness server. The machine is the tree
+# `rust-w3c`'s, mutated where the round's build wrote it (`<tree>:<path>`).
+mutation_tests -p sce-rust-tests --test w3c
+mutation_needs http-fixture
 mutation_oracles backends/rust/runtime/src/engine.rs
-mutation_targets backends/rust/tests/src/generated/test415/test415_sm.rs
+mutation_targets rust-w3c:backends/rust/tests/src/generated/test415/test415_sm.rs
 
 # The proof claims one slot fewer than the document fills.
 mutation_case "test415's proven bound is one event too small" <<'PY'
-edit("backends/rust/tests/src/generated/test415/test415_sm.rs",
-     r'''    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(1);''',
-     r'''    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);''')
+edit("rust-w3c:backends/rust/tests/src/generated/test415/test415_sm.rs",
+     r'''const INTERNAL_QUEUE_BOUND: Option<usize> = Some(1);''',
+     r'''const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);''')
 PY

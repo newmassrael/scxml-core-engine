@@ -19,15 +19,15 @@
 # history" into "this run was somewhere else", and a resume is the one
 # operation where being nearly right is worse than failing outright.
 #
-# The committed tree is the target rather than the template, for the reason
-# `ai_loop_host_contract_rust.cases` records: the template is not compiled into
-# this binary, so an edit there leaves every artifact hash unchanged and the
-# round is reported INCONCLUSIVE. `scripts/materialize.sh rust-integration` rewrites that file
-# from `examples/ai_loop/ai_loop.scxml`, so an anchor moved by a document edit
-# is reported INCONCLUSIVE with the anchor quoted rather than as a pass.
+# The generated machine is the target rather than the template: mutating the
+# output is what proves the test reads it. The tree `rust-integration` writes
+# that file from `examples/ai_loop/ai_loop.scxml`, and the target names it in
+# the tree (`<tree>:<path>`, docs/adr/0097), so the round mutates the copy its
+# build compiles; an anchor moved by a document edit is reported INCONCLUSIVE
+# with the anchor quoted rather than as a pass.
 
 mutation_tests -p sce-rust-tests --test ai_loop
-mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+mutation_targets rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 
 # ── A state the document has drops out of the reverse table ─────────
 #
@@ -40,7 +40,7 @@ mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 # for this one, and it names the state in its panic rather than unwrapping.
 
 mutation_case "a state the document has drops out of the reverse table" <<'PY'
-edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
      '            "working" => Some(AiLoopState::Working),\n',
      '')
 PY
@@ -56,7 +56,7 @@ PY
 # scenarios actually stand in, so `paused` is reached rather than assumed.
 
 mutation_case "a name reads back as a different state" <<'PY'
-edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
      '            "paused" => Some(AiLoopState::Paused),',
      '            "paused" => Some(AiLoopState::Working),')
 PY
@@ -70,7 +70,7 @@ PY
 # state table's fallback rather than the event table's.
 
 mutation_case "an unknown name is guessed at rather than refused" <<'PY'
-edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
      '            "working" => Some(AiLoopState::Working),\n            _ => None,',
      '            "working" => Some(AiLoopState::Working),\n            _ => Some(AiLoopState::Run),')
 PY
