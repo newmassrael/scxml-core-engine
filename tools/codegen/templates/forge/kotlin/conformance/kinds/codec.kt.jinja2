@@ -126,7 +126,7 @@
             val value = {{ s.literal }}
             val sink = mutableListOf<Byte>()
             assertTrue(
-                {{ f.name | to_pascal_case }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink)) == null,
+                {{ f.name | to_pascal_case }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink){% for i in s.encode_inputs %}, {{ i }}{% endfor %}) == null,
                 "{{ f.name }} source {{ loop.index0 }}: the encode answered an error: {{ s.note }}",
             )
             val expected = byteArrayOf({% for b in s.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
@@ -136,11 +136,11 @@
             )
             val cursor = com.sce.forge.runtime.SceCursor(expected)
 {% if s.checks %}
-            val decoded = {{ f.name | to_pascal_case }}.decode(cursor)
+            val decoded = {{ f.name | to_pascal_case }}.decode(cursor{% for i in s.inputs %}, {{ i }}{% endfor %})
                 .valueOr { refused -> error("{{ f.name }} source {{ loop.index0 }}: decode refused as ${refused.error}: {{ s.note }}") }
 {% else %}
             {# A codec that presents no element has nothing to compare. #}
-            val read = {{ f.name | to_pascal_case }}.decode(cursor)
+            val read = {{ f.name | to_pascal_case }}.decode(cursor{% for i in s.inputs %}, {{ i }}{% endfor %})
             assertTrue(
                 read is com.sce.forge.runtime.Decoded.Ok,
                 "{{ f.name }} source {{ loop.index0 }}: decode refused as ${read.errorOrNull()}: {{ s.note }}",
@@ -157,6 +157,27 @@
                 "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
             )
 {% endfor %}
+        }
+{% endfor %}
+
+{# Refused cases (docs/adr/0081 §5): each `source` is a value of the codec's
+   interface its encode refuses, made as a source is, and the encode answers
+   exactly the refusal the case names, the runtime's `CodecError` object,
+   before it writes a byte, so the sink is left empty. #}
+{% for r in f.refused %}
+        run {
+            val value = {{ r.literal }}
+            val sink = mutableListOf<Byte>()
+            val refused = {{ f.name | to_pascal_case }}.encodeSource(value, com.sce.forge.runtime.MutableListSink(sink){% for i in r.encode_inputs %}, {{ i }}{% endfor %})
+            assertTrue(
+                refused == {{ r.symbol }},
+                "{{ f.name }} refused {{ loop.index0 }}: the encode answers {{ r.error }}, not $refused: {{ r.note }}",
+            )
+            assertEquals(
+                0,
+                sink.size,
+                "{{ f.name }} refused {{ loop.index0 }}: the encode wrote bytes before it refused",
+            )
         }
 {% endfor %}
 

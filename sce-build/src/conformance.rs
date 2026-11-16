@@ -6269,6 +6269,16 @@ mod tests {
             "sce_forge_runtime.codec.PresentIfMismatch"
         );
 
+        // The Kotlin printer prints it too, and its harness names the
+        // runtime's error object.
+        let (folded, value) =
+            fold(&printed, &mismatch, Language::Kotlin).expect("Kotlin states it");
+        assert!(folded);
+        assert_eq!(
+            value["refused"][0]["symbol"],
+            "com.sce.forge.runtime.CodecError.PresentIfMismatch"
+        );
+
         let (folded, value) = fold(&checked, &mismatch, Language::Kotlin).expect("Kotlin: none");
         assert!(!folded && value.get("refused").is_none());
 

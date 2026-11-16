@@ -76,6 +76,13 @@ sealed class CodecError {
     /// `encode()` refuses before writing the first byte, so the sink is
     /// untouched.
     data object PresentIfMismatch : CodecError()
+    /// Encode-side: two things a value says of one number disagree: two byte
+    /// strings that share one length field and differ in length, or a length
+    /// the value states beside the content it measures that is not that
+    /// content's length (docs/adr/0065 §2). No frame says both, so the encode
+    /// refuses before writing the first byte and the sink is untouched.
+    /// Mirrors the Rust runtime's `CodecError::InconsistentSource`.
+    data object InconsistentSource : CodecError()
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line,
     /// a parameter or an `END:` the grammar does not admit.
     data object LineMalformed : CodecError()
