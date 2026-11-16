@@ -1660,6 +1660,30 @@ old encode, the old encode and its templates are removed in the same landing.
    file, the readers above, and that every codec of the resources is printed exactly where the printer lowers every
    form of it. A list is presented, when its landing comes, as §2 says (`iter.Seq`), which raises the Go modules'
    `go` directive from 1.22 to 1.23 in that landing.
+
+   *The second Go landing, 2026-11-16:* byte strings and texts, each always there and written to the end of the
+   frame or by a length, and the length that counts one of them, held in a field of its own that it fits, its
+   `sce:length-arith` never taking it below zero. The refinement of R1 is the runtime's `codec.Bytes[B]` and
+   `codec.Text[B]` (`backends/go/forge-runtime/codec/bounded.go`): a struct with an unexported field, made only by
+   `codec.MakeBytes` or `codec.MakeText`, which refuse a length outside the bound (`ErrLengthOutOfRange`) and a text
+   that is not well-formed UTF-8 (`ErrInvalidUTF8`). The bound is a type parameter, `B Bound`, whose two methods,
+   `Least() int` and `Most() int`, a zero-size type the codec's package names for the element answers
+   (`{Codec}{Element}Bound`; `codec.Unbounded`, the largest int, where the protocol states no most, as the C++
+   runtime's `kUnbounded` is). The decision was between this and one runtime type holding its bound in fields, which
+   a source could then present at any bound, or a generated type per element, which would repeat the check in every
+   package: a Go generic carries the bound in the type, as a C++ template parameter does, while the check is written
+   once. The zero value is a value of its type, the fewest units the bound admits, zeros or NULs, as the Python
+   classes default. A `Bytes` holds the slice it is made of and does not copy it: the bound is on the length, which
+   no write to the bytes can change. The value holds no derived length (§3): the struct, `Make{Codec}` and the
+   source have no member for it; the encode derives it from the bounded value's `Len()`; the decode reads it to cut
+   the bytes and makes the bounded value of what it read before the value's literal, returning the runtime's error,
+   which the decode's own check has already refused. Every reader the generator writes reads such an element as the
+   slice or the string it holds (`go_source::element_read`): an algorithm's element field, a validator's or a
+   procedure's read. The harness makes each bounded value by `codec.MakeBytes` or `codec.MakeText` of the bound the
+   codec names and reads it back by `.Bytes()` and `.String()`. A procedure that assigns an element of such a codec
+   makes the value again by `Make{Codec}` over every field the codec declares, as the first landing has it; no
+   document assigns to a codec with a byte string, a text or a derived length, and the rebuild that would hand a
+   bounded value and leave the length out lands with the procedures that need it.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
