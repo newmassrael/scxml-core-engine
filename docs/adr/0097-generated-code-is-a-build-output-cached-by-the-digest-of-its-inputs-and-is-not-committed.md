@@ -20,7 +20,8 @@
   the `[actions.regen-*]` of `bx.toml` (`:418-1224`), the `regen-reproduces` gate and workflow, the drift tests that
   read committed trees, the build files of each language lane, and a release pipeline that does not exist yet.
 - Related:
-  - ADR 0094 (Proposed, on a branch): a generated file's `source-hash` covers the closure of the documents it is
+  - ADR 0094 (Accepted 2026-11-08, landed after this one; its amendment of 2026-11-16 judges it against this
+    ADR): a generated file's `source-hash` covers the closure of the documents it is
     generated from. Its per-file closure is the input set of the per-generation action of section 2 here; the two
     are complementary and neither needs the other to land first;
   - ADR 0078 (a consumer follows SCE one landing at a time): its consumer-guide gate reads the diff of generated
