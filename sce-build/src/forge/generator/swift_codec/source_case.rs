@@ -77,14 +77,25 @@ pub(crate) fn source_case(
     }
     let mut arguments = Vec::new();
     let mut checks = Vec::new();
+    let mut bindings = Vec::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let value = object
             .get(id)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
-        // An element a gate leaves out is `nil`, and a decode presents it so.
+        // An element a gate leaves out is `nil`, and a decode presents it so. A byte string or a
+        // text is made through its bound's one door first, which the harness requires to answer.
         let spelled = if value.is_null() && element.presence.optional() {
             "nil".to_string()
+        } else if let Some(bounded) = super::source::bounded_type(type_name, element) {
+            let raw = match &element.value {
+                Value::Text(_) => text_literal(value),
+                _ => bytes_literal(value),
+            }
+            .map_err(|e| format!("`{id}`: {e}"))?;
+            let local = format!("bound_{id}");
+            bindings.push(format!("let {local} = try #require({bounded}({raw}))"));
+            local
         } else {
             number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?
         };
@@ -92,12 +103,39 @@ pub(crate) fn source_case(
         checks.push((id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}")));
     }
     Ok(SourceCase {
-        bindings: Vec::new(),
+        bindings,
         literal: format!("{type_name}({})", arguments.join(", ")),
         checks,
         inputs: decode_inputs,
         encode_inputs,
     })
+}
+
+/// The Swift array literal of the bytes a source states, an array of numbers each a byte.
+fn bytes_literal(json: &serde_json::Value) -> Result<String, String> {
+    let bytes = json
+        .as_array()
+        .ok_or_else(|| "a byte string is an array of numbers".to_string())?
+        .iter()
+        .map(|b| {
+            b.as_u64()
+                .filter(|b| *b <= 0xFF)
+                .map(|b| b.to_string())
+                .ok_or_else(|| format!("`{b}` is no byte"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(format!("[{}]", bytes.join(", ")))
+}
+
+/// The Swift string literal of the text a source states.
+fn text_literal(json: &serde_json::Value) -> Result<String, String> {
+    let text = json
+        .as_str()
+        .ok_or_else(|| "a text is a string".to_string())?;
+    Ok(format!(
+        "\"{}\"",
+        crate::filters::escape_swift(text.to_string())
+    ))
 }
 
 /// The Swift literal of a number a source states: an integer as itself, which the parameter's

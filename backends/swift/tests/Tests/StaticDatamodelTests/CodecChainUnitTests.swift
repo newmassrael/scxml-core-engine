@@ -15,8 +15,13 @@ import XCTest
 // depth is refused and not left unread, an entry that promises another one the frame lacks leaves the
 // frame short, and a frame that is refused consumes nothing.
 final class CodecChainUnitTests: XCTestCase {
+    /// An entry of `type` holding `body`, whose length the encode derives (docs/adr/0081 §3). Every
+    /// body this file builds is within the entry's bound, so the bound's door answers it.
     private func entry(_ type: UInt8, _ body: [UInt8]) -> CodecTlvEntry {
-        CodecTlvEntry(entry_type: type, entry_len: UInt8(body.count), entry_body: body)
+        guard let held = BoundedBytes<CodecTlvEntry.EntryBodyBound>(body) else {
+            preconditionFailure("a body of \(body.count) bytes is past the entry's bound")
+        }
+        return CodecTlvEntry(entry_type: type, entry_body: held)
     }
 
     func testEntriesAreReadInOrderToTheEndOfTheFrame() throws {

@@ -248,6 +248,12 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_vle_zint_u64.scxml",
         "tests/forge/resources/codec_present_if_basic.scxml",
         "tests/forge/resources/codec_present_if_checked.scxml",
+        "tests/forge/resources/codec_tail.scxml",
+        "tests/forge/resources/codec_length_ref.scxml",
+        "tests/forge/resources/codec_length_ref_dotted_basic.scxml",
+        "tests/forge/resources/codec_scout_zid_body.scxml",
+        "tests/forge/resources/codec_zenoh_locator.scxml",
+        "tests/forge/resources/codec_present_if_string.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -262,8 +268,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         );
     }
     for (template, why) in [(
-        "tests/forge/resources/codec_length_ref.scxml",
-        "a length the encode derives",
+        "tests/forge/resources/codec_zenoh_timestamp_ext.scxml",
+        "an embedded body",
     )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
@@ -352,7 +358,16 @@ fn an_encode_reads_a_field_through_its_source_so_a_local_cannot_hide_it() {
 #[test]
 fn a_tail_is_the_bytes_to_the_end_of_the_frame() {
     let code = swift_of("tests/forge/resources/codec_tail.scxml").expect("a tail is written");
-    assert!(code.contains("public var payload: [UInt8] = []"), "{code}");
+    // A byte string is held in the bounded type its plan gives it (docs/adr/0065 §6 R1), which a
+    // decode makes through the door that refuses what the bound does not hold.
+    assert!(
+        code.contains("public var payload: BoundedBytes<CodecTail.PayloadBound> = .fewest"),
+        "{code}"
+    );
+    assert!(
+        code.contains("public enum PayloadBound: SceByteBound {"),
+        "the bound is a type of the codec's own: {code}"
+    );
     assert!(
         code.contains("public static let frameLength = 2"),
         "the fixed part is the bytes before the tail: {code}"
@@ -362,12 +377,18 @@ fn a_tail_is_the_bytes_to_the_end_of_the_frame() {
         "the frame is read through a copy of the cursor: {code}"
     );
     assert!(
-        code.contains("let payload = Array(try reader.readSlice(reader.remaining))"),
+        code.contains(
+            "let payload = try BoundedBytes<CodecTail.PayloadBound>(decoding: Array(try reader.readSlice(reader.remaining)))"
+        ),
         "{code}"
     );
     assert!(code.contains("cursor = reader"), "{code}");
     assert!(
-        code.contains("frame += self.payload"),
+        code.contains("var frame = [UInt8](repeating: 0, count: 2)"),
+        "the fixed part is written into zeros of its bytes: {code}"
+    );
+    assert!(
+        code.contains("source.payload.append(to: &frame)"),
         "the encode appends the bytes after the fixed part: {code}"
     );
 }
@@ -410,7 +431,7 @@ fn a_field_after_a_variable_length_one_begins_where_it_ended() {
         .find("let zid_size = try reader.readInteger")
         .expect("the size is read");
     let zid = code
-        .find("let zid = Array(try reader.readSlice")
+        .find("let zid = try BoundedBytes<")
         .expect("the bytes are read");
     assert!(
         time < size && size < zid,
@@ -419,7 +440,7 @@ fn a_field_after_a_variable_length_one_begins_where_it_ended() {
     let fixed_after = swift_of("tests/forge/resources/codec_fixed_after_lengthref.scxml")
         .expect("a fixed field after a length-ref is written");
     let bytes = fixed_after
-        .find("let payload = Array")
+        .find("let payload = ")
         .expect("the bytes are read");
     let crc = fixed_after
         .find("let crc32 = try reader.readInteger")
@@ -435,7 +456,7 @@ fn a_length_ref_takes_its_count_from_an_unsigned_field_and_its_arithmetic() {
     let code = swift_of("tests/forge/resources/codec_length_ref_uint16_be.scxml")
         .expect("a length-ref is written");
     assert!(
-        code.contains("let payload = Array(try reader.readSlice(Int(clamping: payload_len)))"),
+        code.contains("(decoding: Array(try reader.readSlice(Int(clamping: payload_len))))"),
         "{code}"
     );
     let arith = swift_of("tests/forge/resources/codec_scout_zid_body.scxml")
@@ -453,12 +474,20 @@ fn a_byte_string_is_held_to_the_bound_its_document_declares() {
     )
     .expect("a bounded tail is written");
     assert!(
-        tail.contains("if reader.remaining > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        let body = Array(try reader.readSlice(reader.remaining))"),
+        tail.contains("if reader.remaining > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        let body = try BoundedBytes<Flagged.BodyBound>(decoding: Array(try reader.readSlice(reader.remaining)))"),
         "a decode refuses the bytes that are left before it cuts them: {tail}"
     );
+    // A value past the bound is no value of the field's type (docs/adr/0065 §6 R1), so the encode
+    // has nothing of it to refuse.
     assert!(
-        tail.contains("if self.body.count > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        var frame: [UInt8] = []"),
-        "an encode refuses a value past the bound before its first byte: {tail}"
+        tail.contains(
+            "public enum BodyBound: SceByteBound {\n        public static let least = 0\n        public static let most: Int? = 8\n    }"
+        ),
+        "the bound is the type's: {tail}"
+    );
+    assert!(
+        !tail.contains("throw CodecError.lengthOutOfRange\n        }\n        var frame"),
+        "the encode refuses no bound its type holds: {tail}"
     );
     let counted = swift_of_datamodel(
         r#"<sce:field id="tag_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
@@ -479,20 +508,33 @@ fn a_text_is_the_string_its_utf8_bytes_spell_and_is_measured_in_those_bytes() {
     )
     .expect("a text is written");
     assert!(
-        code.contains("\n    public var name: String = \"\"\n"),
+        code.contains("\n    public var name: BoundedText<Flagged.NameBound> = .fewest\n"),
         "a field is declared on a line of its own, after its comment: {code}"
     );
     assert!(
-        code.contains("let name = try reader.readString(Int(clamping: n))"),
+        code.contains(
+            "let name = try BoundedText<Flagged.NameBound>(decoding: try reader.readString(Int(clamping: n)))"
+        ),
         "a decode reads the bytes as UTF-8 text, refusing bytes that are not: {code}"
     );
     assert!(
-        code.contains("frame += Array(self.name.utf8)"),
+        code.contains("source.name.append(to: &frame)"),
         "an encode writes the UTF-8 bytes of the text: {code}"
     );
+    // The length is derived from the bytes on the wire, not the characters (docs/adr/0081 §3), and
+    // the value holds none of its own.
     assert!(
-        code.contains("if self.name.utf8.count > 8 {"),
-        "the bound counts the bytes on the wire, not the characters: {code}"
+        code.contains("let n_derived: UInt8 = UInt8(source.name.byteCount)"),
+        "{code}"
+    );
+    assert!(
+        code.contains("appendInteger(n_derived, to: &frame, .big)")
+            || code.contains("storeInteger(n_derived, into: &frame, at: 0, .big)"),
+        "the derived length is what is written: {code}"
+    );
+    assert!(
+        !code.contains("public var n:"),
+        "the value holds no length of its own: {code}"
     );
 }
 
@@ -500,7 +542,15 @@ fn a_text_is_the_string_its_utf8_bytes_spell_and_is_measured_in_those_bytes() {
 fn a_gated_text_reads_a_length_that_shares_its_gate_through_the_value_it_has_there() {
     let code = swift_of("tests/forge/resources/codec_present_if_string.scxml")
         .expect("a gated text with a gated length is written");
-    assert!(code.contains("public var text: String? = nil"), "{code}");
+    assert!(
+        code.contains("public var text: BoundedText<CodecPresentIfString.TextBound>? = nil"),
+        "{code}"
+    );
+    // The length is derived where the text is there, and written where its gate holds.
+    assert!(
+        code.contains("let text_len_derived: UInt8 = source.text != nil ? UInt8((source.text?.byteCount ?? 0)) : 0"),
+        "{code}"
+    );
     assert!(
         code.contains("try reader.readString(Int(clamping: (text_len ?? 0)))"),
         "{code}"
@@ -702,12 +752,18 @@ fn a_length_held_in_the_bits_of_a_flag_is_read_shifted_down_and_masked() {
         "four bits cannot say more than the 15 bytes the document admits, so nothing is judged: {code}"
     );
     assert!(
-        code.contains("if self.payload.count > 15 {"),
-        "an encode still refuses a value past the bound: {code}"
+        code.contains("public static let most: Int? = 15"),
+        "the bytes are held to the bound by their type: {code}"
     );
     assert!(
+        code.contains("Array(try reader.readSlice(Int(clamping: ((carrier >> 4) & 0xF))))"),
+        "{code}"
+    );
+    // The length is derived into its four bits (docs/adr/0081 §3), the rest of the carrier as the
+    // value holds it.
+    assert!(
         code.contains(
-            "let payload = Array(try reader.readSlice(Int(clamping: ((carrier >> 4) & 0xF))))"
+            "carrier_folded = (carrier_folded & ~0xF0) | ((UInt8(truncatingIfNeeded: source.payload.byteCount) & 0xF) << 4)"
         ),
         "{code}"
     );
@@ -972,7 +1028,14 @@ fn a_negated_clause_is_on_a_clear_bit_and_a_disjunction_on_any_clause() {
 fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_ungated_one() {
     let tail = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
-    assert!(tail.contains(": [UInt8]? = nil"), "{tail}");
+    assert!(
+        tail.contains(": BoundedBytes<CodecPresentIfTail.") && tail.contains("Bound>? = nil"),
+        "{tail}"
+    );
+    assert!(
+        tail.contains("if let held = source.") && tail.contains("    held.append(to: &frame)"),
+        "a printed encode appends the bytes where the value holds them: {tail}"
+    );
     assert!(
         tail.contains("Array(try reader.readSlice(reader.remaining))"),
         "{tail}"
@@ -1640,8 +1703,9 @@ fn a_field_of_fewer_whole_bytes_than_its_type_is_read_and_written_as_those_bytes
             "the decode reads the three bytes the field has and no fourth",
         ),
         (
-            "appendInteger(self.n, bytes: 3, to: &frame, .big)",
-            "the encode appends the three bytes and cuts what is above them",
+            "frame[0] |= UInt8(truncatingIfNeeded: (source.n >> 16) & 0xFF) << 0",
+            "the printed encode writes the three bytes of the frame's fixed part and cuts what \
+             is above them",
         ),
         (
             "public static let frameLength = 3",

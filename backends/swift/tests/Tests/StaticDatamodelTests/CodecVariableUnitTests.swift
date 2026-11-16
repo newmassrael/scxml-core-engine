@@ -15,13 +15,13 @@ final class CodecVariableUnitTests: XCTestCase {
     func testATailTakesEverythingToTheEndOfTheInput() throws {
         var cursor = SceCursor([1, 2, 10, 20, 30])
         let frame = try CodecTail.decode(&cursor)
-        XCTAssertEqual(frame.payload, [10, 20, 30])
+        XCTAssertEqual(frame.payload.bytes, [10, 20, 30])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
     func testATailMayBeEmpty() throws {
         var cursor = SceCursor([1, 2])
-        XCTAssertEqual(try CodecTail.decode(&cursor).payload, [])
+        XCTAssertEqual(try CodecTail.decode(&cursor).payload.bytes, [])
     }
 
     func testAFrameShorterThanItsFixedPartIsRefusedAndConsumesNothing() {
@@ -36,8 +36,8 @@ final class CodecVariableUnitTests: XCTestCase {
         var cursor = SceCursor([1, 3, 10, 20, 30, 99, 98])
         let frame = try CodecLengthRef.decode(&cursor)
         XCTAssertEqual(frame.msgId, 1)
-        XCTAssertEqual(frame.len, 3)
-        XCTAssertEqual(frame.payload, [10, 20, 30])
+        // The length is the encode's to derive (docs/adr/0081 §3): the value holds the bytes alone.
+        XCTAssertEqual(frame.payload.bytes, [10, 20, 30])
         XCTAssertEqual(cursor.remaining, 2, "what follows the field is the caller's")
     }
 
@@ -61,7 +61,7 @@ final class CodecVariableUnitTests: XCTestCase {
 
     func testALengthAtTheBoundIsTaken() throws {
         var cursor = SceCursor([1, 32] + [UInt8](repeating: 7, count: 32))
-        XCTAssertEqual(try CodecLengthRef.decode(&cursor).payload.count, 32)
+        XCTAssertEqual(try CodecLengthRef.decode(&cursor).payload.byteCount, 32)
         XCTAssertEqual(cursor.remaining, 0)
     }
 
@@ -72,7 +72,7 @@ final class CodecVariableUnitTests: XCTestCase {
         }
         XCTAssertEqual(cursor.remaining, 35)
         var atTheBound = SceCursor([1, 2] + [UInt8](repeating: 7, count: 32))
-        XCTAssertEqual(try CodecTail.decode(&atTheBound).payload.count, 32)
+        XCTAssertEqual(try CodecTail.decode(&atTheBound).payload.byteCount, 32)
     }
 
     // The bound is on the length the document derives: `zid_len_m1 + 1`, at most 16, so a carried
@@ -83,41 +83,39 @@ final class CodecVariableUnitTests: XCTestCase {
             XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
         }
         var atTheBound = SceCursor([15] + [UInt8](repeating: 1, count: 16))
-        XCTAssertEqual(try CodecScoutZidBody.decode(&atTheBound).zid.count, 16)
+        XCTAssertEqual(try CodecScoutZidBody.decode(&atTheBound).zid.byteCount, 16)
     }
 
-    func testAnEncodeOfAValuePastTheBoundWritesNothing() {
-        var frame = CodecTail()
-        frame.payload = [UInt8](repeating: 7, count: 33)
-        var sink = BytesSink()
-        XCTAssertThrowsError(try frame.encode(into: &sink)) { error in
-            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
-        }
-        XCTAssertEqual(sink.bytes, [])
+    // A value past the bound is no value of the field's type (docs/adr/0065 §6 R1), so no encode is
+    // ever handed one.
+    func testAValuePastTheBoundIsNoValueOfTheField() {
+        XCTAssertNil(BoundedBytes<CodecTail.PayloadBound>([UInt8](repeating: 7, count: 33)))
+        XCTAssertNotNil(BoundedBytes<CodecTail.PayloadBound>([UInt8](repeating: 7, count: 32)))
     }
 
     // `zid_len_m1` states the length less one, and the document adds it back (`length-arith="+1"`).
     func testTheArithmeticOfALengthIsApplied() throws {
         var cursor = SceCursor([2, 0xAA, 0xBB, 0xCC, 0xDD])
         let frame = try CodecScoutZidBody.decode(&cursor)
-        XCTAssertEqual(frame.zid_len_m1, 2)
-        XCTAssertEqual(frame.zid, [0xAA, 0xBB, 0xCC])
+        XCTAssertEqual(frame.zid.bytes, [0xAA, 0xBB, 0xCC])
         XCTAssertEqual(cursor.remaining, 1)
+        // The encode derives the length less one from the bytes it writes.
+        var sink = BytesSink()
+        try frame.encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [2, 0xAA, 0xBB, 0xCC])
     }
 
     func testAnEncodeWritesTheFixedPartAndThenTheBytes() throws {
-        var frame = CodecLengthRef()
-        frame.msgId = 7
-        frame.len = 2
-        frame.payload = [0x10, 0x20]
+        let frame = CodecLengthRef(
+            msgId: 7, payload: try XCTUnwrap(BoundedBytes<CodecLengthRef.PayloadBound>([0x10, 0x20])))
         var sink = BytesSink()
         try frame.encode(into: &sink)
-        XCTAssertEqual(sink.bytes, [7, 2, 0x10, 0x20])
+        XCTAssertEqual(sink.bytes, [7, 2, 0x10, 0x20], "the length is derived from the bytes")
     }
 
-    func testABoundedSinkTooSmallForTheWholeFrameHoldsNoneOfIt() {
+    func testABoundedSinkTooSmallForTheWholeFrameHoldsNoneOfIt() throws {
         var frame = CodecTail()
-        frame.payload = [1, 2, 3, 4]
+        frame.payload = try XCTUnwrap(BoundedBytes<CodecTail.PayloadBound>([1, 2, 3, 4]))
         var sink = BoundedSink(capacity: 3)
         XCTAssertThrowsError(try frame.encode(into: &sink)) { error in
             XCTAssertEqual(error as? CodecError, .bufferOverflow)

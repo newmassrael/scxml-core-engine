@@ -45,8 +45,8 @@ final class CodecVleUnitTests: XCTestCase {
     func testAFieldAfterAChainBeginsWhereTheChainEnded() throws {
         var frame = CodecExtTimestamp()
         frame.time = 300
-        frame.zid_size = 3
-        frame.zid = [1, 2, 3]
+        // The size is the encode's to derive (docs/adr/0081 §3) from the bytes it counts.
+        frame.zid = try XCTUnwrap(BoundedBytes<CodecExtTimestamp.ZidBound>([1, 2, 3]))
         var sink = BytesSink()
         try frame.encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0xAC, 0x02, 3, 1, 2, 3])

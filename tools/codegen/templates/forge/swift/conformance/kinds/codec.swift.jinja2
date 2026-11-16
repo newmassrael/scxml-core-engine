@@ -24,9 +24,19 @@
         let decoded = try #require(testCase.member("decoded"), "{{ f.name }} case \(index) has no decoded value")
         let expectedBytes = try oracleBytes(testCase.member("encoded"))
 
+        {# A codec printed from its plan (docs/adr/0081 step 5) holds no element its encode derives
+           (§3), so the value is made without it and the decode gives none back, and holds each
+           byte string and text in the bounded type it declares, made through its one door. #}
         let value = {{ f.name | to_pascal_case }}(
-{% for field in f.fields %}
+{% for field in f.fields if not (f.printed and field.derived) %}
+{% if f.printed and field.bounded %}
+{% set bounded = ("BoundedText" if field.type == "string" else "BoundedBytes") ~ "<" ~ (f.name | to_pascal_case) ~ "." ~ (field.name | to_pascal_case) ~ "Bound>" %}
 {% if field.optional %}
+            {{ field.name }}: try oracleOptional(decoded.member("{{ field.name }}")) { try #require({{ bounded }}({{ "$0" | swift_unmarshal(field.type) }})) }{{ "," if not loop.last }}
+{% else %}
+            {{ field.name }}: try #require({{ bounded }}({{ ("decoded.member(\"" ~ field.name ~ "\")") | swift_unmarshal(field.type) }})){{ "," if not loop.last }}
+{% endif %}
+{% elif field.optional %}
             {{ field.name }}: try oracleOptional(decoded.member("{{ field.name }}")) { {{ "$0" | swift_unmarshal(field.type) }} }{{ "," if not loop.last }}
 {% else %}
             {{ field.name }}: {{ ("decoded.member(\"" ~ field.name ~ "\")") | swift_unmarshal(field.type) }}{{ "," if not loop.last }}

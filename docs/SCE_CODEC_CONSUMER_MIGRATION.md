@@ -2192,4 +2192,15 @@ Landing: the commit that adds this section, and each later one that names a form
   contradicts it throws `CodecError.presentIfMismatch` before the first byte, and fields that each say one flag and
   disagree throw the new `CodecError.inconsistentSource`; a consumer that switches over `CodecError` exhaustively
   adds that case.
+- Every Swift codec decodes its frame into locals named by its fields and makes the value of them once the frame is
+  read. The wire and the public API of a codec the printer does not print are unchanged.
+- A byte string or text of a printed codec is held in `BoundedBytes<{Codec}.{Field}Bound>` or
+  `BoundedText<{Codec}.{Field}Bound>` (`SceForgeRuntime`), whose failable initializer is the one door: a value
+  outside the bound is `nil`, and no encode is handed one. Read the bytes as `.bytes`, the text as `.text`, and the
+  count on the wire as `.byteCount`. The length or size that measures it (a field, or the bits of a flag) is derived
+  by the encode: a length field is no member of the value and no parameter of its initializer, and a length held in
+  a flag is written as the bytes say whatever the value's own bits say. A call site moves from
+  `CodecLengthRef(msgId: 7, len: 2, payload: [0x10, 0x20])` to
+  `CodecLengthRef(msgId: 7, payload: BoundedBytes([0x10, 0x20])!)`, or binds the bounded value with a check of its
+  own first.
 

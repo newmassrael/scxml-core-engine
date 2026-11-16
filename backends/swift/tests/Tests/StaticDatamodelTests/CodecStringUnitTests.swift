@@ -16,7 +16,7 @@ final class CodecStringUnitTests: XCTestCase {
     func testATextIsTheUtf8BytesItsLengthSays() throws {
         var cursor = SceCursor([0x03, 0x74, 0x63, 0x70, 0x77])
         let frame = try CodecZenohLocator.decode(&cursor)
-        XCTAssertEqual(frame.locator, "tcp")
+        XCTAssertEqual(frame.locator.text, "tcp")
         XCTAssertEqual(cursor.remaining, 1, "what follows the text is the caller's")
     }
 
@@ -26,7 +26,7 @@ final class CodecStringUnitTests: XCTestCase {
             XCTAssertEqual(error as? CodecError, .invalidUtf8, "a scalar cut off is not text")
         }
         var whole = SceCursor([0x06, 0x61, 0xC3, 0xA9, 0xE2, 0x82, 0xAC])
-        XCTAssertEqual(try CodecZenohLocator.decode(&whole).locator, "a\u{E9}\u{20AC}")
+        XCTAssertEqual(try CodecZenohLocator.decode(&whole).locator.text, "a\u{E9}\u{20AC}")
     }
 
     func testBytesThatAreNotUtf8AreRefusedAndConsumeNothing() {
@@ -47,8 +47,9 @@ final class CodecStringUnitTests: XCTestCase {
 
     func testAnEncodeWritesTheUtf8BytesOfTheText() throws {
         var sink = BytesSink()
-        try CodecZenohLocator(locator_len: 2, locator: "\u{E9}").encode(into: &sink)
-        XCTAssertEqual(sink.bytes, [0x02, 0xC3, 0xA9])
+        let locator = try XCTUnwrap(BoundedText<CodecZenohLocator.LocatorBound>("\u{E9}"))
+        try CodecZenohLocator(locator: locator).encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0x02, 0xC3, 0xA9], "the size is derived from the UTF-8 bytes")
     }
 
     func testALengthPastTheBoundIsRefusedBeforeTheBytesAreCut() {
@@ -65,25 +66,23 @@ final class CodecStringUnitTests: XCTestCase {
     // characters.
     func testTheBoundCountsTheBytesOnTheWireAndNotTheCharacters() throws {
         let text = String(repeating: "\u{E9}", count: 128)
+        XCTAssertNil(
+            BoundedText<CodecZenohLocator.LocatorBound>(text),
+            "a text past the bound is no value of the field, so no encode is handed one")
         var sink = BytesSink()
-        XCTAssertThrowsError(try CodecZenohLocator(locator_len: 256, locator: text).encode(into: &sink)) {
-            error in
-            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
-        }
-        XCTAssertEqual(sink.bytes, [], "a refused encode writes nothing")
-        let atTheBound = String(repeating: "a", count: 255)
-        try CodecZenohLocator(locator_len: 255, locator: atTheBound).encode(into: &sink)
+        let atTheBound = try XCTUnwrap(
+            BoundedText<CodecZenohLocator.LocatorBound>(String(repeating: "a", count: 255)))
+        try CodecZenohLocator(locator: atTheBound).encode(into: &sink)
         XCTAssertEqual(sink.bytes.count, 2 + 255, "the size of 255 is two bytes of variable-length integer")
     }
 
     func testAGatedTextWithAGatedLengthIsAbsentWhenItsGateIsClosed() throws {
         var closed = SceCursor([0x00])
         let absent = try CodecPresentIfString.decode(&closed)
-        XCTAssertNil(absent.text_len)
         XCTAssertNil(absent.text)
         var open = SceCursor([0x01, 0x02, 0x68, 0x69])
         let present = try CodecPresentIfString.decode(&open)
-        XCTAssertEqual(present.text, "hi")
+        XCTAssertEqual(present.text?.text, "hi")
         var sink = BytesSink()
         try present.encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x01, 0x02, 0x68, 0x69])
@@ -93,7 +92,7 @@ final class CodecStringUnitTests: XCTestCase {
         var cursor = SceCursor([0x07, 0x03, 0x74, 0x63, 0x70])
         let frame = try CodecEmbedBasic.decode(&cursor)
         XCTAssertEqual(frame.tag, 7)
-        XCTAssertEqual(frame.locator.locator, "tcp")
+        XCTAssertEqual(frame.locator.locator.text, "tcp")
         XCTAssertEqual(cursor.remaining, 0)
         XCTAssertEqual(CodecEmbedBasic.frameLength, 1 + CodecZenohLocator.frameLength)
     }

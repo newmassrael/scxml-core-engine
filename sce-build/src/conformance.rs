@@ -869,11 +869,12 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         encode_refuses_bound: bool,
         /// The backend the harness is rendered for prints the codec from its
-        /// encode plan (docs/adr/0081 step 4): a C++ fragment makes a value by
-        /// its constructor and reads each element through its accessor, and a
-        /// fragment of any language that prints it neither makes the value with
-        /// an element the encode derives nor reads one back (§3). Derived per
-        /// language from the document; fixtures.json never states it.
+        /// encode plan (docs/adr/0081 step 4, and step 5 for Swift): a C++
+        /// fragment makes a value by its constructor and reads each element
+        /// through its accessor, and a fragment of any language that prints it
+        /// neither makes the value with an element the encode derives nor reads
+        /// one back (§3). Derived per language from the document; fixtures.json
+        /// never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         printed: bool,
     },
@@ -3912,14 +3913,9 @@ fn codec_case_rows<'r>(
 fn swift_prints(fixture: &Fixture, resource_dir: &Path, where_: &str) -> Result<bool, String> {
     let document = fixture.document_path(resource_dir);
     let include = [resource_dir.to_path_buf()];
-    crate::encode_plan_file_with_imports(
-        &document,
-        &include,
-        &crate::ForgeCompileOptions::default(),
-        |plan, _| crate::forge::generator::swift_codec_printed(plan),
-    )
-    .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
-    .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))
+    crate::swift_codec_printed_file(&document, &include, &crate::ForgeCompileOptions::default())
+        .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
+        .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))
 }
 
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
@@ -4617,7 +4613,10 @@ pub fn render_harness(
             } => {
                 // Whether this language's backend prints the codec from its
                 // plan (docs/adr/0081 step 4): C++ every codec it writes, Python
-                // each whose forms its printer lowers.
+                // and Swift (step 5) each whose forms its printer lowers. A
+                // Swift codec printed from its plan holds no element its encode
+                // derives and each byte string and text in its bounded type,
+                // which its `cases` fragment makes.
                 if document_exists(&scxml_path) {
                     let options = crate::ForgeCompileOptions::default();
                     let read = match language {
@@ -4627,11 +4626,10 @@ pub fn render_harness(
                         Language::Python => {
                             Some(crate::python_codec_printed_file(&scxml_path, &[], &options))
                         }
-                        Language::Rust
-                        | Language::Kotlin
-                        | Language::Go
-                        | Language::C11
-                        | Language::Swift => None,
+                        Language::Swift => {
+                            Some(crate::swift_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Rust | Language::Kotlin | Language::Go | Language::C11 => None,
                     };
                     if let Some(read) = read {
                         *printed = read
@@ -5852,8 +5850,30 @@ mod tests {
             value["refused"][0]["symbol"],
             serde_json::json!("CodecError.presentIfMismatch")
         );
-        // A length the encode derives is a form the printer does not lower yet.
-        let template = fixture("codec_length_ref");
+        // A byte string is made through its bound's door, and the length it says is derived.
+        let bytes = fixture("codec_length_ref");
+        let mut value = serde_json::to_value(bytes).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            bytes,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a byte string and its derived length");
+        assert!(folded, "the sources of a printed codec are folded");
+        let bound = value["sources"][0]["bindings"][0]
+            .as_str()
+            .expect("a byte string is bound first");
+        assert!(
+            bound.starts_with(
+                "let bound_payload = try #require(BoundedBytes<CodecLengthRef.PayloadBound>(["
+            ),
+            "{bound}"
+        );
+        // An embedded body is a form the printer does not lower yet.
+        let template = fixture("codec_zenoh_timestamp_ext");
         let mut value = serde_json::to_value(template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,

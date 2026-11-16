@@ -3233,6 +3233,29 @@ pub fn cpp_codec_printed_file(
     )
 }
 
+/// Whether the Swift tree prints the encode of the codec at `path` from its
+/// encode plan (docs/adr/0081 step 5), and not from its template: its value
+/// holds no element the encode derives and each byte string and text in its
+/// bounded type. Read as `compile_forge_file` reads it, its imports resolved.
+/// `None` for a document that is not a codec.
+pub fn swift_codec_printed_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Swift,
+        |model, imports, _| {
+            forge::generator::swift_codec_printed(&forge::encode_plan::CodecPlan::of(
+                &model, imports,
+            ))
+        },
+    )
+}
+
 /// Every form of the codec at `path` that the C++ printer does not lower
 /// (docs/adr/0081 step 4), in the order the printer meets them, the first of
 /// which the C++ backend refuses the codec by; empty where it lowers every

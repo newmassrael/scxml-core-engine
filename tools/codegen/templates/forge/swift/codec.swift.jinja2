@@ -55,6 +55,17 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// The bytes of one frame.
 {% endif %}
     public static let frameLength = {{ frame_length }}
+{% if printed %}
+{% for b in printed.bounds %}
+
+    /// How many bytes `{{ b.field }}` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum {{ b.name }}: SceByteBound {
+        public static let least = {{ b.least }}
+        public static let most: Int? = {{ b.most }}
+    }
+{% endfor %}
+{% endif %}
 {# An element the encode derives is no member of a value printed from its plan (docs/adr/0081
    §3): the decode reads it into a local, and the encode computes it. #}
 {% for f in fields if not f.derived %}
@@ -83,13 +94,13 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// more at its encode.
 {% elif f.variable and f.variable.kind == "tail" %}
     /// The {% if f.variable.text %}text of the UTF-8 bytes{% else %}bytes{% endif %} to the end of the frame, as many as the document's `max-size` admits: a frame
-    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+    /// with more is refused with `lengthOutOfRange`, {% if f.variable.wrap %}and a value with more is no value of its type{% else %}as is a value with more at its encode{% endif %}.
 {% if f.variable.text %}
     /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
 {% endif %}
 {% elif f.variable %}
     /// The {% if f.variable.text %}text of as many UTF-8 bytes{% else %}bytes, as many{% endif %} as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+    /// more is refused with `lengthOutOfRange`, {% if f.variable.wrap %}and a value with more is no value of its type; the encode derives what it says{% else %}as is a value with more at its encode{% endif %}.
 {% if f.variable.text %}
     /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
 {% endif %}
@@ -187,17 +198,21 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% elif f.variant %}
         let {{ f.id }}: {{ f.swift_type }}
 {% endif %}
+{# A value printed from its plan holds the bytes or text in its bounded type, made through the door
+   that throws `lengthOutOfRange` for what the bound does not hold (docs/adr/0065 §6 R1). #}
+{% set open = ("try " ~ f.variable.wrap ~ "(decoding: ") if (f.variable and f.variable.wrap) else "" %}
+{% set close = ")" if (f.variable and f.variable.wrap) else "" %}
 {% if f.variable and f.variable.kind == "tail" %}
 {% if f.variable.text %}
-{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = try reader.readString(reader.remaining)
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = {{ open }}try reader.readString(reader.remaining){{ close }}
 {% else %}
-{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = {{ open }}Array(try reader.readSlice(reader.remaining)){{ close }}
 {% endif %}
 {% elif f.variable %}
 {% if f.variable.text %}
-{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = try reader.readString(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %})
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = {{ open }}try reader.readString(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}){{ close }}
 {% else %}
-{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{{ pad }}        {{ f.variable.guard }}{{ bind }}{{ f.id }} = {{ open }}Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %})){{ close }}
 {% endif %}
 {% elif f.variant %}
 {{ pad }}        let {{ f.variant.local }} = {{ f.variant.tag }}

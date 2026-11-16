@@ -16,20 +16,20 @@ final class CodecDottedLengthUnitTests: XCTestCase {
         var cursor = SceCursor([0x32, 0x01, 0x02, 0x03, 0x99])
         let frame = try CodecLengthRefDottedBasic.decode(&cursor)
         XCTAssertEqual(frame.carrier, 0x32)
-        XCTAssertEqual(frame.payload, [0x01, 0x02, 0x03], "the high four bits say 3; the low four are the header")
+        XCTAssertEqual(frame.payload.bytes, [0x01, 0x02, 0x03], "the high four bits say 3; the low four are the header")
         XCTAssertEqual(cursor.remaining, 1, "what follows the bytes is the caller's")
     }
 
     func testALengthOfZeroTakesNoBytes() throws {
         var cursor = SceCursor([0x05])
         let frame = try CodecLengthRefDottedBasic.decode(&cursor)
-        XCTAssertEqual(frame.payload, [])
+        XCTAssertEqual(frame.payload.bytes, [])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
     func testTheLargestLengthTheBitsCanSayIsTaken() throws {
         var cursor = SceCursor([0xF0] + [UInt8](repeating: 0x7A, count: 15))
-        XCTAssertEqual(try CodecLengthRefDottedBasic.decode(&cursor).payload.count, 15)
+        XCTAssertEqual(try CodecLengthRefDottedBasic.decode(&cursor).payload.byteCount, 15)
     }
 
     func testAFrameShorterThanItsLengthSaysIsRefusedAndConsumesNothing() {
@@ -40,10 +40,13 @@ final class CodecDottedLengthUnitTests: XCTestCase {
         XCTAssertEqual(cursor.remaining, 3)
     }
 
-    func testAnEncodeWritesTheCarrierAsItStandsAndThenTheBytes() throws {
+    // The length is the encode's to derive (docs/adr/0081 §3): the four bits the value presents are
+    // replaced by the count of the bytes, and the header bits are written as the value holds them.
+    func testAnEncodeDerivesTheLengthIntoItsBitsAndKeepsTheRestOfTheCarrier() throws {
+        let payload = try XCTUnwrap(BoundedBytes<CodecLengthRefDottedBasic.PayloadBound>([0x01, 0x02, 0x03]))
         var sink = BytesSink()
-        try CodecLengthRefDottedBasic(carrier: 0x30, payload: [0x01, 0x02, 0x03]).encode(into: &sink)
-        XCTAssertEqual(sink.bytes, [0x30, 0x01, 0x02, 0x03])
+        try CodecLengthRefDottedBasic(carrier: 0xF5, payload: payload).encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0x35, 0x01, 0x02, 0x03])
     }
 
     func testTheFlagPropertiesReadAndWriteTheSameBits() {

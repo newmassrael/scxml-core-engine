@@ -1300,6 +1300,20 @@ pub(super) fn render(
         );
         (args.decode_arg, args.encode_arg)
     };
+    // The encode printed from the codec's plan where the Swift printer lowers every form the plan
+    // holds (docs/adr/0081 step 5), with the protocol the value presents its elements through; the
+    // template's own encode where it does not yet (§6), never both. A printed value holds each byte
+    // string and text in the bounded type its plan gives it (docs/adr/0065 §6 R1).
+    let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
+    let prints = source::unlowered_positional(&plan).is_none();
+    let struct_name = filters::to_pascal_case(m.name.clone());
+    let bounded_of = |f: &CodecField| {
+        plan.elements
+            .iter()
+            .find(|e| e.field.id == f.id)
+            .filter(|_| prints)
+            .and_then(|e| source::bounded_type(&struct_name, e))
+    };
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -1502,10 +1516,13 @@ pub(super) fn render(
                 let guard = length_guard::Guard::of(f, &m.fields)
                     .map(|g| g.stmt(Language::Swift, &carried, held, indent))
                     .unwrap_or_default();
-                let (value_type, empty) = if text {
-                    ("String", "\"\"")
-                } else {
-                    ("[UInt8]", "[]")
+                // A value printed from its plan holds the bytes or text in its bounded type, which a
+                // decode makes through the door that refuses what the bound does not hold.
+                let bounded = bounded_of(f);
+                let (value_type, empty) = match (&bounded, text) {
+                    (Some(ty), _) => (ty.clone(), ".fewest"),
+                    (None, true) => ("String".to_string(), "\"\""),
+                    (None, false) => ("[UInt8]".to_string(), "[]"),
                 };
                 return serde_json::json!({
                     "id": f.id,
@@ -1522,6 +1539,7 @@ pub(super) fn render(
                         "carried": carried,
                         "arith": f.length_arith.unwrap_or(0),
                         "guard": guard,
+                        "wrap": bounded,
                     },
                 });
             }
@@ -1620,12 +1638,8 @@ pub(super) fn render(
             })
         })
         .collect();
-    // The encode printed from the codec's plan where the Swift printer lowers every form the plan
-    // holds (docs/adr/0081 step 5), with the protocol the value presents its elements through; the
-    // template's own encode where it does not yet (§6), never both. A value printed from its plan
-    // holds no element the encode derives (§3): the decode reads it into a local alone.
-    let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
-    let prints = source::unlowered_positional(&plan).is_none();
+    // A value printed from its plan holds no element the encode derives (docs/adr/0081 §3): the
+    // decode reads it into a local alone.
     let mut fields = fields;
     for field in &mut fields {
         let id = field["id"].as_str().unwrap_or_default();

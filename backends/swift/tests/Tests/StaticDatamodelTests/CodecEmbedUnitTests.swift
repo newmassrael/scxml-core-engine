@@ -18,14 +18,14 @@ final class CodecEmbedUnitTests: XCTestCase {
         let frame = try CodecZenohTimestampExt.decode(&cursor)
         XCTAssertEqual(frame.ext_size, 4)
         XCTAssertEqual(frame.ts.time, 5)
-        XCTAssertEqual(frame.ts.zid, [0xAA, 0xBB])
+        XCTAssertEqual(frame.ts.zid.bytes, [0xAA, 0xBB])
         XCTAssertEqual(cursor.remaining, 1, "what follows the bounded bytes is the caller's")
     }
 
     func testTheBodyNeedNotTakeAllTheBytesAndTheFrameMovesPastThemAll() throws {
         var cursor = SceCursor([0x05, 0x05, 0x02, 0xAA, 0xBB, 0xEE])
         let frame = try CodecZenohTimestampExt.decode(&cursor)
-        XCTAssertEqual(frame.ts.zid, [0xAA, 0xBB])
+        XCTAssertEqual(frame.ts.zid.bytes, [0xAA, 0xBB])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
@@ -47,8 +47,8 @@ final class CodecEmbedUnitTests: XCTestCase {
     }
 
     func testAnEncodeWritesTheLengthAndThenTheEmbeddedBytes() throws {
-        let frame = CodecZenohTimestampExt(
-            ext_size: 4, ts: CodecZenohTimestamp(time: 5, zid_len: 2, zid: [0xAA, 0xBB]))
+        let zid = try XCTUnwrap(BoundedBytes<CodecZenohTimestamp.ZidBound>([0xAA, 0xBB]))
+        let frame = CodecZenohTimestampExt(ext_size: 4, ts: CodecZenohTimestamp(time: 5, zid: zid))
         var sink = BytesSink()
         try frame.encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x04, 0x05, 0x02, 0xAA, 0xBB])
