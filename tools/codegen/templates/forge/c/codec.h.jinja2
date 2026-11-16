@@ -48,6 +48,8 @@
 #include "sce/forge/codec.h"
 {% if fields | selectattr('c_gated_optional') | list %}
 #include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
+{% elif c11_source %}
+#include "sce/forge/optional.h"  /* a source of the codec that may be absent, docs/adr/0081 */
 {% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
