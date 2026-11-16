@@ -2144,8 +2144,13 @@ one set of bytes.
    composition (a list, a record within the record, a union, an optional one of them) takes it into the
    machine's own types: each record, enum and union of it, at any depth, is made from the value its units hold,
    and every other value, which the units and the machine hold in one type, is copied whole
-   (`forge::composed_lowering::fields_from_unit`). Rust makes it; every other backend refuses such a branch by
-   name, saying it makes no machine's value of the message. Kotlin's runtime library of §12.2
+   (`forge::composed_lowering::fields_from_unit`). Every backend makes it, each spelling the walk's reads of a
+   unit (`ComposedSpelling::unit_field`, `unit_enum`, `unit_union`, `record_of`, `unit_whole`): Go, Kotlin,
+   Swift, Python and C++ hold every such part, Go copying a list into a slice of its own and Python into a
+   list of its own, C++ making a byte string of one entry into the `OwnedBytes` of its bound. C11, whose unit
+   holds a composition in structs of its own, converts a number, a text, an optional one of them, a byte
+   string and a list of numbers, and refuses by name a message that holds any other part, an enum, a
+   record or a union inside it among them, rather than make half of it. Kotlin's runtime library of §12.2
    (`com.sce.runtime.test`) is the Rust one ported type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
@@ -2169,10 +2174,11 @@ one set of bytes.
    for the same reason. It has `text_length` for a template's length restriction, a text's `len`, since a Python
    text is a sequence of code points, and the Python host send request carries a test-port send's value
    (`HostSendRequest.value`). Python generates templates, and the refusal of §11.9 is lifted for Python for
-   `test-template`; Python's test profile matches no union yet, though Python generates a union's unit, so a template
-   whose type reaches one stays refused there, as on C++. Python generates test components next, through the doors
+   `test-template`, a template over a union among them: a case is told apart by the declared name of the tag
+   the unit's `kind` answers, and a union's form written and read a case at a time by the runtime's
+   `union_case`. Python generates test components next, through the doors
    of §12.3, and runs them through `sce_runtime.testprofile.TestCaseRun`; the refusal is lifted for Python for
-   `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
+   `test-component`, but for a component that declares `<sce:action>`.
    Python then generates the configuration, case and suite tables over the same rows, each importing what it reads
    as a sibling module, and runs the examples end to end through `sce_runtime.testprofile.run_suite`; the refusal
    is lifted for Python for the remaining kinds, and for a component's module parameter. C11's runtime library of
@@ -2192,7 +2198,7 @@ one set of bytes.
    carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
    §11.9 is lifted for C11 for `test-template`; C11's test profile matches no union yet
    (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so a template whose type reaches one stays refused there, as on
-   C++ and Python. C11 generates test components next, through the doors of §12.3, each in
+   C++. C11 generates test components next, through the doors of §12.3, each in
    storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
    `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
    C11 then

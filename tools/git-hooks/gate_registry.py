@@ -2209,7 +2209,11 @@ GATES: dict[str, dict] = {
                   # `test_a_corpus_suite_replays_to_its_expected_logs.c`
                   # replays and reads at run time.
                   "sce-build/tests/fixtures/test_profile/boundary/**",
-                  "sce-build/tests/fixtures/test_profile/runs/**"],
+                  "sce-build/tests/fixtures/test_profile/runs/**",
+                  # The documents of job_suite the build generates, and the
+                  # job's completion of the kind examples its port sends.
+                  "sce-build/tests/fixtures/test_profile/*.scxml",
+                  "sce-build/kind-examples/event-schema.scxml"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "
