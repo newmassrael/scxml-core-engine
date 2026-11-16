@@ -22776,6 +22776,23 @@ fn present_if_decode_fixed(
                  }}"
             )
         }
+        // A number the encode derives and a gate decides: zero where the gate
+        // leaves it out, as the encode writes it only beside its content
+        // (docs/adr/0081 §3), and the local a later field reads it off.
+        (Language::C11, Some(p)) if derived.contains(&field.id) => {
+            let test = present_if_test_literal(fields, p, lang);
+            let c_ty = l.type_name(&field.sce_type);
+            let local = c11_source::derived_local(&field.id);
+            format!(
+                "{c_ty} {local} = 0;\n    \
+                 if ({test}) {{\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     {conv8}{local} = ({c_ty})({body8});\n        \
+                     if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
@@ -24421,7 +24438,20 @@ fn present_if_decode_vle(
         // to write into the struct member, not redeclare; route
         // through a `_v` local then assign it as the present value of
         // the optional member. The absent branch writes the absent
-        // value, which keeps the struct fully initialized.
+        // value, which keeps the struct fully initialized. A number the
+        // encode derives is read into a local of its own instead, zero where
+        // the gate leaves it out (docs/adr/0081 §3).
+        Language::C11 if derived.contains(&field.id) => {
+            let local = c11_source::derived_local(&field.id);
+            let inner = vle_decode_stmt(&body_id, width_bits, lang);
+            format!(
+                "uint{width_bits}_t {local} = 0;\n    \
+                 if ({test}) {{\n        \
+                     {inner}\n        \
+                     {local} = {body_id};\n    \
+                 }}"
+            )
+        }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let inner = vle_decode_stmt(&body_id, width_bits, lang);

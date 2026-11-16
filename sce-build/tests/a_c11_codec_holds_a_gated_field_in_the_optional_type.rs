@@ -110,7 +110,9 @@ fn a_gated_number_is_the_optional_struct_of_its_type() {
             "sce_optional_uint16_t seq;",
             "out->seq = sce_optional_uint16_some(",
             "out->seq = sce_optional_uint16_none();",
-            "if (self->seq.present) {",
+            "    sce_optional_uint16_t (*seq)(const void *ctx);\n",
+            "    if (_e_seq.present) {\n",
+            "_e_seq.value",
         ],
         &["out->seq = 0;", "if ((self->flags & 0x01) != 0) {"],
     );
@@ -120,7 +122,8 @@ fn a_gated_number_is_the_optional_struct_of_its_type() {
         &text,
         &[
             "out->optional_id = sce_optional_uint64_some(_v);",
-            "if (self->optional_id.present) {",
+            "    if (_e_optional_id.present) {\n",
+            "(uint64_t)(_e_optional_id.value)",
         ],
         &[],
     );
@@ -141,8 +144,9 @@ fn a_gated_byte_string_or_text_is_the_optional_struct_over_its_bytes() {
             "out->payload.value.len = _n;",
             "out->payload.present = true;",
             "out->payload = sce_optional_bytes_64_none();",
-            "if (self->payload.present) {",
-            "self->payload.value.data, self->payload.value.len",
+            "    if (_e_payload.present) {\n",
+            "_e_payload.value.data, _e_payload.value.len",
+            "    view.data = self->payload.value.data;\n",
         ],
         &["out->payload_len = 0;", "uint8_t payload[64];"],
     );
@@ -154,7 +158,7 @@ fn a_gated_byte_string_or_text_is_the_optional_struct_over_its_bytes() {
             "sce_optional_bytes_32_t text;",
             "sce_forge_is_valid_utf8(raw, _n)",
             "out->text.value.len = _n;",
-            "if (self->text.present) {",
+            "    if (_e_text.present) {\n",
         ],
         &["char text[", "out->text_len = _n;"],
     );
@@ -253,11 +257,12 @@ int main(void) {
         CHECK(codec_present_if_basic_encode_to_buf(&v, out, sizeof out, &n) == SCE_FORGE_CODEC_OK &&
                   n == sizeof on && memcmp(out, on, n) == 0,
               "number round trip");
-        /* The carrier flag is a field of its own; the value is written where it is present. */
+        /* The encode derives the carrier flag from whether the value is there
+         * (docs/adr/0081 §3): a flag the value holds clear is written set. */
         v.flags = 0;
         CHECK(codec_present_if_basic_encode_to_buf(&v, out, sizeof out, &n) == SCE_FORGE_CODEC_OK &&
-                  n == 3 && out[0] == 0x00 && out[1] == 0x12 && out[2] == 0x34,
-              "number written where present, whatever the flag");
+                  n == 3 && out[0] == 0x01 && out[1] == 0x12 && out[2] == 0x34,
+              "number written where present, its flag derived from it");
     }
     {
         const uint8_t zero[] = {0x01, 0x00, 0x00};
