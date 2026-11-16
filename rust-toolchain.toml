@@ -17,6 +17,15 @@
 # edit, made on purpose; the build machines need the new release
 # (`bx-provision <alias> --apply`) before a gate unit can be placed on them.
 #
+# On a build machine a cargo started outside a gate unit (Gradle's
+# `:buildSceCodegen`, a `bx -- cargo ...`) is the run account's rustup proxy,
+# which installs this release on its first use, and two runs at once race in
+# that install (measured 2026-11-16: "could not rename 'downloaded' file").
+# `[platform.linux.tools.rust-rustup]` of bx.toml installs it there once per
+# machine instead, with exactly the components and targets below, and keeps
+# runs off a machine that lacks it; the registry's self-test holds that table's
+# lists to this file's. A move of the release here moves that table with it.
+#
 # Not the floor. `rust-version` in the manifests is the oldest Rust each
 # package builds with, and the `rust-version` gate builds each with exactly
 # that release from its own directory (~/.local/rust/<release>), whose cargo is

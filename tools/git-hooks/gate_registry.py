@@ -3569,6 +3569,16 @@ RUST_TOOLCHAIN_PINS = "scripts/lib/rust_toolchains.sh"
 # read it from there, so the gates and the rest of the tree run one release.
 RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
+# The one other place a release is linked: the directory of the run account's
+# rustup home where rustup's proxy finds the release rust-toolchain.toml pins,
+# so a cargo a run starts outside a gate unit installs nothing on its first use
+# (`[platform.linux.tools.rust-rustup]` in bx.toml says why). The host is the
+# one scripts/install_rust.sh installs for.
+RUSTUP_PROXY_PLACE = "~/.rustup/toolchains/{version}-x86_64-unknown-linux-gnu"
+# How every Rust table's install line begins: the install's own rustup home and
+# cargo home, then the one script, the toolchain and the store entry.
+RUST_INSTALL_HEAD = (f"RUSTUP_HOME={{scratch}}/rh CARGO_HOME={{scratch}}/ch "
+                     f"bash {RUST_TOOLCHAIN_INSTALL} {{version}} {{prefix}}")
 # What a rustup command that adds a toolchain or a part of one looks like. No
 # gate body and not the runner runs one; the gate library alone does, for a
 # hosted runner (`sce_gate_require_rust` and its siblings).
@@ -3996,11 +4006,76 @@ def rust_toolchain_file(repo_root: Path) -> dict:
     return found
 
 
+def rust_install_parts(install: str) -> dict[str, set[str]]:
+    """The components (`-c`) and targets (`-t`) on an install line."""
+    return {"components": set(re.findall(r"(?:^|\s)-c\s+(\S+)", install)),
+            "targets": set(re.findall(r"(?:^|\s)-t\s+(\S+)", install))}
+
+
+def rustup_proxy_failures(repo_root: Path, proxied: dict[str, dict],
+                          pinned: dict, install_head: str) -> list[str]:
+    """What is wrong with the release bx.toml links into rustup's home.
+
+    One table, the release rust-toolchain.toml pins, read from that file;
+    installed as every Rust table is, with exactly the components and targets
+    that file lists, so rustup's proxy finds all it asks for and nothing else;
+    and needed by every run, since any run may start cargo through the proxy.
+    """
+    failures: list[str] = []
+    if len(proxied) != 1:
+        return [f"{len(proxied)} [platform.linux.tools.*] table(s) link a Rust "
+                f"toolchain at {RUSTUP_PROXY_PLACE} ({sorted(proxied)}), and one "
+                f"does: without it a cargo a run starts outside a gate unit "
+                f"installs the release through the account's rustup proxy on first "
+                f"use, and two such runs race in that install"]
+    name, spec = next(iter(proxied.items()))
+    install = spec.get("install", "")
+    shape = {
+        "version_file": spec.get("version_file") == RUST_TOOLCHAIN_FILE,
+        "install": install.startswith(install_head),
+        "path": spec.get("path") == RUSTUP_PROXY_PLACE + "/bin/cargo",
+        "check": spec.get("check") == "cargo {version}",
+        "install_inputs": spec.get("install_inputs") == [RUST_TOOLCHAIN_INSTALL],
+        "needed_by": not spec.get("needed_by"),
+    }
+    for key, ok in shape.items():
+        if not ok:
+            failures.append(
+                f"[platform.linux.tools.{name}] {key} is {spec.get(key)!r}: the "
+                f"release rustup's proxy finds is read from {RUST_TOOLCHAIN_FILE}, "
+                f"installed by `{install_head} ...`, linked at {RUSTUP_PROXY_PLACE} "
+                f"with its cargo checked there, keyed by {RUST_TOOLCHAIN_INSTALL}, "
+                f"and needed by every run")
+    channel = pinned.get("channel")
+    version = bx_tool_version(repo_root, spec)
+    if version != channel:
+        failures.append(
+            f"[platform.linux.tools.{name}] resolves to Rust {version!r} and "
+            f"{RUST_TOOLCHAIN_FILE} pins {channel!r}: the proxy would still install "
+            f"the pinned release on first use")
+    on_line = rust_install_parts(install)
+    for key in ("components", "targets"):
+        want = set(pinned.get(key) or [])
+        if on_line[key] != want:
+            failures.append(
+                f"[platform.linux.tools.{name}] installs the {key} "
+                f"{sorted(on_line[key])} and {RUST_TOOLCHAIN_FILE} lists "
+                f"{sorted(want)}: the toolchain rustup's proxy finds is the one that "
+                f"file asks for, so the proxy installs no missing part on first use "
+                f"and the toolchain is the one any other checkout's rustup installs")
+    return failures
+
+
 def rust_toolchain_failures(repo_root: Path) -> list[str]:
     """What is wrong with the Rust toolchains bx.toml declares, as sentences."""
     failures: list[str] = []
-    tables = {name: spec for name, spec in bx_tool_tables(repo_root).items()
-              if RUST_TOOLCHAIN_INSTALL in spec.get("install", "")}
+    installed = {name: spec for name, spec in bx_tool_tables(repo_root).items()
+                 if RUST_TOOLCHAIN_INSTALL in spec.get("install", "")}
+    # The table linked into rustup's home is the proxy's release, held on its
+    # own below; every other one is a toolchain a gate runs.
+    proxied = {name: spec for name, spec in installed.items()
+               if spec.get("prefix_link") == RUSTUP_PROXY_PLACE}
+    tables = {name: spec for name, spec in installed.items() if name not in proxied}
     if not tables:
         return [f"bx.toml declares no Rust toolchain: no [platform.linux.tools.*] "
                 f"table installs with {RUST_TOOLCHAIN_INSTALL}"]
@@ -4029,8 +4104,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
             f"{RUST_TOOLCHAIN_FILE}: a release written there too is a second pin, "
             f"and the gates would run one release while the tree builds with another")
 
-    install_head = (f"RUSTUP_HOME={{scratch}}/rh CARGO_HOME={{scratch}}/ch "
-                    f"bash {RUST_TOOLCHAIN_INSTALL} {{version}} {{prefix}}")
+    install_head = RUST_INSTALL_HEAD
     versions: dict[str, str] = {}
     for name, spec in sorted(tables.items()):
         version = bx_tool_version(repo_root, spec)
@@ -4052,6 +4126,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
                     f"Rust toolchain is installed by `{install_head} ...`, linked at "
                     f"{RUST_TOOLCHAIN_PLACE} where the gates look, keyed by "
                     f"{RUST_TOOLCHAIN_INSTALL}, and needed by the units named")
+    failures.extend(rustup_proxy_failures(repo_root, proxied, pinned, install_head))
 
     by_version: dict[str, list[str]] = {}
     for name, version in versions.items():
@@ -4078,9 +4153,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
         # What a checkout's rustup installs with the release, a build
         # machine's release has as well, or a gate passes on one and cannot
         # run on the other.
-        install = tables[release].get("install", "")
-        on_line = {"components": set(re.findall(r"(?:^|\s)-c\s+(\S+)", install)),
-                   "targets": set(re.findall(r"(?:^|\s)-t\s+(\S+)", install))}
+        on_line = rust_install_parts(tables[release].get("install", ""))
         for key, flag in (("components", "-c"), ("targets", "-t")):
             for item in sorted(set(pinned.get(key) or []) - on_line[key]):
                 failures.append(
@@ -5658,6 +5731,32 @@ def self_test(repo_root: Path) -> int:
     # declares" above).
     cases += 1
     failures.extend(f"rust-toolchains: {f}" for f in rust_toolchain_failures(repo_root))
+
+    # the-release-rustups-proxy-finds-is-installed-once. The check of the table
+    # linked into rustup's home answers for the tree above; here it is shown
+    # to refuse a table that drifted from rust-toolchain.toml or that only some
+    # runs need, and the absence of the table, so its silence above is a reading.
+    cases += 1
+    proxy_tables = {name: spec for name, spec in bx_tool_tables(repo_root).items()
+                    if spec.get("prefix_link") == RUSTUP_PROXY_PLACE}
+    proxy_head = RUST_INSTALL_HEAD
+    pinned_now = rust_toolchain_file(repo_root)
+    for label, edit_spec, want_refused in (
+            ("as declared", lambda s: s, False),
+            ("a target rust-toolchain.toml does not list",
+             lambda s: {**s, "install": s.get("install", "") + " -t aarch64-unknown-none"},
+             True),
+            ("needed by some runs only", lambda s: {**s, "needed_by": ["scripts/gate"]},
+             True)):
+        drifted = {name: edit_spec(dict(spec)) for name, spec in proxy_tables.items()}
+        refused = bool(rustup_proxy_failures(repo_root, drifted, pinned_now, proxy_head))
+        if refused != want_refused:
+            failures.append(
+                f"rustup-proxy-release: the table {label} was "
+                f"{'refused' if refused else 'passed'}")
+    if not rustup_proxy_failures(repo_root, {}, pinned_now, proxy_head):
+        failures.append("rustup-proxy-release: no table linked into rustup's home "
+                        "was passed")
 
     # every-lane-installs-the-pinned-rust. No lane or script installs or
     # names a Rust channel that moves (see "The Rust a lane installs" above).

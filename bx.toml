@@ -233,6 +233,30 @@ install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install
 install_inputs = ["scripts/install_rust.sh"]
 needed_by = ["scripts/gate --rust"]
 
+# THE SAME RELEASE WHERE RUSTUP'S PROXY FINDS IT. A cargo a run starts outside a gate unit (Gradle's
+# `:buildSceCodegen`, a `bx -- cargo ...`) is the run account's rustup proxy, which reads
+# rust-toolchain.toml and installs that release into the account's rustup home on its first use. Two
+# such runs at once race in that install: measured 2026-11-16 on a build machine, "component download
+# failed for rust-std-wasm32-unknown-unknown: could not rename 'downloaded' file ... .partial". So the
+# release is installed here once per machine by provision, as every table above is, and its entry is
+# linked at the directory rustup keeps that toolchain in, where the proxy finds it installed and
+# installs nothing. The entry is what rustup would have put there (scripts/install_rust.sh copies a
+# rustup install of it out of a private home), with exactly the components and targets
+# rust-toolchain.toml lists, so the proxy finds every one it asks for and the toolchain is the one
+# any other checkout's rustup installs: the registry's self-test holds the two lists equal. Not the
+# entry of the table above, whose gates' extras the proxy does not ask for, and which nothing that
+# runs through rustup may write into. No `needed_by`: every run of the repository may start cargo,
+# so a machine without it is no candidate for any. A machine whose account already holds this
+# toolchain as rustup installed it passes `check` as it is.
+[platform.linux.tools.rust-rustup]
+version_file = "rust-toolchain.toml"
+version_pattern = '^channel = "([0-9.]+)"'
+path = "~/.rustup/toolchains/{version}-x86_64-unknown-linux-gnu/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.rustup/toolchains/{version}-x86_64-unknown-linux-gnu"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix} -c clippy -c rustfmt -t thumbv7em-none-eabihf -t wasm32-unknown-unknown"
+install_inputs = ["scripts/install_rust.sh"]
+
 # THE NIGHTLY, `SCE_RUST_NIGHTLY` in scripts/lib/rust_toolchains.sh: Miri and ThreadSanitizer over
 # the queue runtime (`forge-rust`, and the mutation casefiles that declare it, which `mutation-rounds`
 # runs), and the standard library rebuilt from rust-src with atomics for the threaded emscripten tree

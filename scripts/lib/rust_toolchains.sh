@@ -84,11 +84,14 @@ sce_rust_on_hosted_runner() {
     [[ "${GITHUB_ACTIONS:-}" == true ]]
 }
 
-# The Rust toolchains bx.toml declares, one per line as `<table> <version>
-# <install>` separated by the unit separator (0x1f): every
-# `[platform.linux.tools.<table>]` whose install runs scripts/install_rust.sh,
-# its version written out or read from its `version_file` with its
-# `version_pattern`, as bx reads it. `$1` is the repository root.
+# The Rust toolchains bx.toml declares for the gates, one per line as `<table>
+# <version> <install>` separated by the unit separator (0x1f): every
+# `[platform.linux.tools.<table>]` whose install runs scripts/install_rust.sh
+# and whose entry is linked where the gates look (~/.local/rust), its version
+# written out or read from its `version_file` with its `version_pattern`, as bx
+# reads it. `$1` is the repository root. The one table linked into the run
+# account's rustup home instead (`[platform.linux.tools.rust-rustup]`) is the
+# release rustup's proxy finds, not one a gate runs, and is left out.
 #
 # The table is read by its lines, as bx's shell reads it: each value on one line,
 # a quoted string or an array, and only the strings are read here.
@@ -106,12 +109,12 @@ sce_rust_declared_toolchains() {
             return substr(line, 2, length(line) - 2)
         }
         function flush() {
-            if (name != "" && install ~ /scripts\/install_rust\.sh/)
+            if (name != "" && install ~ /scripts\/install_rust\.sh/ && link ~ /^~\/\.local\/rust\//)
                 printf "%s\037%s\037%s\037%s\037%s\n", name, version, file, pattern, install
         }
         /^\[/ {
             flush()
-            name = ""; version = ""; file = ""; pattern = ""; install = ""
+            name = ""; version = ""; file = ""; pattern = ""; install = ""; link = ""
             if ($0 ~ /^\[platform\.linux\.tools\.[A-Za-z0-9_-]+\]$/)
                 name = substr($0, 23, length($0) - 23)
             next
@@ -121,6 +124,7 @@ sce_rust_declared_toolchains() {
         /^version_file = /    { file = value($0) }
         /^version_pattern = / { pattern = value($0) }
         /^install = /         { install = value($0) }
+        /^prefix_link = /     { link = value($0) }
         END { flush() }
     ' "$root/bx.toml")
 }
