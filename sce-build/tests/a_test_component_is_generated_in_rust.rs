@@ -15,7 +15,7 @@
 //! whose content reads a message of a record of entries the machine spells
 //! otherwise than the record's unit. A message of a record that holds a
 //! composition is made in the machine's types by the walk of its type, which
-//! C++ and Kotlin do not make, and refuse by name.
+//! C++ does not make, and refuses by name.
 //!
 //! What the generated components do when they run is held by
 //! `backends/rust/tests/tests/a_test_component_runs_through_its_doors.rs`,
@@ -587,12 +587,16 @@ fn a_message_holding_records_an_enum_and_a_union_is_made_case_by_case() {
     }
 }
 
+/// The targets that make no machine's value of a composed message a receive
+/// branch reads yet, each with the name its refusal says.
+const UNMADE_COMPOSED_RECEIVE: &[(Language, &str)] = &[(Language::Cpp, "C++")];
+
 /// §12.6: a target that makes no machine's value of a composed message
 /// refuses the branch whose content reads one by name, and says why.
 #[test]
 fn a_composed_message_its_content_reads_is_refused_by_name_where_it_is_not_made() {
     let path = profile_dir().join("job_tester.scxml");
-    for (language, name) in [(Language::Cpp, "C++"), (Language::Kotlin, "Kotlin")] {
+    for &(language, name) in UNMADE_COMPOSED_RECEIVE {
         let Err(err) = generate(&path, language) else {
             panic!("a branch reading a composed message generated on {name}");
         };

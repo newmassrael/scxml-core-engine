@@ -722,6 +722,71 @@ impl ComposedSpelling for KotlinComposed<'_> {
         format!("({}).map {{ {elem} }}", held.text)
     }
 
+    // A record's unit names its fields as the schema does
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `Boolean`, a text, a byte string, and a list or an optional
+    // value of them, in the Kotlin types the machine holds them in, every one
+    // immutable, so the walk holds each as it is read (`copy_whole`).
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Kotlin
+            )
+        ))
+    }
+    // The machine's constant of the same declared name as the unit's value
+    // answers, as a record of entries' enum crosses (`StaticTarget::take_branch`).
+    // The lambda names its parameter, since the walk binds `it` to the element
+    // of a list or the record of a union's case the value is read from.
+    fn unit_enum(&self, machine: &MachineEnum, _document: &str, held: &Held) -> Option<String> {
+        Some(format!(
+            "{}.entries.first {{ sceVariant -> sceVariant.declaredName == ({}).declaredName() }}",
+            machine.ty, held.text
+        ))
+    }
+    // A `when` over every case of the unit's sealed interface, as a union
+    // crosses a call (`kotlin_union_crossing`): an empty case by its object,
+    // one that holds a record by its class, whose `value` the arm binds to `it`
+    // and makes the machine's case of the same variant from. Every case is an
+    // arm, so the `when` is exhaustive.
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        use crate::generator::Language;
+        let unit = crate::forge::generator::union_unit_type(document, Language::Kotlin);
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|arm| {
+                let case = crate::forge::generator::algorithm_union_case(
+                    Language::Kotlin,
+                    &unit,
+                    &arm.variant,
+                    None,
+                );
+                if arm.holds_record {
+                    format!("is {case} -> sceCase.value.let {{ {} }}", arm.value)
+                } else {
+                    format!("{case} -> {}", arm.value)
+                }
+            })
+            .collect();
+        Some(format!(
+            "when (val sceCase = {}) {{ {} }}",
+            held.text,
+            arms.join("; ")
+        ))
+    }
+    // The data class, each member named by its id as the declaration names it
+    // ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id} = {value}"))
+            .collect();
+        Some(format!("{ty}({})", members.join(", ")))
+    }
+
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Kotlin row): named by the union's document, so one union is one type of
     // the machine whichever alias names it.
@@ -1749,5 +1814,69 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, each field read by its id.
+    /// A list of records is mapped element by element into the machine's data
+    /// classes, an enum into the machine's constant of the same declared name,
+    /// and every other value, immutable and one type in the unit and the
+    /// machine, held as it is read.
+    #[test]
+    fn a_kotlin_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &KOTLIN,
+            &Held::reference("sceValue"),
+        )
+        .expect("every field is made");
+        assert_eq!(
+            fields,
+            vec![
+                (
+                    "items".to_string(),
+                    "(sceValue.items).map { MItemRecord(id = it.id, level = \
+                     MLevelEnum.entries.first { sceVariant -> sceVariant.declaredName == \
+                     (it.level).declaredName() }, due = it.due, blob = it.blob, tags = it.tags) }"
+                        .to_string()
+                ),
+                ("grid".to_string(), "sceValue.grid".to_string()),
+                ("late".to_string(), "sceValue.late".to_string()),
+            ]
+        );
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a `when` over every case of
+    /// the unit's sealed interface, an empty case by its object, one that holds
+    /// a record by its class, whose `value` the arm makes the machine's case
+    /// from.
+    #[test]
+    fn a_kotlin_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &KOTLIN,
+            &Held::place("sceValue.shape"),
+        )
+        .expect("the union is made");
+        for needle in [
+            "when (val sceCase = sceValue.shape) { Shape.Dot -> MShapeUnion.",
+            "; is Shape.Circle -> sceCase.value.let { MShapeUnion.",
+            "(MRadiusRecord(radius = it.radius)) }",
+            "; is Shape.Disc -> sceCase.value.let { MShapeUnion.",
+        ] {
+            assert!(made.contains(needle), "{needle} in {made}");
+        }
     }
 }

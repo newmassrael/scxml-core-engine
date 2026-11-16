@@ -12,11 +12,7 @@
 // The expected logs are the files every backend is held to, the canonical logs
 // a reviewed run of the Rust runner wrote. Each case is the twin of the Rust case
 // of the same name in
-// backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs. job_suite
-// is not replayed here: its tester's receive branch reads a message whose record
-// holds a list, of which the Kotlin machine makes no value
-// (docs/SCE_TEST_PROFILE.md §12.6), so its tester is refused where it is
-// generated.
+// backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
 
 package com.sce.integration
 
@@ -31,6 +27,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import com.sce.generated.boundary_suite.moduleParameter as boundaryModuleParameter
 import com.sce.generated.boundary_suite.suite as boundarySuite
+import com.sce.generated.job_suite.moduleParameter as jobModuleParameter
+import com.sce.generated.job_suite.suite as jobSuite
 import com.sce.generated.nested_suite.moduleParameter as nestedModuleParameter
 import com.sce.generated.nested_suite.suite as nestedSuite
 import com.sce.generated.orders_suite.moduleParameter as ordersModuleParameter
@@ -141,6 +139,25 @@ class ACorpusSuiteReplaysToItsExpectedLogsTest {
                     "sends_to_a_removed_ptc error",
                     "takes_before_its_exits pass",
                 ),
+            ),
+        )
+    }
+
+    /**
+     * docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of
+     * `every_matcher` accepts, at 1 ms, which the tester's branch reads as a
+     * composed message; the helper is told and passes, and the tester settles
+     * for the duration its start gives and passes at 501 ms.
+     */
+    @Test
+    fun `the job suite replays to its expected logs`() {
+        replays(
+            Replayed(
+                name = "job_suite",
+                suite = jobSuite(),
+                parameter = ::jobModuleParameter,
+                world = "job-timeout,job-retry",
+                verdicts = listOf("completes_in_time pass"),
             ),
         )
     }

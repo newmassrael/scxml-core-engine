@@ -475,6 +475,28 @@ fn a_message_with_a_text_field_its_content_reads_is_copied_on_kotlin() {
 }
 
 /// Writes each `(file, text)` into `dir`.
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list, a
+/// text that may be absent, numbers that may be absent) binds it in the
+/// machine's payload class, each member made from the value the record's unit
+/// holds, every one immutable and one Kotlin type in the unit and the machine,
+/// so held as it is read.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_kotlin() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let read = at(
+        &code,
+        "val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.every_matcher.Value>()) {",
+    );
+    let bound = at(
+        &code,
+        "pendingJobStatusPayload = JobTesterJobStatusPayload(elapsed_ms = sceValue.elapsed_ms, \
+         note = sceValue.note, codes = sceValue.codes, tag = sceValue.tag, retry = \
+         sceValue.retry, count = sceValue.count)",
+    );
+    assert!(read < bound, "{code}");
+}
+
 fn write_all(dir: &Path, documents: &[(&str, String)]) {
     for (file, text) in documents {
         std::fs::write(dir.join(file), text).unwrap_or_else(|e| panic!("{file} is written: {e}"));

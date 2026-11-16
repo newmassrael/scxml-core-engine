@@ -2703,7 +2703,40 @@ fn kotlin_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
 /// and an optional value (docs/adr/0055) a `T?`.
 pub struct KotlinTarget;
 
+/// The name the statement taking a receive branch of a test component's Kotlin
+/// machine binds the value of the message to, a value of the record its unit
+/// declares (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const KOTLIN_RECEIVED_VALUE: &str = "sceValue";
+
 impl KotlinTarget {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statements taking the receive branch
+    /// on `port` with `template`, which remove the head of the port, bind its
+    /// value as the template's unit holds it to [`KOTLIN_RECEIVED_VALUE`], and
+    /// hold the machine's payload class of `copies`, each a member of it by its
+    /// id with its value, in the field the content reads `_event.data` through.
+    fn received_record(
+        &self,
+        machine: &str,
+        port: &str,
+        template: &TemplateRef,
+        copies: &[(String, String)],
+    ) -> String {
+        let record = self.record_value(
+            &crate::forge::generator::kotlin_payload_class(machine, &template.event),
+            copies,
+        );
+        format!(
+            "val sceMessage = {KOTLIN_TEST_CONTEXT}.receive({})\n\
+             val {KOTLIN_RECEIVED_VALUE} = checkNotNull(sceMessage.valueAs<{}>()) {{ \
+             \"a receive branch takes the message its guard matched\" }}\n\
+             {} = {record}",
+            kotlin_text(port),
+            kotlin_test_template(&template.unit, "Value"),
+            kotlin_payload_field(&template.event)
+        )
+    }
+
     /// The members a record with a byte-string field has beyond a data class's own,
     /// as the text between its `toSaved` and its companion — empty for one with none.
     ///
@@ -3792,7 +3825,7 @@ impl StaticTarget for KotlinTarget {
                     .iter()
                     .map(|f| {
                         let read = format!(
-                            "sceValue.{}",
+                            "{KOTLIN_RECEIVED_VALUE}.{}",
                             crate::forge::generator::event_schema_field_ident(
                                 &f.id,
                                 Language::Kotlin
@@ -3820,23 +3853,21 @@ impl StaticTarget for KotlinTarget {
                         Some((f.id.clone(), held))
                     })
                     .collect::<Option<Vec<(String, String)>>>()?;
-                let record = self.record_value(
-                    &crate::forge::generator::kotlin_payload_class(machine, &template.event),
-                    &copies,
-                );
-                format!(
-                    "val sceMessage = {KOTLIN_TEST_CONTEXT}.receive({})\n\
-                     val sceValue = checkNotNull(sceMessage.valueAs<{}>()) {{ \
-                     \"a receive branch takes the message its guard matched\" }}\n\
-                     {} = {record}",
-                    kotlin_text(port),
-                    kotlin_test_template(&template.unit, "Value"),
-                    kotlin_payload_field(&template.event)
-                )
+                self.received_record(machine, port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the payload
+            // class made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from the value bound to
+            // [`KOTLIN_RECEIVED_VALUE`].
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => self.received_record(machine, port, template, members),
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{KOTLIN_TEST_CONTEXT}.receive({})", kotlin_text(port))
@@ -3848,6 +3879,10 @@ impl StaticTarget for KotlinTarget {
                 format!("{KOTLIN_TEST_CONTEXT}.doneTaken({})", kotlin_text(ptc))
             }
         })
+    }
+    // The value `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(KOTLIN_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
     // `Long`: one past it has no value there. A verdict with no reason is set

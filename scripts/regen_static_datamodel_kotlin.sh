@@ -374,10 +374,9 @@ done
 # run, its record and templates generated as the units above, its components' machines alone
 # as above, and its tables, beside the runtime's records, templates and asking_configuration,
 # which it reuses; and orders_suite and nested_suite, whose records, union and templates
-# TEST_PROFILE_IMPORTS generates above. job_suite is not replayed on Kotlin: its tester's
-# receive branch reads a message whose record holds a list, which the Kotlin machine makes no
-# value of (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the same documents
-# (scripts/regen_static_datamodel_rust.sh).
+# TEST_PROFILE_IMPORTS generates above; and job_suite, whose records and templates
+# TEST_PROFILE generates above, with the job's completion of the kind examples its port sends.
+# The Rust tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
 BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
 BOUNDARY_RECORDS=(signed_reading signed_reading_sent signed_reading_within)
 BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
@@ -406,6 +405,20 @@ for document in "${TTCN3_EXPORT_TABLES[@]}"; do
 done
 for component in "${TTCN3_EXPORT_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/"
+    mkdir -p "$TMP/machine_$component"
+    cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
+    install_generated "$TMP/machine_$component"
+done
+JOB_SUITE_COMPONENTS=(job_tester helper)
+JOB_SUITE_TABLES=(tester_and_helper completes_in_time job_suite)
+"$CODEGEN" generate "sce-build/kind-examples/event-schema.scxml" -l kotlin -o "$TMP/job_completed/"
+install_generated "$TMP/job_completed"
+for document in "${JOB_SUITE_TABLES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l kotlin -o "$TMP/job_$document/"
+    install_generated "$TMP/job_$document"
+done
+for component in "${JOB_SUITE_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/"
     mkdir -p "$TMP/machine_$component"
     cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
     install_generated "$TMP/machine_$component"
