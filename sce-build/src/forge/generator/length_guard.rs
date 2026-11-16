@@ -130,14 +130,12 @@ impl Guard {
 
     /// The statement, in `lang`, that refuses the frame: the one the failure
     /// table raises it with ([`CodecFailure::raise_stmt`]).
-    fn refusal(&self, lang: Language) -> &'static str {
+    fn refusal(&self, lang: Language) -> String {
         let failure = match self.excess {
             Excess::Length => CodecFailure::LengthOutOfRange,
             Excess::Count => CodecFailure::TooManyElements,
         };
-        failure
-            .raise_stmt(lang)
-            .expect("a bound's refusal has a raise statement on every backend")
+        failure.raise_stmt(lang)
     }
 
     /// The check of `value` (held as `held`) as a statement of `lang` at the

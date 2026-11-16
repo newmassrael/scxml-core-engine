@@ -984,7 +984,7 @@ old encode, the old encode and its templates are removed in the same landing.
    not whole bytes in a frame read field by field, a count or a length held in a signed field, two arms of one
    entry codec, a chain closed by a flag wider than one bit, and a member or local of the generated struct used as
    a field's or an input's name. Swift's decode throws the runtime's typed
-   `CodecError`, and its harness holds each reject vector to the case it names (`CodecFailure::observable_symbol`),
+   `CodecError`, and its harness holds each reject vector to the case it names (`CodecFailure::symbol`),
    as Rust's and Go's are held.
    What step 5 still owes is the printer: Swift's encode is its template's, which writes a stored count, length,
    tag and continuation flag from the value rather than deriving each (§3), and its harness runs the catalog's

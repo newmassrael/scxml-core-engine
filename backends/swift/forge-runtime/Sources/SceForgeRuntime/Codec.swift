@@ -8,9 +8,12 @@
 // "need more bytes" and leaves the cursor where it was, and an encode into a bounded sink that is
 // too small answers "buffer overflow" and writes nothing.
 //
-// Only what the Swift codec emitter can raise is declared. A failure is added with the feature that
-// raises it (a variable-length integer, a string, an enum, a presence condition), so that no error
-// here is one nothing can return.
+// Every kind a decode is refused with is declared, under the name `CodecFailure::runtime_name` of
+// `sce-build/src/forge/codec_failure.rs` spells for Swift, so that every runtime holds one
+// vocabulary of them (docs/adr/0099, amendment of 2026-11-16); a kind this runtime never raises
+// (`capacityExceeded`) says so where it is declared. An encode-side error is added with the feature
+// that raises it (a bounded sink, a presence condition), so that none of those is one nothing can
+// return.
 
 /// What a generated codec refuses to do, as a value a caller can match.
 public enum CodecError: Error, Equatable, Sendable {
@@ -38,6 +41,11 @@ public enum CodecError: Error, Equatable, Sendable {
     /// number is not a value of that type, so a decode refuses the frame and consumes nothing. An
     /// open enum holds every number its carrier does and never answers this.
     case undeclaredEnumValue
+    /// A value inside its field's bound and past the capacity a deployment gave the container that
+    /// stores it (docs/adr/0077 §7). A Swift array grows, so no decode of this runtime throws it: it
+    /// is declared so that every runtime holds one vocabulary of the kinds a decode is refused with
+    /// (docs/adr/0099, amendment of 2026-11-16).
+    case capacityExceeded
     /// A variant's tag names an arm this build leaves out (`<sce:arm feature=>`, docs/adr/0072):
     /// the document knows the body, and this build does not take it, so the frame is refused and is
     /// not read as another arm.

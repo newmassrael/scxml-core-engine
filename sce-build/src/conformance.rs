@@ -3529,10 +3529,8 @@ pub struct RenderedHarness {
 /// vectors the harness could only prove those codecs *compile*.
 ///
 /// Each vector gains a `symbol` key naming the backend's spelling of the
-/// failure, absent on backends where a refused decode is observable but its
-/// reason is not (see [`CodecFailure::observable_symbol`]). The fragment
-/// asserts against the symbol when it is there and against refusal when it
-/// is not.
+/// failure ([`CodecFailure::symbol`]), which every backend's decode answers
+/// by name, and the fragment asserts the decode refused with it.
 ///
 /// Answers whether anything was folded, so the caller can declare the
 /// oracle as a prerequisite exactly when this render baked something out
@@ -3648,27 +3646,12 @@ fn fold_reject_vectors(
         out.insert("why".into(), serde_json::Value::from(why));
         out.insert("encoded".into(), serde_json::Value::Array(encoded.clone()));
         out.insert("error".into(), serde_json::Value::from(failure.wire_name()));
-        if let Some(symbol) = failure.observable_symbol(language) {
-            out.insert("symbol".into(), serde_json::Value::from(symbol));
-        }
-        // Where the decode answers one sentinel and keeps the reason on the
-        // cursor (C++, Kotlin), the vector also asserts the record: the
-        // reason for a bound's refusal (docs/adr/0077 §4), and none for a
-        // frame short of bytes, so the two are never mistaken for each other.
-        if let Some(record) = failure.cursor_record(language) {
-            out.insert("cursor_record".into(), serde_json::Value::from(record));
-        }
-        if failure.records_nothing(language) {
-            out.insert(
-                "cursor_records_nothing".into(),
-                serde_json::Value::Bool(true),
-            );
-        }
-        // A reason the cursor keeps in a flag of its own beside its record (a
-        // VLE's value past its width, C++ and Kotlin) is asserted there.
-        if let Some(flag) = failure.cursor_flag(language) {
-            out.insert("cursor_flag".into(), serde_json::Value::from(flag));
-        }
+        // Every backend's decode answers the kind that refused it (docs/adr/0099,
+        // amendment of 2026-11-16), so every vector asserts it by name.
+        out.insert(
+            "symbol".into(),
+            serde_json::Value::from(failure.symbol(language)),
+        );
         folded.push(serde_json::Value::Object(out));
     }
 

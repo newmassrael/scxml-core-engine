@@ -35,9 +35,7 @@ var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 // length-prefixed payload is not well-formed UTF-8 (RFC §synth-5-B).
 // Forge-fail-fast contract — zenoh-pico itself aliases the
 // bytes without validating, but SCE-side codecs reject malformed text
-// early so downstream procedures never see a malformed string. Cpp +
-// Kotlin runtimes collapse this to their existing truncation sentinel
-// (mirrors the VleWidthOverflow declaration-only convention there).
+// early so downstream procedures never see a malformed string.
 var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 
 // ErrBufferOverflow is returned by Encode when a write would exceed
@@ -59,9 +57,7 @@ var ErrPresentIfMismatch = errors.New("sce/codec: present-if mismatch")
 // carried a value its declared set does not hold. sce:strict-variants=
 // "true" (the default) closes the set, so a carrier value outside it is
 // not a value of that type and the frame does not decode. An open set
-// carries every value of its carrier and never returns this. Cpp +
-// Kotlin runtimes collapse this to their truncation sentinel (mirrors
-// the ErrInvalidUTF8 convention).
+// carries every value of its carrier and never returns this.
 var ErrUndeclaredEnumValue = errors.New("sce/codec: undeclared enum value")
 
 // ErrLengthOutOfRange is returned when a length is outside the bound it must
@@ -81,6 +77,22 @@ var ErrLengthOutOfRange = errors.New("sce/codec: length out of range")
 // (docs/adr/0077 §2). Mirrors the Rust runtime's
 // `CodecError::TooManyElements`.
 var ErrTooManyElements = errors.New("sce/codec: too many elements")
+
+// ErrCapacityExceeded names a value inside its field's bound and past the
+// capacity a deployment gave the container that stores it (docs/adr/0077 §7).
+// A Go slice grows, so no decode of this runtime returns it: it is declared so
+// that every runtime holds one vocabulary of the kinds a decode is refused
+// with (docs/adr/0099, amendment of 2026-11-16), as the Rust
+// `CodecError::CapacityExceeded` and the C `SCE_FORGE_CODEC_CAPACITY_EXCEEDED`
+// that do return it.
+var ErrCapacityExceeded = errors.New("sce/codec: capacity exceeded")
+
+// ErrVariantArmNotBuilt names a frame whose variant tag selects an arm the
+// document declares under a build feature the build left out
+// (docs/adr/0072). A Go codec keeps every arm in every build, so no decode of
+// this runtime returns it: it is declared for the one vocabulary, as
+// ErrCapacityExceeded is.
+var ErrVariantArmNotBuilt = errors.New("sce/codec: variant arm not built")
 
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes

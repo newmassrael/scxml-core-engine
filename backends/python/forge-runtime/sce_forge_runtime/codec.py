@@ -44,10 +44,7 @@ class InvalidUtf8(CodecError):
     payload is not well-formed UTF-8 (RFC §5.B). Forge-
     fail-fast contract — zenoh-pico itself aliases the bytes without
     validating, but SCE-side codecs reject malformed text early so
-    downstream procedures never see a malformed ``str``. The Cpp +
-    Kotlin runtimes collapse this to their existing truncation
-    sentinel (``std::nullopt`` / ``null``) instead, mirroring the
-    VleWidthOverflow declaration-only convention there."""
+    downstream procedures never see a malformed ``str``."""
 
 
 class BufferOverflow(CodecError):
@@ -94,9 +91,23 @@ class UndeclaredEnumValue(CodecError):
     does not hold. ``sce:strict-variants="true"`` (the default) closes
     the set, so a carrier value outside it is not a value of that type
     and the frame does not decode. An open set carries every value of
-    its carrier and never raises this. The Cpp + Kotlin runtimes
-    collapse this to their truncation sentinel (mirrors the
-    :class:`InvalidUtf8` convention there)."""
+    its carrier and never raises this."""
+
+
+class CapacityExceeded(CodecError):
+    """Names a value inside its field's bound and past the capacity a
+    deployment gave the container that stores it (docs/adr/0077 §7). A
+    Python list or ``bytes`` grows, so no decode of this runtime raises it:
+    it is declared so that every runtime holds one vocabulary of the kinds a
+    decode is refused with (docs/adr/0099, amendment of 2026-11-16), as the
+    Rust ``CodecError::CapacityExceeded`` that does raise it."""
+
+
+class VariantArmNotBuilt(CodecError):
+    """Names a frame whose variant tag selects an arm the document declares
+    under a build feature the build left out (docs/adr/0072). A Python codec
+    keeps every arm, so no decode of this runtime raises it: it is declared
+    for the one vocabulary, as :class:`CapacityExceeded` is."""
 
 
 # The bytes of a ZInt that carry a continuation flag: a chain of this many

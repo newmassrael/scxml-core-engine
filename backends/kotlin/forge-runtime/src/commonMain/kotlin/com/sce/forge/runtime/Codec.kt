@@ -28,6 +28,24 @@ sealed class CodecError {
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §synth-5-B `codec/vle-width-overflow`.
     object VleWidthOverflow : CodecError()
+    /// The bytes of a `sce:type="string"` field are not well-formed UTF-8
+    /// (RFC 3629): the frame is refused rather than read as a malformed text.
+    object InvalidUtf8 : CodecError()
+    /// A field of a closed enum (`sce:strict-variants`, the default) carried a
+    /// value no variant declares: not a value of the type, so the frame does
+    /// not decode. An open set carries every value of its carrier.
+    object UndeclaredEnumValue : CodecError()
+    /// A value inside its field's bound and past the capacity a deployment gave
+    /// the container that stores it (docs/adr/0077 §7). A Kotlin list or array
+    /// is sized to its value, so no decode of this runtime refuses with it: it
+    /// is declared so that every runtime holds one vocabulary of the kinds a
+    /// decode is refused with (docs/adr/0099, amendment of 2026-11-16).
+    object CapacityExceeded : CodecError()
+    /// A frame whose variant tag selects an arm the document declares under a
+    /// build feature the build left out (docs/adr/0072). A Kotlin codec keeps
+    /// every arm, so it is declared for the one vocabulary, as
+    /// [CapacityExceeded] is.
+    object VariantArmNotBuilt : CodecError()
     /// RFC §synth-5-B encode-side counterpart to NeedMoreBytes: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded [ByteArraySink] can raise

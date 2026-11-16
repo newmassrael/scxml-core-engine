@@ -11006,9 +11006,7 @@ fn rust_bounded_rebind(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> Op
         return None;
     }
     crate::forge::codec_totality::byte_bound(f, fields)?;
-    let refusal = crate::forge::codec_failure::CodecFailure::LengthOutOfRange
-        .observable_symbol(l.lang)
-        .expect("Rust names a length out of range");
+    let refusal = crate::forge::codec_failure::CodecFailure::LengthOutOfRange.symbol(l.lang);
     let id = l.codec_field_id(&f.id);
     let new = format!("{RUNTIME_CODEC}::Bounded::new");
     Some(if f.present_if.is_some() {
@@ -13691,9 +13689,8 @@ fn render_codec(
                     use crate::forge::codec_failure::{BoundKind, CodecFailure};
                     let c11 = crate::generator::Language::C11;
                     let status = BoundKind::of(f)
-                        .map(CodecFailure::over_bound)
-                        .and_then(|failure| failure.observable_symbol(c11))
-                        .expect("a field held in an array has a bound C11 names");
+                        .map(|kind| CodecFailure::over_bound(kind).symbol(c11))
+                        .expect("a field held in an array has a bound");
                     obj.insert("c_over_bound_status".into(), status.into());
                 }
             }
@@ -20539,8 +20536,6 @@ fn chain_guard_if(
 ) -> String {
     use crate::generator::Language;
     match lang {
-        // Braced: a bail of C++ or Kotlin records its refusal on the cursor
-        // before it returns, so it can be two statements.
         Language::C11 | Language::Cpp | Language::Kotlin => {
             format!("\n{indent}if ({cond}) {{ {bail} }}")
         }
@@ -20645,12 +20640,9 @@ fn tlv_chain_guard(
     indent: &str,
 ) -> String {
     use crate::forge::codec_failure::CodecFailure;
-    // Both are positional failures, which every backend raises with a
-    // statement (`codec_failure::tests::only_a_failure_no_reader_raises_has_a_raise_statement`).
-    let raise = |f: CodecFailure| {
-        f.raise_stmt(lang)
-            .expect("a positional codec failure has a raise statement on every backend")
-    };
+    // Every backend refuses with the kind by a statement of its own
+    // (`codec_failure::tests::every_raise_names_its_kind_on_every_backend`).
+    let raise = |f: CodecFailure| f.raise_stmt(lang);
     let past_depth = raise(CodecFailure::TooManyElements);
     if max_depth.is_none() {
         if !entry_flag {
@@ -20665,11 +20657,11 @@ fn tlv_chain_guard(
             lang,
             indent,
             &format!("_more {and} {}", chain_cursor_empty(lang)),
-            raise(CodecFailure::NeedMoreBytes),
+            &raise(CodecFailure::NeedMoreBytes),
         );
     }
     if !entry_flag {
-        return chain_guard_if(lang, indent, chain_cursor_nonempty(lang), past_depth);
+        return chain_guard_if(lang, indent, chain_cursor_nonempty(lang), &past_depth);
     }
     let and = if matches!(lang, crate::generator::Language::Python) {
         "and"
@@ -20683,9 +20675,9 @@ fn tlv_chain_guard(
             lang,
             indent,
             &short_frame,
-            raise(CodecFailure::NeedMoreBytes)
+            &raise(CodecFailure::NeedMoreBytes)
         ),
-        chain_guard_if(lang, indent, "_more", past_depth),
+        chain_guard_if(lang, indent, "_more", &past_depth),
     )
 }
 

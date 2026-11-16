@@ -13,7 +13,7 @@
    declare, so a closed enum is required and an open one, whose conversion is total, is not.
 
    A reject asserts the failure by the case of the runtime's typed `CodecError` the decode throws
-   (`CodecFailure::observable_symbol`), as the Rust and Go fragments assert theirs. #}
+   (`CodecFailure::symbol`), as every other backend's fragment asserts its own. #}
 {% macro lift(m, raw) -%}
 {% if m.enum_open %}{{ m.enum_document | to_pascal_case }}.fromUnderlying({{ raw | swift_unmarshal(m.type) }}){% else %}try #require({{ m.enum_document | to_pascal_case }}.fromUnderlying({{ raw | swift_unmarshal(m.type) }})){% endif %}
 {%- endmacro %}

@@ -4,21 +4,20 @@
 // RFC synth-5-B — the decode-side failure vocabulary a generated codec can
 // signal, and each backend's spelling of it.
 //
-// Two consumers share this table and must not grow private copies:
+// This table is the one source of the kinds of rejection a decode answers
+// (docs/adr/0099, amendment of 2026-11-16). Every runtime declares the whole
+// of it in its own error type, under the name `runtime_name` derives from the
+// kind's wire name by that language's rule, and
+// `tests::every_runtime_declares_every_failure` reads each runtime's source to
+// hold it there: a kind added here and not to a runtime, or a runtime's name
+// spelled another way, fails that test rather than drifting.
+//
+// Three consumers share this table and must not grow private copies:
 //   - `forge::generator` emits the statement that raises a failure from
 //     inside a generated decode;
 //   - `conformance` renders the assertion a reject vector makes about that
-//     same failure from outside.
-//
-// Raising a failure and observing one are not the same question, so the
-// table answers both. Cpp and Kotlin return one sentinel for every failure
-// (the "MCU-only codec sub-features" convention); a refusal that is not a
-// frame short of bytes is recorded on the cursor beside it (a bound's,
-// docs/adr/0077 §4), and Python's generated `decode` funnels every
-// `CodecError` through one `except` into `None`. For all three the failure
-// is raised by name inside the decode but is *not* observable by name
-// outside it, so `observable_symbol` reports `None` and a caller can only
-// assert that the decode refused — which is the whole of what it can see.
+//     same failure from outside;
+//   - the runtimes, whose declarations the test above holds to it.
 
 use crate::generator::Language;
 
@@ -67,6 +66,23 @@ pub enum CodecFailure {
     /// failure: only the value is. Raised by the runtime's VLE reader, not by
     /// a generated statement.
     VleWidthOverflow,
+    /// A text field's bytes are not well-formed UTF-8 (RFC 3629): the frame
+    /// is refused and never waited on.
+    InvalidUtf8,
+    /// A field of a closed enum (`sce:strict-variants`, the default) whose
+    /// carrier holds a value no variant declares: not a value of the type.
+    UndeclaredEnumValue,
+    /// A value inside its field's bound and past what the form that stores
+    /// it holds: the capacity a deployment gave an inline buffer or list
+    /// (docs/adr/0077 §7). Raised only where a container has a capacity of
+    /// its own (Rust, C11); a runtime whose containers grow declares it and
+    /// never raises it.
+    CapacityExceeded,
+    /// The frame's variant tag names an arm the document declares under a
+    /// build feature this build leaves out (docs/adr/0072). Raised only where
+    /// a build can leave an arm out (Rust, C11, C++); a runtime that keeps
+    /// every arm declares it and never raises it.
+    VariantArmNotBuilt,
     /// An `sce:encoding="cbor"` map is not one the codec reads
     /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
     /// or an entry of the wrong major type.
@@ -75,6 +91,9 @@ pub enum CodecFailure {
     CborRequiredKeyMissing,
     /// A CBOR byte string is not its declared `sce:length`.
     CborWrongLength,
+    /// The value of a key the codec does not declare nests deeper than the
+    /// skip admits (SCE_FORGE.md §4.6.1: 16).
+    CborTooDeep,
     /// A CBOR value does not fit its declared type or `sce:max-size`.
     CborOutOfRange,
     /// A `sce:encoding="content-line"` component has a line, a parameter or
@@ -101,14 +120,19 @@ pub enum CodecFailure {
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 14] = [
+    pub const ALL: [CodecFailure; 19] = [
         CodecFailure::NeedMoreBytes,
         CodecFailure::LengthOutOfRange,
         CodecFailure::TooManyElements,
         CodecFailure::VleWidthOverflow,
+        CodecFailure::InvalidUtf8,
+        CodecFailure::UndeclaredEnumValue,
+        CodecFailure::CapacityExceeded,
+        CodecFailure::VariantArmNotBuilt,
         CodecFailure::CborMalformed,
         CodecFailure::CborRequiredKeyMissing,
         CodecFailure::CborWrongLength,
+        CodecFailure::CborTooDeep,
         CodecFailure::CborOutOfRange,
         CodecFailure::LineMalformed,
         CodecFailure::LineRequiredMissing,
@@ -126,9 +150,14 @@ impl CodecFailure {
             CodecFailure::LengthOutOfRange => "length-out-of-range",
             CodecFailure::TooManyElements => "too-many-elements",
             CodecFailure::VleWidthOverflow => "vle-width-overflow",
+            CodecFailure::InvalidUtf8 => "invalid-utf8",
+            CodecFailure::UndeclaredEnumValue => "undeclared-enum-value",
+            CodecFailure::CapacityExceeded => "capacity-exceeded",
+            CodecFailure::VariantArmNotBuilt => "variant-arm-not-built",
             CodecFailure::CborMalformed => "cbor-malformed",
             CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
             CodecFailure::CborWrongLength => "cbor-wrong-length",
+            CodecFailure::CborTooDeep => "cbor-too-deep",
             CodecFailure::CborOutOfRange => "cbor-out-of-range",
             CodecFailure::LineMalformed => "line-malformed",
             CodecFailure::LineRequiredMissing => "line-required-missing",
@@ -162,6 +191,7 @@ impl CodecFailure {
             CodecFailure::CborMalformed
                 | CodecFailure::CborRequiredKeyMissing
                 | CodecFailure::CborWrongLength
+                | CodecFailure::CborTooDeep
                 | CodecFailure::CborOutOfRange
         )
     }
@@ -180,67 +210,63 @@ impl CodecFailure {
         )
     }
 
-    /// Whether a runtime reader raises this failure and no generated statement
-    /// does: a CBOR or content-line failure, which the readers and the codec
-    /// templates of those encodings return as a value (SCE_FORGE.md §4.6.1,
-    /// §4.6.4), and a VLE's value past its width, which the runtime's VLE
-    /// reader returns and the generated decode passes on.
-    pub fn is_raised_by_a_reader(self) -> bool {
-        self.is_cbor() || self.is_content_line() || self == CodecFailure::VleWidthOverflow
+    /// The name the runtime of `lang` declares this failure under, spelled from
+    /// the wire name by that language's own rule for the declaration it is: a
+    /// type or a variant in PascalCase (Rust, C++, Kotlin, Python), an enum
+    /// case in lowerCamelCase (Swift, The Swift API Design Guidelines), an
+    /// enumerator in upper snake case behind the runtime's prefix (C11), and an
+    /// error sentinel `Err` + PascalCase with the initialisms in capitals (Go,
+    /// Go Code Review Comments, "Initialisms"). No runtime's name is written
+    /// here by hand, so a kind has one spelling per language and every lane
+    /// reads it from this one place.
+    pub fn runtime_name(self, lang: Language) -> String {
+        let mut words = self.wire_name().split('-');
+        match lang {
+            Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
+                words.map(capitalized).collect()
+            }
+            Language::Swift => {
+                let first = words.next().expect("a wire name has a first word");
+                format!("{first}{}", words.map(capitalized).collect::<String>())
+            }
+            Language::C11 => format!(
+                "SCE_FORGE_CODEC_{}",
+                self.wire_name().replace('-', "_").to_ascii_uppercase()
+            ),
+            Language::Go => format!("Err{}", words.map(go_word).collect::<String>()),
+        }
     }
 
-    /// The statement a generated positional decode uses to signal this
-    /// failure. `None` for a failure a runtime reader raises
-    /// ([`Self::is_raised_by_a_reader`]): the positional codec's statements
-    /// do not raise one.
-    pub fn raise_stmt(self, lang: Language) -> Option<&'static str> {
-        match self {
-            CodecFailure::NeedMoreBytes => Some(match lang {
-                Language::Rust => "return Err(CodecError::NeedMoreBytes);",
-                Language::C11 => "return SCE_FORGE_CODEC_NEED_MORE_BYTES;",
-                Language::Cpp => "return std::nullopt;",
-                Language::Kotlin => "return null",
-                Language::Go => "return nil, codec.ErrNeedMoreBytes",
-                Language::Python => "raise NeedMoreBytes()",
-                Language::Swift => "throw CodecError.needMoreBytes",
-            }),
-            // A bound's refusal is not a frame short of bytes, so C++ and
-            // Kotlin record it on the cursor before they return their one
-            // sentinel (docs/adr/0077 §4; `SceCursor::refuse`, as ADR 0072
-            // records a left-out arm's).
-            CodecFailure::LengthOutOfRange => Some(match lang {
-                Language::Rust => "return Err(CodecError::LengthOutOfRange);",
-                Language::C11 => "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;",
-                Language::Cpp => {
-                    "cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;"
-                }
-                Language::Kotlin => "cursor.refuse(CodecError.LengthOutOfRange); return null",
-                Language::Go => "return nil, codec.ErrLengthOutOfRange",
-                Language::Python => "raise LengthOutOfRange()",
-                Language::Swift => "throw CodecError.lengthOutOfRange",
-            }),
-            CodecFailure::TooManyElements => Some(match lang {
-                Language::Rust => "return Err(CodecError::TooManyElements);",
-                Language::C11 => "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;",
-                Language::Cpp => {
-                    "cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;"
-                }
-                Language::Kotlin => "cursor.refuse(CodecError.TooManyElements); return null",
-                Language::Go => "return nil, codec.ErrTooManyElements",
-                Language::Python => "raise TooManyElements()",
-                Language::Swift => "throw CodecError.tooManyElements",
-            }),
-            CodecFailure::VleWidthOverflow
-            | CodecFailure::CborMalformed
-            | CodecFailure::CborRequiredKeyMissing
-            | CodecFailure::CborWrongLength
-            | CodecFailure::CborOutOfRange
-            | CodecFailure::LineMalformed
-            | CodecFailure::LineRequiredMissing
-            | CodecFailure::LineTooMany
-            | CodecFailure::LineTooLong
-            | CodecFailure::LineBadEscape
-            | CodecFailure::LineBadValue => None,
+    /// The expression a generated decode and a caller name this failure by in
+    /// `lang`: the runtime's name, qualified as code outside the runtime
+    /// reaches it.
+    pub fn symbol(self, lang: Language) -> String {
+        let name = self.runtime_name(lang);
+        match lang {
+            Language::Rust => format!("CodecError::{name}"),
+            Language::Cpp => format!("::SCE::Forge::CodecError::{name}"),
+            Language::Kotlin | Language::Swift => format!("CodecError.{name}"),
+            Language::Go => format!("codec.{name}"),
+            Language::Python | Language::C11 => name,
+        }
+    }
+
+    /// The statement a generated decode refuses its frame with for this
+    /// failure, in the channel each language has for it (docs/adr/0099,
+    /// amendment of 2026-11-16): Rust's `Err`, a C11 status, a C++ and a Kotlin
+    /// `Decoded` holding the error, Go's `error`, a Python exception and a
+    /// Swift typed throw. Every kind has one on every backend: a decode is
+    /// refused with the kind that refused it, never with a sentinel that
+    /// stands for all of them.
+    pub fn raise_stmt(self, lang: Language) -> String {
+        let symbol = self.symbol(lang);
+        match lang {
+            Language::Rust => format!("return Err({symbol});"),
+            Language::C11 | Language::Cpp => format!("return {symbol};"),
+            Language::Kotlin => format!("return Decoded.Refused({symbol})"),
+            Language::Go => format!("return nil, {symbol}"),
+            Language::Python => format!("raise {symbol}()"),
+            Language::Swift => format!("throw {symbol}"),
         }
     }
 
@@ -293,163 +319,27 @@ impl CodecFailure {
             BoundKind::Count => CodecFailure::TooManyElements,
         }
     }
+}
 
-    /// The symbol a caller compares the cursor's record of a refusal against
-    /// on the backends whose decode returns one sentinel for every failure
-    /// and records the reason beside it (C++ `SceCursor::last_refusal`,
-    /// Kotlin `SceCursor.lastRefusal`), or `None` where the failure is not
-    /// recorded there. A frame short of bytes records nothing, and a caller
-    /// can check that too ([`Self::records_nothing`]).
-    pub fn cursor_record(self, lang: Language) -> Option<&'static str> {
-        let (length, count) = match lang {
-            Language::Cpp => (
-                "::SCE::Forge::CodecError::LengthOutOfRange",
-                "::SCE::Forge::CodecError::TooManyElements",
-            ),
-            Language::Kotlin => (
-                "com.sce.forge.runtime.CodecError.LengthOutOfRange",
-                "com.sce.forge.runtime.CodecError.TooManyElements",
-            ),
-            Language::Rust | Language::C11 | Language::Go | Language::Python | Language::Swift => {
-                return None
-            }
-        };
-        match self {
-            CodecFailure::LengthOutOfRange => Some(length),
-            CodecFailure::TooManyElements => Some(count),
-            _ => None,
-        }
+/// `word` with its first letter in capitals: one word of a PascalCase name.
+fn capitalized(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
     }
+}
 
-    /// The flag of the cursor that holds when a decode refused for this reason,
-    /// read as `<cursor>.<flag>`, on the backends whose decode returns one
-    /// sentinel for every failure and keeps this one's reason on the cursor
-    /// apart from its record of refusals: the VLE reader's overflow flag
-    /// (C++ `SceCursor::last_vle_overflow`, Kotlin `SceCursor.lastVleOverflow`).
-    /// `None` for any other failure or backend.
-    pub fn cursor_flag(self, lang: Language) -> Option<&'static str> {
-        match (lang, self) {
-            (Language::Cpp, CodecFailure::VleWidthOverflow) => Some("last_vle_overflow()"),
-            (Language::Kotlin, CodecFailure::VleWidthOverflow) => Some("lastVleOverflow"),
-            _ => None,
-        }
-    }
+/// The words of a wire name that are initialisms, which a Go name spells in
+/// capitals (`ErrVLEWidthOverflow`, `ErrInvalidUTF8`).
+const GO_INITIALISMS: [&str; 2] = ["vle", "utf8"];
 
-    /// Whether a refusal of this kind leaves the cursor's record empty on the
-    /// backends that keep one: a frame short of bytes is the one a caller may
-    /// resume by appending, so it must not read as a refusal for a reason.
-    pub fn records_nothing(self, lang: Language) -> bool {
-        matches!(lang, Language::Cpp | Language::Kotlin)
-            && matches!(self, CodecFailure::NeedMoreBytes)
-    }
-
-    /// The case of the Swift runtime's `CodecError` a decode throws for this
-    /// failure (`backends/swift/forge-runtime/Sources/SceForgeRuntime/Codec.swift`),
-    /// which a caller compares the thrown error with.
-    fn swift_symbol(self) -> &'static str {
-        match self {
-            CodecFailure::NeedMoreBytes => "CodecError.needMoreBytes",
-            CodecFailure::LengthOutOfRange => "CodecError.lengthOutOfRange",
-            CodecFailure::TooManyElements => "CodecError.tooManyElements",
-            CodecFailure::VleWidthOverflow => "CodecError.vleWidthOverflow",
-            CodecFailure::CborMalformed => "CodecError.cborMalformed",
-            CodecFailure::CborRequiredKeyMissing => "CodecError.cborRequiredKeyMissing",
-            CodecFailure::CborWrongLength => "CodecError.cborWrongLength",
-            CodecFailure::CborOutOfRange => "CodecError.cborOutOfRange",
-            CodecFailure::LineMalformed => "CodecError.lineMalformed",
-            CodecFailure::LineRequiredMissing => "CodecError.lineRequiredMissing",
-            CodecFailure::LineTooMany => "CodecError.lineTooMany",
-            CodecFailure::LineTooLong => "CodecError.lineTooLong",
-            CodecFailure::LineBadEscape => "CodecError.lineBadEscape",
-            CodecFailure::LineBadValue => "CodecError.lineBadValue",
-        }
-    }
-
-    /// The symbol a *caller* can compare a refused decode against, or `None`
-    /// on backends where the failure is not observable by name.
-    pub fn observable_symbol(self, lang: Language) -> Option<&'static str> {
-        match (lang, self) {
-            (Language::Rust, CodecFailure::NeedMoreBytes) => Some("CodecError::NeedMoreBytes"),
-            (Language::C11, CodecFailure::NeedMoreBytes) => Some("SCE_FORGE_CODEC_NEED_MORE_BYTES"),
-            (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
-            // A bound's refusal (docs/adr/0077 §4) is named on the same three.
-            (Language::Rust, CodecFailure::LengthOutOfRange) => {
-                Some("CodecError::LengthOutOfRange")
-            }
-            (Language::Rust, CodecFailure::TooManyElements) => Some("CodecError::TooManyElements"),
-            (Language::C11, CodecFailure::LengthOutOfRange) => {
-                Some("SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE")
-            }
-            (Language::C11, CodecFailure::TooManyElements) => {
-                Some("SCE_FORGE_CODEC_TOO_MANY_ELEMENTS")
-            }
-            (Language::Go, CodecFailure::LengthOutOfRange) => Some("codec.ErrLengthOutOfRange"),
-            (Language::Go, CodecFailure::TooManyElements) => Some("codec.ErrTooManyElements"),
-            // A VLE's value past its width is the runtime reader's own error,
-            // which the generated decode returns as it is on the same three.
-            (Language::Rust, CodecFailure::VleWidthOverflow) => {
-                Some("CodecError::VleWidthOverflow")
-            }
-            (Language::C11, CodecFailure::VleWidthOverflow) => {
-                Some("SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW")
-            }
-            (Language::Go, CodecFailure::VleWidthOverflow) => Some("codec.ErrVLEWidthOverflow"),
-            // The CBOR reader's refusals are named on Rust, Go and C11, whose
-            // decodes return the runtime's typed error or status.
-            (Language::Rust, CodecFailure::CborMalformed) => Some("CodecError::CborMalformed"),
-            (Language::Rust, CodecFailure::CborRequiredKeyMissing) => {
-                Some("CodecError::CborRequiredKeyMissing")
-            }
-            (Language::Rust, CodecFailure::CborWrongLength) => Some("CodecError::CborWrongLength"),
-            (Language::Rust, CodecFailure::CborOutOfRange) => Some("CodecError::CborOutOfRange"),
-            (Language::Go, CodecFailure::CborMalformed) => Some("codec.ErrCborMalformed"),
-            (Language::Go, CodecFailure::CborRequiredKeyMissing) => {
-                Some("codec.ErrCborRequiredKeyMissing")
-            }
-            (Language::Go, CodecFailure::CborWrongLength) => Some("codec.ErrCborWrongLength"),
-            (Language::Go, CodecFailure::CborOutOfRange) => Some("codec.ErrCborOutOfRange"),
-            (Language::C11, CodecFailure::CborMalformed) => Some("SCE_FORGE_CODEC_CBOR_MALFORMED"),
-            (Language::C11, CodecFailure::CborRequiredKeyMissing) => {
-                Some("SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING")
-            }
-            (Language::C11, CodecFailure::CborWrongLength) => {
-                Some("SCE_FORGE_CODEC_CBOR_WRONG_LENGTH")
-            }
-            (Language::C11, CodecFailure::CborOutOfRange) => {
-                Some("SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE")
-            }
-            // The content-line reader and writer return the runtime's typed
-            // error or status on the same three backends.
-            (Language::Rust, CodecFailure::LineMalformed) => Some("CodecError::LineMalformed"),
-            (Language::Rust, CodecFailure::LineRequiredMissing) => {
-                Some("CodecError::LineRequiredMissing")
-            }
-            (Language::Rust, CodecFailure::LineTooMany) => Some("CodecError::LineTooMany"),
-            (Language::Rust, CodecFailure::LineTooLong) => Some("CodecError::LineTooLong"),
-            (Language::Rust, CodecFailure::LineBadEscape) => Some("CodecError::LineBadEscape"),
-            (Language::Rust, CodecFailure::LineBadValue) => Some("CodecError::LineBadValue"),
-            (Language::Go, CodecFailure::LineMalformed) => Some("codec.ErrLineMalformed"),
-            (Language::Go, CodecFailure::LineRequiredMissing) => {
-                Some("codec.ErrLineRequiredMissing")
-            }
-            (Language::Go, CodecFailure::LineTooMany) => Some("codec.ErrLineTooMany"),
-            (Language::Go, CodecFailure::LineTooLong) => Some("codec.ErrLineTooLong"),
-            (Language::Go, CodecFailure::LineBadEscape) => Some("codec.ErrLineBadEscape"),
-            (Language::Go, CodecFailure::LineBadValue) => Some("codec.ErrLineBadValue"),
-            (Language::C11, CodecFailure::LineMalformed) => Some("SCE_FORGE_CODEC_LINE_MALFORMED"),
-            (Language::C11, CodecFailure::LineRequiredMissing) => {
-                Some("SCE_FORGE_CODEC_LINE_REQUIRED_MISSING")
-            }
-            (Language::C11, CodecFailure::LineTooMany) => Some("SCE_FORGE_CODEC_LINE_TOO_MANY"),
-            (Language::C11, CodecFailure::LineTooLong) => Some("SCE_FORGE_CODEC_LINE_TOO_LONG"),
-            (Language::C11, CodecFailure::LineBadEscape) => Some("SCE_FORGE_CODEC_LINE_BAD_ESCAPE"),
-            (Language::C11, CodecFailure::LineBadValue) => Some("SCE_FORGE_CODEC_LINE_BAD_VALUE"),
-            // Swift's decode throws the runtime's typed `CodecError` (docs/adr/0099: a
-            // refusal is not a value), each case named after Rust's variant.
-            (Language::Swift, failure) => Some(failure.swift_symbol()),
-            // Cpp / Kotlin / Python: refusal is observable, its name is not.
-            (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
-        }
+/// One word of a Go name: an initialism in capitals, any other capitalized.
+fn go_word(word: &str) -> String {
+    if GO_INITIALISMS.contains(&word) {
+        word.to_ascii_uppercase()
+    } else {
+        capitalized(word)
     }
 }
 
@@ -480,6 +370,7 @@ mod tests {
                 .count(),
             6
         );
+        assert_eq!(CodecFailure::ALL.iter().filter(|f| f.is_cbor()).count(), 5);
     }
 
     #[test]
@@ -488,111 +379,177 @@ mod tests {
         assert!(err.contains("too-many-elements"), "{err}");
     }
 
-    /// A backend that can name the failure must raise it by that same name —
-    /// otherwise a reject vector would assert against a symbol the decode
-    /// never produces.
+    /// Each language's rule, held on the kinds whose words test it: Go's
+    /// initialisms, Swift's lower first word, C11's prefix.
     #[test]
-    fn an_observable_symbol_is_the_one_the_emit_raises() {
-        // Only a backend that emits a codec raises anything.
-        for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Codec) {
-            for f in CodecFailure::ALL {
-                if let (Some(symbol), Some(raise)) = (f.observable_symbol(lang), f.raise_stmt(lang))
-                {
-                    assert!(
-                        raise.contains(symbol),
-                        "{lang:?} {f:?}: raise `{raise}` does not mention observable `{symbol}`",
-                    );
-                }
-            }
-        }
+    fn each_language_spells_a_kind_by_its_own_rule() {
+        let vle = CodecFailure::VleWidthOverflow;
+        assert_eq!(vle.runtime_name(Language::Rust), "VleWidthOverflow");
+        assert_eq!(vle.runtime_name(Language::Go), "ErrVLEWidthOverflow");
+        assert_eq!(vle.runtime_name(Language::Swift), "vleWidthOverflow");
+        assert_eq!(
+            vle.runtime_name(Language::C11),
+            "SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW"
+        );
+        let utf8 = CodecFailure::InvalidUtf8;
+        assert_eq!(utf8.runtime_name(Language::Kotlin), "InvalidUtf8");
+        assert_eq!(utf8.runtime_name(Language::Go), "ErrInvalidUTF8");
+        assert_eq!(
+            CodecFailure::CborRequiredKeyMissing.symbol(Language::Cpp),
+            "::SCE::Forge::CodecError::CborRequiredKeyMissing"
+        );
+        assert_eq!(
+            CodecFailure::NeedMoreBytes.symbol(Language::Python),
+            "NeedMoreBytes"
+        );
     }
 
-    /// A failure a generated statement raises has a raise statement on every
-    /// backend, and one a runtime reader raises (CBOR, content-line, a VLE's
-    /// value past its width) on none — the reader returns it.
+    /// A decode refuses with the kind that refused it on every backend: the
+    /// statement names the symbol a caller compares the refusal with, so a
+    /// reject vector asserts against the name the decode produces.
     #[test]
-    fn only_a_failure_no_reader_raises_has_a_raise_statement() {
-        for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Codec) {
+    fn every_raise_names_its_kind_on_every_backend() {
+        for &lang in Language::ALL {
             for f in CodecFailure::ALL {
-                assert_eq!(
-                    f.raise_stmt(lang).is_some(),
-                    !f.is_raised_by_a_reader(),
-                    "{lang:?} {f:?}"
+                let raise = f.raise_stmt(lang);
+                let symbol = f.symbol(lang);
+                assert!(
+                    raise.contains(&symbol),
+                    "{lang:?} {f:?}: raise `{raise}` does not name `{symbol}`",
                 );
             }
         }
     }
 
-    /// Swift's decode throws a typed error for every failure (docs/adr/0099),
-    /// so a reject vector names each one there: the case the runtime's
-    /// `CodecError` declares for it, which a generated statement that raises it
-    /// throws by the same name.
+    /// The failures are distinguishable on every backend: one that named two
+    /// the same would let a reject vector pass on the wrong refusal.
     #[test]
-    fn every_failure_is_named_on_swift_by_its_codec_error_case() {
-        for f in CodecFailure::ALL {
-            let symbol = f
-                .observable_symbol(Language::Swift)
-                .unwrap_or_else(|| panic!("{f:?} is not named on Swift"));
-            assert!(symbol.starts_with("CodecError."), "{f:?}: {symbol}");
-            if let Some(raise) = f.raise_stmt(Language::Swift) {
-                assert_eq!(raise, format!("throw {symbol}"), "{f:?}");
-            }
-        }
-        assert_eq!(
-            CodecFailure::TooManyElements.observable_symbol(Language::Swift),
-            Some("CodecError.tooManyElements")
-        );
-    }
-
-    /// A VLE's value past its width is named where the runtime's reader
-    /// returns a typed error (Rust, C11, Go, Swift), and read from the cursor's
-    /// flag where the decode answers one sentinel (C++, Kotlin): a reject
-    /// vector of it asserts the reason on six backends, not only that a decode
-    /// refused.
-    #[test]
-    fn a_vle_past_its_width_is_observable_by_name_or_by_the_cursor_flag() {
-        let f = CodecFailure::VleWidthOverflow;
-        assert_eq!(CodecFailure::parse("vle-width-overflow"), Ok(f));
-        assert!(!f.is_cbor() && !f.is_content_line() && f.is_raised_by_a_reader());
-        for (lang, symbol) in [
-            (Language::Rust, "CodecError::VleWidthOverflow"),
-            (Language::C11, "SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW"),
-            (Language::Go, "codec.ErrVLEWidthOverflow"),
-            (Language::Swift, "CodecError.vleWidthOverflow"),
-        ] {
-            assert_eq!(f.observable_symbol(lang), Some(symbol), "{lang:?}");
-            assert_eq!(f.cursor_flag(lang), None, "{lang:?}");
-        }
-        assert_eq!(f.cursor_flag(Language::Cpp), Some("last_vle_overflow()"));
-        assert_eq!(f.cursor_flag(Language::Kotlin), Some("lastVleOverflow"));
-        assert_eq!(f.observable_symbol(Language::Python), None);
-        assert_eq!(f.cursor_flag(Language::Python), None);
-        // No other failure is read from a cursor flag.
+    fn no_backend_names_two_failures_alike() {
         for &lang in Language::ALL {
-            for other in CodecFailure::ALL.into_iter().filter(|o| *o != f) {
-                assert_eq!(other.cursor_flag(lang), None, "{lang:?} {other:?}");
-            }
-        }
-    }
-
-    /// The failures must be distinguishable wherever they are observable at
-    /// all — a backend that named two the same would let a reject vector
-    /// pass on the wrong refusal.
-    #[test]
-    fn observable_failures_are_distinguishable() {
-        for &lang in Language::ALL {
-            let named: Vec<&str> = CodecFailure::ALL
+            let mut named: Vec<String> = CodecFailure::ALL
                 .into_iter()
-                .filter_map(|f| f.observable_symbol(lang))
+                .map(|f| f.symbol(lang))
                 .collect();
-            let mut distinct = named.clone();
-            distinct.sort_unstable();
-            distinct.dedup();
+            named.sort_unstable();
+            named.dedup();
             assert_eq!(
-                distinct.len(),
                 named.len(),
+                CodecFailure::ALL.len(),
                 "{lang:?} names two failures identically"
             );
         }
+    }
+
+    /// The source of each runtime's codec error type.
+    fn runtime_sources(lang: Language) -> &'static [&'static str] {
+        match lang {
+            Language::Rust => &[include_str!(
+                "../../../backends/rust/forge-runtime/src/codec.rs"
+            )],
+            Language::Cpp => &[include_str!(
+                "../../../backends/cpp/forge-runtime/include/sce/forge/codec.h"
+            )],
+            Language::Kotlin => &[include_str!(
+                "../../../backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt"
+            )],
+            Language::Go => &[
+                include_str!("../../../backends/go/forge-runtime/codec/codec.go"),
+                include_str!("../../../backends/go/forge-runtime/codec/cbor.go"),
+                include_str!("../../../backends/go/forge-runtime/codec/content_line.go"),
+            ],
+            Language::Python => &[
+                include_str!("../../../backends/python/forge-runtime/sce_forge_runtime/codec.py"),
+                include_str!("../../../backends/python/forge-runtime/sce_forge_runtime/cbor.py"),
+                include_str!(
+                    "../../../backends/python/forge-runtime/sce_forge_runtime/content_line.py"
+                ),
+            ],
+            Language::C11 => &[include_str!(
+                "../../../backends/c/forge-runtime/include/sce/forge/codec.h"
+            )],
+            Language::Swift => &[include_str!(
+                "../../../backends/swift/forge-runtime/Sources/SceForgeRuntime/Codec.swift"
+            )],
+        }
+    }
+
+    /// The text from `open` up to the first `close` after it: the body of the
+    /// one declaration a runtime holds its error type in.
+    fn declaration<'s>(lang: Language, text: &'s str, open: &str, close: &str) -> &'s str {
+        let start = text
+            .find(open)
+            .unwrap_or_else(|| panic!("{lang:?}: the runtime declares no `{open}`"));
+        let body = &text[start..];
+        let end = body
+            .find(close)
+            .unwrap_or_else(|| panic!("{lang:?}: `{open}` has no `{close}`"));
+        &body[..end]
+    }
+
+    /// Whether the runtime of `lang` declares `name` as one kind of its codec
+    /// error: a variant of its error enum (Rust, Swift, C++, C11), an object of
+    /// its sealed class (Kotlin), a subclass of `CodecError` (Python) or an
+    /// error sentinel of the `codec` package (Go).
+    fn declares(lang: Language, name: &str) -> bool {
+        let sources = runtime_sources(lang);
+        // `line` is `before`, then `name`, then text that starts with `after`
+        // (that ends there, where `after` is empty).
+        let names = |line: &str, before: &str, after: &str| {
+            line.strip_prefix(before)
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| {
+                    if after.is_empty() {
+                        rest.is_empty()
+                    } else {
+                        rest.starts_with(after)
+                    }
+                })
+        };
+        let in_block = |open: &str, close: &str, before: &str, after: &str| {
+            sources.iter().any(|text| {
+                declaration(lang, text, open, close)
+                    .lines()
+                    .any(|l| names(l.trim(), before, after))
+            })
+        };
+        let at_top = |before: &str, after: &str| {
+            sources
+                .iter()
+                .any(|text| text.lines().any(|l| names(l, before, after)))
+        };
+        match lang {
+            Language::Rust => in_block("pub enum CodecError {", "\n}", "", ","),
+            Language::Swift => in_block("public enum CodecError: Error", "\n}", "case ", ""),
+            Language::Cpp => in_block("enum class CodecError", "\n};", "", " = "),
+            Language::C11 => in_block("typedef enum {", "} sce_forge_codec_status_t;", "", " = "),
+            Language::Kotlin => in_block(
+                "sealed class CodecError {",
+                "\n}",
+                "object ",
+                " : CodecError()",
+            ),
+            Language::Python => at_top("class ", "(CodecError):"),
+            Language::Go => at_top("var ", " = errors.New("),
+        }
+    }
+
+    /// Every runtime declares every kind of this table under the name derived
+    /// for it: the vocabulary is one, and a runtime that lacks a kind, or
+    /// spells one another way, is named here with the kind it lacks.
+    #[test]
+    fn every_runtime_declares_every_failure() {
+        let mut missing = Vec::new();
+        for &lang in Language::ALL {
+            for f in CodecFailure::ALL {
+                let name = f.runtime_name(lang);
+                if !declares(lang, &name) {
+                    missing.push(format!("{lang:?} {name}"));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "runtimes lacking a kind of the decode vocabulary: {missing:?}"
+        );
     }
 }
