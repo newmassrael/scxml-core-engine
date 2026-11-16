@@ -857,12 +857,14 @@ pub enum FixtureSpec {
         /// states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         encode_refuses_bound: bool,
-        /// The C++ backend prints the codec from its encode plan
-        /// (docs/adr/0081 step 4): the fragment makes a value by its
-        /// constructor and reads each element through its accessor. Derived
-        /// from the document; fixtures.json never states it.
+        /// The backend the harness is rendered for prints the codec from its
+        /// encode plan (docs/adr/0081 step 4): a C++ fragment makes a value by
+        /// its constructor and reads each element through its accessor, and a
+        /// fragment of any language that prints it neither makes the value with
+        /// an element the encode derives nor reads one back (§3). Derived per
+        /// language from the document; fixtures.json never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        cpp_printed: bool,
+        printed: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1614,11 +1616,11 @@ impl Manifest {
                     grows,
                     encode_may_fail,
                     encode_refuses_bound,
-                    cpp_printed,
+                    printed,
                 } => {
-                    if *cpp_printed {
+                    if *printed {
                         return Err(format!(
-                            "fixture {}: codec `cpp_printed` is derived from the SCXML \
+                            "fixture {}: codec `printed` is derived from the SCXML \
                              (its encode plan); remove it from fixtures.json",
                             f.name
                         ));
@@ -3743,8 +3745,8 @@ fn fold_source_cases(
         return Ok(false);
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
-    let (rows, cpp_printed) = codec_case_rows(fixture, sources, "sources", &where_)?;
-    let Some(printer) = CasePrinter::of(cpp_printed, language, "sources", &where_)? else {
+    let (rows, printed) = codec_case_rows(fixture, sources, "sources", &where_)?;
+    let Some(printer) = CasePrinter::of(printed, language, "sources", &where_)? else {
         return Ok(false);
     };
     let folded = fold_case_rows(
@@ -3812,8 +3814,8 @@ fn fold_refused_cases(
         return Ok(false);
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
-    let (rows, cpp_printed) = codec_case_rows(fixture, refused, "refused", &where_)?;
-    let Some(printer) = CasePrinter::of(cpp_printed, language, "refused", &where_)? else {
+    let (rows, printed) = codec_case_rows(fixture, refused, "refused", &where_)?;
+    let Some(printer) = CasePrinter::of(printed, language, "refused", &where_)? else {
         return Ok(false);
     };
     let folded = fold_case_rows(
@@ -3876,7 +3878,7 @@ fn codec_case_rows<'r>(
     key: &str,
     where_: &str,
 ) -> Result<(&'r [serde_json::Value], bool), String> {
-    let FixtureSpec::Codec { cpp_printed, .. } = &fixture.spec else {
+    let FixtureSpec::Codec { printed, .. } = &fixture.spec else {
         return Err(format!(
             "{where_}: '{key}' are a codec's byte cases; this fixture is not a codec"
         ));
@@ -3885,7 +3887,7 @@ fn codec_case_rows<'r>(
         .as_array()
         .filter(|rows| !rows.is_empty())
         .ok_or_else(|| format!("{where_}: '{key}' must be a non-empty array"))?;
-    Ok((rows.as_slice(), *cpp_printed))
+    Ok((rows.as_slice(), *printed))
 }
 
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
@@ -3900,19 +3902,21 @@ enum CasePrinter {
 impl CasePrinter {
     /// The printer of `language`'s harness, or `None` for a backend whose
     /// encode does not print the plan, which runs its `cases` as before. A
-    /// codec the C++ backend does not print (`cpp_printed`) is refused by
+    /// codec the C++ backend does not print (`printed`) is refused by
     /// name: a printer runs every case of every shape it prints
     /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
-    /// constructor makes from the case.
+    /// constructor makes from the case. A Python codec printed from its plan
+    /// runs its `cases` too, without the elements its encode derives, until
+    /// the Python harness writes a case as a value of its source.
     fn of(
-        cpp_printed: bool,
+        printed: bool,
         language: Language,
         key: &str,
         where_: &str,
     ) -> Result<Option<Self>, String> {
         Ok(match language {
             Language::Rust => Some(CasePrinter::Rust),
-            Language::Cpp if cpp_printed => Some(CasePrinter::Cpp),
+            Language::Cpp if printed => Some(CasePrinter::Cpp),
             Language::Cpp => {
                 return Err(format!(
                     "{where_}: the C++ backend refuses this codec (docs/adr/0081 step 4), \
@@ -4421,16 +4425,31 @@ pub fn render_harness(
                 grows,
                 encode_may_fail,
                 encode_refuses_bound,
-                cpp_printed,
+                printed,
             } => {
-                if document_exists(&scxml_path) && matches!(language, Language::Cpp) {
-                    *cpp_printed = crate::cpp_codec_printed_file(
-                        &scxml_path,
-                        &[],
-                        &crate::ForgeCompileOptions::default(),
-                    )
-                    .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
-                    .unwrap_or(false);
+                // Whether this language's backend prints the codec from its
+                // plan (docs/adr/0081 step 4): C++ every codec it writes, Python
+                // each whose forms its printer lowers.
+                if document_exists(&scxml_path) {
+                    let options = crate::ForgeCompileOptions::default();
+                    let read = match language {
+                        Language::Cpp => {
+                            Some(crate::cpp_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Python => {
+                            Some(crate::python_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Rust
+                        | Language::Kotlin
+                        | Language::Go
+                        | Language::C11
+                        | Language::Swift => None,
+                    };
+                    if let Some(read) = read {
+                        *printed = read
+                            .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
+                            .unwrap_or(false);
+                    }
                 }
                 if document_exists(&scxml_path) {
                     derive_codec_shape(
@@ -4449,10 +4468,10 @@ pub fn render_harness(
                     }
                     if !*cbor && !*content_line {
                         let model = read_codec_model(&scxml_path, &fixture_name)?;
-                        // A C++ codec printed from its plan holds each bound in
-                        // a type, and its encode refuses nothing of it
+                        // A codec printed from its plan holds each bound in a
+                        // type, and its encode refuses nothing of it
                         // (docs/adr/0081 step 4).
-                        *encode_refuses_bound = !*cpp_printed
+                        *encode_refuses_bound = !*printed
                             && crate::forge::generator::encode_refuses_a_bound(
                                 &model.fields,
                                 language,
@@ -5369,8 +5388,11 @@ mod tests {
 
         // As the render derives it: the C++ backend prints this codec.
         let mut printed = checked.clone();
-        if let FixtureSpec::Codec { cpp_printed, .. } = &mut printed.spec {
-            *cpp_printed = true;
+        if let FixtureSpec::Codec {
+            printed: by_plan, ..
+        } = &mut printed.spec
+        {
+            *by_plan = true;
         }
         let (folded, value) = fold(&printed, &mismatch, Language::Cpp).expect("C++ states it");
         assert!(folded);

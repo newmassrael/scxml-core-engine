@@ -36,6 +36,9 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}{{ "LengthOutOfRange, " if (decode_refuses_length or encode_refuses_length) else "" }}NeedMoreBytes, {{ "PresentIfMismatch, " if encode_refuses_mismatch else "" }}SceCursor, SceSink{{ ", TooManyElements" if (decode_refuses_count or encode_refuses_count) else "" }}{{ ", UndeclaredEnumValue" if has_closed_enum_fields else "" }}
+{% if python_source.bounded %}
+from sce_forge_runtime.bounded import BoundedBytes
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -43,7 +46,7 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, 
 {% endif %}
 
 from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields or has_tlv_chain_fields else "" }}
-from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}
+from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}
 
 
 {% if has_variant %}
@@ -93,6 +96,14 @@ class {{ struct_name }}Variant:
 
 
 {% endif %}
+{# docs/adr/0081 step 4: a codec printed from its plan names the class of each
+   byte string's bound, the Protocol a source of it satisfies and the encode
+   over any source, before the value's class. #}
+{% if python_source %}
+{{ python_source.before }}
+
+
+{% endif %}
 @dataclass
 class {{ struct_name }}:
 {% if has_no_fields %}
@@ -101,7 +112,9 @@ class {{ struct_name }}:
     # methods below attach correctly.
     pass
 {% else %}
-{% for field in fields %}
+{# An element the encode derives is no field of a value printed from its plan
+   (docs/adr/0081 §3). #}
+{% for field in fields if not field.derived %}
 {% if field.py_flag_default_literal is defined %}
     {{ field.id }}: {{ field.py_type }} = {{ field.py_flag_default_literal }}
 {% else %}
@@ -111,6 +124,10 @@ class {{ struct_name }}:
 {% if has_variant %}
     body: {{ struct_name }}Variant = field(default_factory={{ struct_name }}Variant)
 {% endif %}
+{% endif %}
+{% if python_source.hold %}
+
+{{ python_source.hold }}
 {% endif %}
 
     @classmethod
@@ -206,7 +223,7 @@ class {{ struct_name }}:
             return None
 {% endif %}
         return cls(
-{% for field in fields %}
+{% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
             body=body,
@@ -240,7 +257,7 @@ class {{ struct_name }}:
         except CodecError:
             return None
         return cls(
-{% for field in fields %}
+{% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
@@ -258,7 +275,7 @@ class {{ struct_name }}:
         except CodecError:
             return None
         value = cls(
-{% for field in fields %}
+{% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
@@ -276,7 +293,7 @@ class {{ struct_name }}:
         except CodecError:
             return None
         value = cls(
-{% for field in fields %}
+{% for field in fields if not field.derived %}
             {{ field.id }}={{ field.local }},
 {% endfor %}
         )
@@ -372,6 +389,9 @@ class {{ struct_name }}:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with.{% endif %}"""
+{% if python_source %}
+        encode_source(self, w)
+{% else %}
 {% if has_parent_flags %}
         # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.
         _ = parent_flags
@@ -451,6 +471,7 @@ class {{ struct_name }}:
 {% for expr in encode_exprs %}
         w.write_u8({{ expr }})
 {% endfor %}
+{% endif %}
 {% endif %}
 
     def encode_to_bytes(self{{ params_after_first_arg }}) -> bytes:

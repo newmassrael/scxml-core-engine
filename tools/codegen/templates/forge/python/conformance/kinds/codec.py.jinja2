@@ -24,7 +24,10 @@
 {% if f.fields %}
             decoded = case["decoded"]
 {% endif %}
-{% for field in f.fields %}
+{# A codec printed from its plan holds no element its encode derives
+   (docs/adr/0081 §3): the value is made without it, and the decode gives
+   none back. #}
+{% for field in f.fields if not (f.printed and field.derived) %}
 {% if field.type == "bytes" and field.optional %}
             {# An absent entry is JSON `null`, `None` here and in the class. #}
             input_{{ field.name | to_snake_case }} = None if decoded["{{ field.name }}"] is None else bytes(decoded["{{ field.name }}"])
@@ -43,7 +46,7 @@
 
             if not decode_only:
                 value = {{ f.name }}.{{ f.name | to_pascal_case }}(
-{% for field in f.fields %}
+{% for field in f.fields if not (f.printed and field.derived) %}
                     {{ field.name | to_snake_case }}=input_{{ field.name | to_snake_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
                 )
@@ -67,7 +70,7 @@
                     0,
                     f"{{ f.name }} case {i}: a decode-only frame is read whole",
                 )
-{% for field in f.fields %}
+{% for field in f.fields if not (f.printed and field.derived) %}
             self.assertEqual(
                 getattr(round_tripped, "{{ field.name | to_snake_case }}"),
                 input_{{ field.name | to_snake_case }},

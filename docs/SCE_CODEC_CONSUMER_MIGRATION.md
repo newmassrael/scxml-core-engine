@@ -1798,3 +1798,25 @@ Landing: the commits that add this section.
   case, `-` read as `_`): `-D SCE_FEATURE_<NAME>_OFF`, or `.define("SCE_FEATURE_<NAME>_OFF")` in the target's
   `swiftSettings`. A build that sets none keeps every arm, as before.
 
+## A printed Python codec derives its byte strings' lengths, and holds each byte string in the class of its bound (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. It moves the positional
+codecs whose elements are integers, flag sets, enums and byte strings, each always there, whose every derived
+element is the length of one byte string held in a field of its own, and whose encode refuses nothing (the
+codecs `sce_build::python_codec_printed_file` answers `Some(true)` for). Every other Python codec is unchanged.
+
+- A length the encode derives is no longer a field of the value: `msg.len` is gone, the dataclass does not take
+  `len=`, and `decode` gives none back. The encode writes the length of the bytes it writes, less or more what
+  `sce:length-arith` says. Drop the length from your constructor calls; read `len(msg.payload)` where you read it.
+- A byte string element is a value of a class the module names, `{Codec}{Element}Bytes` (for example
+  `CodecLengthRefPayloadBytes`), a subclass of `sce_forge_runtime.bounded.BoundedBytes` and so of `bytes`. It is
+  made only within the element's bound and raises `LengthOutOfRange` past it. The value makes it of whatever bytes
+  you hand it, where the value is made and wherever you set the element after, so
+  `CodecLengthRef(msg_id=1, payload=b"abc")` and `msg.payload = b"abc"` still read as before, and raise
+  `LengthOutOfRange` there, not at `encode`, for bytes past the bound. Everything a `bytes` does, the element does.
+- `encode` no longer raises for a byte string past its bound, as no value holds one. `encode_to_bytes` and
+  `encode` keep their signatures.
+- `encode_source(src, w)` of the codec's module encodes any object that presents the codec's elements as attributes, which
+  `{Codec}Source`, a `typing.Protocol`, names: the dataclass is one, and so is any object of yours with those
+  attributes. A byte string of such a source is a value of the element's class.
+

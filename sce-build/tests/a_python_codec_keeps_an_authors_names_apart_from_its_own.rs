@@ -90,7 +90,10 @@ struct Shape {
     /// What the attribute named by the author must hold after the FIRST frame
     /// is decoded, as a Python expression over `{v}` (that attribute). A
     /// round trip alone passes when a field replaces a method of the class that
-    /// happens to be unused by it; reading the field back does not.
+    /// happens to be unused by it; reading the field back does not. Where the
+    /// name is of an element the encode derives, which the value does not hold
+    /// (docs/adr/0081 §3), the expression is over `{value}`, the decoded value,
+    /// and `{name}`, the name as a Python string.
     check: &'static str,
 }
 
@@ -126,6 +129,9 @@ const SHAPES: &[Shape] = &[
         frames: &[&[2, 0xAA, 0xBB]],
         check: "{v} == bytes([0xAA, 0xBB])",
     },
+    // The length is derived (docs/adr/0081 §3): the value printed from its
+    // plan holds no attribute of the author's name, and the bytes it measures
+    // read back.
     Shape {
         id: "length_named",
         imports: &[],
@@ -135,7 +141,7 @@ const SHAPES: &[Shape] = &[
     <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="NAME" sce:max-size="16"/>"#,
         frames: &[&[2, 0xAA, 0xBB]],
-        check: "{v} == 2",
+        check: "not hasattr({value}, {name}) and {value}.data == bytes([0xAA, 0xBB])",
     },
     Shape {
         id: "string_named",
@@ -574,8 +580,9 @@ for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
             again = value.encode_to_bytes()
             assert again == frame, f"round trip {again.hex()} != {frame.hex()}"
             if number == 0:
-                held = getattr(value, name)
-                assert eval(check.replace("{v}", "held")), f"the field reads back as {held!r}"
+                held = getattr(value, name) if "{v}" in check else value
+                spelled = check.replace("{v}", "held").replace("{value}", "value").replace("{name}", repr(name))
+                assert eval(spelled), f"{spelled} is false of {held!r}"
     except BaseException as e:
         last = traceback.format_exc().strip().splitlines()[-1]
         failures.append(f"{shape}\t{name}\t{last}")

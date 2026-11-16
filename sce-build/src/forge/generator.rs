@@ -33,6 +33,7 @@ mod go_test_template;
 mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
+mod python_source;
 mod python_test_tables;
 mod python_test_template;
 mod rust_source;
@@ -10617,6 +10618,22 @@ fn refuse_cpp_unlowered(
     }
 }
 
+/// Whether the Python backend prints `m` from its encode plan (docs/adr/0081
+/// step 4, §6): its plan uses only the forms the Python printer lowers. Such a
+/// value is a source of its codec, holds no element the encode derives, and
+/// holds each byte string in the class of its bound; any other codec keeps the
+/// template's encode whole.
+pub(crate) fn python_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    python_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+}
+
+/// Every form of `m`'s encode plan the Python printer does not lower, as the
+/// clause that names it, in the order the printer meets them; empty where
+/// [`python_codec_printed`].
+pub(crate) fn python_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    python_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+}
+
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
@@ -13443,6 +13460,24 @@ fn render_codec(
     } else {
         (None, false)
     };
+    // docs/adr/0081 step 4: a Python codec whose plan uses only the forms the
+    // Python printer lowers is printed from its plan, its value a source of it
+    // and its encode over any source; any other keeps the template's encode
+    // whole (§6), so no codec has two. The plan is kept beside the text, as the
+    // fields of the value are read off it.
+    let python_printed = if matches!(lang, crate::generator::Language::Python) {
+        let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+        match (python_source::unlowered(&plan), plan) {
+            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
+                let printed =
+                    python_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                Some((p, printed))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
@@ -14809,6 +14844,19 @@ fn render_codec(
                     rust_view::into_builder_plain(&codec_field_decode_local(&f.id, lang)).into(),
                 );
             }
+            // docs/adr/0081 §3: a Python value printed from its plan holds no
+            // element the encode derives, and holds each byte string in the
+            // class of its bound, made within it by default.
+            if let Some((plan, printed)) = &python_printed {
+                obj.insert(
+                    "derived".into(),
+                    python_source::derived_field(plan, &f.id).into(),
+                );
+                if let Some((class, default)) = printed.bytes.get(&f.id) {
+                    obj.insert(type_key.into(), class.clone().into());
+                    obj.insert("default_value".into(), default.clone().into());
+                }
+            }
             Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -14862,6 +14910,16 @@ fn render_codec(
                 "members": printed.members,
                 "private": printed.private,
                 "decoded": printed.decoded,
+            }),
+        );
+    }
+    if let Some((_, printed)) = &python_printed {
+        ctx.insert(
+            "python_source".into(),
+            serde_json::json!({
+                "before": printed.before,
+                "hold": printed.hold,
+                "bounded": printed.bounded,
             }),
         );
     }
@@ -15198,8 +15256,12 @@ fn render_codec(
     }
     // A printed C++ encode refuses what its plan's totality names; it runs no
     // prologue of the template's.
+    // A printed Python encode, likewise; the printer prints only a plan that
+    // refuses nothing.
     let encode_can_refuse = if cpp_printed.is_some() {
         cpp_printed_refuses
+    } else if let Some((plan, _)) = &python_printed {
+        !plan.totality.is_total()
     } else {
         refuses_mismatch || !bound_lines.is_empty()
     };
@@ -15208,15 +15270,23 @@ fn render_codec(
         present_if_encode_prologue.into(),
     );
     ctx.insert("encode_can_refuse".into(), encode_can_refuse.into());
-    // What the encode raises by name, for a backend that imports each error.
+    // What the encode raises by name, for a backend that imports each error: a
+    // printed Python encode raises none of the template's refusals.
     {
         use crate::forge::codec_failure::CodecFailure;
-        ctx.insert("encode_refuses_mismatch".into(), refuses_mismatch.into());
+        let template_encode = python_printed.is_none();
+        ctx.insert(
+            "encode_refuses_mismatch".into(),
+            (template_encode && refuses_mismatch).into(),
+        );
         for (key, failure) in [
             ("encode_refuses_length", CodecFailure::LengthOutOfRange),
             ("encode_refuses_count", CodecFailure::TooManyElements),
         ] {
-            ctx.insert(key.into(), bound_failures.contains(&failure).into());
+            ctx.insert(
+                key.into(),
+                (template_encode && bound_failures.contains(&failure)).into(),
+            );
         }
     }
 
@@ -26893,16 +26963,27 @@ fn generate_encode_exprs(
 /// where the piece lands in the byte; a piece of a field wider than a byte is
 /// narrowed to one where the language's types would otherwise not meet.
 fn encode_byte_unified(pieces: &[(&CodecField, Piece)], l: &LangCtx) -> String {
+    encode_byte_read_by(pieces, l, &|field: &CodecField| {
+        l.codec_field_ref(&l.codec_field_id(&field.id))
+    })
+}
+
+/// [`encode_byte_unified`], each field's value read as `read` spells it: the
+/// value's own member on a template's encode, and on an encode printed from
+/// the plan (docs/adr/0081 §2) the source's element or the number the encode
+/// derived.
+fn encode_byte_read_by(
+    pieces: &[(&CodecField, Piece)],
+    l: &LangCtx,
+    read: &dyn Fn(&CodecField) -> String,
+) -> String {
     use crate::generator::Language;
     let lang = l.lang;
     let one = pieces.len() == 1;
     let parts: Vec<String> = pieces
         .iter()
         .map(|(field, piece)| {
-            let field_ref = l.codec_carrier_expr(
-                &field.sce_type,
-                &l.codec_field_ref(&l.codec_field_id(&field.id)),
-            );
+            let field_ref = l.codec_carrier_expr(&field.sce_type, &read(field));
             let carrier_bits = l.codec_carrier_bits(&field.sce_type);
             let (from, mask, to) = (piece.from, piece.mask, piece.to);
             let down = |value: &str| {
@@ -26986,38 +27067,46 @@ fn encode_single_field_unified(
     exprs: &mut Vec<String>,
     l: &LangCtx,
 ) {
+    let value = l.codec_field_ref(&l.codec_field_id(&field.id));
+    exprs.extend(encode_whole_field_read_as(field, default_endian, &value, l));
+}
+
+/// The encode expressions of the whole fixed field `field`, one for each of its
+/// bytes in its byte order (docs/adr/0095 §2), its value read as `value`: the
+/// value's own member on a template's encode, and on an encode printed from
+/// the plan (docs/adr/0081 §2) the source's element or the number the encode
+/// derived.
+fn encode_whole_field_read_as(
+    field: &CodecField,
+    default_endian: Endian,
+    value: &str,
+    l: &LangCtx,
+) -> Vec<String> {
     use crate::generator::Language;
     let lang = l.lang;
-    let name = l.codec_field_id(&field.id);
     // An enum-typed field is written as its carrier — see
     // `LangCtx::codec_carrier_expr`.
-    let field_ref = l.codec_carrier_expr(&field.sce_type, &l.codec_field_ref(&name));
+    let field_ref = l.codec_carrier_expr(&field.sce_type, value);
     let span = BitSpan::of(field, default_endian).expect("a whole write is of a fixed field");
 
     match span.bytes {
-        1 => {
-            match lang {
-                Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
-                Language::Kotlin => exprs.push(format!("{field_ref}.toByte()")),
-                Language::Rust => exprs.push(field_ref),
-                Language::Go => exprs.push(format!("byte({field_ref})")),
-                Language::Python => exprs.push(format!("{field_ref} & 0xFF")),
-                // C11 (return-by-value encode shape): field_ref already includes `self->`,
-                // and the value is a uint8_t so no width cast is required.
-                Language::C11 => exprs.push(field_ref),
-                Language::Swift => no_swift_emitter("encode_single_field_unified"),
-            }
-        }
-        bytes => {
-            // Multi-byte fixed field: delegate to the encode byte-extraction
-            // SSOT (the mirror of `decode_multibyte_unified`). `field_ref`
-            // already carries the per-language receiver prefix, so the same
-            // shift / mask / narrow rules serve both this positional path and
-            // the streaming `streaming_fixed_field_encode_*` wrappers.
-            for e in encode_multibyte_unified(&field_ref, bytes, span.endian, lang) {
-                exprs.push(e);
-            }
-        }
+        1 => vec![match lang {
+            Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+            Language::Kotlin => format!("{field_ref}.toByte()"),
+            Language::Rust => field_ref,
+            Language::Go => format!("byte({field_ref})"),
+            Language::Python => format!("{field_ref} & 0xFF"),
+            // C11 (return-by-value encode shape): field_ref already includes `self->`,
+            // and the value is a uint8_t so no width cast is required.
+            Language::C11 => field_ref,
+            Language::Swift => no_swift_emitter("encode_single_field_unified"),
+        }],
+        // Multi-byte fixed field: delegate to the encode byte-extraction
+        // SSOT (the mirror of `decode_multibyte_unified`). `field_ref`
+        // already carries the per-language receiver prefix, so the same
+        // shift / mask / narrow rules serve both this positional path and
+        // the streaming `streaming_fixed_field_encode_*` wrappers.
+        bytes => encode_multibyte_unified(&field_ref, bytes, span.endian, lang),
     }
 }
 
