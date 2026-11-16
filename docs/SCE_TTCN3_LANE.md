@@ -410,8 +410,9 @@ On C++ the same is in place: `sce/include/test/` (`Trace.h`, `FromCanonical.h`, 
 (`tests/test_runtime/TraceTest.cpp`, `RunnerTest.cpp`, and `ATestSuiteRunsEndToEndTest.cpp`,
 `ARecordReadsBackTheFormItWritesTest.cpp` and `ARunnerProgramWritesTheLogOfEachTraceTest.cpp` under
 `tests/integration/`), in the words of the Rust reader. Its configuration of every form,
-`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place, since C++'s test profile
-matches no union yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place; C++ reads and writes
+`order_placed`'s union through `orders_configuration`, whose traces the corpus's `orders_suite` replays (§12.1), and
+its readers of a union through `FromCanonical::unionCase` (`TraceTest.cpp`).
 
 On Go the same is in place: the readers of each form beside the writers in the package `testprofile/canonical`
 (`from_canonical.go`, each answering an error in the words of the Rust reader), `ParseTrace`, `TraceAdapter`,
@@ -446,9 +447,9 @@ On Python the same is in place: `sce_runtime.testprofile` (`from_canonical`, `tr
 `backends/python/tests/integration/static_datamodel/`), in the words of the Rust reader; a reader raises a
 `TraceRefusal`. A trace is read by the runtime's own JSON reader, which keeps a number's text and refuses `NaN`,
 `Infinity` and a member named twice, where Python's `json` would read them, and a trace file is read as its bytes, so
-a `\r\n` is not read as the line feed a file may end in. Python's test profile matches no union yet
-(`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so its configuration of every form is C++'s,
-`trace_forms/unionless_forms_configuration.scxml`. The program keeps `sys.stdout` for the contract's lines and hands
+a `\r\n` is not read as the line feed a file may end in. Its configuration of every form is C++'s,
+`trace_forms/unionless_forms_configuration.scxml`, and it reads `order_placed`'s union through `orders_configuration`
+as C++ does. The program keeps `sys.stdout` for the contract's lines and hands
 it to the standard error while the cases run, where a generated statechart's `<log>` prints.
 
 On C11 the same is in place: `sce/test/input_trace.h` (the trace, its canonical text and its player),
@@ -461,7 +462,8 @@ runtime, `C11Reading` beside `C11Canonical`, and the C11 twins of the C++ tests
 reader the saved state is read with (`sce/saved_json.h`), every refusal is a sentence in a `sce_saved_error_t`, and
 every table is bounded, a trace past a bound refused by name. The runner makes its log directory through
 `sce_directory_make` (`sce/directory.h`), whose POSIX implementation is in the runtime's platform tier. It reads the
-same configuration of every form as C++, since C11's test profile matches no union yet either.
+same configuration of every form as C++, and `order_placed`'s union through `orders_configuration` as C++ does, its
+readers of a union `sce_test_from_canonical_union_case` and `sce_test_from_canonical_no_record`.
 
 The trace replay and the runner program are in place on all seven backends, Rust, Kotlin, C++, Go, Swift, Python and
 C11, each over the same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
@@ -490,7 +492,7 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   test cases, an MTC alone and with PTCs, each verdict the profile has, and a guard that ends in `error`.
 - **`job_suite`, `orders_suite` and `nested_suite`** (`sce-build/tests/fixtures/test_profile/` and
   `sce-build/tests/fixtures/ttcn3_export/`) are exported and validated, and run end to end on the Rust runner
-  (`job_suite` on all seven backends, `orders_suite` and `nested_suite` on Rust, Kotlin, Go, Swift and Python),
+  (all three on all seven backends),
   each from one trace under `sce-build/tests/fixtures/test_profile/runs/<suite>/traces/`:
   - `completes_in_time` (world `job-timeout,job-retry`): a `job_status` at 1 ms that every matcher of
     `every_matcher` accepts (a value list holding a range, `ifpresent` on an absent text, a list of three codes
@@ -510,9 +512,8 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   `boundary_suite` (below; Go has the programs `cmd/job_suite_runner`, `cmd/orders_suite_runner` and
   `cmd/nested_suite_runner`): `job_suite` on all six, since every backend makes the machine's value of the
   composed `job_status` its tester's receive branch reads (TP §12.6), and `orders_suite` and `nested_suite` on
-  Kotlin, Go, Swift and Python. They wait on C++ and C11 for a union in their test profiles: `order_placed`
-  holds one, and the two match no value of a union (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so their
-  templates over `order_placed`, and so the two suites, are refused there by the union's name.
+  all six, since every backend's test profile matches a union (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`),
+  which `order_placed` holds.
   `ping_suite` (`assembly/`) is exported and validated and runs nowhere; the corpus does not need it.
 - **Every test case of `runtime_suite` has a trace and an expected log.** The
   traces are `sce-build/tests/fixtures/test_profile/runtime/traces/<test case>.json`, written by hand, each the
@@ -586,28 +587,28 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
 
 ### 12.2 The rows of ADR 0091 §2
 
-| Row | Runs on all seven backends (`runtime_suite`, `boundary_suite`, `job_suite`) | Runs on some backends | Missing from every run |
-|---|---|---|---|
-| Type definitions | records of unsigned integers, and of signed and 64-bit integers; an optional field, a text and a list of integers | enums, a byte string, a list of records, a record within a record and a union (`orders_suite`, `nested_suite`: Rust, Kotlin, Go, Swift, Python) | |
-| Template | specific values, `?`, record matching, value parameters, ranges of signed integers, every mechanism of TP §6.1 (`every_matcher`) | union matching and template references (`orders_suite`: Rust, Kotlin, Go, Swift, Python) | |
-| Port type | yes | | |
-| Component type | yes | | |
-| Test configuration | `connect` and `map` | | |
-| Test case | yes | | |
-| Module parameters | a feature (PICS), `<sce:module-parameter>` | | |
-| Control part | the order, selection by `all` and `any`, guards | | |
-| `setverdict` | `pass`, `inconclusive`, `fail`, and `none` written by a document | | |
-| `alt` with receive branches | yes | | |
-| `timer` | start, stop, timeout, a default duration, a duration given at the start (`job_suite`) | a restart (`nested_suite`: Rust, Kotlin, Go, Swift, Python) | |
-| `altstep` and `activate` (ancestor transitions) | | `nested_suite`: Rust, Kotlin, Go, Swift, Python | |
-| `send` | yes | | |
-| PTC `create`, `start`, `done`, `kill` | all four, the kill of a PTC that still runs and of one that is done each recorded as `component-killed` (TP §12.5) | | |
-| `log` | yes | | |
+| Row | Runs on all seven backends (`runtime_suite`, `boundary_suite`, `job_suite`, `orders_suite`, `nested_suite`) | Missing from every run |
+|---|---|---|
+| Type definitions | records of unsigned integers, and of signed and 64-bit integers; an optional field, a text and a list of integers; enums, a byte string, a list of records, a record within a record and a union (`orders_suite`, `nested_suite`) | |
+| Template | specific values, `?`, record matching, value parameters, ranges of signed integers, every mechanism of TP §6.1 (`every_matcher`); union matching and template references (`orders_suite`) | |
+| Port type | yes | |
+| Component type | yes | |
+| Test configuration | `connect` and `map` | |
+| Test case | yes | |
+| Module parameters | a feature (PICS), `<sce:module-parameter>` | |
+| Control part | the order, selection by `all` and `any`, guards | |
+| `setverdict` | `pass`, `inconclusive`, `fail`, and `none` written by a document | |
+| `alt` with receive branches | yes | |
+| `timer` | start, stop, timeout, a default duration, a duration given at the start (`job_suite`), a restart (`nested_suite`) | |
+| `altstep` and `activate` (ancestor transitions) | `nested_suite` | |
+| `send` | yes | |
+| PTC `create`, `start`, `done`, `kill` | all four, the kill of a PTC that still runs and of one that is done each recorded as `component-killed` (TP §12.5) | |
+| `log` | yes | |
 
 The two ways a document leads a run to `error` besides the guard, a test case that can never end, which is `error`
 with no instant pending (P13), and a dynamic error, such as a send to a removed PTC's port (P6, P13), run on all
-seven backends too (`boundary_suite`'s `never_ends` and `sends_to_a_removed_ptc`). What keeps a row to some backends
-is in §12.1: a union, which the test profiles of C++ and C11 match no value of. Which run shows each aspect of each row is
+seven backends too (`boundary_suite`'s `never_ends` and `sends_to_a_removed_ptc`). Every row runs on all seven
+backends, since every backend's test profile matches a union (§12.1). Which run shows each aspect of each row is
 held by `sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs` (§13.1).
 
 ### 12.3 The refusals of ADR 0091 §3
@@ -681,10 +682,9 @@ in the component that invokes it, which is accepted on its own.
   `boundary_suite` (§12.1), replayed on all seven backends, its expected logs written by the Rust runner and
   reviewed;
 - `job_suite`, `orders_suite` and `nested_suite` (or suites that replace them) made runnable end to end, so that
-  their rows run as well as export: `job_suite` on all seven backends, `orders_suite` and `nested_suite` on
-  Rust, Kotlin, Go, Swift and Python, their expected logs written by the Rust runner and reviewed (§12.1); what
-  remains is a union in the test profiles of C++ and C11; they run in the lane only once their mapped records have a codec
-  (above), which ADR 0101's steps 1 to 4 and 6 give;
+  their rows run as well as export: done, all three on all seven backends, their expected logs written by the
+  Rust runner and reviewed (§12.1); they run in the lane only once their mapped records have a codec (above),
+  which ADR 0101's steps 1 to 4 and 6 give;
 - a fixture that raises `test-profile/script-engine`, or a recorded reason why no profile document can reach that
   refusal once `datamodel` is held to `sce-static`: done, the reason is recorded in §12.3.
 
@@ -722,9 +722,8 @@ listed in DD §13.2.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
 - In place: the traces and the expected logs of every test case of `runtime_suite`, and on each backend the first
   test above over them (§12.1); the traces and the expected logs of `boundary_suite`, replayed on all seven
-  backends, and of `job_suite`, `orders_suite` and `nested_suite` (§12.1), `job_suite` replayed on all seven
-  backends, `orders_suite` and `nested_suite` on Rust, Kotlin, Go, Swift and Python, and each log held to its
-  expected log;
+  backends, and of `job_suite`, `orders_suite` and `nested_suite` (§12.1), each replayed on all seven backends, and
+  each log held to its expected log;
   the codec documents (§12.1); and the second test,
   `sce-build/tests/the_corpus_covers_every_row_and_refusal_of_adr_0091.rs`. It reads the rows of ADR 0091 §2 from
   the ADR's table and the refusals of §3 from its bullets, so a row or a refusal the ADR gains is uncovered until
@@ -733,8 +732,6 @@ listed in DD §13.2.
   `error` of P13 by the guard, a test case that can never end and a dynamic error. Each refusal is held by its
   refused fixtures, each one the parser's tests hold to its diagnostic, or by the reason §12.3 records. Every aspect
   has a run.
-- Not in place: the replay of `orders_suite` and `nested_suite` on C++ and C11, which waits on a union in their
-  test profiles (§12.1).
 
 ### 13.2 In the downstream
 

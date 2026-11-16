@@ -1400,6 +1400,37 @@ states, and none changes a document, a wire or a diagnostic:
    `fromSaved` on the interface's companion, extensions written beside the type, the tag beside the case's fields
    by the runtime's `SavedValues.union` and read first by `SavedValues.unionTag` (section 6.1 item 7).
 
+## Decided while landing the test profile's union on C++ and C11 (2026-11-16)
+
+Item 6 of the C++ landing, item 7 of the Python landing and item 9 of the C11 landing are done: every backend that
+generates a test template is in `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`, which the matrix's test holds, so a
+template, a component and a configuration that reach a union are generated on all seven, and `orders_suite` and
+`nested_suite` replay on all seven (docs/SCE_TTCN3_LANE.md §12.1).
+
+1. **The canonical walk hands a direction the variant of each case it binds**, beside the record's alias:
+   `CanonicalForm::case_record` and `CanonicalSpelling::case_record` take it. A direction that holds each case in
+   a place of its own, named by the case, needs it to name the place: C++ reads a case's record into
+   `decltype(<union>::<Case>::value)`, the type of the alternative's `value`, and C11 reads and writes it as the
+   case's member of `as`. A direction that binds the case's record by a pattern ignores it.
+2. **C++ tells a case apart by `std::holds_alternative`** on the alternative of its case in the unit's `cases`,
+   and reads its record through the case's `proven<Case>()` only where `&&` has proved the alternative; a value
+   is the union's struct built from the alternative of its case. Its form is written by `std::visit` with a
+   visitor declared where it is written, one `operator()` per alternative, so a case either side gains is a
+   build error, as a union's crossing is; and read by the runtime's `FromCanonical::unionCase`, a view of the one
+   member held by value, then a branch per variant, the end no variant reaches `std::abort();`.
+3. **C11 tells a case apart by its `tag`**, compared with the constant of the tag's enum that names the case, and
+   reads its record as the case's member of `as` only where `&&` has proved the tag; a value is built by the
+   constructor of its case, the record given as a compound literal of its type, since C passes no initializer.
+   Its form is written through a pointer to the union by the branch its tag chooses, a tag that names no case
+   refusing the form as a closed enum's undeclared value does (`sce_test_canonical_caseless_union`); and read by
+   the index of the variant `sce_test_from_canonical_union_case` answers, the case's record into its member of
+   `as` and the tag set last. The reader writes into storage it zeroed first, so the value it leaves is the one
+   the constructor of its case builds.
+4. **A receive branch's content that reads a message holding a union is still refused on C11 by name**: C11's
+   composed receive converts no union and no enum of a composition (`ComposedSpelling::unit_union` and
+   `unit_enum` answer none), since C has no expression that binds the record of a case. The corpus needs none of
+   it: no tester of `orders_suite` or `nested_suite` reads `_event.data`.
+
 ## Consequences
 
 - The type grammar has a sum beside its product, so a value whose fields depend on a choice states the dependence in

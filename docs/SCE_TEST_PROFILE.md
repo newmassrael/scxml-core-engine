@@ -1237,9 +1237,11 @@ C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h`
 - for a specific template (§6.2) alone, `Value value(<the formal parameters>)`, the value it sends, which matches
   it.
 
-A template whose type reaches a union at any depth is refused on C++ by the union's own refusal (ADR 0092, section
-7): C++ generates the union's unit, a struct of one `std::variant`, and its walk spells no case of one and its
-runtime no canonical form of one yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+A template whose type reaches a union at any depth matches it through the struct the union's unit declares, of one
+`std::variant` (ADR 0092, section 7; `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart by
+`std::holds_alternative` on the alternative of its case, its record read through the case's proven read only where
+`&&` has proved the alternative, a value built from the alternative of its case, and a union's form written by a
+visitor of one arm per case and read back a case at a time (`Canonical::unionCase`, `FromCanonical::unionCase`).
 
 Rust generates `test-template` (§12.6, slice 6). The unit is a file `<name>.rs`, named by the document's file as
 every forge unit is, which declares:
@@ -1323,9 +1325,10 @@ sce_<document>`), so an enum a record of another document holds is named by its 
 exactly the modules its text names, as the Go unit does, so it reaches no module a run need not have generated.
 Python joins the tests by the join Rust, Kotlin and Go share, in Python's words (`and`, `or`, `not`, `True`,
 `False`, `test_template_walk::Connectives`), whose precedence is C's. A template whose type reaches a union at any
-depth is refused on Python by the union's own refusal, as on C++ (ADR 0092, section 7): Python generates the union's
-unit, a class and one frozen dataclass per case, and its walk spells no case of one and its runtime no canonical
-form of one yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+depth matches it through the union's unit, a class and one frozen dataclass per case (ADR 0092, section 7;
+`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart by the declared name of the tag the unit's
+`kind` answers, its record read as the case's `value`, and a union's form written and read a case at a time by the
+runtime's `union_case`.
 
 C11 generates `test-template` (§12.6, slice 6). The unit is a header `<name>.h`, named by the document's file as every
 forge unit is, and, since C has no namespace, each declaration carries the document's name:
@@ -1349,10 +1352,13 @@ forge unit is, and, since C has no namespace, each declaration carries the docum
 
 Every record, enum and referenced template the unit names is reached through the header of the document that
 declares it, which the unit includes, and a referenced template's functions are named by its document. C11 joins
-the tests as Rust, Kotlin, Go and Python do. A template whose type reaches a union at any depth is refused on C11 by
-the union's own refusal, as on C++ (ADR 0092, section 7): C11 generates the union's unit, a struct of its tag and a C
-`union` of its cases' records, and its walk spells no case of one and its runtime no canonical form of one yet
-(`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`). The C11 unit of an event schema holds a byte string of one
+the tests as Rust, Kotlin, Go and Python do. A template whose type reaches a union at any depth matches it through
+the union's unit, a struct of its tag and a C `union` of its cases' records (ADR 0092, section 7;
+`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart by its `tag`, compared with the constant of the
+tag's enum, its record read as the case's member of `as` only where `&&` has proved the tag, a value built by the
+constructor of its case (`<union>_case_<case>`), and a union's form written through a pointer to it by the branch
+its tag chooses (`sce_test_canonical_begin_union_case`) and read by the index of the variant read
+(`sce_test_from_canonical_union_case`). The C11 unit of an event schema holds a byte string of one
 entry in the buffer of its bound beside its length (`sce_static_bytes_<N>_t`), as a composition holds one inside a
 list, so a byte string is compared by its length and its octets, the other side read through the runtime's view of
 bytes, counted by its length and built by the initializer of its type. C11 refuses by name a reference, inside a
@@ -1379,8 +1385,9 @@ algorithm's unit does, whose members are:
 Every enum, record and referenced template the unit names is named bare, as its own unit declares it in the module,
 and a referenced template's functions through its enum (`<Name>.matches`, `<Name>.value`); the unit imports the
 profile's runtime (`import SceTestProfile`) exactly where it counts a text. Swift joins the tests as Rust, Kotlin,
-Go, Python and C11 do. Swift lowers no union, so a template whose type reaches a union at any depth is refused on
-Swift as on C++ (ADR 0092, section 7). It refuses by name too a template whose type, or a formal parameter's, holds
+Go, Python and C11 do, a template whose type reaches a union at any depth matching it through the union's unit, as
+on every backend (ADR 0092, section 7; `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`). It refuses by name a
+template whose type, or a formal parameter's, holds
 at any depth a record or an enum whose own Swift unit is not written, by what that unit is refused for (a record
 with a byte string that may be absent, an enum of an open set of variants), so no unit names a type nothing
 declares. Every backend generates `test-template`.
@@ -1407,7 +1414,7 @@ names the machine's session after the component (`bindSessionId`, `mtc` or the P
 XML Name), binds the context, registers the test-port processor and the test-component invoker on it and starts the
 machine;
 `deliverSnapshot` delivers the snapshot event; `terminated` is the machine's having entered a top-level `<final>`.
-A component that uses a template whose type reaches a union is refused on C++ as the template is.
+A component that uses a template whose type reaches a union matches through the template's unit as any other does.
 
 Rust generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Rust generator writes for any
 `sce-static` document, `<file>_sm.rs`, lowered through the same doors by the same lowering and spelled for the Rust
@@ -1526,8 +1533,7 @@ context on its policy, registers the test-port processor and the test-component 
 `__test__ = False`, so pytest collects none, whatever the document's name makes of its own. The engine takes a session
 id it is given, or draws one, whether or not a saved state can hold its machine, so the component's session id needs
 no saved shape. Python refuses by name a component that declares `<sce:action>`, whose policy is constructed with a
-host the component is given nothing of, and one that uses a template whose type reaches a union, which Python's
-test profile does not match yet (ADR 0092, section 7; `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+host the component is given nothing of.
 
 C11 generates `test-component` (§12.6, slice 6). The unit is the statechart machine the C11 generator writes for any
 `sce-static` document, `<file>_sm.h` and `<file>_sm.c`, lowered through the same doors by the same lowering and
@@ -1580,9 +1586,7 @@ a root its id (`<machine>_init_with_session_id`), so it names the session whethe
 machine. A name the build cannot hold as a session id (`SCE_MAX_SESSION_ID_LEN`, or a location past
 `SCE_MAX_URI_LEN`) ends the run with `error`, the reason in its log, and the machine is not started
 (`sce_test_context_error`). C11 refuses by name a component that declares
-`<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of, and one that
-uses a template whose type reaches a union, which C11's test profile does not match yet (ADR 0092, section 7;
-`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+`<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of.
 
 A C11 component reads a module parameter as the other backends' do. The machine's construction starts the member at
 its type's zero, or for an enum at the variant its document declares first, a compound literal of the buffer's own
@@ -2196,11 +2200,12 @@ one set of bytes.
    the run with `error`, and so does a kill of a component whose machine is running. It has `sce_test_text_length`
    for a template's length restriction, since a C text is held as UTF-8 bytes, and the C11 host send request
    carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
-   §11.9 is lifted for C11 for `test-template`; C11's test profile matches no union yet
-   (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so a template whose type reaches one stays refused there, as on
-   C++. C11 generates test components next, through the doors of §12.3, each in
+   §11.9 is lifted for C11 for `test-template`, a template over a union among them: a case is told apart by its
+   `tag`, and a union's form written and read a case at a time by the runtime's
+   `sce_test_canonical_begin_union_case` and `sce_test_from_canonical_union_case`. C11 generates test components
+   next, through the doors of §12.3, each in
    storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
-   `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
+   `test-component`, but for a component that declares `<sce:action>`.
    C11 then
    generates the configuration, case and suite tables over the same rows, each including what it reads by its
    header and making every machine from storage the caller places, and runs the examples end to end through
