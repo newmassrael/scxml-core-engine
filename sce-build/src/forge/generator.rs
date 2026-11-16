@@ -15200,6 +15200,16 @@ fn render_codec(
                 "inline": printed.inline,
                 "said_held": printed.said_held,
                 "unknown_tag": printed.unknown_tag,
+                "groups": printed
+                    .groups
+                    .iter()
+                    .map(|group| serde_json::json!({
+                        "name": group.name,
+                        "ty": group.ty,
+                        "default": group.default,
+                        "made": group.made,
+                    }))
+                    .collect::<Vec<_>>(),
             }),
         );
     }

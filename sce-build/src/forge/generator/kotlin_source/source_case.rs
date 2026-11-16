@@ -16,11 +16,14 @@
 //! the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members,
-    variant_choice, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    byte_values, case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value,
+    source_members, variant_choice, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL,
+    VARIANT_MEMBER,
 };
 use super::super::*;
+use super::group::{group_arm_class, group_property};
 use super::{arm_class, list_class, refinement_class, unknown_tag_class};
+use crate::forge::codec_roles::{GateGroup, GroupArm};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// Where a codec's Kotlin value is: the package of the document that declares
@@ -83,10 +86,10 @@ pub(crate) struct SourceCase {
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
 /// the flag inputs `inputs` states, each to the decode and those the value does
 /// not say to the encode, and the decode the tag its caller hands it (`tag`)
-/// where its variant has no tag of its own. A codec that holds a group is one
-/// the Kotlin printer does not print, and its case is refused by name; so is a
-/// source that states an element the value does not present or leaves out one
-/// it does, and a tag that is not the one of the arm the source holds.
+/// where its variant has no tag of its own. A group is the class of the arm the
+/// source states, compared arm and member alike. A source that states an
+/// element the value does not present or leaves out one it does is refused by
+/// name, and so is a tag that is not the one of the arm the source holds.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -105,17 +108,18 @@ pub(crate) fn source_case(
             encode_inputs.push(format!("{value}u"));
         }
     }
-    if !plan.groups().is_empty() {
-        return Err("a Kotlin case states no group yet: the Kotlin printer \
-                    prints no codec that holds one"
-            .to_string());
-    }
     let literal = value_literal(plan, path, source, held)?;
     let mut checks = Vec::new();
     for element in &plan.elements {
         if let Some(holds) = element_holds(element, DECODED, VALUE, 0, held)? {
             checks.push((element.field.id.clone(), holds));
         }
+    }
+    for group in plan.groups() {
+        checks.push((
+            gates_label(group),
+            group_holds(plan, group, DECODED, VALUE, 0, held)?,
+        ));
     }
     if plan.model.variant.is_some() {
         checks.push((
@@ -157,14 +161,36 @@ fn element_holds(
     depth: usize,
     held: &mut dyn HeldCodecs,
 ) -> Result<Option<String>, String> {
+    member_holds(
+        element.field,
+        &element.value,
+        element.presence.optional(),
+        decoded,
+        value,
+        depth,
+        held,
+    )
+}
+
+/// [`element_holds`] of `field`, of the abstract type `value`, an element a
+/// value presents alone or a member of an arm of a group, `optional` where the
+/// property may be `null`.
+fn member_holds(
+    field: &CodecField,
+    value_type: &Value<'_>,
+    optional: bool,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<Option<String>, String> {
     let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
-    let property = l.codec_field_id(&element.field.id);
+    let property = l.codec_field_id(&field.id);
     let (decoded, value) = (
         format!("{decoded}.{property}"),
         format!("{value}.{property}"),
     );
-    let optional = element.presence.optional();
-    Ok(Some(match &element.value {
+    Ok(Some(match value_type {
         Value::Bytes(_) if optional => {
             format!("{decoded}?.bytes.contentEquals({value}?.bytes)")
         }
@@ -228,10 +254,119 @@ fn value_holds(
     for element in &plan.elements {
         holds.extend(element_holds(element, decoded, value, depth, held)?);
     }
+    for group in plan.groups() {
+        holds.push(group_holds(plan, group, decoded, value, depth, held)?);
+    }
     if plan.model.variant.is_some() {
         holds.push(variant_holds(plan, decoded, value, depth, held)?);
     }
     Ok(holds)
+}
+
+/// A Kotlin `Boolean` expression that holds when `decoded` and `value`, two
+/// sources of the codec `plan`, hold the same arm of `group`, or none, with
+/// each member the same, compared as an element is. The `when` is exhaustive
+/// over the sealed class the codec's file declares, `null` among its cases
+/// where the value may hold no arm.
+fn group_holds(
+    plan: &EncodePlan<'_>,
+    group: &GateGroup,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let path = CodecPath::new(&plan.model.name);
+    let property = group_property(group);
+    let (x, y) = (format!("gx{depth}"), format!("gy{depth}"));
+    // Each member of `arm` the same on both sides, `true` where it holds none.
+    let members = |arm: &GroupArm, held: &mut dyn HeldCodecs| -> Result<String, String> {
+        let mut same = Vec::new();
+        for id in &arm.fields {
+            let field = member_field(plan, id);
+            same.extend(member_holds(
+                field,
+                &plan.value(field),
+                false,
+                &x,
+                &y,
+                depth + 1,
+                held,
+            )?);
+        }
+        Ok(if same.is_empty() {
+            "true".to_string()
+        } else {
+            same.join(" && ")
+        })
+    };
+    let compared = if group.is_sum() {
+        let mut cases = Vec::new();
+        for arm in &group.arms {
+            let class = path.qualified(&group_arm_class(&path.type_name, group, arm));
+            cases.push(format!(
+                "is {class} -> {y} is {class} && {}",
+                members(arm, &mut *held)?
+            ));
+        }
+        if group.absent.is_some() {
+            cases.push(format!("null -> {y} == null"));
+        }
+        format!("when ({x}) {{ {} }}", cases.join("; "))
+    } else {
+        let same = members(&group.arms[0], &mut *held)?;
+        if group.absent.is_some() {
+            format!("if ({x} == null || {y} == null) {x} == null && {y} == null else {same}")
+        } else {
+            same
+        }
+    };
+    Ok(format!(
+        "{decoded}.{property}.let {{ {x} -> {value}.{property}.let {{ {y} -> {compared} }} }}"
+    ))
+}
+
+/// The field `id` of `plan`, a member of one of its groups.
+fn member_field<'m>(plan: &EncodePlan<'m>, id: &str) -> &'m CodecField {
+    plan.model
+        .fields
+        .iter()
+        .find(|f| f.id == id)
+        .expect("a group's member is a field of the codec")
+}
+
+/// The value of `group`, a group of the codec `plan` at `path`, that `json`
+/// states, as [`group_choice`] reads it: the class of the arm it states, made
+/// of each member as the arm holds it, or `null`.
+fn group_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    group: &GateGroup,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let Some(chosen) = group_choice(group, json)? else {
+        return Ok("null".to_string());
+    };
+    let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
+    let class = path.qualified(&group_arm_class(&path.type_name, group, chosen.arm));
+    let mut args = Vec::new();
+    for id in &chosen.arm.fields {
+        let field = member_field(plan, id);
+        let member = chosen
+            .members
+            .get(id)
+            .filter(|json| !json.is_null())
+            .ok_or_else(|| format!("the arm holds `{id}`, and the source states none"))?;
+        let literal = member_literal(field, &plan.value(field), path, member, held)
+            .map_err(|e| format!("`{id}`: {e}"))?;
+        args.push(format!("{} = {literal}", l.codec_field_id(id)));
+    }
+    Ok(if args.is_empty() {
+        class
+    } else {
+        format!("{class}({})", args.join(", "))
+    })
 }
 
 /// A Kotlin `Boolean` expression that holds when `decoded` and `value`, two
@@ -299,6 +434,17 @@ fn value_literal(
                 .map_err(|e| format!("`{id}`: {e}"))?
         };
         args.push(format!("{} = {value}", l.codec_field_id(id)));
+    }
+    // A group, keyed by its gates, is the class of the arm it states, made of
+    // its members, or `null` (docs/adr/0081 §5).
+    for group in plan.groups() {
+        let label = gates_label(group);
+        let json = object
+            .get(&label)
+            .ok_or_else(|| format!("the source states no `{label}`"))?;
+        let value =
+            group_literal(plan, path, group, json, held).map_err(|e| format!("`{label}`: {e}"))?;
+        args.push(format!("{} = {value}", group_property(group)));
     }
     if plan.model.variant.is_some() {
         let json = object

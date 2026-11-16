@@ -2446,3 +2446,21 @@ codecs whose variant's arms say a flag input, a body that says one in some of it
   you hand is not checked. A parent refuses a body, an entry or an arm that says otherwise than it hands it with
   `CodecError.PresentIfMismatch`, before a byte is written.
 
+## A printed Kotlin codec holds a gate group as one property (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that hold a group of a flag of their own or of a flag input (ADR 0065 §6 R4b, R4c): two elements one flag
+decides, a length stated on the side without its content, and a disjunction of flags.
+
+- The members of a group are no properties of the data class. The group is, named as every backend names it
+  (`flags_has_payload`, `s`): `{Codec}{Gates}`, a sealed class of a data class for each arm (`{Codec}{Gates}.HasPayload`,
+  `.NotHasPayload`), or one data class where the group has one arm. It is `null` where the gates allow no arm.
+  Replace `value.payload = bytes` with `value.flags_has_payload = {Codec}FlagsHasPayload.HasPayload(payload = ...)`,
+  and a read of a member with a `when` over the arm (`is {Codec}FlagsHasPayload.HasPayload -> it.payload`).
+- An arm holds each member always there, typed as an element alone is: a number as its type, a byte string, a text
+  or a list in the class of its bound, a body as `{Body}Source`. An arm's properties are `val`: make a new arm to
+  change one.
+- The flags the group's gates read are derived from the arm the value holds; whatever their bits hold is written
+  over. A flag input a group decides is said by the value (`{Codec}.input<Name>(src)`) and no longer handed to the
+  encode over a source.
+

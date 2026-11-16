@@ -95,10 +95,15 @@ class {{ struct_name }}{% if kotlin_source %} : {{ struct_name }}Source{% endif 
 // value it never declared.
 {# An element the encode derives is no field of a value printed from its plan
    (docs/adr/0081 §3), and each element it presents overrides the property of
-   the codec's source interface. #}
+   the codec's source interface. A field a gate group holds is no field of the
+   value either: the group is (docs/adr/0065 §6 R4), one property of the class
+   the printer declares, which the decode makes as `made` says. #}
 data class {{ struct_name }}(
 {% for field in fields if not field.derived %}
-    {{ "override " if kotlin_source else "" }}var {{ field.id }}: {{ field.kt_type }} = {% if field.kt_flag_default_literal is defined %}{{ field.kt_flag_default_literal }}{% else %}{{ field.kt_default }}{% endif %}{{ "," if not loop.last or has_variant else "" }}
+    {{ "override " if kotlin_source else "" }}var {{ field.id }}: {{ field.kt_type }} = {% if field.kt_flag_default_literal is defined %}{{ field.kt_flag_default_literal }}{% else %}{{ field.kt_default }}{% endif %}{{ "," if not loop.last or has_variant or kotlin_source.groups else "" }}
+{% endfor %}
+{% for group in kotlin_source.groups %}
+    override var {{ group.name }}: {{ group.ty }} = {{ group.default }}{{ "," if not loop.last or has_variant else "" }}
 {% endfor %}
 {% if has_variant %}
 {% set ns = namespace(default_arm=none) %}
@@ -424,6 +429,9 @@ data class {{ struct_name }}(
 {% for field in fields if not field.derived %}
                     {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }},
 {% endfor %}
+{% for group in kotlin_source.groups %}
+                    {{ group.name }} = {{ group.made }},
+{% endfor %}
                     body = body
                 )
             )
@@ -454,7 +462,10 @@ data class {{ struct_name }}(
             return Decoded.Ok(
                 {{ struct_name }}(
 {% for field in fields if not field.derived %}
-                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last or kotlin_source.groups else "" }}
+{% endfor %}
+{% for group in kotlin_source.groups %}
+                    {{ group.name }} = {{ group.made }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )
@@ -473,7 +484,10 @@ data class {{ struct_name }}(
             return Decoded.Ok(
                 {{ struct_name }}(
 {% for field in fields if not field.derived %}
-                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last or kotlin_source.groups else "" }}
+{% endfor %}
+{% for group in kotlin_source.groups %}
+                    {{ group.name }} = {{ group.made }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )
@@ -488,7 +502,10 @@ data class {{ struct_name }}(
             return Decoded.Ok(
                 {{ struct_name }}(
 {% for field in fields if not field.derived %}
-                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last or kotlin_source.groups else "" }}
+{% endfor %}
+{% for group in kotlin_source.groups %}
+                    {{ group.name }} = {{ group.made }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )

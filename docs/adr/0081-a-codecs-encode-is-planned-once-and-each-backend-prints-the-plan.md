@@ -1451,6 +1451,25 @@ old encode, the old encode and its templates are removed in the same landing.
    asks; a check at an arm tests the local the arm is read into, which Kotlin narrows to the arm's class. An input
    said through a group or a list's law stays with those forms, and so do a check against the entry before and
    a codec handed what the entry before it was, which only a chain's walk says.
+
+   *The twelfth Kotlin landing, 2026-11-17:* a gate group of flags of the codec's own or of flag inputs (§6 R4b,
+   R4c): two elements one flag decides, a length stated on the side without its content (`Absent::Group`), a
+   disjunction whose flags each arm sets (`Derive::ArmFlag`), and an input a group decides, which the value says
+   (`InputSource::Group`). The value holds the group as one property, named as every printer names it
+   (`group_accessor`): a sealed class `{Codec}{Gates}` of a data class for each arm, nested and named after the
+   flags the arm sets (`group_arm_name`), as the variant's sealed class nests its arms, or one data class where
+   the group has one arm, and `null` where the gates allow no arm. An arm holds each member always there, typed as
+   an element alone is, its properties `val`, since an arm is one value of the sum. The encode reads the group once
+   and binds each member off the arm the value holds to the local an element is read into, `null` where the arm
+   holds none, by a `when` with a case for each arm that holds it (a case of several classes narrows to none of
+   them), so every statement that reads a member reads it as it reads a gated element; a member every arm holds,
+   of a group the value always holds an arm of, is no `null`, and is written without a test, as kotlinc refuses
+   a comparison it calls always true. The decode makes the arm the gates it read select, each member of the local
+   it read, asserted present (`!!`) where the decode read it under the gate that selects the arm. The case printer
+   states a group as the arm's class made of its members and compares it arm by arm, each member as an element is.
+   Considered and refused: arms of `var` properties, which would let a value change one member of an arm in place
+   where §2 makes an arm a value; and a flat class of optional members, which is the struct the group replaces.
+   Two lists of one count and a group of a chain's memberships stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

@@ -25,7 +25,7 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::{ElementId, InputSource};
+use crate::forge::codec_roles::{ElementId, GateVar, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
@@ -35,6 +35,7 @@ use crate::forge::encode_plan::{
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) mod group;
 pub(super) mod source_case;
 
 /// The first form of `plan` the Kotlin printer does not print, as the clause
@@ -48,13 +49,15 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
 /// byte strings, texts, and bodies and lists of codecs it prints, each always
-/// there or decided by a gate on a flag of the codec's own, and whose variant's
+/// there, decided by a gate on a flag of the codec's own or an input, or held
+/// by a group of such gates (docs/adr/0065 §6 R4b, R4c), and whose variant's
 /// arms are codecs it prints; whose every derived element is either a length,
 /// a count or an encoded length of the elements it measures, held in a field
 /// of its own and gated beside its content where its content is, a flag set
-/// exactly where the one field it gates is there, the tag of the arm the value
-/// holds, or the bits of a carrier the arm of an embedded body's variant
-/// fills; and whose encode refuses
+/// exactly where the one field it gates is there, a flag the arm of a group
+/// the value holds gives, the tag of the arm the value holds, or the bits of a
+/// carrier the arm of an embedded body's variant fills; and whose encode
+/// refuses
 /// only what it answers itself, before the first byte: a gate it cannot
 /// derive, measures that disagree, a number past its field, or what a codec
 /// it holds refuses. A CBOR map and a content-line component keep their own
@@ -103,10 +106,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         match &plan.roles.inputs[&said.input.name] {
             InputSource::Gate { .. }
             | InputSource::Forward { .. }
+            | InputSource::Group
             | InputSource::EveryArm { .. }
             | InputSource::SomeArms { .. } => {}
-            InputSource::Group | InputSource::List { .. } => forms.push(format!(
-                "input '{}': a flag input the value says through a group or a list's law",
+            InputSource::List { .. } => forms.push(format!(
+                "input '{}': a flag input the value says through a list's law",
                 said.input.name
             )),
         }
@@ -124,39 +128,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         }
     }
     for element in &plan.elements {
-        let id = &element.field.id;
-        match &element.value {
-            Value::Scalar(t) if t.int_bit_width().is_some() => {}
-            Value::Scalar(SceType::Enum(_)) => {}
-            Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
-            Value::Bytes(_) | Value::Text(_) => {}
-            // A body is written by its codec's own `encodeSource`, which a
-            // codec the Kotlin backend prints has, handed nothing.
-            Value::Body { codec } => {
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a body of `{codec}`, which the Kotlin backend does not print"
-                    ));
-                }
-                forms.extend(handed_form(plan, id, codec));
-            }
-            // A list is walked, each entry written by its codec's own
-            // `encodeSource`, which a codec the Kotlin backend prints has.
-            Value::List { codec, law, bound } => {
-                if bound.least > 0 {
-                    forms.push(format!("field '{id}': a list of a least past zero"));
-                }
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
-                    ));
-                }
-                forms.extend(handed_form(plan, id, codec));
-                if !law.is_none() {
-                    forms.push(format!("field '{id}': a list held to a law"));
-                }
-            }
-        }
+        forms.extend(value_forms(
+            plan,
+            imports,
+            &element.field.id,
+            &element.value,
+        ));
         // A number the value states while its content is absent is `null`
         // where any of its content is there.
         match element.presence {
@@ -164,8 +141,30 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Presence::Gated => forms.extend(gate_form(plan, element.field)),
         }
     }
-    if !plan.groups().is_empty() {
-        forms.push("a group of fields a gate decides together".to_string());
+    // A group (docs/adr/0065 §6 R4b, R4c) is presented as the sealed class of
+    // a data class for each of its arms, or the data class of its one arm,
+    // `null` where the gates allow no arm; its gates are flags of the codec's
+    // own or flag inputs, derived from the arm the value holds, and its
+    // members are held as an element alone is, always there in the arm that
+    // holds them.
+    for group in plan.groups() {
+        let label = super::rust_source::gates_label(group);
+        if group.chain().is_some() {
+            forms.push(format!("group '{label}': a group of a chain's memberships"));
+        }
+        if group.aligned.is_some() {
+            forms.push(format!(
+                "group '{label}': a group of two lists of one count"
+            ));
+        }
+        for id in group.fields() {
+            let member = m
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a group's member is a field of the codec");
+            forms.extend(value_forms(plan, imports, id, &plan.value(member)));
+        }
     }
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
@@ -176,6 +175,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
                 forms.extend(presence_form(&derived.element, presence));
             }
+            // A flag of a disjunction, what the arm of the group the value
+            // holds gives it (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
             // The tag of the arm the value holds, into a field of an unsigned
             // number or a flag of a carrier; and a carrier's bits the arm of an
             // embedded body's variant fills, whose body the elements above
@@ -266,6 +268,53 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     forms
 }
 
+/// What of `id`, an element of the abstract type `value` the value of `plan`
+/// presents alone or a group of it holds, the printer does not print: it
+/// prints an integer, a flag set, an enum, a byte string, a text, and a body or
+/// a list of a codec the Kotlin backend prints, held to no law, each handed a
+/// carrier's bits or an input of the codec's own.
+fn value_forms(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    id: &str,
+    value: &Value<'_>,
+) -> Vec<String> {
+    let mut forms = Vec::new();
+    match value {
+        Value::Scalar(t) if t.int_bit_width().is_some() => {}
+        Value::Scalar(SceType::Enum(_)) => {}
+        Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
+        Value::Bytes(_) | Value::Text(_) => {}
+        // A body is written by its codec's own `encodeSource`, which a codec
+        // the Kotlin backend prints has.
+        Value::Body { codec } => {
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a body of `{codec}`, which the Kotlin backend does not print"
+                ));
+            }
+            forms.extend(handed_form(plan, id, codec));
+        }
+        // A list is walked, each entry written by its codec's own
+        // `encodeSource`, which a codec the Kotlin backend prints has.
+        Value::List { codec, law, bound } => {
+            if bound.least > 0 {
+                forms.push(format!("field '{id}': a list of a least past zero"));
+            }
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
+                ));
+            }
+            forms.extend(handed_form(plan, id, codec));
+            if !law.is_none() {
+                forms.push(format!("field '{id}': a list held to a law"));
+            }
+        }
+    }
+    forms
+}
+
 /// What of the derived number of `element` the printer does not print: it
 /// prints a length, a count or an encoded length of the elements it measures,
 /// each of which that is there says the same number or the value is refused,
@@ -292,17 +341,10 @@ fn number_form(element: &ElementId, number: &Number<'_>, imports: &[ImportContex
             }
         }
     }
-    match &number.into {
-        NumberInto::Field { absent, .. } => {
-            if *absent == Absent::Group {
-                forms.push(format!(
-                    "element '{element}': a length a group holds on the side without its content"
-                ));
-            }
-        }
-        // Folded into its carrier, as a presence flag is.
-        NumberInto::Flag => {}
-    }
+    // A number into a field holds, where nothing it measures is there, zero,
+    // what the value states, or what the arm of a group that holds it on the
+    // side without its content does (docs/adr/0065 §6 R4b); one into a flag is
+    // folded into its carrier, as a presence flag is.
     forms
 }
 
@@ -376,13 +418,17 @@ fn derived_fields(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value
-/// presents it alone, or the encode derives it whole.
+/// presents it alone or as a member of a group, or the encode derives it
+/// whole.
 fn unread_form(
     plan: &EncodePlan<'_>,
     derived: &BTreeSet<String>,
     field: &CodecField,
 ) -> Option<String> {
-    (element_of(plan, &field.id).is_none() && !derived.contains(&field.id)).then(|| {
+    (element_of(plan, &field.id).is_none()
+        && plan.roles.group_of(&field.id).is_none()
+        && !derived.contains(&field.id))
+    .then(|| {
         format!(
             "field '{}': a field the value neither presents nor the encode derives whole",
             field.id
@@ -395,11 +441,26 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
     plan.elements.iter().find(|e| e.field.id == id)
 }
 
+/// Whether the encode's local of `id`, an element the value of `plan` presents
+/// alone or a member of a group of it, may be `null`: a gate decides the
+/// element, or the arm of the group the value holds may hold no `id`.
+fn read_optional(plan: &EncodePlan<'_>, id: &str) -> bool {
+    match element_of(plan, id) {
+        Some(element) => element.presence.optional(),
+        None => plan
+            .roles
+            .group_of(id)
+            .is_some_and(|group| group::member_optional(group, id)),
+    }
+}
+
 /// Whether the Kotlin value of `plan`, a plan [`unlowered`] answers `None` for,
-/// holds no field `id`: the encode derives it (docs/adr/0081 §3) and the value
-/// does not state it while its content is absent.
+/// holds no field `id` of its own: the encode derives it (docs/adr/0081 §3)
+/// and the value does not state it while its content is absent, or a group
+/// holds it (docs/adr/0065 §6 R4), which is the value's property.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_fields(plan).contains(id) && element_of(plan, id).is_none()
+    (derived_fields(plan).contains(id) || plan.roles.group_of(id).is_some())
+        && element_of(plan, id).is_none()
 }
 
 /// The fields the number the value states as `id` measures, each gated: the
@@ -474,6 +535,91 @@ pub(super) struct KotlinSource {
     /// R4a), at the indentation of a method's body; empty where the value says
     /// none.
     pub(super) said_held: String,
+    /// Each gate group the value holds as one property (docs/adr/0065 §6 R4),
+    /// in the order of the plan's groups; its members are no properties of
+    /// their own.
+    pub(super) groups: Vec<group::GroupField>,
+}
+
+/// How an arm of a group holds a member, always there in it: the type of its
+/// property, the value it holds by default, and what the decode makes it of
+/// from the local it read.
+pub(super) struct Member {
+    /// The type of the property.
+    pub(super) ty: String,
+    /// The value it holds by default.
+    pub(super) default: String,
+    /// What the decode hands the arm's constructor for it.
+    pub(super) made: String,
+}
+
+/// How an arm of a group of the codec whose data class is `struct_name` holds
+/// `field`, of the abstract type `value`, with the class of its bound declared
+/// into `before`, `inline` set where that is a value class: a number as its
+/// Kotlin type, a byte string, a text or a list in the class of its bound
+/// (docs/adr/0065 §6 R1, R2), and a body as any source of its codec. The decode
+/// read the member into a local of the field's own name, `null` where a gate
+/// left it out; the arm is made only where the gates say it is there.
+fn member_of(
+    before: &mut String,
+    inline: &mut bool,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+    field: &CodecField,
+    value: &Value<'_>,
+) -> Member {
+    let id = &field.id;
+    let local = if field.present_if.is_some() {
+        format!("{}!!", l.codec_field_decode_local(id))
+    } else {
+        l.codec_field_decode_local(id)
+    };
+    match value {
+        Value::Bytes(bound) | Value::Text(bound) => {
+            let class = refinement_class(struct_name, id, &field.sce_type);
+            let text = matches!(value, Value::Text(_));
+            before.push_str(&bounded_class(struct_name, id, &class, bound, text));
+            *inline = true;
+            Member {
+                ty: class.clone(),
+                default: format!("{class}.fewest()"),
+                made: format!("{class}.of({local}) ?: return null"),
+            }
+        }
+        Value::List { codec, bound, .. } => {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a list of a printed codec only");
+            let class = list_class(struct_name, id);
+            before.push_str(&bounded_list_class(
+                struct_name,
+                id,
+                &class,
+                bound,
+                &format!("{}Source", body_type(import)),
+            ));
+            *inline = true;
+            Member {
+                ty: class.clone(),
+                default: format!("{class}.fewest()"),
+                made: format!("{class}.of({local}) ?: return null"),
+            }
+        }
+        Value::Body { codec } => {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a body of a printed codec only");
+            Member {
+                ty: format!("{}Source", body_type(import)),
+                default: format!("{}()", body_type(import)),
+                made: local,
+            }
+        }
+        Value::Scalar(ty) => Member {
+            ty: l.type_name(ty).into_owned(),
+            default: l.default_expr(ty),
+            made: local,
+        },
+    }
 }
 
 /// The data class of the codec a printed import names, which the wildcard
@@ -586,6 +732,41 @@ pub(super) fn render(
         held.insert(id.clone(), Held { ty, default, made });
     }
 
+    // Each group, its arms' classes and the classes of its members' bounds,
+    // each member held once though several arms may hold it.
+    let mut groups = Vec::new();
+    for gate_group in plan.groups() {
+        let mut members = BTreeMap::new();
+        for id in gate_group.fields() {
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a group's member is a field of the codec");
+            members.insert(
+                id.to_string(),
+                member_of(
+                    &mut before,
+                    &mut inline,
+                    l,
+                    imports,
+                    struct_name,
+                    field,
+                    &plan.value(field),
+                ),
+            );
+        }
+        groups.push(group::declare(
+            plan,
+            l,
+            struct_name,
+            gate_group,
+            &members,
+            &mut before,
+        ));
+    }
+
     // The tag a catch-all arm holds, within the tags no arm names.
     let unknown_tag = crate::forge::codec_totality::unknown_tag(plan.model).map(|unknown| {
         let class = unknown_tag_class(struct_name);
@@ -604,7 +785,7 @@ pub(super) fn render(
          /// of the frame.\n\
          interface {struct_name}Source"
     ));
-    if plan.elements.is_empty() && plan.arms.is_empty() {
+    if plan.elements.is_empty() && plan.arms.is_empty() && groups.is_empty() {
         before.push('\n');
     } else {
         before.push_str(" {\n");
@@ -615,6 +796,9 @@ pub(super) fn render(
                 l.codec_field_id(id),
                 presented[id]
             ));
+        }
+        for gate_group in &groups {
+            before.push_str(&format!("    val {}: {}\n", gate_group.name, gate_group.ty));
         }
         if !plan.arms.is_empty() {
             before.push_str(&format!(
@@ -649,6 +833,7 @@ pub(super) fn render(
         held,
         inline,
         unknown_tag,
+        groups,
     }
 }
 
@@ -998,7 +1183,7 @@ fn encode_source(
     // the content is there; every other is derived always.
     let (stated, derived): (Vec<&String>, Vec<&String>) = numbers
         .iter()
-        .partition(|id| element_of(plan, id).is_some());
+        .partition(|id| element_of(plan, id).is_some() || plan.roles.group_of(id).is_some());
     let named = |ids: &[&String]| {
         ids.iter()
             .map(|id| format!("`{}`", l.codec_field_id(id)))
@@ -1031,6 +1216,14 @@ fn encode_source(
     let input = |name: &str| -> String {
         inputs_read.borrow_mut().insert(name.to_string());
         input_name(name)
+    };
+    // The groups the body reads whole, by their place among the plan's groups,
+    // each read off the source once, before the first write, as `_g_<group>`;
+    // a member of one is read off the arm the value holds as `_e_<member>`.
+    let groups_read: RefCell<BTreeSet<usize>> = RefCell::new(BTreeSet::new());
+    let group_local = |at: usize| -> String {
+        groups_read.borrow_mut().insert(at);
+        format!("_g_{}", group::group_property(&plan.groups()[at]))
     };
     // Whether the body reads the arm of the variant the value holds, which is
     // read off the source once, before the first write, as `_r_body`.
@@ -1077,7 +1270,8 @@ fn encode_source(
                 struct_name,
                 &said.input.name,
                 &element,
-                &|| variant().to_string()
+                &|| variant().to_string(),
+                &group_local
             )
         ));
     }
@@ -1176,6 +1370,21 @@ fn encode_source(
                     bits.literal(0)
                 ));
             }
+            // A flag of a disjunction that decides a group (docs/adr/0065 §6
+            // R4c): set where the value holds an arm that sets it, or no arm
+            // where the gates then set it.
+            (ElementId::Flag { field, flag }, Derive::ArmFlag { group: at, gate }) => {
+                let def = flag_def(plan, field, flag);
+                let bits = CarrierBits::of(&carrier_field(plan, field).sce_type);
+                let mask = bits.literal(((1u64 << def.width) - 1) << def.bit);
+                let u = format!("_u_{}", l.codec_field_id(field));
+                let holds =
+                    group::gate_holds(struct_name, &plan.groups()[*at], *gate, &group_local(*at));
+                folds.entry(field.clone()).or_default().push(format!(
+                    "{u} = ({u} and {mask}.inv()) or (if ({holds}) {mask} else {})\n",
+                    bits.literal(0)
+                ));
+            }
             // The tag of the arm the value holds: the value the document gives
             // a named arm, and the tag the catch-all holds.
             (element_id, Derive::VariantTag) => {
@@ -1237,9 +1446,7 @@ fn encode_source(
                         format!("{content}.{VARIANT_PROPERTY}")
                     };
                     let switch = format!("when ({subject}) {{\n{cases}}}\n");
-                    let gated =
-                        element_of(plan, &term.body.id).is_some_and(|e| e.presence.optional());
-                    if gated {
+                    if read_optional(plan, &term.body.id) {
                         body.push_str(&format!(
                             "if ({content} != null) {{\n{}}}\n",
                             indented(&switch)
@@ -1460,7 +1667,7 @@ fn encode_source(
         match &check.site {
             CheckSite::Embed { body: held } => {
                 let content = element(&held.id);
-                let test = if element_of(plan, &held.id).is_some_and(|e| e.presence.optional()) {
+                let test = if read_optional(plan, &held.id) {
                     format!("{content} != null && {}", says(&content))
                 } else {
                     says(&content)
@@ -1470,7 +1677,7 @@ fn encode_source(
             CheckSite::List { list } => {
                 let content = element(&list.id);
                 // A list a gate leaves out holds no entry to check.
-                let entries = if element_of(plan, &list.id).is_some_and(|e| e.presence.optional()) {
+                let entries = if read_optional(plan, &list.id) {
                     format!("({content}?.entries ?: emptyList())")
                 } else {
                     format!("{content}.entries")
@@ -1580,7 +1787,10 @@ fn encode_source(
                 body.push_str(&match guard {
                     Guard::Always => write,
                     // Where the value holds it: the local it is tested by is
-                    // not `null`, which narrows it for the write.
+                    // not `null`, which narrows it for the write; a member
+                    // every arm holds, of a group the value always holds an
+                    // arm of, is always there.
+                    Guard::Present if !read_optional(plan, &field.id) => write,
                     Guard::Present => {
                         format!("if ({held} != null) {{\n{}}}\n", indented(&write))
                     }
@@ -1630,6 +1840,26 @@ fn encode_source(
             bound.push_str(&format!("val _e_{name} = src.{name}\n"));
         }
     }
+    // Each member of a group the body reads, off the arm the value holds, `null`
+    // where that arm holds none; each group read whole once, before its
+    // members.
+    let mut members = String::new();
+    for (at, gate_group) in plan.groups().iter().enumerate() {
+        for id in gate_group.fields() {
+            if reads.contains(id) {
+                members.push_str(&format!(
+                    "val _e_{} = {}\n",
+                    l.codec_field_id(id),
+                    group::member_read(l, struct_name, gate_group, id, &group_local(at))
+                ));
+            }
+        }
+    }
+    for at in groups_read.into_inner() {
+        let name = group::group_property(&plan.groups()[at]);
+        bound.push_str(&format!("val _g_{name} = src.{name}\n"));
+    }
+    bound.push_str(&members);
     // The arm of the variant, after the elements, as the source declares it.
     if variant_read.get() {
         bound.push_str(&format!("val {VARIANT_LOCAL} = src.{VARIANT_PROPERTY}\n"));
@@ -1700,6 +1930,7 @@ fn encode_source(
             &said.input.name,
             &|id: &str| format!("src.{}", l.codec_field_id(id)),
             &|| format!("src.{VARIANT_PROPERTY}"),
+            &|at: usize| format!("src.{}", group::group_property(&plan.groups()[at])),
         );
         // A value that can say nothing of the input answers `null` then
         // (docs/adr/0065 §6 R4e).
@@ -1837,10 +2068,10 @@ fn fold_bits(plan: &EncodePlan<'_>, l: &LangCtx, carrier: &str, flag: &str, bits
 }
 
 /// The import alias of the codec the body `field`, or each entry of the list
-/// `field`, of `plan` is a value of.
-fn held_alias<'p>(plan: &'p EncodePlan<'_>, field: &CodecField) -> &'p str {
-    match element_of(plan, &field.id).map(|e| &e.value) {
-        Some(Value::Body { codec } | Value::List { codec, .. }) => codec,
+/// `field`, of `plan` is a value of, presented alone or held by a group.
+fn held_alias<'f>(plan: &EncodePlan<'_>, field: &'f CodecField) -> &'f str {
+    match plan.value(field) {
+        Value::Body { codec } | Value::List { codec, .. } => codec,
         _ => unreachable!("`{}` is a body or a list the value presents", field.id),
     }
 }
@@ -1861,9 +2092,30 @@ fn said_value(
     input: &str,
     read: &dyn Fn(&str) -> String,
     variant: &dyn Fn() -> String,
+    group: &dyn Fn(usize) -> String,
 ) -> String {
     let source = &plan.roles.inputs[input];
     match source {
+        // Set where the value holds an arm of the group gated on it that sets
+        // it, or no arm where the gates then set it (docs/adr/0065 §6 R4b).
+        InputSource::Group => {
+            let gate = GateVar::Input(input.to_string());
+            let (at, gate_group) = plan
+                .groups()
+                .iter()
+                .enumerate()
+                .find(|(_, g)| g.gates.contains(&gate))
+                .expect("an input a group says has its group");
+            let place = gate_group
+                .gates
+                .iter()
+                .position(|g| *g == gate)
+                .expect("found by the gate");
+            format!(
+                "(if ({}) 1 else 0).toUByte()",
+                group::gate_holds(struct_name, gate_group, place, &group(at))
+            )
+        }
         InputSource::Gate { field, when_clear } => {
             let (set, clear) = if *when_clear { (0, 1) } else { (1, 0) };
             format!(
@@ -1901,8 +2153,8 @@ fn said_value(
             };
             over_arms(plan, imports, struct_name, &variant(), &each, otherwise)
         }
-        InputSource::Group | InputSource::List { .. } => {
-            unreachable!("`unlowered` prints no input a group or a list's law says")
+        InputSource::List { .. } => {
+            unreachable!("`unlowered` prints no input a list's law says")
         }
     }
 }
@@ -2186,11 +2438,13 @@ fn derive_number(
         (Some(there), Absent::Never | Absent::Zero) => {
             format!("if ({there}) {number} else {zero}")
         }
-        (Some(there), Absent::Stated) => format!(
+        // What the value states, alone or in the arm of the group that holds
+        // it on the side without its content (docs/adr/0065 §6 R4b), which
+        // the arms keep apart from the content, so the two never both say it.
+        (Some(there), Absent::Stated | Absent::Group) => format!(
             "if ({there}) {number} else ({} ?: {zero})",
             element(&field.id)
         ),
-        (Some(_), Absent::Group) => unreachable!("`unlowered` prints no number a group states"),
     };
     out.push_str(&format!("val _d_{name} = {value}\n"));
     // A value that states the number beside content says it twice, and must

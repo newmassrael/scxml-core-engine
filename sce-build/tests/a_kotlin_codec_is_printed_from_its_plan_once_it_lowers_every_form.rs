@@ -471,12 +471,11 @@ fn a_length_held_in_a_flag_is_folded_into_its_carrier() {
 
 /// A flag input the value does not say is a parameter of the encode after the
 /// sink, which a gate tests as it tests a flag, and which the value's `encode`
-/// hands on; an input the value says is not printed yet.
+/// hands on.
 ///
 /// Turns red where `kotlin_source::encode_source` drops `plan.given` from its
-/// parameters or `gate_test` stops spelling a `Clause::Input`, where the
-/// template's `encode` stops handing its inputs on, or where
-/// `positional_forms` stops naming an input the value says.
+/// parameters or `gate_test` stops spelling a `Clause::Input`, or where the
+/// template's `encode` stops handing its inputs on.
 #[test]
 fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
     assert!(unlowered("codec_chain_handed_entry").is_empty());
@@ -493,12 +492,105 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
             "        return encodeSource(this, w, afterMarker)\n",
         ],
     );
-    let forms = unlowered("codec_zenoh_init_body");
-    assert!(
-        forms
-            .iter()
-            .any(|f| f.contains("a flag input the value says")),
-        "codec_zenoh_init_body says S and A by the fields gated on them: {forms:?}"
+}
+
+/// A gate group (docs/adr/0065 §6 R4b) is one property of the value: a sealed
+/// class of a data class for each arm, each holding the members present while
+/// the gate holds its value, the stated length in the arm without its content.
+/// The encode reads each member off the arm the value holds, `null` where it
+/// holds none, derives the flag and the length from them, and the decode makes
+/// the arm its gate selects of what it read.
+///
+/// Turns red where `kotlin_source::positional_forms` names a group of a flag
+/// unlowered, `group::declare` stops nesting the arms in the sealed class or
+/// typing a member as the class of its bound, `group::member_read` reads a
+/// member other than off the arm the value holds, `derive_number` stops reading
+/// the stated length off its arm (`Absent::Group`), `derived_field` keeps a
+/// member a field of the data class, or the template stops making the group.
+#[test]
+fn a_group_is_one_property_whose_arms_hold_its_members() {
+    let name = "codec_present_if_length_ref";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "sealed class CodecPresentIfLengthRefFlagsHasPayload {\n",
+            "    data class HasPayload(\n        val payload: CodecPresentIfLengthRefPayloadBytes \
+             = CodecPresentIfLengthRefPayloadBytes.fewest()\n    ) : \
+             CodecPresentIfLengthRefFlagsHasPayload()\n",
+            "    data class NotHasPayload(\n        val payload_size: UByte = 0.toUByte()\n    ) : \
+             CodecPresentIfLengthRefFlagsHasPayload()\n",
+            "    val flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload\n",
+            "    override var flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = \
+             CodecPresentIfLengthRefFlagsHasPayload.HasPayload()\n",
+            "            val _g_flags_has_payload = src.flags_has_payload\n",
+            "            val _e_payload = when (val _g = _g_flags_has_payload) { \
+             is CodecPresentIfLengthRefFlagsHasPayload.HasPayload -> _g.payload; else -> null }\n",
+            "            val _e_payload_size = when (val _g = _g_flags_has_payload) { \
+             is CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload -> _g.payload_size; \
+             else -> null }\n",
+            "            val _d_payload_size = if (_e_payload != null) \
+             _e_payload.bytes.size.toUByte() else (_e_payload_size ?: 0.toUByte())\n",
+            "                flags_has_payload = if (((flags.toUInt() shr 0) and 0x1u) != 0x0u) \
+             CodecPresentIfLengthRefFlagsHasPayload.HasPayload(payload = \
+             CodecPresentIfLengthRefPayloadBytes.of(payload!!) ?: return null) else \
+             CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload(payload_size = payload_size)\n",
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &["var payload: ", "var payload_size: ", "src.payload"],
+    );
+}
+
+/// The flags of a disjunction that decides a group (docs/adr/0065 §6 R4c) are
+/// each derived from the arm the value holds, and the value may hold none.
+///
+/// Turns red where `kotlin_source::encode_source` stops folding a
+/// `Derive::ArmFlag` from the group, or `group::gate_holds` tests other than
+/// the arms that set the gate.
+#[test]
+fn a_disjunctions_flags_are_derived_from_the_arm_the_value_holds() {
+    let name = "codec_present_if_disjunction";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "    val flags_wants_a_or_wants_b: CodecPresentIfDisjunctionFlagsWantsAOrWantsB?\n",
+            "            val _g_flags_wants_a_or_wants_b = src.flags_wants_a_or_wants_b\n",
+            "_u_flags = (_u_flags and 0x1u.inv()) or (if ((_g_flags_wants_a_or_wants_b is \
+             CodecPresentIfDisjunctionFlagsWantsAOrWantsB.",
+            "_u_flags = (_u_flags and 0x2u.inv()) or (if ((_g_flags_wants_a_or_wants_b is \
+             CodecPresentIfDisjunctionFlagsWantsAOrWantsB.",
+            " else null\n",
+        ],
+    );
+}
+
+/// An input a group decides (docs/adr/0065 §6 R4b) is said by the value: set
+/// where it holds the group's arm, and not handed to its encode.
+///
+/// Turns red where `kotlin_source::positional_forms` names an input a group
+/// says unlowered, or `said_value` reads it other than off the group.
+#[test]
+fn an_input_a_group_says_is_read_off_the_arm_the_value_holds() {
+    let name = "codec_zenoh_init_body";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "        fun inputS(src: CodecZenohInitBodySource): UByte =\n            \
+             (if (src.s != null) 1 else 0).toUByte()",
+            "    val s: CodecZenohInitBodyS?\n",
+            "            val _e_sn_res = _g_s?.sn_res\n",
+        ],
     );
 }
 
@@ -682,16 +774,19 @@ fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
 }
 
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a CBOR map and a group that holds a length the
-/// value states beside its content each name their form.
+/// template's encode whole: a CBOR map and a group of a chain's memberships
+/// each name their form.
 ///
-/// Turns red where `kotlin_source::positional_forms` stops naming a group, or
-/// `unlowered_forms` a CBOR map.
+/// Turns red where `kotlin_source::positional_forms` stops naming a group of a
+/// chain's memberships, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_cbor_map", "a CBOR map"),
-        ("codec_present_if_length_ref", "a group"),
+        (
+            "codec_chain_has_envelope",
+            "a group of a chain's memberships",
+        ),
     ] {
         let forms = unlowered(name);
         assert!(
@@ -880,6 +975,9 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_chain_handed_entry",
         "codec_variant_dispatch",
         "codec_source_parent_tag",
+        "codec_present_if_length_ref",
+        "codec_present_if_disjunction",
+        "codec_zenoh_init_body",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
