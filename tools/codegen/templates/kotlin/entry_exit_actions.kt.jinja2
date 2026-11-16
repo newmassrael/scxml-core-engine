@@ -50,7 +50,7 @@
                         val invokeParams = mutableMapOf<String, Any?>()
 {% if inv.namelist %}
                         if (!({% for var_name in inv.namelist.split() %}engineInv.hasVariable(sidInv, "{{ var_name | escape_kotlin }}"){{ " && " if not loop.last }}{% endfor %})) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
 {% for var_name in inv.namelist.split() %}
@@ -65,7 +65,7 @@
    inline rather than bound with `{% raw %}{% set %}{% endraw %}`: this
    backend's templates never bind author text. #}
 {% if not (param.expr or param.location) %}
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> names no location")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='{{ param.name | escape_kotlin }}'> names no location")
 {% else %}
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -74,7 +74,7 @@
                         try {
                             invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, {{ (param.expr or param.location) | to_script_source_expr }})
                         } catch (_: Exception) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> could not be read")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='{{ param.name | escape_kotlin }}'> could not be read")
                         }
 {% endif %}
 {% endfor %}
@@ -130,7 +130,7 @@
                                 {{ inv.native_src }}
                             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {% if 'error.execution' in model.events %}
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr> failed to evaluate")
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr> failed to evaluate")
 {% endif %}
                                 return@deferInvoke
                             }
@@ -151,7 +151,7 @@
                             }
                             if (filePath == null) {
 {% if 'error.execution' in model.events %}
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
 {% endif %}
                                 return@deferInvoke
                             }
@@ -165,7 +165,7 @@
                             }
                             if (scxmlContent == null) {
 {% if 'error.execution' in model.events %}
-                                raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
+                                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke contentexpr='{{ inv.contentexpr | escape_kotlin }}'> could not be evaluated")
 {% endif %}
                                 return@deferInvoke
                             }
@@ -198,7 +198,7 @@
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
 {% if 'error.execution' in model.events %}
-                                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr | escape_kotlin }}'{% endif %}> evaluated to a document it did not declare")
+                                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr | escape_kotlin }}'{% endif %}> evaluated to a document it did not declare")
 {% endif %}
                                     return@deferInvoke
                                 }
@@ -231,7 +231,7 @@
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
 {% if 'error.execution' in model.events %}
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
 {% endif %}
                         }
                     }
@@ -295,14 +295,14 @@
                         val v = engine.evaluateExpr(sid, {{ dm_var.expr | to_script_source_expr }})
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
                     }
 {% elif dm_var.content %}
                     try {
                         val v = engine.parseDataValue(sid, "{{ dm_var.content | escape_kotlin }}")
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> content failed to initialise")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='{{ dm_var.id }}'> content failed to initialise")
                     }
 {% else %}
                     engine.setVariable(sid, "{{ dm_var.id }}", null)
@@ -383,7 +383,7 @@
                         val {{ var }} = try {
                             valueToWireString(hostEngine.evaluateExpr(hostSid, {{ expr | to_script_source_expr }}))
                         } catch (_: Exception) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> {{ attr }}expr failed to evaluate")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> {{ attr }}expr failed to evaluate")
                             return@deferInvoke
                         }
 {% endif %}
@@ -398,7 +398,7 @@
                         val hostInvokeSrc: String = try {
                             {{ inv.native_src }}
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
 {% else %}
@@ -415,7 +415,7 @@
                         val hostInvokeContent: String = try {
                             {{ inv.native_content }}
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> content expr failed to evaluate")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> content expr failed to evaluate")
                             return@deferInvoke
                         }
 {% else %}
@@ -430,7 +430,7 @@
 {% if inv.namelist and model.needs_script_engine %}
 {% for var_name in inv.namelist.split() %}
                         if (!hostEngine.hasVariable(hostSid, "{{ var_name }}")) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names '{{ var_name }}', which is not declared")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names '{{ var_name }}', which is not declared")
                             return@deferInvoke
                         }
                         try {
@@ -439,7 +439,7 @@
                                 (hostInvokeParams["{{ var_name }}"] ?: emptyList()) + valueToWireString(namelistValue)
                             putParam(hostInvokePayload, "{{ var_name }}", namelistValue)
                         } catch (_: Exception) {
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist entry '{{ var_name }}' failed to evaluate")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist entry '{{ var_name }}' failed to evaluate")
                             return@deferInvoke
                         }
 {% endfor %}
@@ -476,7 +476,7 @@
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -489,7 +489,7 @@
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke({{ state_ref }}, generatedInvokeId) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke type='{{ inv.invoke_type | escape_kotlin }}'> names an external service this platform does not support")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.INVOKE_TYPE_UNSUPPORTED, "<invoke type='{{ inv.invoke_type | escape_kotlin }}'> names an external service this platform does not support")
                     }
                 }
 {% elif inv.is_hybrid is defined and inv.is_hybrid %}
@@ -539,7 +539,7 @@
                         valueToJson({{ state.donedata.native_content_value }})
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {% if 'error.execution' in model.events %}
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate")
 {% endif %}
                         valueToJson("")
                     }
@@ -571,7 +571,7 @@
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate")
                     }
 {% elif state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
@@ -590,7 +590,7 @@
                         doneParams["{{ param.name | escape_kotlin }}"] = {{ param.native_value }}
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {% if 'error.execution' in model.events %}
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
 {% endif %}
                     }
 {% else %}
@@ -601,19 +601,19 @@
                         doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.expr | to_script_source_expr }})
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
                     }
 {% elif param.expr is none and param.location %}
                     try {
                         doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, {{ param.location | to_script_source_expr }})
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
                     }
 {% else %}
                     // §scxml-5.7: an empty location names no location —
                     // error.execution, and this pair is ignored.
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> has an empty location")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<donedata> <param name='{{ param.name | escape_kotlin }}'> has an empty location")
 {% endif %}
 {% endfor %}
                     // §scxml-5.5: the pairs that survived, `{}` when none did

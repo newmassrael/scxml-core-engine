@@ -31,7 +31,7 @@
                     println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}(scriptEngine?.evaluateExpr(scriptSessionId ?: "", {{ action.expr | to_script_source_expr }})?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {

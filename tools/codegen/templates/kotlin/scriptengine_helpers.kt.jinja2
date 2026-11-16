@@ -118,21 +118,21 @@
             try {
                 engine.setVariable(sid, "{{ var.id }}", engine.evaluateExpr(sid, {{ var.expr | to_script_source_expr }}))
             } catch (e: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> expr failed to evaluate")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='{{ var.id }}'> expr failed to evaluate")
             }
 {% elif var.src %}
             // W3C SCXML 5.3.1: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
             try {
                 engine.loadDataFromSrc("{{ var.src }}", "{{ model.scxml_base_path }}")?.let { engine.setVariable(sid, "{{ var.id }}", engine.parseDataValue(sid, it)) }
             } catch (e: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded")
             }
 {% elif var.content %}
             // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content (C++ parseEventData pattern)
             try {
                 engine.setVariable(sid, "{{ var.id }}", engine.parseDataValue(sid, "{{ var.content | escape_kotlin }}"))
             } catch (e: Exception) {
-                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> content failed to initialise")
+                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='{{ var.id }}'> content failed to initialise")
             }
 {% elif var.type == 'runtime' %}
             // W3C SCXML 5.2: Runtime variable '{{ var.id }}' (late binding, undefined)
@@ -157,7 +157,7 @@
             val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, {{ dm_var.expr | to_script_source_expr }})
             engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
         }
 {% elif dm_var.content %}
         // State '{{ state_id }}' variable '{{ dm_var.id }}' (inline content, C++ parseEventData pattern)
@@ -165,7 +165,7 @@
             val initResult_{{ dm_var.id | to_camel_case }} = engine.parseDataValue(sid, "{{ dm_var.content | escape_kotlin }}")
             engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> content failed to initialise")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='{{ dm_var.id }}'> content failed to initialise")
         }
 {% else %}
         engine.setVariable(sid, "{{ dm_var.id }}", null)
@@ -180,7 +180,7 @@
         try {
             engine.executeScript(sid, {{ script.content | to_script_source_script }})
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "a top-level <script> failed to execute")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "a top-level <script> failed to execute")
         }
 {% endfor %}
     }
@@ -211,14 +211,14 @@
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, reason)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -259,7 +259,7 @@
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -280,7 +280,7 @@
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<assign> failed")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -301,7 +301,7 @@
             engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
             true
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "$element idlocation could not take the id")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "$element idlocation could not take the id")
             false
         }
     }
@@ -318,7 +318,7 @@
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

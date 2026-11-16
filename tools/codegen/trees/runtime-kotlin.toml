@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the Kotlin engine runtime is built on, generated for
+# Kotlin into backends/kotlin/runtime/src/commonMain/kotlin/generated
+# (ADR 0097): the reasons an engine raises `error.execution` and
+# `error.communication` for (sce:std/engine/error_reason.scxml, docs/adr/0106
+# #111). The runtime names the enum `com.sce.runtime.ErrorReason` and writes
+# each reason by its declared-name accessor, so the document is the one
+# spelling of it. Named by its path under stdlib/engine, so it carries the
+# source hash of that directory.
+
+[tree]
+name = "runtime-kotlin"
+roots = ["backends/kotlin/runtime/src/commonMain/kotlin/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "kotlin", "--output-dir", "{out}"]
+place = "backends/kotlin/runtime/src/commonMain/kotlin/generated"
+keep = ["*.kt"]

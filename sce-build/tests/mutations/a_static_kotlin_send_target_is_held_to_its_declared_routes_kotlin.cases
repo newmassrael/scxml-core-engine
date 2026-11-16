@@ -42,6 +42,6 @@ edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
      "            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {",
      "            if (false && com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {")
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
-     "                    raisePlatformError({{ machine_name }}Event.Error.Communication, \"<send> targetexpr names a session this processor cannot reach\", {{ send_id_kt }})\n",
+     "                    raisePlatformError({{ machine_name }}Event.Error.Communication, ErrorReason.TARGET_UNREACHABLE, \"<send> targetexpr names a session this processor cannot reach\", {{ send_id_kt }})\n",
      "")
 PY

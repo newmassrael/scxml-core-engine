@@ -1933,8 +1933,8 @@ fn guard_payload(
         Language::Kotlin => {
             let otherwise = if raises_error {
                 format!(
-                    " ?: run {{ raiseInternal({machine_name}Event.Error.Execution, \
-                     EventMetadata(data = \"{msg}\", type = \"platform\")) }}"
+                    " ?: run {{ raisePlatformError({machine_name}Event.Error.Execution, \
+                     ErrorReason.PAYLOAD_REFUSED, \"{msg}\") }}"
                 )
             } else {
                 String::new()

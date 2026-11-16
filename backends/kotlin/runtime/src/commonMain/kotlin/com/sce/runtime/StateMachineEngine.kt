@@ -871,7 +871,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val name = eventNameOf(queued.event) ?: "the event"
             val replacement = QueuedEvent(
                 errorEvent,
-                EventMetadata(data = "`$name` payload: ${refusal.message}", type = "platform")
+                EventMetadata(
+                    data = errorData(ErrorReason.PAYLOAD_REFUSED, "`$name` payload: ${refusal.message}"),
+                    type = "platform"
+                )
             )
             // The replacement carries no typed payload, so binding it clears the
             // view the refused delivery left half read.
@@ -1892,6 +1895,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             resolveEventByName("error.execution")?.let {
                 raisePlatformError(
                     it,
+                    ErrorReason.PARAM_UNFIT,
                     "<invoke type='${request.processorType}' id='${request.invokeId}'>: " +
                         "$HOST_INVOKE_DEADLINE_PARAM='${deadlineValues.joinToString(",")}' " +
                         "is not a whole number of milliseconds"
@@ -1941,7 +1945,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // the element's error raised with what the host said.
             startedHostInvokes.remove(started.processorType to started.invokeId)
             dropHostInvokeDeadline(token)
-            resolveEventByName("error.execution")?.let { raisePlatformError(it, refusal) }
+            // The host's refusal is the event's data as the host wrote it: the
+            // host owns the shape of what it refuses with, as a peer owns the
+            // status of its reply (docs/adr/0106 #111), so it is not wrapped in
+            // a code of the engine's vocabulary.
+            resolveEventByName("error.execution")?.let { enqueueInternal(it, EventMetadata.platform(refusal)) }
             return true
         }
         val doneData = response?.doneData
@@ -1984,7 +1992,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     val at = (deadline as? RestoredDeadline.At)?.atMs
                     if (!startHostInvoke(request, at)) {
                         resolveEventByName("error.execution")?.let {
-                            raisePlatformError(it, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(
+                                it,
+                                ErrorReason.PROCESSOR_UNREGISTERED,
+                                "<invoke> names an invoker the host declared but never registered"
+                            )
                         }
                     }
                 }
@@ -2379,6 +2391,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // — the scheduler needed it to be cancellable.
         raisePlatformError(
             event,
+            ErrorReason.PROCESSOR_UNREGISTERED,
             "<send type='${request.processorType}'> names a processor the host declared but never registered",
             request.sendId
         )
@@ -4824,6 +4837,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 if (!sendToChild(route.invokeId, route.eventName, route.eventData)) {
                     raisePlatformError(
                         route.unreachable as E,
+                        ErrorReason.TARGET_UNREACHABLE,
                         "<send target='#_${route.invokeId}'> names an invocation that is not running",
                         entry.sendId
                     )
@@ -4832,6 +4846,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 if (!deliverToChildSession(route.sessionId, route.eventName, route.eventData)) {
                     raisePlatformError(
                         route.unreachable as E,
+                        ErrorReason.TARGET_UNREACHABLE,
                         "<send> names a session that was no longer running when its delay elapsed",
                         entry.sendId
                     )
@@ -5347,25 +5362,28 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *    defaults to `EventMetadata.internal()`, and most generated error sites
      *    called it — so an event the PROCESSOR raised was labelled as one the
      *    document asked for.
-     *  * `_event.data` carries [message]. A document that answers
-     *    `error.execution` was handed an empty string, so it could see THAT
-     *    something failed and never WHAT.
+     *  * `_event.data` is the record SCE_MESH.md section 10.7.1 pins for an
+     *    `error.*` event (docs/adr/0106, #111): `errorName` (the event, read
+     *    from the code by [errorName]), `reason` ([reason], by the
+     *    vocabulary's declared name) and `detail` ([detail]), so a document
+     *    that answers `error.execution` reads the code without parsing a
+     *    sentence.
      *
      * [sendId] is for the `<send>` failures the spec requires it on (test 332);
      * it stays blank everywhere else.
      *
-     * [message] names the failing construct and is a literal formed at
+     * [detail] names the failing construct and is a literal formed at
      * generation time, never the script engine's own error text — the dynamic
      * detail belongs on the log line beside the call.
      */
-    protected fun raisePlatformError(event: E, message: String, sendId: String = "") {
+    protected fun raisePlatformError(event: E, reason: ErrorReason, detail: String, sendId: String = "") {
         // §scxml-3.12.2: the processor signals its own failures as `error.*`,
         // and "platforms MAY include additional information about the nature of
         // the error in the 'data' field". Cited in the body so the ledger binds
         // it to this symbol.
         enqueueInternal(
             event,
-            EventMetadata(data = message, type = "platform", sendId = sendId)
+            EventMetadata(data = errorData(reason, detail), type = "platform", sendId = sendId)
         )
     }
 
@@ -5447,7 +5465,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // Justification (UNCHECKED_CAST): [scheduleParentSend] accepts only
             // E for the unreachable event.
             @Suppress("UNCHECKED_CAST")
-            raisePlatformError(route.unreachable as E, "<send target='#_parent'> has no parent session to reach", sendId)
+            raisePlatformError(
+                route.unreachable as E,
+                ErrorReason.TARGET_UNREACHABLE,
+                "<send target='#_parent'> has no parent session to reach",
+                sendId
+            )
             return
         }
         toParent(route.eventName, route.eventData)
@@ -5851,7 +5874,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         child.onSendToParent = null
         child.assignedSessionId?.let { tree.leave(it, child) }
         child.detachMesh()
-        resolveEventByName("error.execution")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }
+        resolveEventByName("error.execution")?.let {
+            raisePlatformError(it, ErrorReason.INVOKE_CHILD_INIT_FAILED, failure.childStartRefusal(invokedAs))
+        }
     }
 
     /**

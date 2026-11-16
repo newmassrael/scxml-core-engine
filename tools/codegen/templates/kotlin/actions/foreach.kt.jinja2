@@ -40,7 +40,7 @@
 {% elif model.needs_script_engine %}
 {% if not action.array or not action.item %}
             // W3C SCXML 4.6: Missing required foreach attribute (array/item)
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach> is missing its 'array' or 'item' attribute")
+            raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach> is missing its 'array' or 'item' attribute")
 {% else %}
             if (run foreach@{
                 assertScriptSession()
@@ -64,7 +64,7 @@
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<foreach array='{{ action.array }}'> failed to iterate")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='{{ action.array }}'> failed to iterate")
                     true
                 }
             }) {

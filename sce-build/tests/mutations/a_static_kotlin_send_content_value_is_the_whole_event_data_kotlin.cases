@@ -47,8 +47,8 @@ PY
 
 mutation_case "a content value that failed is replaced by the empty string without a word" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
-     "            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {\n{% if 'error.execution' in model.events %}\n                raisePlatformError({{ machine_name }}Event.Error.Execution, \"<send> contentexpr failed to evaluate\"",
-     "            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {\n{% if false %}\n                raisePlatformError({{ machine_name }}Event.Error.Execution, \"<send> contentexpr failed to evaluate\"")
+     "            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {\n{% if 'error.execution' in model.events %}\n                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, \"<send> contentexpr failed to evaluate\"",
+     "            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {\n{% if false %}\n                raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, \"<send> contentexpr failed to evaluate\"")
 PY
 
 # ── ... and ends the block it is in ────────────────────────────────

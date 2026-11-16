@@ -65,7 +65,7 @@
 {{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the pair.
 {% if 'error.execution' in model.events %}
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
 {% endif %}
 {% if failed_flag %}
 {{ indent }}    {{ failed_flag }} = true
@@ -88,7 +88,7 @@
 {{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and the
 {{ indent }}    // value — the act still happens, without a field the document
 {{ indent }}    // could not produce.
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.{% if param.expr %}EXPRESSION_FAILED{% else %}LOCATION_INVALID{% endif %}, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}")
 {% if failed_flag %}
 {{ indent }}    {{ failed_flag }} = true
 {% endif %}
@@ -96,7 +96,7 @@
 {% elif model.needs_script_engine and not (param.expr or param.location) %}
 {{ indent }}// W3C SCXML 5.7.1: an empty location names no location in the data
 {{ indent }}// model — reported, and the pair left out.
-{{ indent }}raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> names no location")
+{{ indent }}raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.LOCATION_INVALID, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> names no location")
 {% if failed_flag %}
 {{ indent }}{{ failed_flag }} = true
 {% endif %}
@@ -141,7 +141,7 @@
 {% if param.native_fails %}
 {{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {% if 'error.execution' in model.events %}
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: it failed to evaluate")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: it failed to evaluate")
 {% endif %}
 {{ indent }}    return@deferInvoke
 {{ indent }}}
@@ -158,7 +158,7 @@
 {{ indent }}    putParam({{ typed }}, "{{ param.name | escape_kotlin }}", v)
 {% endif %}
 {{ indent }}} catch (refusal: Exception) {
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: ${refusal.message}")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.PARAM_UNFIT, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: ${refusal.message}")
 {{ indent }}    return@deferInvoke
 {{ indent }}}
 {% endif %}
@@ -196,7 +196,7 @@
 {{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {{ indent }}    // W3C SCXML 5.7.1: report the failure and leave the value out.
 {% if 'error.execution' in model.events %}
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
 {% endif %}
 {{ indent }}}
 {% elif param.native_seed %}
@@ -214,7 +214,7 @@
 {{ indent }}    {{ param.native_value }}
 {{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
 {% if 'error.execution' in model.events %}
-{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
 {% endif %}
 {{ indent }}}
 {% endif %}

@@ -102,7 +102,7 @@ const BACKENDS: &[Backend] = &[
     Backend {
         dir: "kotlin",
         bypass: &["raiseInternal({{ machine_name }}Event.Error."],
-        entry_point: "raisePlatformError(event, message)",
+        entry_point: "raisePlatformError(event, reason, detail)",
     },
     Backend {
         dir: "python",

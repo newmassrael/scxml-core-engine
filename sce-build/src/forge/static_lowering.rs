@@ -3674,9 +3674,14 @@ impl StaticTarget for KotlinTarget {
             }
         })
     }
-    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String {
         format!(
-            "raisePlatformError({machine}Event.Error.Execution, \"{}\")",
+            "raisePlatformError({machine}Event.Error.Execution, ErrorReason.{}, \"{}\")",
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Kotlin,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::escape_kotlin(message.to_string())
         )
     }

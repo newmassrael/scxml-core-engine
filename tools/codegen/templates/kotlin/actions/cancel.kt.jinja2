@@ -21,7 +21,7 @@
                     null
                 }
                 if (sendidToCancel == null) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
                     true
                 } else {
                     cancelSend(sendidToCancel)
@@ -47,7 +47,7 @@
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false
                 } catch (_: Exception) {
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
                     true
                 }
             }) {

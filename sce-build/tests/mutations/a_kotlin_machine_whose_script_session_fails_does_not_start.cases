@@ -152,6 +152,6 @@ PY
 
 mutation_case "the child whose start was refused raises no error.execution" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        resolveEventByName(\"error.execution\")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }\n",
-     "        resolveEventByName(\"error.no-such-event\")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }\n")
+     "        resolveEventByName(\"error.execution\")?.let {\n            raisePlatformError(it, ErrorReason.INVOKE_CHILD_INIT_FAILED, failure.childStartRefusal(invokedAs))\n",
+     "        resolveEventByName(\"error.no-such-event\")?.let {\n            raisePlatformError(it, ErrorReason.INVOKE_CHILD_INIT_FAILED, failure.childStartRefusal(invokedAs))\n")
 PY
