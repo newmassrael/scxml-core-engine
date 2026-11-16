@@ -15,9 +15,17 @@ import SceForgeRuntime
 {% if variant_enum.default %}
 /// The catch-all holds the tag it was read for, as no arm names it.
 {% endif %}
+{# docs/adr/0072: an arm under a build feature is a case of the build that has it, left out where
+   the build sets the condition `off` names; its tag is then refused by the decode. #}
 public enum {{ variant_enum.name }}: Equatable, Sendable {
 {% for c in variant_enum.cases %}
+{% if c.off %}
+#if !{{ c.off }}
+{% endif %}
     case {{ c.case }}({{ c.type }})
+{% if c.off %}
+#endif
+{% endif %}
 {% endfor %}
 {% if variant_enum.default %}
     case `default`(tag: {{ variant_enum.default.tag_type }}, body: {{ variant_enum.default.type }})
@@ -110,7 +118,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
     public var tag: UInt8 {
         switch body {
 {% for c in variant_enum.cases %}
+{% if c.off %}
+        #if !{{ c.off }}
+{% endif %}
         case .{{ c.case }}: return {{ c.tag }}
+{% if c.off %}
+        #endif
+{% endif %}
 {% endfor %}
 {% if variant_enum.default %}
         case .default(let held, _): return held
@@ -168,8 +182,17 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        let {{ f.variant.local }} = {{ f.variant.tag }}
 {{ pad }}        switch {{ f.variant.local }} {
 {% for c in f.variant.cases %}
+{% if c.off %}
+{{ pad }}        #if !{{ c.off }}
+{% endif %}
 {{ pad }}        {{ c.label }}
 {{ pad }}            frame.{{ f.id }} = {{ c.value }}
+{% if c.off %}
+{{ pad }}        #else
+{{ pad }}        {{ c.label }}
+{{ pad }}            throw CodecError.variantArmNotBuilt
+{{ pad }}        #endif
+{% endif %}
 {% endfor %}
 {{ pad }}        }
 {% elif f.chain and f.chain.accessor %}
@@ -294,8 +317,14 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            var piece = BytesSink()
 {{ pad }}            switch {{ src }} {
 {% for c in f.variant.cases %}
+{% if c.off %}
+{{ pad }}            #if !{{ c.off }}
+{% endif %}
 {{ pad }}            case {{ c.pattern }}:
 {{ pad }}                try arm.encode(into: &piece{{ c.encode_args }})
+{% if c.off %}
+{{ pad }}            #endif
+{% endif %}
 {% endfor %}
 {{ pad }}            }
 {{ pad }}            frame += piece.bytes

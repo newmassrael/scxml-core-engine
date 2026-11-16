@@ -763,16 +763,36 @@ fn bits_a_swift_codec_cannot_lay_out_are_refused_by_name() {
                <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
             "12 bits that are not whole bytes, in a frame whose layout depends on what it holds",
         ),
-        (
-            r#"<sce:field id="past" sce:type="uint16" sce:byte="0" sce:bit-offset="4" sce:bit-size="8" sce:endian="native"/>"#,
-            "the native byte order",
-        ),
     ] {
         let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));
         assert!(
             refusal.contains("has no Swift lowering yet") && refusal.contains(what),
             "{field}: {refusal}"
         );
+    }
+}
+
+#[test]
+fn a_word_in_the_native_byte_order_is_read_and_written_as_a_big_endian_one() {
+    let code = swift_of_datamodel(
+        r#"<sce:field id="past" sce:type="uint16" sce:byte="0" sce:bit-offset="4" sce:bit-size="8" sce:endian="native"/>"#,
+    )
+    .expect("a word in the native byte order is written, as on every backend");
+    for (expected, why) in [
+        (
+            "past: try (cursor.peekInteger(UInt16.self, at: 0, .big) >> 4) & 0xFF",
+            "the decode reads the word as big-endian",
+        ),
+        (
+            "frame[0] |= UInt8(truncatingIfNeeded: (self.past >> 4) & 0xF) << 0",
+            "the first byte of the word is its most significant",
+        ),
+        (
+            "frame[1] |= UInt8(truncatingIfNeeded: self.past & 0xF) << 4",
+            "and the second its least",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
     }
 }
 
@@ -1422,6 +1442,53 @@ fn a_gated_field_of_an_enum_is_read_and_written_in_turn_where_its_flag_is_set() 
     ] {
         assert!(code.contains(expected), "{why}: {expected} in {code}");
     }
+}
+
+#[test]
+fn an_arm_under_a_feature_is_a_case_of_the_build_that_has_it_and_its_tag_is_refused_elsewhere() {
+    let code = swift_of("backends/rust/forge-conformance/fixtures/codec_feature_gated_arm.scxml")
+        .expect("a variant with an arm under a feature is written");
+    for (expected, why) in [
+        (
+            "#if !SCE_FEATURE_GATED_ARM_OFF\n    case codecDefaultMarkerArmB(",
+            "the arm's case is declared unless the build sets the condition",
+        ),
+        (
+            "        #if !SCE_FEATURE_GATED_ARM_OFF\n        case 0x2:\n            frame.body = .codecDefaultMarkerArmB(try ",
+            "the decode reads the arm in the build that has it",
+        ),
+        (
+            "        #else\n        case 0x2:\n            throw CodecError.variantArmNotBuilt\n        #endif",
+            "and refuses its tag in the build that leaves it out, not reading it as the catch-all",
+        ),
+        (
+            "            #if !SCE_FEATURE_GATED_ARM_OFF\n            case .codecDefaultMarkerArmB(let arm):",
+            "the encode writes the arm in the build that has it",
+        ),
+        (
+            "public var body: CodecFeatureGatedArmVariant = .codecDefaultMarkerArmA(",
+            "a value starts at the arm the document marks as its default, which every build holds",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+    assert!(
+        !code.contains("#if !SCE_FEATURE_GATED_ARM_OFF\n    case codecDefaultMarkerArmA("),
+        "an arm under no feature is in every build: {code}"
+    );
+
+    let last =
+        swift_of("backends/rust/forge-conformance/fixtures/codec_feature_gated_arm_held.scxml")
+            .expect(
+                "a variant whose last arm is under a feature and that has no catch-all is written",
+            );
+    assert!(
+        last.contains(
+            "        #else\n        default:\n            throw CodecError.variantArmNotBuilt\n        #endif"
+        ),
+        "the last arm stands for what the others do not match, and is refused where it is \
+         not built: {last}"
+    );
 }
 
 #[test]

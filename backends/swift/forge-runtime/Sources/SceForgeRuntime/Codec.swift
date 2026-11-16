@@ -38,6 +38,10 @@ public enum CodecError: Error, Equatable, Sendable {
     /// number is not a value of that type, so a decode refuses the frame and consumes nothing. An
     /// open enum holds every number its carrier does and never answers this.
     case undeclaredEnumValue
+    /// A variant's tag names an arm this build leaves out (`<sce:arm feature=>`, docs/adr/0072):
+    /// the document knows the body, and this build does not take it, so the frame is refused and is
+    /// not read as another arm.
+    case variantArmNotBuilt
     /// An encode was handed a field that is present where the flag input that gates it says it is not,
     /// or absent where the input says it is: the value and the input contradict each other, so no
     /// frame is written.

@@ -76,3 +76,27 @@ total, so a gated arm needs no catch-all.
 - The AST and XSD gain an optional attribute, additively; both surfaces are pre-release.
 - A variant with n distinct features writes its source accessor once per subset of them (2^n). The
   consumer's case has one.
+
+## Amendment, 2026-11-16: Swift gates the arm as C does, by a condition that turns it off
+
+Swift's codec refused an arm under a feature by name until it was its turn. Swift has a compile-time
+switch over one case of an enum and one case of a `switch`, so it is not a backend that keeps the arm
+in every build, as Go, Kotlin and Python are; it gates the arm, as C and C++ do.
+
+- A Swift compilation condition is set or not and holds no value, so it cannot default to on as the
+  C macro does. The arm is built unless the build sets `SCE_FEATURE_<NAME>_OFF`: the C macro's name
+  followed by `_OFF` (`-D SCE_FEATURE_REQUEST_PUT_DEL_OFF`, or `.define(..)` in a package's
+  `swiftSettings`). A build that names no condition keeps every arm, which is the default meaning.
+- The arm's case of the variant's enum, its case of the decode's and the encode's `switch`, its case
+  of a caller-tag variant's `tag`, and its case of a parent's derivation of a carrier's bits from the
+  arm (`<sce:variant-dispatch>`) are each under `#if !SCE_FEATURE_<NAME>_OFF`.
+- In a build that sets the condition, the decode's `#else` case refuses the arm's tag with
+  `CodecError.variantArmNotBuilt`, as §2 has every other backend refuse it, and does not read the
+  frame as another arm.
+- A value made before a frame is read starts at the arm the document marks as its default, which is
+  never under a feature; with no such arm, at the first arm every build holds, and else at the
+  catch-all.
+- Considered and refused: SwiftPM package traits (SE-0450), whose condition is set where the trait is
+  enabled. The generated file is compiled into the consumer's own target, so a target that declares
+  no trait would leave every gated arm out, which reverses the default; and a trait needs tools
+  version 6.1, past the 6.0 the Swift packages declare.

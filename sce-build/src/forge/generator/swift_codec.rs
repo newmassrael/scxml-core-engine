@@ -289,9 +289,6 @@ fn field_unlowered(
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
-    if f.present_if.is_some() && !f.flags.is_empty() {
-        return what("a flags carrier that is present only on a condition");
-    }
     if let BitSize::Repeat { count_ref } = &f.bit_size {
         return repeat_unlowered(m, f, count_ref, element);
     }
@@ -347,10 +344,9 @@ fn field_unlowered(
             ));
         }
     }
-    // A word of one byte has no byte order: it is the byte's own bits.
-    if span.bytes > 1 && span.endian == Endian::Native {
-        return what("the native byte order");
-    }
+    // A word in the native byte order is read and written as a big-endian one, as every backend
+    // reads it (`bit_layout::BitSpan::endian`, [`order_of`]), and a flags carrier is never gated:
+    // the parser refuses `sce:present-if` on one for every backend.
     None
 }
 
@@ -359,10 +355,10 @@ fn field_unlowered(
 /// It is the arm a tag selects, held with the fields before it: the tag is a field of the codec
 /// (the whole of it, or a range of bits of a flags carrier), and each arm is the struct of an
 /// imported entry codec, read from the frame once the tag is. The unit of every arm must be
-/// written (`element`). An arm that is built only under a feature is named. Two arms of one entry
-/// codec would be two cases of one name, and a field named `body` would be the name of the arm's
-/// own. A tag its caller supplies is the `tag` the decode is given; an encode needs none, since the
-/// arm that is held says which it is.
+/// written (`element`). An arm that is built only under a feature is a case of the build that has
+/// it ([`feature_off_condition`]). Two arms of one entry codec would be two cases of one name, and
+/// a field named `body` would be the name of the arm's own. A tag its caller supplies is the `tag`
+/// the decode is given; an encode needs none, since the arm that is held says which it is.
 fn variant_unlowered(
     m: &CodecModel,
     v: &CodecVariant,
@@ -375,9 +371,6 @@ fn variant_unlowered(
         return what(&format!(
             "whose tag its caller supplies, in a codec with a field named `{CALLER_TAG}`"
         ));
-    }
-    if v.arms.iter().any(|arm| arm.feature.is_some()) {
-        return what("with an arm built only under a feature");
     }
     if m.fields.iter().any(|f| f.id == VARIANT_FIELD) {
         return what(&format!(
@@ -407,6 +400,16 @@ fn variant_unlowered(
 
 /// The name of the field a variant's arm is held in.
 const VARIANT_FIELD: &str = "body";
+
+/// The Swift compilation condition that leaves out an arm compiled under the build feature
+/// `feature` (docs/adr/0072): the C and C++ macro's name ([`c_feature_macro`]) followed by `_OFF`.
+/// A Swift condition is set or not and holds no value, so the arm is built unless the build sets
+/// the condition (`-D SCE_FEATURE_<NAME>_OFF`, or `.define` in a package's `swiftSettings`), as a
+/// feature that is on by default is. In a build that sets it the arm's case is not declared, and a
+/// decode refuses the arm's tag with `variantArmNotBuilt` and does not read the frame as another arm.
+fn feature_off_condition(feature: &str) -> String {
+    format!("{}_OFF", c_feature_macro(feature))
+}
 
 /// The name of the tag a caller gives a decode, and of the property that answers it for a value.
 const CALLER_TAG: &str = "tag";
@@ -922,6 +925,8 @@ fn variant_context(
                 "value": format!(".{case}(try {ty}.decode(&reader{decode_args}))"),
                 "pattern": format!(".{case}(let arm)"),
                 "encode_args": encode_args,
+                // The condition a build leaves the arm out by, for an arm under a feature.
+                "off": arm.feature.as_deref().map(feature_off_condition),
             })
         })
         .collect();
@@ -932,20 +937,25 @@ fn variant_context(
             "value": format!(".default(tag: {narrowed}, body: try {ty}.decode(&reader{decode_args}))"),
             "pattern": ".default(_, let arm)",
             "encode_args": encode_args,
+            // The catch-all is never under a feature: every build holds it.
+            "off": serde_json::Value::Null,
         }));
     }
-    // What a value that has read no frame yet holds: the arm the document marks as its default, and
-    // else the first.
-    let initial = match arms
+    // What a value that has read no frame yet holds: the arm the document marks as its default,
+    // which is never under a feature, else the first arm every build holds, else the catch-all, which
+    // every build holds too. A variant whose every arm is under a feature and that has no catch-all
+    // starts at its first arm, which the build that has every feature holds.
+    let held_by_every_build = arms
         .iter()
         .find(|(arm, ..)| arm.is_default)
-        .or(arms.first())
-    {
-        Some((_, case, ty)) => format!(".{case}({ty}())"),
-        None => format!(
-            ".default(tag: 0, body: {}())",
-            default.as_deref().expect("a variant holds an arm")
-        ),
+        .or_else(|| arms.iter().find(|(arm, ..)| arm.feature.is_none()));
+    let initial = match (held_by_every_build, &default) {
+        (Some((_, case, ty)), _) => format!(".{case}({ty}())"),
+        (None, Some(ty)) => format!(".default(tag: 0, body: {ty}())"),
+        (None, None) => {
+            let (_, case, ty) = arms.first().expect("a variant holds an arm");
+            format!(".{case}({ty}())")
+        }
     };
     let mut bodies: Vec<String> = Vec::new();
     for ty in arms.iter().map(|(_, _, ty)| ty).chain(default.as_ref()) {
@@ -986,6 +996,7 @@ fn variant_context(
                     "case": case,
                     "type": ty,
                     "tag": format!("0x{:X}", arm.value),
+                    "off": arm.feature.as_deref().map(feature_off_condition),
                 }))
                 .collect::<Vec<_>>(),
             "default": default.as_ref().map(|ty| serde_json::json!({
@@ -1050,10 +1061,18 @@ fn parent_tag_locals(derivations: &[ParentTagDerivation]) -> Vec<String> {
         lines.push(format!("{pad}        switch {held}.{VARIANT_FIELD} {{"));
         for arm in &d.arms {
             let shifted = ((arm.value & mask) << d.bit) & 0xFF;
+            // An arm under a feature is a case of the build that has it (docs/adr/0072).
+            let off = arm.feature.as_deref().map(feature_off_condition);
+            if let Some(off) = &off {
+                lines.push(format!("{pad}        #if !{off}"));
+            }
             lines.push(format!(
                 "{pad}        case .{}: {local} = 0x{shifted:02X}",
                 filters::to_camel_case(arm.body_alias.clone())
             ));
+            if off.is_some() {
+                lines.push(format!("{pad}        #endif"));
+            }
         }
         if d.catch_all {
             lines.push(format!(
