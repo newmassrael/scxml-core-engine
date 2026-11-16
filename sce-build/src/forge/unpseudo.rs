@@ -1836,12 +1836,25 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         }
         // A union local is its declaration plus one nested `field = expr` line
         // for its tag and each field of its case, as `pseudo` writes it
-        // (docs/adr/0092, section 6.1 item 5); it takes no `= <expr>`.
+        // (docs/adr/0092, section 6.1 item 5), or one line `= <element>` where
+        // it is copied whole from an element of a list (docs/adr/0099, section
+        // 5.2); never both.
         if let Some(alias) = sce_type.union_alias() {
-            if init.is_some() {
-                return Err(ParseError {
-                    line: line.number,
-                    why: "a union var takes field lines under it, not `= <expr>`".to_string(),
+            if let Some(init) = init {
+                if !kids.is_empty() {
+                    return Err(ParseError {
+                        line: line.number,
+                        why: "a union var takes `= <element>` or field lines under it, not both"
+                            .to_string(),
+                    });
+                }
+                return Ok(AlgorithmStmt::UnionCopied {
+                    name: undo(name, line.number)?,
+                    name_spelling: None,
+                    alias: alias.to_string(),
+                    type_spelling: None,
+                    init: undo(init, line.number)?,
+                    init_spelling: None,
                 });
             }
             let mut fields = Vec::new();

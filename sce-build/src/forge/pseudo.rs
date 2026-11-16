@@ -1238,6 +1238,22 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 }
             });
         }
+        // A union local copied whole from an element: one line, as a record
+        // local received from a call is (docs/adr/0099, section 5.2).
+        AlgorithmStmt::UnionCopied {
+            name, alias, init, ..
+        } => {
+            out.line_of(vec![
+                Part::Word(Word::Var),
+                Part::Text(format!(
+                    "{}: {}{} = {}",
+                    text(name),
+                    crate::forge::model::AlgorithmValueType::UNION_PREFIX,
+                    text(alias),
+                    text(init)
+                )),
+            ]);
+        }
         // A record local received whole from a call: one line, as a scalar
         // local with an `init` is.
         AlgorithmStmt::RecordFromCall {

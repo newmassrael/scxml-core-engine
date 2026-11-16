@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The shapes of a list that are no dot, in their order: a list of unions the
+     algorithm builds, each item appended whole by the name of the loop's item,
+     and returned (docs/adr/0099, "Still open" item 2). Past eight kept shapes
+     the list fails `capacity-exceeded` on the bounded backends. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shapes_kept" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:signature>
+    <sce:param name="shapes" type="list&lt;union:Shape&gt;"/>
+    <sce:return type="list&lt;union:Shape&gt;[8]" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="kept" type="list&lt;union:Shape&gt;[8]"/>
+    <sce:foreach item="shape" in="shapes">
+      <sce:if cond="shape.kind !== ShapeKind.dot">
+        <sce:append target="kept" expr="shape"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="kept"/>
+  </sce:body>
+</scxml>

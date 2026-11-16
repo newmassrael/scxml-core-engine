@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The widest circle or rect of a list of shapes: each item of the loop over
+     the list is a union of its own, and a test of its tag narrows it as a test
+     of a parameter does, so each case's fields are read under the test that
+     proves the case (docs/adr/0099, section 5.2 and "Still open" item 2). A dot
+     adds nothing. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shapes_widest" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:signature>
+    <sce:param name="shapes" type="list&lt;union:Shape&gt;"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="widest" type="uint16" init="0"/>
+    <sce:foreach item="shape" in="shapes">
+      <sce:if cond="shape.kind === ShapeKind.circle">
+        <sce:if cond="shape.radius &gt; widest">
+          <sce:assign target="widest" expr="shape.radius"/>
+        </sce:if>
+      </sce:if>
+      <sce:if cond="shape.kind === ShapeKind.rect">
+        <sce:if cond="shape.width &gt; widest">
+          <sce:assign target="widest" expr="shape.width"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="widest"/>
+  </sce:body>
+</scxml>

@@ -10981,26 +10981,52 @@ fn parse_algorithm_stmt(
             // each field of that case's record (docs/adr/0092, section 6.1
             // item 5). Which case the tag names, and whether the fields are
             // that case's, need the union and are judged where the import
-            // resolves. It is not a buffer, and no value an algorithm holds is
-            // handed to it whole yet, so it takes neither `capacity` nor
-            // `init`.
+            // resolves. Or it is copied whole from an element of a list of its
+            // union, `init="xs[i]"` (docs/adr/0099, section 5.2), which the
+            // judge of the body holds to that shape; never both. It is not a
+            // buffer, so it takes no `capacity`.
             if let Some(alias) = sce_type.union_alias() {
-                for attr in ["init", "capacity"] {
-                    if let Some(value) = node.attribute(attr) {
+                if let Some(value) = node.attribute("capacity") {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:var name=\"{name}\">"),
+                            attr: "capacity".into(),
+                            value: value.into(),
+                            rule: format!(
+                                "omitted — a union local of {alias} is built from its \
+                                 <sce:set>s or copied from an element of a list of its union, \
+                                 and holds no buffer"
+                            ),
+                        },
+                    ));
+                }
+                if let Some(init) = node.attribute("init") {
+                    if node.children().any(|n| n.is_element()) {
                         return Err(located(
                             node,
                             doc_name,
                             ValidationError::AttributeRuleViolated {
                                 element: format!("<sce:var name=\"{name}\">"),
-                                attr: attr.into(),
-                                value: value.into(),
+                                attr: "init".into(),
+                                value: init.into(),
                                 rule: format!(
-                                    "omitted — a union local of {alias} is built from one \
-                                     <sce:set> for its tag and one per field of its case"
+                                    "omitted, or the <sce:set> children are — a union local \
+                                     of {alias} is copied from an element or built from its \
+                                     case, not both"
                                 ),
                             },
                         ));
                     }
+                    return Ok(AlgorithmStmt::UnionCopied {
+                        name,
+                        name_spelling: AttributeSpelling::of(node, None, "name"),
+                        alias: alias.to_string(),
+                        type_spelling: AttributeSpelling::of(node, None, "type"),
+                        init: init.to_string(),
+                        init_spelling: AttributeSpelling::of(node, None, "init"),
+                    });
                 }
                 let fields =
                     read_record_fields(node, doc_name, format!("<sce:var name=\"{name}\">"))?;
@@ -11305,6 +11331,7 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -11521,6 +11548,7 @@ fn judge_buffer_uses(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { expr: None, .. }
             | AlgorithmStmt::Call { .. }
@@ -11613,6 +11641,7 @@ fn reject_read_only_assignment(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -11667,6 +11696,7 @@ fn reject_require_without_may_fail(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }

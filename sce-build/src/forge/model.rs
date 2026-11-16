@@ -5492,6 +5492,28 @@ pub enum AlgorithmStmt {
         type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         fields: Vec<RecordFieldInit>,
     },
+    /// `<sce:var name=... type="union:<alias>" init="xs[i]"/>` — a union local
+    /// copied whole from the element of a list of its union at an index
+    /// (docs/adr/0099, section 5.2 and "Still open" item 2): the element is read
+    /// by the backend's checked read, so an index outside the list fails
+    /// `out-of-range` and declares nothing, and the local is the subject a test
+    /// of its tag narrows, which the element itself is not.
+    ///
+    /// A variant of its own, not an `init` on [`Self::UnionVar`], as
+    /// [`Self::RecordFromCall`] is beside [`Self::RecordVar`]: every reader of a
+    /// built union's `<sce:set>`s would otherwise walk an empty list here.
+    UnionCopied {
+        name: String,
+        #[serde(skip)]
+        name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        #[serde(rename = "union")]
+        alias: String,
+        #[serde(skip)]
+        type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        init: String,
+        #[serde(skip)]
+        init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
     /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
     /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a
     /// one-level member access only; a computed index (`buf[i]`) is rejected
@@ -5657,18 +5679,21 @@ impl<'a> AlgorithmBinding<'a> {
     }
 }
 
-/// Each parameter and local of `union:<alias>` of the algorithm whose
-/// signature is `signature` and whose body is `body`, by name, with the alias
-/// of its union, parameters first and then locals in source order
-/// (docs/adr/0092, Landing order step 5). One answer for the parser, which
-/// leaves a body that holds one to the judge of its returns, and for every
-/// reader that types or lowers one.
+/// Each parameter, local and loop item of `union:<alias>` of the algorithm
+/// whose signature is `signature` and whose body is `body`, by name, with the
+/// alias of its union, parameters first and then locals and loop items in
+/// source order (docs/adr/0092, Landing order step 5). A loop item over a
+/// `list<union:<alias>>` parameter or local is a value of that union, the
+/// subject a test of its tag narrows as a parameter's (docs/adr/0099, section
+/// 5.2). One answer for the parser, which leaves a body that holds one to the
+/// judge of its returns, and for every reader that types or lowers one.
 pub fn algorithm_unions<'a>(
     signature: &'a AlgorithmSignature,
     body: &'a [AlgorithmStmt],
 ) -> Vec<(&'a str, &'a str)> {
     let mut bindings = Vec::new();
     collect_algorithm_bindings(body, &mut bindings);
+    let listed = algorithm_union_lists(signature, body);
     signature
         .params
         .iter()
@@ -5677,12 +5702,45 @@ pub fn algorithm_unions<'a>(
                 .union_alias()
                 .map(|alias| (p.name.as_str(), alias))
         })
-        .chain(bindings.into_iter().filter_map(|binding| match binding {
-            AlgorithmBinding::UnionLocal { name, alias } => Some((name, alias)),
-            AlgorithmBinding::Local { .. }
-            | AlgorithmBinding::ForeachItem { .. }
-            | AlgorithmBinding::RecordLocal { .. } => None,
+        .chain(bindings.into_iter().filter_map(|binding| {
+            match binding {
+                AlgorithmBinding::UnionLocal { name, alias } => Some((name, alias)),
+                AlgorithmBinding::ForeachItem { name, source } => listed
+                    .iter()
+                    .find(|(list, _)| *list == source.trim())
+                    .map(|&(_, alias)| (name, alias)),
+                AlgorithmBinding::Local { .. } | AlgorithmBinding::RecordLocal { .. } => None,
+            }
         }))
+        .collect()
+}
+
+/// The alias of the union each `list<union:<alias>>` parameter and local of
+/// the algorithm whose signature is `signature` and whose body is `body` holds
+/// values of, by the list's name (docs/adr/0099, "Still open" item 2): what a
+/// union local copied from an element of one is held to, and what a backend
+/// names the element's type by.
+pub fn algorithm_union_lists<'a>(
+    signature: &'a AlgorithmSignature,
+    body: &'a [AlgorithmStmt],
+) -> Vec<(&'a str, &'a str)> {
+    let mut bindings = Vec::new();
+    collect_algorithm_bindings(body, &mut bindings);
+    signature
+        .params
+        .iter()
+        .map(|p| (p.name.as_str(), &p.sce_type))
+        .chain(bindings.into_iter().filter_map(|binding| match binding {
+            AlgorithmBinding::Local { name, sce_type } => Some((name, sce_type)),
+            AlgorithmBinding::ForeachItem { .. }
+            | AlgorithmBinding::RecordLocal { .. }
+            | AlgorithmBinding::UnionLocal { .. } => None,
+        }))
+        .filter_map(|(name, ty)| {
+            ty.list_elem()
+                .and_then(AlgorithmValueType::union_alias)
+                .map(|alias| (name, alias))
+        })
         .collect()
 }
 
@@ -5703,7 +5761,8 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             | AlgorithmStmt::RecordFromCall { name, alias, .. } => {
                 out.push(AlgorithmBinding::RecordLocal { name, alias });
             }
-            AlgorithmStmt::UnionVar { name, alias, .. } => {
+            AlgorithmStmt::UnionVar { name, alias, .. }
+            | AlgorithmStmt::UnionCopied { name, alias, .. } => {
                 out.push(AlgorithmBinding::UnionLocal { name, alias });
             }
             AlgorithmStmt::Foreach {
@@ -5779,15 +5838,23 @@ impl AlgorithmModel {
         algorithm_unions(&self.signature, &self.body)
     }
 
-    /// Whether the algorithm holds a union anywhere: a parameter, a local or
-    /// its return (docs/adr/0092, Landing order step 5).
+    /// Each `list<union:<alias>>` parameter and local, by name, with its
+    /// union's alias ([`algorithm_union_lists`]).
+    pub fn union_lists(&self) -> Vec<(&str, &str)> {
+        algorithm_union_lists(&self.signature, &self.body)
+    }
+
+    /// Whether the algorithm holds a union anywhere: a parameter, a local, a
+    /// list of them or its return (docs/adr/0092, Landing order step 5;
+    /// docs/adr/0099, "Still open" item 2).
     pub fn holds_union(&self) -> bool {
         !self.unions().is_empty()
+            || !self.union_lists().is_empty()
             || self
                 .signature
                 .return_type
                 .as_ref()
-                .is_some_and(|ty| ty.union_alias().is_some())
+                .is_some_and(|ty| !ty.union_aliases().is_empty())
     }
 }
 
@@ -5854,6 +5921,7 @@ fn collect_buffers_and_returns<'a>(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { expr: None, .. }

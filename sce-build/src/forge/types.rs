@@ -276,6 +276,15 @@ impl ListElem {
         matches!(self.value(), ValueType::Record { .. })
     }
 
+    /// The alias the scope names the union by when the element is a value of a
+    /// union (docs/adr/0099, "Still open" item 2); `None` for any other element.
+    pub fn union_alias(self) -> Option<&'static str> {
+        match self.value() {
+            ValueType::Union { alias } => Some(alias.as_str()),
+            _ => None,
+        }
+    }
+
     /// The type one element has as an operand ([`InferredType::of_value`]). A
     /// record element is `Unknown`: it has no operand type, and is read through
     /// its fields.

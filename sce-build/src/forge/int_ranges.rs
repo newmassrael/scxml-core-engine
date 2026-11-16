@@ -423,6 +423,16 @@ impl Analysis<'_, '_> {
                     env.forget_relations(&key);
                 }
             }
+            // The index is judged like any expression; the element copied is
+            // the list's, whose fields no guard here bounds, and each is read
+            // at its declared range (docs/adr/0099, section 5.2).
+            AlgorithmStmt::UnionCopied {
+                init,
+                init_spelling,
+                ..
+            } => {
+                self.stored(init, init_spelling.as_ref(), env, None);
+            }
             AlgorithmStmt::Assign {
                 target,
                 expr,

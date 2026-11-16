@@ -103,6 +103,11 @@ impl Walk<'_> {
                 init,
                 init_spelling,
                 ..
+            }
+            | AlgorithmStmt::UnionCopied {
+                init,
+                init_spelling,
+                ..
             } => self.expression(init, init_spelling.as_ref(), None),
             AlgorithmStmt::Assign {
                 target,

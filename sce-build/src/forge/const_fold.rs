@@ -653,9 +653,10 @@ fn eval_stmt(
         | AlgorithmStmt::RecordFromCall { name, alias, .. } => Err(ConstFoldKind::NotFoldable(
             format!("local '{name}' is a record:{alias}, and a build-time fold computes scalars"),
         )),
-        AlgorithmStmt::UnionVar { name, alias, .. } => Err(ConstFoldKind::NotFoldable(format!(
-            "local '{name}' is a union:{alias}, and a build-time fold computes scalars"
-        ))),
+        AlgorithmStmt::UnionVar { name, alias, .. }
+        | AlgorithmStmt::UnionCopied { name, alias, .. } => Err(ConstFoldKind::NotFoldable(
+            format!("local '{name}' is a union:{alias}, and a build-time fold computes scalars"),
+        )),
         AlgorithmStmt::Assign { target, expr, .. } => {
             let target = target.trim();
             // Identifier-only LValues in fold bodies. Member/Index

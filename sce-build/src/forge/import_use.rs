@@ -260,6 +260,12 @@ impl Names {
                     init,
                     init_spelling,
                     ..
+                }
+                | AlgorithmStmt::UnionCopied {
+                    alias,
+                    init,
+                    init_spelling,
+                    ..
                 } => {
                     self.name(alias);
                     self.expr(init, init_spelling.as_ref())?;

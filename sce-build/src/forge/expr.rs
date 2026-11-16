@@ -910,6 +910,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, ctx, source)?;
+    reject_union_elements_as_parts(ast, ctx, source, true)?;
     reject_misdirected_indexing(ast, source)?;
     reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
@@ -1154,6 +1155,70 @@ pub(crate) fn judge_union_argument_written(
     judge_union_argument(&ast, callee, param, ctx, written).map(|_| ())
 }
 
+/// The union an element of the list `ty` is, by the alias the scope names it
+/// under, when `ty` is a `list<union:<alias>>` parameter or local of an
+/// algorithm (docs/adr/0099, "Still open" item 2); `None` for every other type.
+pub(crate) fn listed_union(ty: InferredType) -> Option<&'static str> {
+    match ty {
+        InferredType::List(elem) | InferredType::ListBuffer(elem) => elem.union_alias(),
+        _ => None,
+    }
+}
+
+/// Judge the `init` written `written` of a union local of `union:<alias>`
+/// copied whole (docs/adr/0099, section 5.2): an element of a list of that
+/// union read at an index, `xs[i]`, where `xs` is a `list<union:…>` parameter
+/// or local whose union is the local's by its document's identity, as a union
+/// argument is held to its parameter's ([`judge_union_argument`]). The element
+/// is read by the backend's checked read, so an index outside the list fails
+/// `out-of-range`; anything else (a union by its name, a call, a field) is
+/// refused naming what a union local takes, since a union local is built from
+/// its `<sce:set>`s or copied from an element, and nothing else.
+pub(crate) fn judge_union_element_copy(
+    written: &str,
+    alias: &str,
+    ctx: &TypeCtx<'_>,
+) -> Result<(), Refusal> {
+    let written = written.trim();
+    let mut ast = parse_to_ast(written)?;
+    infer_types(&mut ast, ctx);
+    let identity = |of: &str| {
+        ctx.value_scope
+            .and_then(|scope| scope.unions.get(of))
+            .map(|union| union.identity.clone())
+    };
+    let listed = match &ast.kind {
+        ExprKind::Index { object, .. } => listed_union(object.ty),
+        _ => None,
+    };
+    let construct = match listed {
+        // The element is read by the checked read of an index, which fails
+        // `out-of-range`: only a body that may fail has the channel for it.
+        Some(_) if !ctx.receives_failures => format!(
+            "`{written}`, an element copied into a union local of union:{alias} in an algorithm \
+             that does not declare `may-fail` (the element is read by the checked read of its \
+             index, which fails `out-of-range` where the index is outside the list)"
+        ),
+        Some(held) if identity(held).is_some() && identity(held) == identity(alias) => {
+            return Ok(())
+        }
+        Some(held) => format!(
+            "`{written}`, an element of a list of union:{held}, copied into a union local of \
+             union:{alias} (a union local is copied from an element of a list of its own union)"
+        ),
+        None => format!(
+            "`{written}` as the value of a union local of union:{alias} (a union local is built \
+             from its <sce:set>s or copied whole from an element of a list of its union, \
+             `xs[i]`)"
+        ),
+    };
+    Err(ExprError::UnsupportedConstruct {
+        construct,
+        observed: Some(written.to_string()),
+    }
+    .at(ast.span.clone()))
+}
+
 /// The argument written `written`, as a `<sce:call args>` lists it, handed to
 /// the parameter of `callee` that takes the union `param` whole, judged as an
 /// expression's argument is ([`judge_union_argument`]) and spelled as `target`
@@ -1179,7 +1244,7 @@ pub(crate) fn transpile_union_argument(
 /// and Swift copy the value they pass, and Kotlin, Python and the Interpreter
 /// hand the very object, which no algorithm writes ("Decided while landing step
 /// 5" item 3), so each hands the name as it is.
-fn handed_union(target: ExprTarget, name: &str) -> String {
+pub(crate) fn handed_union(target: ExprTarget, name: &str) -> String {
     let held = target.local_spelling(name);
     match target {
         ExprTarget::Rust => format!("{held}.clone()"),
@@ -1785,6 +1850,51 @@ fn reject_unnamed_record_elements(
     expr.children()
         .into_iter()
         .try_for_each(|child| reject_unnamed_record_elements(child, ctx, source))
+}
+
+/// Refuse the element of a list of unions an algorithm holds read at an index
+/// anywhere but as the whole expression (`whole`), which a union local copies
+/// (docs/adr/0099, section 5.2): an element at an index is no narrowing
+/// subject, so its fields are read nowhere and its tag is not tested there
+/// (docs/adr/0092, section 6.1 item 2), and a union is no operand. The repair
+/// is to bind the element: a union local copied from it, or a `<sce:foreach>`
+/// item.
+///
+/// A statechart's list is a place of the one value type whose elements its scope
+/// types ([`TypeCtx::reads_elements_of`]), read through its path as the
+/// statechart's own rules say (docs/adr/0099, section 5.1); this is an
+/// algorithm's rule, and passes such a list by.
+fn reject_union_elements_as_parts(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+    whole: bool,
+) -> Result<(), Refusal> {
+    if let ExprKind::Index { object, .. } = &expr.kind {
+        let algorithm_list = !place_path(object).is_some_and(|path| ctx.reads_elements_of(&path));
+        if let (Some(alias), false, true) = (listed_union(object.ty), whole, algorithm_list) {
+            let observed = expr
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string);
+            return Err(ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "`{}`, an element of a list of union:{alias} read at an index inside an \
+                     expression (an element at an index is no subject a test of its tag \
+                     narrows: copy it whole into a union local, \
+                     <sce:var type=\"union:{alias}\" init=\"…[…]\"/>, or walk the list with a \
+                     <sce:foreach>, and read the local or the item)",
+                    observed.as_deref().unwrap_or_default()
+                ),
+                observed,
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_union_elements_as_parts(child, ctx, source, false))
 }
 
 /// Where a record-valued node stands, for [`reject_records_as_operands`].
@@ -2918,6 +3028,7 @@ pub(crate) fn judge_narrowed_use(
     let mut ast = parse_to_ast(expr)?;
     infer_types(&mut ast, ctx);
     reject_optional_misuse(&ast, &ctx.proven, expr)?;
+    reject_union_elements_as_parts(&ast, ctx, expr, true)?;
     reject_unproven_union_reads(&ast, ctx, &ctx.proven, expr)?;
     reject_union_arguments(&ast, ctx, expr)?;
     if let Expected::Slot(slot) = expected {

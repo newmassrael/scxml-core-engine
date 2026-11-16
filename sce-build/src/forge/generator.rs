@@ -33187,10 +33187,14 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             // A union an algorithm holds is the enum its unit declares, built whole as the case
             // its tag names (docs/adr/0092, Landing order step 5), so the local is named as
             // written like any other.
-            AlgorithmStmt::UnionVar { name, .. } if reserved(name) => Some(format!(
-                "the <sce:var name=\"{name}\">, a name Swift reserves,"
-            )),
-            AlgorithmStmt::UnionVar { .. } => None,
+            AlgorithmStmt::UnionVar { name, .. } | AlgorithmStmt::UnionCopied { name, .. }
+                if reserved(name) =>
+            {
+                Some(format!(
+                    "the <sce:var name=\"{name}\">, a name Swift reserves,"
+                ))
+            }
+            AlgorithmStmt::UnionVar { .. } | AlgorithmStmt::UnionCopied { .. } => None,
             AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
@@ -40400,6 +40404,7 @@ fn record_locals(
                 }
                 AlgorithmStmt::Var { .. }
                 | AlgorithmStmt::UnionVar { .. }
+                | AlgorithmStmt::UnionCopied { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
                 | AlgorithmStmt::Return { .. }
@@ -40450,6 +40455,7 @@ fn optional_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &AlgorithmValueType)> {
                 AlgorithmStmt::RecordVar { .. }
                 | AlgorithmStmt::RecordFromCall { .. }
                 | AlgorithmStmt::UnionVar { .. }
+                | AlgorithmStmt::UnionCopied { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
                 | AlgorithmStmt::Return { .. }
@@ -40640,6 +40646,7 @@ fn collect_bc_foreach_member_types(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -40762,6 +40769,7 @@ fn collect_append_buffers(
             AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -40811,6 +40819,9 @@ impl<'a> ListSpelling<'a> {
                     .qualified_type
                     .clone()
             }
+            // A union element is the type the union's own unit declares, as a
+            // union parameter is (docs/adr/0099, "Still open" item 2).
+            AlgorithmValueType::Union { alias } => algorithm_union_type(l, imports, alias)?,
             // A list of anything else is a composition no algorithm's list
             // lowers yet, refused by name (docs/adr/0086, section 7.3).
             other => {
@@ -40829,8 +40840,15 @@ impl<'a> ListSpelling<'a> {
         })
     }
 
+    /// Whether the element is a value of a type the algorithm imports, a record
+    /// or a union, and not a number: held in the containers a record element is
+    /// held in (Kotlin's `List` and `ArrayList`, C11's view declared beside the
+    /// algorithm), stored as it is, with no conversion that names a scalar.
     fn is_record(&self) -> bool {
-        matches!(self.elem, AlgorithmValueType::Record { .. })
+        matches!(
+            self.elem,
+            AlgorithmValueType::Record { .. } | AlgorithmValueType::Union { .. }
+        )
     }
 
     /// A read-only `list<T>` parameter: a borrowed view of the caller's
@@ -41234,6 +41252,7 @@ fn collect_algorithm_assigned_roots(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -41312,6 +41331,7 @@ fn lower_algorithm_stmt_and_check(
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Call { .. }
@@ -41851,6 +41871,50 @@ fn lower_algorithm_stmt(
             };
             out.push_str(&line);
         }
+        // docs/adr/0099, section 5.2: a union local copied whole from the
+        // element of a list of its union at an index. The element is read by
+        // the backend's checked read of an index, the expression layer's
+        // (SCE_FORGE.md §3.4.1), so an index outside the list fails
+        // `out-of-range` before the local holds anything: Rust's `?` and the
+        // effect of Swift, Kotlin and Python leave the body there, and the
+        // state-passing backends check the failure after the declaration, as
+        // every statement that can fail is checked
+        // ([`lower_algorithm_stmt_and_check`]), so the filler beside a recorded
+        // failure is never read. The judge held `init` to an element of a list
+        // of this union before any backend was asked
+        // ([`crate::forge::expr::judge_union_element_copy`]), and refuses a
+        // write of the local, so it is declared once and never changed, as a
+        // union local built from its case is.
+        AlgorithmStmt::UnionCopied {
+            name,
+            alias,
+            init,
+            init_spelling,
+            ..
+        } => {
+            let union_type = algorithm_union_type(l, imports, alias)?;
+            let site = ExpressionSite::new(init, init_spelling.as_ref());
+            let value = expr::transpile_typed(
+                init,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::Unknown,
+            )
+            .map_err(|refusal| site.place(refusal))?;
+            let local = l.local_id(name);
+            let line = match lang {
+                Language::Kotlin => format!("{pad}val {local}: {union_type} = {value}\n"),
+                Language::Cpp | Language::C11 => {
+                    format!("{pad}const {union_type} {local} = {value};\n")
+                }
+                Language::Swift => format!("{pad}let {local}: {union_type} = {value}\n"),
+                Language::Go => format!("{pad}{local} := {value}\n"),
+                Language::Python => format!("{pad}{local}: {union_type} = {value}\n"),
+                Language::Rust => format!("{pad}let {local}: {union_type} = {value};\n"),
+            };
+            out.push_str(&line);
+        }
         AlgorithmStmt::Assign {
             target,
             target_spelling,
@@ -42257,6 +42321,33 @@ fn lower_algorithm_stmt(
                         let holds_text =
                             resolve_record(imports, alias, None, "<sce:append>")?.holds_text();
                         owned_record(lang, &l.local_id(name), holds_text)
+                    }
+                    // A union element is a union of the list's own document, by
+                    // the name of the parameter, local or loop item that holds it,
+                    // as a union is handed to a call (docs/adr/0099, "Still open"
+                    // item 2): the list keeps its own value, a clone on Rust.
+                    AlgorithmValueType::Union { alias } => {
+                        let name = rhs.trim();
+                        let same_union = unions
+                            .alias_of(name)
+                            .and_then(|held| unions.union(held))
+                            .zip(unions.union(alias))
+                            .is_some_and(|(held, listed)| held.identity == listed.identity);
+                        if !same_union {
+                            let at = rhs_site.locate(Some(0..name.len()));
+                            let refusal: ForgeError =
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an append to a list<union:{alias}> of something other \
+                                         than a union:{alias} parameter, local or foreach item \
+                                         (a union is appended by the name that holds it)"
+                                    ),
+                                    observed: at.observed(),
+                                }
+                                .into();
+                            return Err(at.place(refusal));
+                        }
+                        expr::handed_union(l.expr_target(), name)
                     }
                     other => {
                         return Err(crate::forge::static_lowering::composition_not_lowered(
@@ -42811,6 +42902,19 @@ fn lower_algorithm_stmt(
                         item_is_borrowed = record.holds_text();
                         Some(record.qualified_type.clone())
                     }
+                    // An item over a list of unions is a value of the type the
+                    // union's unit declares, read through its tag and the fields
+                    // of the cases a test of its tag leaves (docs/adr/0099,
+                    // section 5.2). A Rust union is no `Copy` type, so its loop
+                    // borrows each element, which every read of a union takes
+                    // through `&self`.
+                    InferredType::List(elem) | InferredType::ListBuffer(elem)
+                        if elem.union_alias().is_some() =>
+                    {
+                        let alias = elem.union_alias().unwrap_or_default();
+                        item_is_borrowed = true;
+                        Some(algorithm_union_type(l, imports, alias)?)
+                    }
                     InferredType::List(elem) | InferredType::ListBuffer(elem) => {
                         Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned())
                     }
@@ -42871,7 +42975,7 @@ fn lower_algorithm_stmt(
                 // buffer of records is an `ArrayList`, walked as it is.
                 let kotlin_slot_reader = match (lang, walked_buffer, source_ty) {
                     (Language::Kotlin, Some(_), InferredType::ListBuffer(elem))
-                        if !elem.is_record() =>
+                        if !elem.is_record() && elem.union_alias().is_none() =>
                     {
                         Some(expr::kotlin_buffer_reader(elem)?)
                     }
@@ -45027,7 +45131,14 @@ impl<'a> AlgorithmTypes<'a> {
                                 Some(AlgorithmValueType::Scalar(elem)) => {
                                     list_buffers.push((name.to_string(), elem.clone()));
                                 }
-                                Some(elem @ AlgorithmValueType::Record { .. }) => {
+                                // A union element is held as a record element
+                                // is: walked by a `<sce:foreach>`, and read at an
+                                // index only whole, by a union local copied
+                                // from it (docs/adr/0099, section 5.2).
+                                Some(
+                                    elem @ (AlgorithmValueType::Record { .. }
+                                    | AlgorithmValueType::Union { .. }),
+                                ) => {
                                     record_list_buffers.push((name.to_string(), elem.clone()));
                                 }
                                 _ => {}
@@ -45084,9 +45195,12 @@ impl<'a> AlgorithmTypes<'a> {
                             ));
                             continue;
                         }
-                        // A list of another element is a composition the list
-                        // parameter's own spelling refuses by name
-                        // ([`ListSpelling::new`]); its item is typed by nothing.
+                        // An item over a list of unions is a place of the one
+                        // value type, registered as a union parameter is
+                        // ([`crate::forge::model::algorithm_unions`]). A list of
+                        // another element is a composition the list's own
+                        // spelling refuses by name ([`ListSpelling::new`]); its
+                        // item is typed by nothing.
                         Some(_) => continue,
                         None => SceType::Uint8,
                     }
@@ -45238,12 +45352,19 @@ impl<'a> AlgorithmTypes<'a> {
         // record an algorithm holds.
         let scope = import_type_scope(imports);
         let unions = m.unions();
-        let returned_union = m
+        let returned_unions = m
             .signature
             .return_type
             .as_ref()
-            .and_then(AlgorithmValueType::union_alias);
-        for alias in unions.iter().map(|&(_, alias)| alias).chain(returned_union) {
+            .map(AlgorithmValueType::union_aliases)
+            .unwrap_or_default();
+        let union_lists = m.union_lists();
+        for alias in unions
+            .iter()
+            .chain(union_lists.iter())
+            .map(|&(_, alias)| alias)
+            .chain(returned_unions)
+        {
             refuse_unheld_union(&scope, alias)?;
         }
 

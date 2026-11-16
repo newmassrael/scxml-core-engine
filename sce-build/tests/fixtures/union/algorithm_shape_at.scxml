@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The longest extent of the shape at a position of a list of shapes: the
+     element is copied whole into a union local, read by the checked read of its
+     index, so a position outside the list fails `out-of-range`, and the local is
+     the subject each test of its tag narrows, which the element at an index is
+     not (docs/adr/0099, section 5.2 and "Still open" item 2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shape_at" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:signature>
+    <sce:param name="shapes" type="list&lt;union:Shape&gt;"/>
+    <sce:param name="at" type="uint32"/>
+    <sce:return type="uint16" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="picked" type="union:Shape" init="shapes[at]"/>
+    <sce:if cond="picked.kind === ShapeKind.dot">
+      <sce:return expr="0"/>
+    </sce:if>
+    <sce:if cond="picked.kind === ShapeKind.circle">
+      <sce:return expr="picked.radius"/>
+    </sce:if>
+    <sce:if cond="picked.kind === ShapeKind.rect">
+      <sce:return expr="picked.width &lt; picked.height ? picked.height : picked.width"/>
+    </sce:if>
+  </sce:body>
+</scxml>

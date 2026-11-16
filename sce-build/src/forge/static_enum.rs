@@ -678,6 +678,14 @@ impl AlgorithmWalk<'_, '_> {
                 }
                 Ok(())
             }
+            // A union local copied whole from an element names a value of no
+            // enum; its index is read as any expression is (docs/adr/0099,
+            // section 5.2).
+            AlgorithmStmt::UnionCopied {
+                init,
+                init_spelling,
+                ..
+            } => self.expect(init, init_spelling.as_ref(), &Slot::Named),
             AlgorithmStmt::Assign {
                 target,
                 expr,

@@ -1397,16 +1397,19 @@ impl WrittenType {
     }
 
     /// The type as an algorithm's parameter, return or local holds it: what
-    /// every slot holds ([`Self::slot_view`]), and `union:U` whole
-    /// (docs/adr/0092, section 1.1 item 3, Landing order step 5). A union
-    /// inside a list or an optional value is a composition no algorithm holds
-    /// yet, refused by name as every slot refuses one (docs/adr/0086, section
-    /// 7.3). Which backend lowers an algorithm's union is said where the
-    /// algorithm is rendered
+    /// every slot holds ([`Self::slot_view`]), `union:U` whole (docs/adr/0092,
+    /// section 1.1 item 3, Landing order step 5) and `list<union:U>`, a list of
+    /// such values (docs/adr/0099, "Still open" item 2): read by `len`, by a
+    /// `<sce:foreach>` whose item is a union of its own, and by an index whose
+    /// element a union local takes whole. A union inside an optional value is a
+    /// composition no algorithm holds yet, refused by name as every slot refuses
+    /// one (docs/adr/0086, section 7.3). Which backend lowers an algorithm's
+    /// union is said where the algorithm is rendered
     /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
     pub fn algorithm_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Union { .. } => Ok(self),
+            Self::List { elem, .. } if matches!(**elem, Self::Union { .. }) => Ok(self),
             _ => self.slot_view(),
         }
     }
@@ -6395,10 +6398,12 @@ mod tests {
     }
 
     /// An algorithm's slot holds `union:U` whole (docs/adr/0092, Landing order
-    /// step 5), and a union inside an optional value or a list is still a
-    /// composition no slot holds, refused by the union it stops at.
+    /// step 5) and a list of them (docs/adr/0099, "Still open" item 2), and a
+    /// union inside an optional value is still a composition no slot holds,
+    /// refused by the union it stops at. A statechart's slot holds no list of
+    /// unions.
     #[test]
-    fn an_algorithm_slot_holds_a_union_whole_and_no_union_inside_another_type() {
+    fn an_algorithm_slot_holds_a_union_whole_or_listed_and_no_optional_union() {
         let union = WrittenType::read("union:Shape").unwrap();
         assert!(union.algorithm_view().is_ok());
         assert_eq!(union.union_alias(), Some("Shape"));
@@ -6406,7 +6411,10 @@ mod tests {
         assert_eq!(optional.algorithm_view().unwrap_err().place, "union:Shape");
         assert_eq!(optional.union_alias(), None);
         let listed = WrittenType::read("list<union:Shape>[2]").unwrap();
-        assert_eq!(listed.algorithm_view().unwrap_err().place, "union:Shape");
+        assert!(listed.algorithm_view().is_ok());
+        assert_eq!(listed.union_alias(), None);
+        assert_eq!(listed.union_aliases(), vec!["Shape"]);
+        assert_eq!(listed.slot_view().unwrap_err().place, "union:Shape");
         // Every type a slot holds, an algorithm's slot holds too.
         assert!(WrittenType::read("record:Item")
             .unwrap()

@@ -403,7 +403,8 @@ impl Statement for AlgorithmStmt {
             AlgorithmStmt::Var { name, .. }
             | AlgorithmStmt::RecordVar { name, .. }
             | AlgorithmStmt::RecordFromCall { name, .. }
-            | AlgorithmStmt::UnionVar { name, .. } => into.write(name),
+            | AlgorithmStmt::UnionVar { name, .. }
+            | AlgorithmStmt::UnionCopied { name, .. } => into.write(name),
             AlgorithmStmt::If { .. }
             | AlgorithmStmt::While { .. }
             | AlgorithmStmt::Foreach { .. }
@@ -429,6 +430,7 @@ impl Statement for AlgorithmStmt {
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
             | AlgorithmStmt::UnionVar { .. }
+            | AlgorithmStmt::UnionCopied { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -900,6 +902,21 @@ impl AlgorithmWalk<'_, '_> {
                 init_spelling,
                 ..
             } => self.judge(init, init_spelling.as_ref(), hint, proven),
+            // A union local copied whole takes an element of a list of its own
+            // union at an index (docs/adr/0099, section 5.2), whose index is
+            // judged as any expression is.
+            AlgorithmStmt::UnionCopied {
+                alias,
+                init,
+                init_spelling,
+                ..
+            } => {
+                let ctx = self.ctx.proving(proven.clone());
+                crate::forge::expr::judge_union_element_copy(init, alias, &ctx).map_err(
+                    |refusal| ExpressionSite::new(init, init_spelling.as_ref()).place(refusal),
+                )?;
+                self.judge(init, init_spelling.as_ref(), hint, proven)
+            }
             // A union local is built whole: the case its tag names, and each
             // field of that case's record held to the type the record declares
             // it with (docs/adr/0092, section 6.1 item 5).
@@ -1005,6 +1022,10 @@ impl AlgorithmWalk<'_, '_> {
                 let slot = self.ctx.lookup_var(target);
                 self.judge(expr, expr_spelling.as_ref(), Expected::Slot(slot), proven)
             }
+            // A union is appended whole by the name that holds it, to a list of
+            // its union, which the lowering of the append holds it to
+            // (docs/adr/0099, "Still open" item 2).
+            AlgorithmStmt::Append { expr, .. } if self.unions.holds(expr.trim()) => Ok(()),
             AlgorithmStmt::Append {
                 expr,
                 expr_spelling,
@@ -1143,8 +1164,9 @@ impl AlgorithmWalk<'_, '_> {
                 spelling,
                 format!(
                     "`{}`, a union, as a value (a union is read through its tag and the fields \
-                     of its cases, and is taken whole only by a <sce:return> of its type and by \
-                     a parameter of a called algorithm that takes its union)",
+                     of its cases, and is taken whole only by a <sce:return> of its type, by \
+                     a parameter of a called algorithm that takes its union and by an \
+                     <sce:append> to a list of its union)",
                     expr.trim()
                 ),
             ));

@@ -732,6 +732,16 @@ impl Body<'_> {
                 }
                 format!("var {name} = {{{}}};", members.join(", "))
             }
+            // A union copied whole from an element of a list of its union at an
+            // index (docs/adr/0099, section 5.2): the library's checked read,
+            // which throws for an index outside the list before the local is
+            // declared. The object is the list's own, which no algorithm writes,
+            // as a union handed to a call is ("Decided while landing step 5"
+            // item 3 of docs/adr/0092).
+            AlgorithmStmt::UnionCopied { name, init, .. } => {
+                check_name(self.algorithm, name)?;
+                format!("var {name} = {};", lowered(init, InferredType::Unknown)?)
+            }
             // A record received whole from a call.
             AlgorithmStmt::RecordFromCall {
                 name, alias, init, ..

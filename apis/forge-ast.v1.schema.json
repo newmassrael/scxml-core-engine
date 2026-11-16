@@ -605,6 +605,33 @@
           "type": "object"
         },
         {
+          "description": "`<sce:var name=... type=\"union:<alias>\" init=\"xs[i]\"/>` — a union local copied whole from the element of a list of its union at an index (docs/adr/0099, section 5.2 and \"Still open\" item 2): the element is read by the backend's checked read, so an index outside the list fails `out-of-range` and declares nothing, and the local is the subject a test of its tag narrows, which the element itself is not.\n\nA variant of its own, not an `init` on [`Self::UnionVar`], as [`Self::RecordFromCall`] is beside [`Self::RecordVar`]: every reader of a built union's `<sce:set>`s would otherwise walk an empty list here.",
+          "properties": {
+            "init": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "union_copied"
+              ],
+              "type": "string"
+            },
+            "union": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "init",
+            "name",
+            "stmt",
+            "union"
+          ],
+          "type": "object"
+        },
+        {
           "description": "`<sce:assign target=\"lvalue\" expr=\"...\"/>` — mutates an existing l-value. SCE's `validate_lvalue_shape` accepts an identifier or a one-level member access only; a computed index (`buf[i]`) is rejected because it is not a statically-known storage location. Byte buffers are built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never index writes. Stored as a raw string and validated by the parser.",
           "properties": {
             "expr": {
