@@ -152,6 +152,12 @@ pub struct Produced {
     pub provenance: Provenance,
     /// The action key of the generation.
     pub key: Digest,
+    /// The Merkle root of the files the generation read, the action's
+    /// `input_root_digest`.
+    pub input_root: Digest,
+    /// The digest of each file the generation read, by its path relative to
+    /// the checkout's root, as the key took it.
+    pub inputs: BTreeMap<String, Digest>,
     /// The files the generation read, relative to the checkout's root: what
     /// a build that runs it has to watch to know when to run it again.
     pub reads: BTreeSet<String>,
@@ -225,10 +231,13 @@ struct HashedFile {
     digest: Digest,
 }
 
-/// A stage-2 key, and the encoded directories of the input root it names.
+/// A stage-2 key, the input root it names, the encoded directories that root
+/// is made of, and the digest each file of it had when the key was taken.
 struct KeyedInputs {
     key: Digest,
+    input_root: Digest,
     directories: Vec<(Digest, Vec<u8>)>,
+    inputs: BTreeMap<String, Digest>,
 }
 
 /// The generator of one checkout, and the files it has hashed.
@@ -395,9 +404,15 @@ impl Generator {
             })?;
             salt.push_str(&format!("\n!{tool}={version}"));
         }
+        let inputs = files
+            .into_iter()
+            .map(|(path, file)| (path, file.digest))
+            .collect();
         Ok(Some(KeyedInputs {
             key: self.action(command, root.digest.clone(), salt.into_bytes()),
+            input_root: root.digest,
             directories: root.directories,
+            inputs,
         }))
     }
 
@@ -423,7 +438,12 @@ impl Generator {
             return Ok(None);
         };
         let reads = ReadSet::parse(&bytes, &read_set_digest)?;
-        let Some(KeyedInputs { key, .. }) = self.generation_key(generation, command, &reads)?
+        let Some(KeyedInputs {
+            key,
+            input_root,
+            inputs,
+            ..
+        }) = self.generation_key(generation, command, &reads)?
         else {
             return Ok(None);
         };
@@ -458,6 +478,8 @@ impl Generator {
             files,
             provenance: Provenance::Hit,
             key,
+            input_root,
+            inputs,
             reads: reads.present,
             absent: reads.absent,
         }))
@@ -544,8 +566,12 @@ impl Generator {
             );
         }
 
-        let Some(KeyedInputs { key, directories }) =
-            self.generation_key(generation, command_digest, &reads)?
+        let Some(KeyedInputs {
+            key,
+            input_root,
+            directories,
+            inputs,
+        }) = self.generation_key(generation, command_digest, &reads)?
         else {
             return Err(GenerationError::ChangedDuringRun {
                 arguments: shown,
@@ -582,6 +608,8 @@ impl Generator {
             files,
             provenance: Provenance::Ran,
             key,
+            input_root,
+            inputs,
             reads: reads.present,
             absent: reads.absent,
         })

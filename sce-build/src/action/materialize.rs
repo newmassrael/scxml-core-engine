@@ -40,6 +40,85 @@ pub struct Report {
     /// Every file a generation of the tree looked for and did not find,
     /// relative to the checkout's root.
     pub absent: BTreeSet<String>,
+    /// The digest of each file a generation of the tree read, by its path
+    /// relative to the checkout's root.
+    pub inputs: BTreeMap<String, Digest>,
+    /// Every action the tree was made by, generations first in the order the
+    /// manifest declares them, then the format passes.
+    pub actions: Vec<ActionRecord>,
+    /// The arguments of each generation whose member the backend declined
+    /// by name (`skip_unsupported`), so that no file of the tree is its.
+    pub declined: Vec<String>,
+}
+
+/// One action of a materialization, by its key and the roots of what it read
+/// and what it wrote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActionRecord {
+    pub kind: ActionKind,
+    /// The action key.
+    pub key: Digest,
+    /// The Merkle root of the action's inputs.
+    pub input_root: Digest,
+    /// The Merkle root of the files the action produced, by their paths
+    /// relative to its output directory: a generation's own output, or the
+    /// files a format pass rewrote, relative to the directory it formatted.
+    pub output_root: Digest,
+}
+
+/// What an action of a materialization was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ActionKind {
+    /// A generator invocation, by its arguments as the manifest declares
+    /// them (the output directory spelled `{out}`).
+    Generation { arguments: Vec<String> },
+    /// A format pass of `tool` over `directory`, relative to the directory
+    /// the tree was written into.
+    Format {
+        tool: &'static str,
+        directory: String,
+    },
+}
+
+/// Add the digests of `read` to `into`. A path `into` holds already with
+/// another digest is returned: two generations of one materialization read
+/// it with different bytes, so the tree is of no one state of the checkout.
+fn record_inputs(
+    into: &mut BTreeMap<String, Digest>,
+    read: &BTreeMap<String, Digest>,
+) -> Result<(), String> {
+    for (path, digest) in read {
+        match into.get(path) {
+            Some(held) if held != digest => return Err(path.clone()),
+            Some(_) => {}
+            None => {
+                into.insert(path.clone(), digest.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The Merkle root of `files`, each a digest and whether it is executable,
+/// by its path with `/` between components.
+fn root_of<'a>(
+    files: impl IntoIterator<Item = (&'a String, &'a Digest, bool)>,
+) -> Result<Digest, String> {
+    let files: BTreeMap<String, InputFile> = files
+        .into_iter()
+        .map(|(path, digest, is_executable)| {
+            (
+                path.clone(),
+                InputFile {
+                    digest: digest.clone(),
+                    is_executable,
+                },
+            )
+        })
+        .collect();
+    input_root(&files)
+        .map(|root| root.digest)
+        .map_err(|e| e.to_string())
 }
 
 /// Why a tree was not written.
@@ -64,6 +143,11 @@ pub enum MaterializeError {
     },
     #[error("tree `{tree}`: the store lost {digest} between finding and reading it")]
     Lost { tree: String, digest: Digest },
+    #[error(
+        "tree `{tree}`: {path} changed between two generations that read it, so the tree is \
+         of no one state of the checkout; materialize it again"
+    )]
+    InputMoved { tree: String, path: String },
     #[error("tree `{tree}`: {detail}")]
     Invalid { tree: String, detail: String },
     #[error("tree `{tree}`: {tool} failed on {dir}:\n{stderr}")]
@@ -101,6 +185,7 @@ pub fn materialize(
                 ..
             }) if placed_generation.skip_unsupported => {
                 report.runs += 1;
+                report.declined.push(shown);
                 continue;
             }
             Err(source) => {
@@ -116,6 +201,25 @@ pub fn materialize(
         }
         report.reads.extend(produced.reads.iter().cloned());
         report.absent.extend(produced.absent.iter().cloned());
+        record_inputs(&mut report.inputs, &produced.inputs)
+            .map_err(|path| MaterializeError::InputMoved { tree: name(), path })?;
+        report.actions.push(ActionRecord {
+            kind: ActionKind::Generation {
+                arguments: placed_generation.generation.arguments.clone(),
+            },
+            key: produced.key.clone(),
+            input_root: produced.input_root.clone(),
+            output_root: root_of(
+                produced
+                    .files
+                    .iter()
+                    .map(|(path, file)| (path, &file.digest, file.is_executable)),
+            )
+            .map_err(|detail| MaterializeError::Invalid {
+                tree: name(),
+                detail,
+            })?,
+        });
         for (relative, file) in &produced.files {
             if !kept(&placed_generation.keep, relative) {
                 continue;
@@ -195,16 +299,30 @@ pub fn materialize(
                 }
             })?;
             for dir in dirs {
-                let provenance = match format.tool {
-                    FormatTool::Rustfmt => formatter
-                        .rustfmt(store, &into.join(&dir))
-                        .map_err(|e| e.in_tree(&tree.name, &dir))?,
+                let (tool, pass) = match format.tool {
+                    FormatTool::Rustfmt => (
+                        "rustfmt",
+                        formatter
+                            .rustfmt(store, &into.join(&dir))
+                            .map_err(|e| e.in_tree(&tree.name, &dir))?,
+                    ),
                 };
-                match provenance {
-                    Some(Provenance::Hit) => report.hits += 1,
-                    Some(Provenance::Ran) => report.runs += 1,
-                    None => {}
+                let Some(pass) = pass else {
+                    continue;
+                };
+                match pass.provenance {
+                    Provenance::Hit => report.hits += 1,
+                    Provenance::Ran => report.runs += 1,
                 }
+                report.actions.push(ActionRecord {
+                    kind: ActionKind::Format {
+                        tool,
+                        directory: dir,
+                    },
+                    key: pass.key,
+                    input_root: pass.input_root,
+                    output_root: pass.output_root,
+                });
             }
         }
     }
@@ -274,6 +392,15 @@ impl FormatError {
     }
 }
 
+/// A format pass that had files to format: where its result came from, its
+/// key, and the roots of what it read and wrote.
+struct FormatPass {
+    provenance: Provenance,
+    key: Digest,
+    input_root: Digest,
+    output_root: Digest,
+}
+
 /// The formatters of the checkout, each named by its version and settings.
 struct Formatter {
     root: PathBuf,
@@ -338,7 +465,7 @@ impl Formatter {
         &self,
         store: &dyn ContentStore,
         dir: &Path,
-    ) -> Result<Option<Provenance>, FormatError> {
+    ) -> Result<Option<FormatPass>, FormatError> {
         let (version, edition) = self.rustfmt_settings()?.clone();
         let all = rust_files_under(dir)?;
         let names: Vec<String> = all.iter().filter(|p| !p.contains('/')).cloned().collect();
@@ -405,10 +532,17 @@ impl Formatter {
             let complete = formatted.len() == all.len()
                 && formatted.iter().all(|(path, _)| all.contains(path));
             if complete {
+                let mut written = Vec::new();
                 for (path, bytes) in formatted {
                     write_file(&dir.join(&path), &bytes, false)?;
+                    written.push((path, Digest::of(&bytes)));
                 }
-                return Ok(Some(Provenance::Hit));
+                return Ok(Some(FormatPass {
+                    provenance: Provenance::Hit,
+                    output_root: format_output_root(&written)?,
+                    key,
+                    input_root: root.digest,
+                }));
             }
         }
 
@@ -423,8 +557,10 @@ impl Formatter {
             });
         }
         let mut output_files = Vec::new();
+        let mut written = Vec::new();
         for path in &all {
             let digest = store.write_blob(&fs::read(dir.join(path))?)?;
+            written.push((path.clone(), digest.clone()));
             output_files.push(OutputFile {
                 path: path.clone(),
                 digest: Some(digest),
@@ -442,8 +578,23 @@ impl Formatter {
                 ..ActionResult::default()
             },
         )?;
-        Ok(Some(Provenance::Ran))
+        Ok(Some(FormatPass {
+            provenance: Provenance::Ran,
+            output_root: format_output_root(&written)?,
+            key,
+            input_root: root.digest,
+        }))
     }
+}
+
+/// The Merkle root of the files a format pass wrote, none executable.
+fn format_output_root(written: &[(String, Digest)]) -> Result<Digest, FormatError> {
+    root_of(written.iter().map(|(path, digest)| (path, digest, false))).map_err(|stderr| {
+        FormatError::Tool {
+            tool: "rustfmt",
+            stderr,
+        }
+    })
 }
 
 /// Remove from `into` every generated file under `tree`'s roots that
@@ -661,6 +812,75 @@ pub fn is_generated_file(path: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two generations that read one file read the same bytes, or the tree
+    /// is refused: its provenance could name only one of them.
+    #[test]
+    fn a_file_two_generations_read_with_different_bytes_is_named() {
+        let mut held = BTreeMap::new();
+        let first: BTreeMap<String, Digest> = [
+            ("t/a.jinja2".to_string(), Digest::of(b"a")),
+            ("x/doc.scxml".to_string(), Digest::of(b"doc")),
+        ]
+        .into_iter()
+        .collect();
+        record_inputs(&mut held, &first).unwrap();
+        let same: BTreeMap<String, Digest> = [("t/a.jinja2".to_string(), Digest::of(b"a"))]
+            .into_iter()
+            .collect();
+        record_inputs(&mut held, &same).unwrap();
+        assert_eq!(held, first);
+        let moved: BTreeMap<String, Digest> = [("x/doc.scxml".to_string(), Digest::of(b"doc!"))]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            record_inputs(&mut held, &moved),
+            Err("x/doc.scxml".to_string())
+        );
+        assert_eq!(held, first, "the moved digest replaced the first");
+    }
+
+    /// An action's output root is the REAPI Merkle root of its files: the
+    /// same files give one root whatever their order, and a changed byte or
+    /// executable bit another.
+    #[test]
+    fn an_output_root_is_the_merkle_root_of_the_files() {
+        let a = "gen/a.rs".to_string();
+        let b = "b.rs".to_string();
+        let (da, db) = (Digest::of(b"a"), Digest::of(b"b"));
+        let one = root_of([(&a, &da, false), (&b, &db, false)]).unwrap();
+        let other_order = root_of([(&b, &db, false), (&a, &da, false)]).unwrap();
+        assert_eq!(one, other_order);
+        let expected = input_root(
+            &[
+                (
+                    a.clone(),
+                    InputFile {
+                        digest: da.clone(),
+                        is_executable: false,
+                    },
+                ),
+                (
+                    b.clone(),
+                    InputFile {
+                        digest: db.clone(),
+                        is_executable: false,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        )
+        .unwrap()
+        .digest;
+        assert_eq!(one, expected);
+        let edited = Digest::of(b"a!");
+        assert_ne!(
+            one,
+            root_of([(&a, &edited, false), (&b, &db, false)]).unwrap()
+        );
+        assert_ne!(one, root_of([(&a, &da, true), (&b, &db, false)]).unwrap());
+    }
 
     #[test]
     fn a_keep_pattern_matches_component_by_component() {
