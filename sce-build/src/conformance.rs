@@ -3891,12 +3891,14 @@ fn codec_case_rows<'r>(
 }
 
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
-/// whose value is `{Codec}Parts` (docs/adr/0058 §4), or the C++ one, whose
-/// value its constructor makes (docs/adr/0081 step 4).
+/// whose value is `{Codec}Parts` (docs/adr/0058 §4), the C++ one, whose value
+/// its constructor makes (docs/adr/0081 step 4), or the Python one, whose value
+/// its dataclass's constructor makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CasePrinter {
     Rust,
     Cpp,
+    Python,
 }
 
 impl CasePrinter {
@@ -3905,9 +3907,9 @@ impl CasePrinter {
     /// codec the C++ backend does not print (`printed`) is refused by
     /// name: a printer runs every case of every shape it prints
     /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
-    /// constructor makes from the case. A Python codec printed from its plan
-    /// runs its `cases` too, without the elements its encode derives, until
-    /// the Python harness writes a case as a value of its source.
+    /// constructor makes from the case. Python prints a codec one landing at a
+    /// time (§6): a codec it prints runs its cases as a value of its source,
+    /// and one it does not runs its `cases` on the template's encode.
     fn of(
         printed: bool,
         language: Language,
@@ -3924,6 +3926,7 @@ impl CasePrinter {
                      prints from its plan"
                 ))
             }
+            Language::Python if printed => Some(CasePrinter::Python),
             // Their encodes do not print the plan: they run the `cases`.
             Language::Kotlin
             | Language::Go
@@ -3938,6 +3941,7 @@ impl CasePrinter {
         match self {
             CasePrinter::Rust => Language::Rust,
             CasePrinter::Cpp => Language::Cpp,
+            CasePrinter::Python => Language::Python,
         }
     }
 }
@@ -4000,6 +4004,7 @@ fn fold_case_rows(
                 type_name: type_name.clone(),
             };
             let cpp_path = crate::forge::generator::CppCodecPath::new(type_name);
+            let python_path = crate::forge::generator::PythonCodecPath::new(&fixture.name);
             rows.iter()
                 .enumerate()
                 .map(|(i, row)| {
@@ -4043,6 +4048,29 @@ fn fold_case_rows(
                                 inputs: case.inputs,
                                 encode_inputs: case.encode_inputs,
                                 note: crate::filters::escape_cpp(note.to_string()),
+                            }
+                        }
+                        CasePrinter::Python => {
+                            let case = crate::forge::generator::python_source_case(
+                                plan,
+                                &python_path,
+                                source,
+                                inputs,
+                                tag,
+                                &mut held,
+                            )
+                            .map_err(|e| format!("{at}: {e}"))?;
+                            // The Python printer prints no codec that takes a
+                            // flag input or a caller's tag, so a decode and an
+                            // encode are handed nothing after the cursor or
+                            // the sink, and the value needs no binding.
+                            PrintedCase {
+                                bindings: Vec::new(),
+                                literal: case.literal,
+                                checks: case.checks,
+                                inputs: Vec::new(),
+                                encode_inputs: Vec::new(),
+                                note: note.to_string(),
                             }
                         }
                         CasePrinter::Rust => {
@@ -5253,6 +5281,70 @@ mod tests {
             refused.contains("the C++ backend refuses this codec"),
             "{refused}"
         );
+    }
+
+    /// A byte case of a codec the Python backend prints from its plan is
+    /// written as a value its dataclass's constructor makes, with no element
+    /// the encode derives, and one of a codec it does not print reaches the
+    /// harness as no case (docs/adr/0081 §5, §6).
+    ///
+    /// Turns red where `CasePrinter::of` stops answering Python for a printed
+    /// codec, or `python_source::source_case` states the derived length or
+    /// spells a byte string as other than `bytes`.
+    #[test]
+    fn a_source_case_of_a_printed_python_codec_is_a_value_of_its_dataclass() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_length_ref")
+            .expect("the catalog holds codec_length_ref");
+        let reference = serde_json::json!({ "codecs": { "codec_length_ref": { "sources": [{
+            "source": { "msgId": 1, "payload": [10, 20, 30] },
+            "encoded": [1, 3, 10, 20, 30],
+            "note": "three bytes"
+        }] } } });
+        let fold = |printed: bool| {
+            let mut fixture = fixture.clone();
+            if let FixtureSpec::Codec {
+                printed: by_plan, ..
+            } = &mut fixture.spec
+            {
+                *by_plan = printed;
+            }
+            let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+            fold_source_cases(
+                &mut value,
+                &reference,
+                &fixture,
+                Language::Python,
+                &resource_dir,
+                &reference_path,
+            )
+            .map(|folded| (folded, value))
+        };
+
+        let (folded, value) = fold(true).expect("Python states it");
+        assert!(folded);
+        assert_eq!(
+            value["sources"][0]["literal"],
+            "codec_length_ref.CodecLengthRef(msg_id=1, payload=bytes([10, 20, 30]))"
+        );
+        assert_eq!(
+            value["sources"][0]["checks"],
+            serde_json::json!([
+                { "element": "msgId", "holds": "decoded.msg_id == value.msg_id" },
+                { "element": "payload", "holds": "decoded.payload == value.payload" },
+            ])
+        );
+
+        let (folded, value) = fold(false).expect("a codec on the template is handed nothing");
+        assert!(!folded && value.get("sources").is_none());
     }
 
     /// A refused case (docs/adr/0081 §5) reaches the Rust and the C++ harness

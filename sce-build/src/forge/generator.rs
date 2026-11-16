@@ -64,6 +64,13 @@ pub(crate) use cpp_source::source_case::{
     source_case as cpp_source_case, CodecPath as CppCodecPath,
 };
 
+/// A byte case of the Python conformance harness, its source a value the
+/// printed dataclass's constructor makes (docs/adr/0081 §5). See
+/// [`python_source::source_case::source_case`].
+pub(crate) use python_source::source_case::{
+    source_case as python_source_case, CodecPath as PythonCodecPath,
+};
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(

@@ -79,6 +79,46 @@
 {% endfor %}
 {% endif %}
 
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5), the same cases the Rust and C++ fragments run, for a
+   codec the Python backend prints from its plan: each `source` is the printed
+   dataclass, made by its constructor from the case, written by the generator
+   from the codec's plan, and its bytes were computed by an independent model.
+   The value is encoded by the module's `encode_source` and compared with the
+   bytes (law 4 of docs/adr/0058 §5), and the bytes are decoded and what the
+   decode presents compared with the value, element by element (law 1).
+   Independent of `oracle_eligible`, which speaks of the `cases`. #}
+{% for s in f.sources %}
+        from sce_forge_runtime.codec import BytearraySink as _BytearraySink, SceCursor as _SceCursor
+        value = {{ s.literal }}
+        _encoded = bytearray()
+        {{ f.name }}.encode_source(value, _BytearraySink(_encoded))
+        _expected = bytes([{{ s.encoded | join(", ") }}])
+        self.assertEqual(
+            bytes(_encoded),
+            _expected,
+            "{{ f.name }} source {{ loop.index0 }}: {{ s.note }}",
+        )
+        _cursor = _SceCursor(_expected)
+        decoded = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(_cursor)
+        self.assertIsNotNone(
+            decoded,
+            "{{ f.name }} source {{ loop.index0 }}: decode refused: {{ s.note }}",
+        )
+        if decoded is not None:
+            self.assertEqual(
+                _cursor.remaining(),
+                0,
+                "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread",
+            )
+{% for c in s.checks %}
+            self.assertTrue(
+                {{ c.holds }},
+                "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}",
+            )
+{% endfor %}
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. The generated Python `decode` funnels every `CodecError` through
    one `except` into `None`, so the failure is raised by name inside the

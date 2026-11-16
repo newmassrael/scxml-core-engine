@@ -938,9 +938,12 @@ old encode, the old encode and its templates are removed in the same landing.
 
    The harness runs each printed codec's `cases`, made and compared without the elements the encode derives, as the
    C++ harness did until its thirty-seventh landing: the fixture's `printed` (renamed from `cpp_printed`, as it now
-   says whether the harness language prints the codec, C++ or Python) says so. Writing a case's `source` as a value
-   of the Python source, which §5 asks of a printer, waits for the Python case printer, which reads the notation as
-   `rust_source::source_case` does. `a_python_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a
+   says whether the harness language prints the codec, C++ or Python) says so. The Python case printer
+   (`python_source::source_case`) writes each `source` of a printed codec as its dataclass made by its constructor,
+   reading the notation where the Rust and C++ cases read it; the harness encodes it with the module's
+   `encode_source`, compares the bytes, decodes them and compares each element (§5). It states only the shapes the
+   Python printer prints and refuses any other by name, and a refused case waits for the first Python encode that
+   refuses, whose runtime then names each refusal (`EncodeFailure::symbol`). `a_python_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a
    printed codec's module, that every codec of the resources is printed exactly where the printer lowers every form
    of it, and that the others keep the template's encode.
 5. Swift, when its codec lowers what the plan holds.

@@ -27,6 +27,8 @@ use crate::forge::encode_plan::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) mod source_case;
+
 /// The first form of `plan` the Python printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
 pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
