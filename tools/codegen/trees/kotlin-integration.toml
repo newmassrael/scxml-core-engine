@@ -63,10 +63,14 @@ keep = ["*Sm.kt"]
 # - external_chain_is_bounded holds each engine to ARCHITECTURE.md
 #   "External-Event Budget", a driver at a time;
 # - parallel_region_root_external_domain, the external transition of a
-#   region root, has a driver on six of the seven channels.
+#   region root, has a driver on six of the seven channels;
+# - a_static_child_declares_its_data_with_a_handed_value holds docs/adr/0098
+#   for a `datamodel="sce-static"` child, whose handed values are typed, which
+#   the script-engine fixture of that ADR does not reach.
 [[generation]]
 each = { list = [
     "a_child_timer_is_a_deadline_of_its_parent",
+    "a_static_child_declares_its_data_with_a_handed_value",
     "external_chain_is_bounded",
     "parallel_region_root_external_domain",
 ], as = "document" }

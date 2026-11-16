@@ -408,19 +408,35 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     }
 
 {# By parts of at most `kotlin_method_items` variables, for the reason a save
-   is (dispatch.kt.jinja2). #}
-{% set seeded_parts = static_fields | selectattr('seeded') | list | batch(kotlin_method_items) | list %}
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+   is (dispatch.kt.jinja2), called in document order. The variables are
+   declared again in that order, each initial value reading the properties
+   declared before it as the property initializers do: a variable handed a
+   value takes it, every other one its own initial value, which can neither
+   fail nor act (one that could fail is refused where it is written), so
+   declaring it a second time is not observable. A module parameter keeps what
+   its component filled. #}
+{% set declared_parts = static_fields | rejectattr('module_parameter') | list | batch(kotlin_method_items) | list %}
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
-{% for part in seeded_parts %}
+{% for part in declared_parts %}
         acceptParamsPart{{ loop.index0 }}(params)
 {% endfor %}
     }
-{% for part in seeded_parts %}
+{% for part in declared_parts %}
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart{{ loop.index0 }}(params: InvokeParams) {
 {% for field in part %}
-        params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
+{% if field.seeded %}
+        {{ field.name }} = params.{{ field.id | to_camel_case }} ?: ({{ field.init }})
+{% else %}
+        {{ field.name }} = {{ field.init }}
+{% endif %}
 {% endfor %}
     }
 {% endfor %}
