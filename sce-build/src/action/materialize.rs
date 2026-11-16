@@ -34,6 +34,12 @@ pub struct Report {
     pub hits: usize,
     /// Generations and format passes that ran.
     pub runs: usize,
+    /// Every file a generation of the tree read, relative to the checkout's
+    /// root ([`super::generation::Produced::reads`]).
+    pub reads: BTreeSet<String>,
+    /// Every file a generation of the tree looked for and did not find,
+    /// relative to the checkout's root.
+    pub absent: BTreeSet<String>,
 }
 
 /// Why a tree was not written.
@@ -108,6 +114,8 @@ pub fn materialize(
             Provenance::Hit => report.hits += 1,
             Provenance::Ran => report.runs += 1,
         }
+        report.reads.extend(produced.reads.iter().cloned());
+        report.absent.extend(produced.absent.iter().cloned());
         for (relative, file) in &produced.files {
             if !kept(&placed_generation.keep, relative) {
                 continue;
