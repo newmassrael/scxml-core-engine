@@ -193,7 +193,7 @@ fn a_byte_string_is_held_to_its_bound_and_its_length_is_derived() {
     holds(
         "codec_length_ref",
         &text,
-        &["func (s *CodecLengthRef) WireLen() uint8 {\n\treturn uint8(s.payload.Len())\n}\n"],
+        &["func (s *CodecLengthRef) WireLen() uint8 {\n\treturn uint8(s.Payload().Len())\n}\n"],
     );
     holds_none(
         "codec_length_ref",
@@ -341,7 +341,7 @@ fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
             "\tif src.Beta().Len() != src.Alpha().Len() {\n\t\treturn codec.ErrInconsistentSource\n\t}\n",
             "\tif src.Alpha().Len() > 0xFF {\n\t\treturn codec.ErrLengthOutOfRange\n\t}\n",
             "\t_dSpanLen := uint8(src.Alpha().Len())\n",
-            "func (s *CodecLengthShared) WireSpanLen() uint8 {\n\treturn uint8(s.alpha.Len())\n}\n",
+            "func (s *CodecLengthShared) WireSpanLen() uint8 {\n\treturn uint8(s.Alpha().Len())\n}\n",
         ],
     );
     holds_none(
@@ -369,7 +369,7 @@ fn a_length_of_gated_content_is_answered_as_the_frame_carries_it() {
         &text,
         &[
             "func (s *CodecPresentIfString) WireTextLen() optional.Of[uint8] {\n\
-           \tif _v, ok := s.text.Get(); ok {\n\
+           \tif _v, ok := s.Text().Get(); ok {\n\
            \t\treturn optional.Some(uint8(_v.Len()))\n\
            \t}\n\
            \treturn optional.None[uint8]()\n\
@@ -382,17 +382,65 @@ fn a_length_of_gated_content_is_answered_as_the_frame_carries_it() {
         "codec_length_stated",
         &text,
         &["func (s *CodecLengthStated) WireSpanLen() uint8 {\n\
-           \tif _v, ok := s.alpha.Get(); ok {\n\
+           \tif _v, ok := s.Alpha().Get(); ok {\n\
            \t\treturn uint8(_v.Len())\n\
            \t}\n\
-           \tif _v, ok := s.beta.Get(); ok {\n\
+           \tif _v, ok := s.Beta().Get(); ok {\n\
            \t\treturn uint8(_v.Len())\n\
            \t}\n\
-           \tif _s, ok := s.spanLen.Get(); ok {\n\
+           \tif _s, ok := s.SpanLen().Get(); ok {\n\
            \t\treturn _s\n\
            \t}\n\
            \treturn 0\n\
            }\n"],
+    );
+}
+
+/// A body is presented as its codec's source interface and held as one,
+/// written by its codec's own `EncodeSource`; a body whose encode can refuse
+/// is first counted over a sink that keeps nothing, which returns its refusal
+/// before the first byte and gives the length that measures it.
+///
+/// Turns red where `go_source::render` presents a body as its codec's value
+/// rather than its source, where the zero value presents no body, where
+/// `count_body` stops counting over `codec.CountingSink`, where the encoded
+/// length is read off the source, or where the decode's literal holds the
+/// value it read rather than its address (`made`).
+#[test]
+fn a_body_is_presented_as_its_source_and_its_encoded_length_is_counted() {
+    assert!(unlowered("codec_length_shared").is_empty());
+    assert!(unlowered("codec_encoded_length_checked").is_empty());
+    let text = resource_go("codec_encoded_length_checked");
+    holds(
+        "codec_encoded_length_checked",
+        &text,
+        &[
+            "\tInner() codec_length_shared.CodecLengthSharedSource\n",
+            "func (s *CodecEncodedLengthChecked) Inner() codec_length_shared.CodecLengthSharedSource {\n\
+             \tif s.inner == nil {\n\
+             \t\treturn &codec_length_shared.CodecLengthShared{}\n\
+             \t}\n\
+             \treturn s.inner\n\
+             }\n",
+            "\tvar _kInner codec.CountingSink\n\
+             \tif err := codec_length_shared.EncodeSource(src.Inner(), &_kInner); err != nil {\n\
+             \t\treturn err\n\
+             \t}\n",
+            "uint16(_kInner.Position())",
+            "\tif err := codec_length_shared.EncodeSource(src.Inner(), w); err != nil {\n",
+            "\t\tinner: &Inner,\n",
+            "func (s *CodecEncodedLengthChecked) WireInnerSize() uint16 {\n\
+             \tvar _k codec.CountingSink\n\
+             \t_ = codec_length_shared.EncodeSource(s.Inner(), &_k)\n\
+             \treturn uint16(_k.Position())\n\
+             }\n",
+            "the refusal of a body it holds",
+        ],
+    );
+    holds_none(
+        "codec_encoded_length_checked",
+        &text,
+        &["src.InnerSize()", "\tinnerSize uint16\n"],
     );
 }
 
@@ -634,6 +682,8 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_present_if_string",
         "codec_present_if_tail",
         "codec_length_shared",
+        "codec_length_stated",
+        "codec_encoded_length_checked",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

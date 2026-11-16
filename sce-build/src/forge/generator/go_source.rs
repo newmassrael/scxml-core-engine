@@ -25,6 +25,14 @@
 //! element's presence says, and folds it into its carrier in place of the
 //! bits the value presents.
 //!
+//! A body of another printed codec is presented, held and made as that
+//! codec's source interface, so a value is made of any source of the body, and
+//! is written by that codec's own `EncodeSource`. The encode counts a body
+//! over the runtime's `codec.CountingSink` where a length measures its frame
+//! or where its encode can refuse, before the first byte. A number the encode
+//! derives into a field is answered by a method of the value,
+//! `Wire{Field}`, as the frame carries it.
+//!
 //! An encode that can refuse returns the refusal the plan's totality names,
 //! the runtime's sentinel of its name (`codec.ErrPresentIfMismatch`,
 //! `codec.ErrInconsistentSource`, `codec.ErrLengthOutOfRange`), before it
@@ -39,41 +47,53 @@ use super::*;
 use crate::forge::codec_roles::ElementId;
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, Measure, Measured, Narrow,
-    Number, NumberInto, Offset, Presence, PresenceFlag, Value, Write,
+    Absent, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, HandedFrom, Measure, Measured,
+    Narrow, Number, NumberInto, Offset, Presence, PresenceFlag, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The first form of `plan` the Go printer does not print, as the clause that
 /// names it, or `None` where it prints the codec whole.
-pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
-    unlowered_forms(plan).into_iter().next()
+pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
+    unlowered_forms(plan, imports).into_iter().next()
 }
 
 /// Every form of `plan` the Go printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets,
-/// enums, byte strings and texts, each always there or decided by a gate on a
-/// flag of the codec's own carriers or on an input the encode is handed, the
-/// integers written whole, in bytes they share with other fields, or as a
-/// variable-length integer of 16, 32 or 64 bits, and the byte strings and
-/// texts written to the end of the frame or by a length; whose every derived
-/// element is a length of byte strings or texts, held in a field or in a flag
-/// of a carrier the value presents, its `sce:length-arith` never taking it
-/// below zero, or a flag the presence of one element says; and whose encode
-/// refuses what its totality names of these. A CBOR map and a content-line
-/// component keep their own templates' encodes.
-pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
+/// enums, byte strings, texts and bodies of codecs it prints, each always
+/// there or decided by a gate on a flag of the codec's own carriers or on an
+/// input the encode is handed, the integers written whole, in bytes they share
+/// with other fields, or as a variable-length integer of 16, 32 or 64 bits,
+/// the byte strings and texts written to the end of the frame or by a length,
+/// and a body handed each flag input it does not say from a carrier or an
+/// input of this codec's; whose every derived element is a length of byte
+/// strings or texts or the encoded length of a body, held in a field or in a
+/// flag of a carrier the value presents, its `sce:length-arith` never taking
+/// it below zero, or a flag the presence of one element says; and whose
+/// encode refuses what its totality names of these, a refusal of a body it
+/// holds among them. A CBOR map and a content-line component keep their own
+/// templates' encodes. `imports` are the codec's own, which say whether a
+/// codec it holds is printed ([`ImportContext::go_printed`]).
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
-        CodecPlan::Positional(plan) => positional_forms(plan),
+        CodecPlan::Positional(plan) => positional_forms(plan, imports),
         CodecPlan::Cbor(_) => vec!["a CBOR map".to_string()],
         CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
     }
 }
 
+/// The import of the codec `plan` holds as `alias`, where the Go backend
+/// prints it from its plan.
+fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i ImportContext> {
+    imports
+        .iter()
+        .find(|import| import.alias == alias && import.go_printed.is_some())
+}
+
 /// [`unlowered_forms`] of a positional codec.
-fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
+fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
     if m.variant.is_some() {
@@ -104,7 +124,25 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
                     ));
                 }
             }
-            Value::Body { codec } => forms.push(format!("field '{id}': a body of `{codec}`")),
+            // Written by its codec's own `EncodeSource`, which a codec the Go
+            // backend prints has, handed each input it takes and does not say
+            // from a carrier or an input of this codec's.
+            Value::Body { codec } => {
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a body of `{codec}`, which the Go backend does not print"
+                    ));
+                }
+                if plan
+                    .handed
+                    .get(*codec)
+                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+                {
+                    forms.push(format!(
+                        "field '{id}': a body handed an input its parent binds nothing to"
+                    ));
+                }
+            }
             Value::List { codec, .. } => {
                 forms.push(format!("field '{id}': a list of `{codec}`"));
             }
@@ -113,11 +151,25 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
     if !plan.groups().is_empty() {
         forms.push("a group of fields a gate decides together".to_string());
     }
+    let folded = folded_carriers(plan);
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
             // A number into a field, or into a flag of a carrier.
             (_, Derive::Number(number)) => {
                 forms.extend(number_form(&derived.element, number));
+                // The encoded length of a body is counted before any carrier
+                // is folded, so the body is handed what the value presents.
+                for measure in &number.measures {
+                    if let Measured::Encoded { codec, .. } = &measure.of {
+                        if handed_from_folded(plan, &folded, codec) {
+                            forms.push(format!(
+                                "element '{}': the encoded length of a body handed a flag the \
+                                 encode derives",
+                                derived.element
+                            ));
+                        }
+                    }
+                }
             }
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
                 forms.extend(presence_form(&derived.element, presence));
@@ -130,7 +182,7 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
     }
     // A flag the encode derives is folded into its carrier as the value
     // presents it, which the value then presents whole.
-    for carrier in folded_carriers(plan) {
+    for &carrier in &folded {
         if element_of(plan, carrier).map(|e| e.presence) != Some(Presence::Always) {
             forms.push(format!(
                 "field '{carrier}': a carrier of a derived flag the value does not present whole"
@@ -219,9 +271,8 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             Measured::Entries { .. } => {
                 forms.push(format!("element '{element}': a count of a list"));
             }
-            Measured::Encoded { .. } => {
-                forms.push(format!("element '{element}': the encoded length of a body"));
-            }
+            // Counted by the body's own encode over a sink that keeps nothing.
+            Measured::Encoded { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!("element '{element}': a flag a held codec says"));
             }
@@ -269,6 +320,17 @@ fn folded_carriers<'p>(plan: &'p EncodePlan<'_>) -> BTreeSet<&'p str> {
             _ => None,
         })
         .collect()
+}
+
+/// Whether the body of the codec `alias` is handed a flag of a carrier in
+/// `folded`, whose bits the encode derives.
+fn handed_from_folded(plan: &EncodePlan<'_>, folded: &BTreeSet<&str>, alias: &str) -> bool {
+    plan.handed.get(alias).is_some_and(|handed| {
+        handed.iter().any(|h| {
+            matches!(&h.from, Some(HandedFrom::Carrier { carrier, .. })
+                if folded.contains(carrier.id.as_str()))
+        })
+    })
 }
 
 /// The fields of `plan` whose value the encode derives as a number.
@@ -496,9 +558,13 @@ impl GoPrinted {
     }
 }
 
-/// Each number the encode of `plan` derives into a field, by the field's id,
-/// in the order of the derivations.
+/// Each number the encode of `plan` derives into a field that the value
+/// answers by its own elements, by the field's id, in the order of the
+/// derivations, each field once. A number that counts a body handed a flag
+/// input of the codec's own is not one: the encode is handed the input, and
+/// the value does not hold it.
 fn wire_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<(&'p str, &'p Number<'m>)> {
+    let mut seen = BTreeSet::new();
     plan.derivations
         .iter()
         .filter_map(|derived| match (&derived.element, &derived.by) {
@@ -509,6 +575,16 @@ fn wire_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<(&'p str, &'p Number<'m
             }
             _ => None,
         })
+        .filter(|(_, number)| {
+            number.measures.iter().all(|measure| match &measure.of {
+                Measured::Encoded { codec, .. } => !plan.handed.get(*codec).is_some_and(|h| {
+                    h.iter()
+                        .any(|h| matches!(h.from, Some(HandedFrom::Input { .. })))
+                }),
+                _ => true,
+            })
+        })
+        .filter(|(id, _)| seen.insert(*id))
         .collect()
 }
 
@@ -530,13 +606,16 @@ pub(crate) fn wire_method(id: &str) -> String {
 /// length gated beside its content, no number, as the field is then not on
 /// the wire. A value whose measures disagree has no frame, and its encode
 /// refuses it; the method answers its first measure.
-fn wire_methods(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+fn wire_methods(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> String {
     let mut out = String::new();
-    let mut seen = BTreeSet::new();
+    // A carrier a body is handed a flag of, read off the value.
+    let carrier = |c: &CodecField| format!("s.{}()", l.codec_field_id(&c.id));
     for (id, number) in wire_numbers(plan) {
-        if !seen.insert(id) {
-            continue;
-        }
         let NumberInto::Field { field, absent, .. } = &number.into else {
             unreachable!("`wire_numbers` keeps a number into a field");
         };
@@ -555,26 +634,30 @@ fn wire_methods(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String
                 format!("{ty}({size})")
             }
         };
+        let measured = |measure: &Measure<'_>, held: &str, indent: &str| {
+            held_measure(plan, imports, &carrier, measure, held, indent)
+        };
         let mut body = String::new();
         match number.measures.iter().find(|measure| !measure.gated) {
             Some(anchor) => {
-                let size = held_measure(anchor, &held_element(anchor));
+                let (counted, size) = measured(anchor, &held_element(l, anchor), "\t");
+                body.push_str(&counted);
                 body.push_str(&format!("\treturn {}\n", wrap(&size)));
             }
             None => {
                 for measure in &number.measures {
-                    let size = held_measure(measure, "_v");
+                    let (counted, size) = measured(measure, "_v", "\t\t");
                     body.push_str(&format!(
-                        "\tif _v, ok := {}.Get(); ok {{\n\t\treturn {}\n\t}}\n",
-                        held_element(measure),
+                        "\tif _v, ok := {}.Get(); ok {{\n{counted}\t\treturn {}\n\t}}\n",
+                        held_element(l, measure),
                         wrap(&size)
                     ));
                 }
                 body.push_str(&match absent {
                     Absent::Zero => format!("\treturn optional.None[{ty}]()\n"),
                     Absent::Stated => format!(
-                        "\tif _s, ok := s.{}.Get(); ok {{\n\t\treturn _s\n\t}}\n\treturn 0\n",
-                        member(id)
+                        "\tif _s, ok := s.{}().Get(); ok {{\n\t\treturn _s\n\t}}\n\treturn 0\n",
+                        l.codec_field_id(id)
                     ),
                     Absent::Never => "\treturn 0\n".to_string(),
                     Absent::Group => unreachable!("`unlowered` prints no length a group holds"),
@@ -590,22 +673,144 @@ fn wire_methods(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String
     out
 }
 
-/// The field of the value that holds the content `measure` measures.
-fn held_element(measure: &Measure<'_>) -> String {
+/// The read of the content `measure` measures off the value, by the method
+/// that presents it.
+fn held_element(l: &LangCtx, measure: &Measure<'_>) -> String {
     let content = match &measure.of {
         Measured::Bytes { field, .. } => field,
-        _ => unreachable!("`unlowered` prints a length of byte strings or texts only"),
+        Measured::Encoded { body, .. } => body,
+        _ => unreachable!("`unlowered` prints a length of bytes, texts or bodies only"),
     };
-    format!("s.{}", member(&content.id))
+    format!("s.{}()", l.codec_field_id(&content.id))
 }
 
-/// The number `measure` gives of the content `held` holds, an `int`: the
-/// bytes of a byte string or a text, less or more its `sce:length-arith`.
-fn held_measure(measure: &Measure<'_>, held: &str) -> String {
+/// The number `measure` gives of the content `held` holds, an `int`, and the
+/// statements, at `indent`, that count it first: the bytes of a byte string
+/// or a text, less or more its `sce:length-arith`, or the bytes the body's own
+/// encode writes over a sink that keeps none, handed each input it takes off
+/// the carriers `carrier` reads. A body whose encode refuses has no frame; the
+/// count is then of what it wrote before it refused.
+fn held_measure(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    carrier: &dyn Fn(&CodecField) -> String,
+    measure: &Measure<'_>,
+    held: &str,
+    indent: &str,
+) -> (String, String) {
     match &measure.of {
-        Measured::Bytes { offset, .. } => format!("{held}.Len(){}", length_arith(offset)),
-        _ => unreachable!("`unlowered` prints a length of byte strings or texts only"),
+        Measured::Bytes { offset, .. } => (
+            String::new(),
+            format!("{held}.Len(){}", length_arith(offset)),
+        ),
+        Measured::Encoded { codec, .. } => (
+            format!(
+                "{indent}var _k codec.CountingSink\n\
+                 {indent}_ = {}\n",
+                body_encode(plan, imports, codec, held, "&_k", carrier)
+            ),
+            "_k.Position()".to_string(),
+        ),
+        _ => unreachable!("`unlowered` prints a length of bytes, texts or bodies only"),
     }
+}
+
+/// The call that writes `source`, a source of the body of the codec `alias`
+/// holds, into `sink` by that codec's `EncodeSource`, handed each flag input
+/// it takes and does not say: a flag of a carrier, read by `carrier`, or an
+/// input of this codec's own, which the encode is handed.
+fn body_encode(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    alias: &str,
+    source: &str,
+    sink: &str,
+    carrier: &dyn Fn(&CodecField) -> String,
+) -> String {
+    let import = printed_import(imports, alias)
+        .expect("`unlowered` prints a body of a codec the Go backend prints");
+    let handed: String = plan
+        .handed
+        .get(alias)
+        .into_iter()
+        .flatten()
+        .map(|h| match &h.from {
+            Some(HandedFrom::Carrier {
+                carrier: c,
+                bit,
+                width,
+            }) => {
+                let mask = if *width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << width) - 1
+                };
+                format!(", byte(({} >> {bit}) & 0x{mask:X})", carrier(c))
+            }
+            Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
+            None => unreachable!("`unlowered` prints no body handed an input bound to nothing"),
+        })
+        .collect();
+    format!(
+        "{}.EncodeSource({source}, {sink}{handed})",
+        import.namespace
+    )
+}
+
+/// The local of the sink that keeps nothing a body `body` is counted over,
+/// with the statements, written into `out` once for each body, that encode
+/// the body the source presents, where it presents one, by its codec `alias`
+/// over that sink, handed the carriers `carrier` reads, and return its
+/// refusal before the first byte of the frame.
+fn count_body(
+    imports: &[ImportContext],
+    reads: &SourceReads<'_, '_>,
+    body: &CodecField,
+    alias: &str,
+    carrier: &dyn Fn(&CodecField) -> String,
+    counted: &mut BTreeSet<String>,
+    out: &mut String,
+) -> String {
+    let plan = reads.plan;
+    let k = format!("_k{}", reads.l.codec_field_id(&body.id));
+    if !counted.insert(body.id.clone()) {
+        return k;
+    }
+    // A body whose encode can refuse passes its refusal on, here.
+    if plan.totality.refuses(RefusalKind::Child, &body.id) {
+        plan.totality.require(RefusalKind::Child, &body.id);
+    }
+    let call = body_encode(
+        plan,
+        imports,
+        alias,
+        &reads.value(&body.id),
+        &format!("&{k}"),
+        carrier,
+    );
+    let check = format!("if err := {call}; err != nil {{\n\treturn err\n}}\n");
+    out.push_str(&format!("\tvar {k} codec.CountingSink\n"));
+    if element_of(plan, &body.id).is_some_and(|e| e.presence.optional()) {
+        out.push_str(&format!(
+            "\tif {} {{\n{}\t}}\n",
+            reads.present(&body.id),
+            indented(&indented(&check))
+        ));
+    } else {
+        out.push_str(&indented(&check));
+    }
+    k
+}
+
+/// The Go type a source presents the body of the codec `alias` holds as: that
+/// codec's source interface, so any source of the body is one.
+fn body_source(imports: &[ImportContext], alias: &str) -> (String, String) {
+    let import = printed_import(imports, alias)
+        .expect("`unlowered` prints a body of a codec the Go backend prints");
+    (
+        format!("{}.{}Source", import.namespace, import.type_name),
+        format!("{}.{}", import.namespace, import.type_name),
+    )
 }
 
 /// The `sce:length-arith` of a derived length as a Go term the count of bytes
@@ -641,9 +846,10 @@ pub(super) struct GoSource {
     /// be absent.
     pub(super) held: BTreeMap<String, String>,
     /// For each byte string and text, by field id, the local the decode makes
-    /// the bounded value of it in, and for each length the value states, the
-    /// optional value of the number the decode read: what the value's literal
-    /// holds in place of what the decode read.
+    /// the bounded value of it in, for each length the value states, the
+    /// optional value of the number the decode read, and for each body, the
+    /// source of it the decoded value is: what the value's literal holds in
+    /// place of what the decode read.
     pub(super) made: BTreeMap<String, String>,
     /// The statements the decode runs before the value's literal: each byte
     /// string and text it read made into its bounded value, refused as the
@@ -653,17 +859,45 @@ pub(super) struct GoSource {
 
 /// The Go text of the codec `plan`, whose value's struct is `struct_name`; the
 /// plan is one [`unlowered`] answers `None` for.
-pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> GoSource {
+pub(super) fn render(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> GoSource {
     let mut before = String::new();
     let mut held = BTreeMap::new();
     let mut made = BTreeMap::new();
     let mut decoded = String::new();
     // Each element: its method, its field, and the Go type it is presented as.
     let mut elements: Vec<(String, String, String)> = Vec::new();
+    // The value a method presents where the value holds no element of it: a
+    // body the zero value holds none of presents its codec's zero value.
+    let mut zero: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let method = l.codec_field_id(id);
         let optional = element.presence.optional();
+        // A body is presented as its codec's source interface, and held as
+        // one, so a value is made of any source of the body; the decode holds
+        // the value it read in it (docs/adr/0081 §2).
+        if let Value::Body { codec } = &element.value {
+            let (source, value) = body_source(imports, codec);
+            let ty = if optional {
+                made.insert(
+                    id.clone(),
+                    format!("optional.Convert({method}, func(b {value}) {source} {{ return &b }})"),
+                );
+                format!("optional.Of[{source}]")
+            } else {
+                made.insert(id.clone(), format!("&{method}"));
+                zero.insert(method.clone(), format!("&{value}{{}}"));
+                source
+            };
+            held.insert(id.clone(), ty.clone());
+            elements.push((method, member(id), ty));
+            continue;
+        }
         let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
             let scalar = l.type_name(&element.field.sce_type).into_owned();
             let ty = if optional {
@@ -775,16 +1009,25 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> G
         fields.join(", ")
     );
     for (method, field, ty) in &elements {
+        let held_none = match zero.get(method) {
+            Some(zero) => format!(
+                "\tif s.{field} == nil {{\n\
+                 \t\treturn {zero}\n\
+                 \t}}\n"
+            ),
+            None => String::new(),
+        };
         after.push_str(&format!(
             "\n// {method} returns the element the value presents as {method}.\n\
              func (s *{struct_name}) {method}() {ty} {{\n\
+             {held_none}\
              \treturn s.{field}\n\
              }}\n"
         ));
     }
-    after.push_str(&wire_methods(plan, l, struct_name));
+    after.push_str(&wire_methods(plan, l, imports, struct_name));
     after.push('\n');
-    after.push_str(&encode_source(plan, l, struct_name));
+    after.push_str(&encode_source(plan, l, imports, struct_name));
 
     GoSource {
         before,
@@ -900,8 +1143,17 @@ fn refusal(plan: &EncodePlan<'_>, kind: RefusalKind, at: &str) -> String {
 /// each derived number made from what it measures, each derived flag folded
 /// into its carrier, then the writes in wire order, each element read off the
 /// source by its method. A function of the package and not a method of the
-/// value, so a source need not be a value of the codec.
-fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+/// value, so a source need not be a value of the codec. A body is written by
+/// its codec's own `EncodeSource`; one whose encode can refuse is first
+/// encoded over a sink that keeps nothing, which returns its refusal before
+/// the first byte and counts its frame for a length that measures it
+/// (docs/adr/0058 §3).
+fn encode_source(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> String {
     let numbers = derived_numbers(plan);
     let (stated, derived): (Vec<&String>, Vec<&String>) = numbers
         .iter()
@@ -940,6 +1192,15 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
             .collect();
         returned.sort();
         returned.dedup();
+        // A body whose encode can refuse returns its codec's refusal.
+        if plan
+            .totality
+            .refusals()
+            .iter()
+            .any(|r| r.kind == RefusalKind::Child)
+        {
+            returned.push("the refusal of a body it holds".to_string());
+        }
         format!(
             " It returns {} for\n// a value no frame carries, before it writes a byte to w, and \
              otherwise only the\n// error of w",
@@ -964,13 +1225,36 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
     // Each flag the encode derives, by its carrier: the statements that fold
     // it into the carrier's local in place of the bits the value presents.
     let mut folds: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // The bodies counted over a sink that keeps nothing, each once.
+    let mut counted: BTreeSet<String> = BTreeSet::new();
+    // A body counted before the carriers are folded is handed their bits as
+    // the source presents them, which `unlowered` holds to be what the encode
+    // writes.
+    let presented_carrier = |c: &CodecField| reads.value(&c.id);
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
             (element, Derive::Number(number)) => {
                 let measured: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| plain_measure(&reads, measure))
+                    .map(|measure| match &measure.of {
+                        Measured::Encoded { body, codec, .. } => {
+                            let k = count_body(
+                                imports,
+                                &reads,
+                                body,
+                                codec,
+                                &presented_carrier,
+                                &mut counted,
+                                &mut out,
+                            );
+                            MeasureText {
+                                size: format!("{k}.Position()"),
+                                present: measure.gated.then(|| reads.present(&body.id)),
+                            }
+                        }
+                        _ => plain_measure(&reads, measure),
+                    })
                     .collect();
                 if let Some((carrier, statement)) =
                     derive_number(plan, l, &reads, element, &number.into, &measured, &mut out)
@@ -1063,6 +1347,24 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
             refusal(plan, RefusalKind::PresentIfMismatch, &field.id)
         ));
     }
+    // A body whose encode can refuse, which no length counted, is encoded over
+    // a sink that keeps nothing before the first byte, so its refusal leaves w
+    // as it was.
+    for element in &plan.elements {
+        if let Value::Body { codec } = &element.value {
+            if plan.totality.refuses(RefusalKind::Child, &element.field.id) {
+                count_body(
+                    imports,
+                    &reads,
+                    element.field,
+                    codec,
+                    &read,
+                    &mut counted,
+                    &mut out,
+                );
+            }
+        }
+    }
     // A byte string's bytes or a text's, as the slice the sink writes.
     let slice = |f: &CodecField| -> String {
         if f.sce_type == SceType::String {
@@ -1110,7 +1412,17 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                         format!("{}\n", vle_encode_block(&value, *width_bits, l.lang))
                     }
                     BitSize::Tail | BitSize::LengthRef => write_slice(&slice(field)),
-                    _ => unreachable!("`unlowered` prints no body or list"),
+                    // By the body's codec's own encode, into the same sink.
+                    BitSize::Embed => {
+                        let Value::Body { codec } = plan.value(field) else {
+                            unreachable!("an embedded field holds a body");
+                        };
+                        format!(
+                            "\tif err := {}; err != nil {{\n\t\treturn err\n\t}}\n",
+                            body_encode(plan, imports, codec, &read(field), "w", &read)
+                        )
+                    }
+                    _ => unreachable!("`unlowered` prints no list"),
                 };
                 out.push_str(&match guard {
                     Guard::Always => body,

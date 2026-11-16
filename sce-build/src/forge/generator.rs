@@ -10897,7 +10897,11 @@ pub(crate) fn kotlin_content_line_printed(
 /// its `{Codec}Source`, and is made by `Make{Codec}`; any other codec keeps the
 /// template's encode whole.
 pub(crate) fn go_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
-    go_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+    go_source::unlowered(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
+    .is_none()
 }
 
 /// What a reader in another package knows of `m` where the Go backend prints
@@ -10909,7 +10913,7 @@ pub(crate) fn go_codec_printed_reads(
     imports: &[ImportContext],
 ) -> Option<go_source::GoPrinted> {
     let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-    match (go_source::unlowered(&plan), plan) {
+    match (go_source::unlowered(&plan, imports), plan) {
         (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => Some(
             go_source::GoPrinted::of(&p, &filters::to_pascal_case(m.name.clone())),
         ),
@@ -10921,7 +10925,10 @@ pub(crate) fn go_codec_printed_reads(
 /// clause that names it, in the order the printer meets them; empty where
 /// [`go_codec_printed`].
 pub(crate) fn go_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
-    go_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+    go_source::unlowered_forms(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
 }
 
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
@@ -13849,9 +13856,10 @@ fn render_codec(
     // facade that returns the bytes can fail.
     let go_printed = if matches!(lang, crate::generator::Language::Go) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (go_source::unlowered(&plan), plan) {
+        match (go_source::unlowered(&plan, imports), plan) {
             (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-                let printed = go_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                let printed =
+                    go_source::render(&p, &l, imports, &filters::to_pascal_case(m.name.clone()));
                 Some((p, printed))
             }
             _ => None,
