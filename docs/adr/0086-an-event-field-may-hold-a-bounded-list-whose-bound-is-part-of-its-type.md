@@ -572,7 +572,11 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    where it is made, one record below the payload, on Swift with `fileprivate` and on C11 with `restrict`
    (`a_composed_record_whose_field_swift_reserves_is_refused_by_name`,
    `a_composed_record_whose_field_c_reserves_is_refused_where_it_is_declared`), each run for a second backend
-   too, which the same document is refused for.
+   too, which the same document is refused for. The same ground holds where no composed value is: the Swift gate's
+   arms for a field of a schema of plain fields and for an enum's variant (spelled lowerCamelCase, as the parser
+   spells a `<sce:variant name>` for Swift), and the Go and Python gates' arms for a record's field, judged names
+   the parser had already refused, and are removed with them
+   (`a_reserved_name_a_machine_holds_is_refused_where_it_is_declared`).
 4. **A Rust machine holds every bound in its type** (amended 2026-11-04, answer G). The machine row of the table is
    every place a Rust machine has, not only a composed one: a variable, a record the machine declares, the payload
    struct of an event it reads, at the top level and at any depth. A `list<T>[N]` is

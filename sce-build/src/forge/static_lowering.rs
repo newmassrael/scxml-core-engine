@@ -739,25 +739,23 @@ fn enum_crossing_function_names(ty: &str) -> (String, String) {
 }
 
 /// Why a field of an event schema cannot be a property of the struct Swift holds a
-/// record, or the payload of an event, in: a name Swift reserves, or a field that may
-/// be absent over an element Swift does not spell (a byte string). `None` for a field
-/// it writes. The one answer for a record a machine holds and for an event's payload,
-/// which are the same struct of the same fields.
+/// record, or the payload of an event, in: a field that may be absent over an element
+/// Swift does not spell (a byte string). `None` for a field it writes. The one answer
+/// for a record a machine holds and for an event's payload, which are the same struct
+/// of the same fields. A field named by a word Swift reserves is no such property
+/// either, and is refused where the schema's document declares it, for every backend
+/// at once (`validation/reserved-code-identifier`,
+/// [`crate::scxml_identifier::reject_malformed`]), so it never reaches a gate.
 fn swift_field_unwritten(field: &crate::forge::model::EntryField) -> Option<&'static str> {
-    if matches!(
+    matches!(
         &field.sce_type,
         EntryType::Optional { elem }
             if !crate::forge::generator::algorithm_optional_spelled(
                 Language::Swift,
                 &crate::forge::model::AlgorithmValueType::of_scalar(elem.clone()),
             )
-    ) {
-        Some("an optional byte string")
-    } else if crate::reader_names::is_reserved_word(Language::Swift, &field.id) {
-        Some("a name Swift reserves")
-    } else {
-        None
-    }
+    )
+    .then_some("an optional byte string")
 }
 
 /// Whether `ty` is a number or a truth value (see [`plain_schema`]).
@@ -11970,20 +11968,9 @@ impl StaticTarget for GoTarget<'_> {
         })
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
-        // A record's field is named as the author wrote it, so one Go reserves
-        // cannot be a field.
-        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
-            schema
-                .fields
-                .iter()
-                .find(|f| crate::reader_names::is_reserved_word(Language::Go, &f.id))
-                .map(|f| (alias, f))
-        }) {
-            return Some(format!(
-                "record:{alias} with the field `{}`, a name Go reserves",
-                field.id
-            ));
-        }
+        // A record's field is named as the author wrote it; one Go reserves is
+        // refused where the record's document declares it, for every backend at
+        // once ([`crate::scxml_identifier::reject_malformed`]).
         // The reader a field gets is its id in Pascal case, and the method a
         // record writes its saved form with is `ToSaved`: one field cannot have
         // both.
@@ -13424,20 +13411,9 @@ impl StaticTarget for PythonTarget {
         ))
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
-        // A record's field is named as the author wrote it, so one Python
-        // reserves cannot be a field.
-        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
-            schema
-                .fields
-                .iter()
-                .find(|f| crate::reader_names::is_reserved_word(Language::Python, &f.id))
-                .map(|f| (alias, f))
-        }) {
-            return Some(format!(
-                "record:{alias} with the field `{}`, a name Python reserves",
-                field.id
-            ));
-        }
+        // A record's field is named as the author wrote it; one Python reserves
+        // is refused where the record's document declares it, for every backend
+        // at once ([`crate::scxml_identifier::reject_malformed`]).
         // The methods a record writes and reads its saved form with are named on the
         // type, beside its fields: one field cannot have either name.
         if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
@@ -17995,10 +17971,10 @@ impl StaticTarget for SwiftTarget {
                 var.id
             ));
         }
-        // A record's field is named as the author wrote it, so one Swift reserves cannot
-        // be a field, and a field that may be absent is `T?` over an element Swift spells
-        // ([`swift_field_unwritten`]). A schema that holds a composition is spelled by
-        // the walks over its type (docs/adr/0086), and is checked below.
+        // A record's field is named as the author wrote it, and a field that may be
+        // absent is `T?` over an element Swift spells ([`swift_field_unwritten`]). A
+        // schema that holds a composition is spelled by the walks over its type
+        // (docs/adr/0086), and is checked below.
         let entry_records = model.entry_records();
         if let Some((alias, field, why)) = entry_records
             .iter()
@@ -18010,26 +17986,14 @@ impl StaticTarget for SwiftTarget {
                 field.id
             ));
         }
-        // A variant is a member of the enum's type, named lowerCamelCase, and one Swift
-        // reserves is not a member a `switch` or a leading dot can name.
-        if let Some((enum_name, variant)) = model.held_enums().values().find_map(|e| {
-            e.variants
-                .iter()
-                .find(|v| {
-                    let ident =
-                        crate::forge::enum_naming::variant_ident(Language::Swift, &e.name, &v.name);
-                    crate::reader_names::is_reserved_word(Language::Swift, &ident)
-                })
-                .map(|v| (e.name.clone(), v.name.clone()))
-        }) {
-            return Some(format!(
-                "the variant `{variant}` of the enum `{enum_name}`, a name Swift reserves"
-            ));
-        }
+        // A variant is a member of the enum's type, named lowerCamelCase
+        // ([`crate::forge::enum_naming::variant_ident`]); one Swift reserves is no member
+        // a `switch` or a leading dot can name, and is refused where the enum's document
+        // declares it, spelled as Swift spells it (`<sce:variant name>`,
+        // [`crate::scxml_identifier::reject_malformed`]).
         // An event's typed payload is read through a struct of its schema's fields, each
-        // named as the author wrote it: one Swift reserves cannot be a property, and a
-        // field that may be absent is `T?` over an element Swift spells, the same
-        // struct a record is ([`swift_field_unwritten`]).
+        // named as the author wrote it, and a field that may be absent is `T?` over an
+        // element Swift spells, the same struct a record is ([`swift_field_unwritten`]).
         let entry_events = model.entry_event_schemas();
         if let Some((schema, field, why)) = entry_events
             .values()

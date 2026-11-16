@@ -1924,6 +1924,15 @@ name = "a_c11_machine_reads_a_composed_payload_at_any_depth"
 path = "tests/a_c11_machine_reads_a_composed_payload_at_any_depth.rs"
 required-features = ["cli"]
 
+# A field of an imported event schema and a variant of an imported enum named
+# by a word one backend reserves are refused where their document declares
+# them, for every backend, by the parser alone (docs/adr/0086, section 7.3). It
+# runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_reserved_name_a_machine_holds_is_refused_where_it_is_declared"
+path = "tests/a_reserved_name_a_machine_holds_is_refused_where_it_is_declared.rs"
+required-features = ["cli"]
+
 # A statechart sends a composed value by the name of the place that holds it
 # (docs/adr/0086, section 5.2). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]
