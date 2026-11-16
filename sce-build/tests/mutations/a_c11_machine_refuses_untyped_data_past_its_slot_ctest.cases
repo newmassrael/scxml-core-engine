@@ -30,8 +30,13 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        refuse_event_data(sm, NULL);\n")
 PY
 
+# The push is the only caller `refuse_event_data` and `sm` have on a machine
+# with no script engine, and the C tree builds with -Werror: a mutant that only
+# deletes the call leaves both unused and never compiles (INCONCLUSIVE on
+# 2026-11-15, Mutation Rounds job 132835284129). The casts keep them referenced,
+# so the mutant builds and the drop is what the test meets.
 mutation_case "data past the slot is dropped with no count" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        refuse_event_data(sm, &evt->event);\n        return;\n",
-     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        return;\n")
+     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        (void)sm;\n        (void)refuse_event_data;\n        return;\n")
 PY

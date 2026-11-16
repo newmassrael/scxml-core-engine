@@ -97,13 +97,19 @@ PY
 # configuration it was handed, over no session.
 # Killer: `a_resumed_start_whose_session_cannot_be_established_is_refused`,
 # which finds `_CONFIG_NONE`.
+#
+# On a document with no host acts the check is the only reader of `refused`,
+# and the C tree builds with -Werror: a mutant that only deletes it leaves an
+# unused variable and never compiles (INCONCLUSIVE on 2026-11-15, Mutation
+# Rounds job 132835284163). The cast keeps it read, so the mutant builds and
+# the refusal passed over is what the test meets.
 
 mutation_case "the resumed start stands in its configuration past a session that failed" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (refused == SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_SCRIPT_SESSION_UNAVAILABLE;
     }""",
-     """""")
+     """    (void)refused;""")
 PY
 
 # ── The refused child is kept ──────────────────────────────────────

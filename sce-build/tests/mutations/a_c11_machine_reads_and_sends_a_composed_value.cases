@@ -82,14 +82,18 @@ PY
 
 # A text a composed value holds in its buffer is read as the pointer every C
 # text expression is, which is C that does not compile (docs/adr/0086,
-# section 6).
+# section 6). The call is the pass's only caller, and the round builds with
+# warnings denied: a mutant that only deletes it leaves the pass and the function it calls
+# unused and never compiles (INCONCLUSIVE on 2026-11-15, Mutation Rounds job
+# 132835284145). Naming the pass keeps it referenced, so the mutant builds and
+# the skipped pass is what the tests meet.
 mutation_case "a composed text is read as a pointer" <<'PY'
 edit("sce-build/src/forge/expr.rs",
      r'''    if matches!(target, ExprTarget::C) {
         read_composed_texts_through_buffers(ast, ctx, renames);
     }''',
      r'''    if matches!(target, ExprTarget::C) {
-        let _ = (ctx, renames);
+        let _ = (read_composed_texts_through_buffers, ctx, renames);
     }''')
 PY
 
