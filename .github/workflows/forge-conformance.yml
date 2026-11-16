@@ -21,6 +21,9 @@ on:
     branches: [ main ]
     paths:
       - 'tests/forge/**'
+      # The standard library, whose algorithms the manifest names as fixtures
+      # (`sce:std/...`): an edit of one alone changes what every arm runs.
+      - 'stdlib/**'
       - 'sce-build/**'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
@@ -64,6 +67,9 @@ on:
     branches: [ main ]
     paths:
       - 'tests/forge/**'
+      # The standard library, whose algorithms the manifest names as fixtures
+      # (`sce:std/...`): an edit of one alone changes what every arm runs.
+      - 'stdlib/**'
       - 'sce-build/**'
       - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
