@@ -42,17 +42,19 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
-/// byte strings, texts and bodies of codecs it prints that are handed no flag
-/// input, always there, decided by a gate of a carrier's flags, or a number the
-/// value states while the content it measures is absent; whose every derived
-/// element is a number measured off byte strings, texts and bodies, in a field
-/// or in a flag of a carrier, or a flag set where the elements it gates are
-/// there; and that takes no flag input. Its encode refuses, before its first
-/// byte, a number past what holds it, measures of one number that disagree, a
-/// number the value states beside content that says another, and what a body
+/// byte strings, texts, and bodies and lists of codecs it prints that are
+/// handed no flag input and held to no law, always there, decided by a gate of
+/// a carrier's flags, or a number the value states while the content it
+/// measures is absent; whose every derived element is a number measured off
+/// byte strings, texts, lists and bodies, in a field or in a flag of a
+/// carrier, or a flag set where the elements it gates are there; and that
+/// takes no flag input. Its encode refuses, before its first byte, a number
+/// past what holds it, measures of one number that disagree, a number the
+/// value states beside content that says another, and what a body or an entry
 /// it holds refuses. Its writes are the fixed bytes and the byte strings of a
 /// positional layout and, of a streamed one, whole fixed fields,
-/// variable-length integers, byte strings and bodies. A CBOR map and a
+/// variable-length integers, byte strings, bodies, and lists and chains that
+/// end with their scope, walked entry by entry. A CBOR map and a
 /// content-line component keep their own templates' encodes. `imports` are the
 /// codec's own, which say whether a codec it holds is printed
 /// ([`ImportContext::c11_printed`]).
@@ -120,8 +122,40 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.push(format!("field '{id}': a body handed flag inputs"));
                 }
             }
-            Value::List { codec, .. } => {
-                forms.push(format!("field '{id}': a list of `{codec}`"));
+            // Presented as a walk of its entries, each a source of its codec,
+            // and written entry by entry by that codec's own encode, which a
+            // codec the C11 backend prints has. The value holds the entries in
+            // an array beside the length member `{id}_len`, which its walk
+            // `{codec}_value_{id}_begin` and `_next` read, names no element
+            // of its own may take.
+            Value::List { codec, law, .. } => {
+                if printed_body(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a list of `{codec}`, which the C11 backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!(
+                        "field '{id}': a list whose entries are handed flag inputs"
+                    ));
+                }
+                if !law.is_none() {
+                    forms.push(format!("field '{id}': a list held to a law"));
+                }
+                let taken = [
+                    format!("{id}_len"),
+                    format!("{id}_begin"),
+                    format!("{id}_next"),
+                ];
+                if plan
+                    .elements
+                    .iter()
+                    .any(|other| taken.contains(&other.field.id))
+                {
+                    forms.push(format!(
+                        "field '{id}': a list whose length member or walk another element names"
+                    ));
+                }
             }
         }
         // An element a gate decides, and a number the value states while its
@@ -186,9 +220,17 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Write::Tail { field, .. } => forms.extend(unread_form(plan, &numbers, field)),
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                if list.is_some() {
+                // A walk of each entry in turn; a chain that sets its entries'
+                // flag, hands an entry what the one before it was, holds a
+                // bare entry's place or is held to a law is not printed yet.
+                if list.as_ref().is_some_and(|walk| {
+                    !walk.previous.is_empty()
+                        || walk.slots.is_some()
+                        || walk.ends.is_some()
+                        || walk.lawful
+                }) {
                     forms.push(format!(
-                        "field '{}': a list walked as it is written",
+                        "field '{}': a chain whose walk sets or hands its entries a flag",
                         field.id
                     ));
                 }
@@ -244,9 +286,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
 }
 
 /// What of the derived number of `element` the printer does not print: it
-/// prints a number measured off byte strings, texts and the encoded lengths
-/// of bodies, in a field or in a flag of a carrier, held to what its measures
-/// say together ([`derive_number`]).
+/// prints a number measured off byte strings, texts, lists and the encoded
+/// lengths of bodies, in a field or in a flag of a carrier, held to what its
+/// measures say together ([`derive_number`]).
 fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
     let mut forms = Vec::new();
     for measure in &number.measures {
@@ -257,9 +299,8 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             // Counted by its codec's encode into a counting sink, which
             // passes on what the body refuses.
             Measured::Encoded { .. } => {}
-            Measured::Entries { .. } => {
-                forms.push(format!("element '{element}': a count of a list"));
-            }
+            // The entries the list's maker counted as it walked them.
+            Measured::Entries { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!("element '{element}': a flag a held codec says"));
             }
@@ -359,13 +400,15 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 }
 
 /// The C type the source presents `element` as: the type the value's struct
-/// holds a number in, or the view of a byte string or a text that holds its
-/// bound ([`BoundedView`]).
+/// holds a number in, the view of a byte string or a text that holds its bound
+/// ([`BoundedView`]), the pair a body's source is passed as, or the walk of a
+/// list that holds its bound ([`BoundedList`]).
 ///
 /// An element a gate decides, or a number the value states while its content
 /// is absent, is presented as the optional value of that type: a number in the
 /// type `sce/forge/optional.h` holds it in, which the value's struct holds it
-/// in too, and a view in the optional type declared beside it.
+/// in too, and a view, a pair or a list in the optional type declared beside
+/// it.
 fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
     let gated = element.presence.optional();
     match &element.value {
@@ -375,7 +418,111 @@ fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
         Value::Bytes(_) | Value::Text(_) => BoundedView::of(l, snake, element).ty(),
         Value::Body { codec } if gated => format!("{}_source_ref_optional_t", body_prefix(codec)),
         Value::Body { codec } => format!("{}_source_ref_t", body_prefix(codec)),
-        Value::List { .. } => unreachable!("`unlowered` prints no list"),
+        Value::List { .. } if gated => BoundedList::of(l, snake, element).optional(),
+        Value::List { .. } => BoundedList::of(l, snake, element).ty(),
+    }
+}
+
+/// The refinement of a list or a chain (docs/adr/0065 §6 R2, R7) in C11: a
+/// walk of its entries over the context it is presented with, the table each
+/// entry is a source of its codec by, and the count of its entries, of a type
+/// of its own for each element, made by one function that walks the list once,
+/// counts it and checks the bound, and answers a status (docs/adr/0081 §2).
+/// The walk is the runtime's `sce_forge_walk_t`, a begin and next pair, so an
+/// array, a linked list or any store of a consumer's own presents its entries
+/// where it holds them.
+struct BoundedList {
+    /// The prefix of its type and its maker, `{snake}_{element}_list`.
+    base: String,
+    /// The prefix of the symbols of the entries' codec ([`body_prefix`]).
+    entry: String,
+    /// How many entries the maker holds it to.
+    bound: Bound,
+}
+
+impl BoundedList {
+    /// The list of `element`, a list or a chain of the codec `snake`.
+    fn of(l: &LangCtx, snake: &str, element: &Element<'_>) -> Self {
+        let Value::List { codec, bound, .. } = &element.value else {
+            unreachable!("a list's refinement is of a list or a chain");
+        };
+        BoundedList {
+            base: format!("{snake}_{}_list", l.codec_field_id(&element.field.id)),
+            entry: body_prefix(codec),
+            bound: *bound,
+        }
+    }
+
+    /// Its type.
+    fn ty(&self) -> String {
+        format!("{}_t", self.base)
+    }
+
+    /// The optional value of it, which a source presents a list a gate
+    /// decides as, made as `sce/forge/optional.h` makes one.
+    fn optional(&self) -> String {
+        format!("{}_optional_t", self.base)
+    }
+
+    /// The declaration of [`Self::optional`].
+    fn declare_optional(&self) -> String {
+        format!(
+            "/* A list of {} that may be absent: absent where the gate leaves the\n \
+             * element out. */\n\
+             SCE_OPTIONAL_DECLARE_NAMED({}_optional, {})\n\n",
+            self.ty(),
+            self.base,
+            self.ty()
+        )
+    }
+
+    /// Its type and its maker, for the element `id` of `value`.
+    fn declare(&self, id: &str, value: &str) -> String {
+        let (ty, base, entry) = (self.ty(), &self.base, &self.entry);
+        let least = self.bound.least;
+        let held = match self.bound.most {
+            Some(most) => format!("{least} to {most} entries"),
+            None => format!("{least} or more entries, the protocol stating no most"),
+        };
+        // An entry past the most is refused as it is met, so a walk that
+        // never ends is refused too where the list has a most.
+        let past = match self.bound.most {
+            Some(most) => format!(
+                "        if (!sce_forge_length_within_bound(count, {most})) {{\n            \
+                 return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n        }}\n"
+            ),
+            None => String::new(),
+        };
+        let fewest = if least > 0 {
+            format!(
+                "    if (count < {least}u) {{\n        \
+                 return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }}\n"
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "/* The `{id}` element of {value}: a list of {held} of {entry}_t,\n \
+             * walked where it is held, which outlives the list. A list is made by\n \
+             * {base}_make, which walks it once, counts its entries and refuses one\n \
+             * outside the bound, so every list holds it (docs/adr/0081 §2) and the\n \
+             * encode over a source writes its `count` entries, refusing nothing of\n \
+             * the count. */\n\
+             typedef struct {{\n    const sce_forge_walk_t *walk;\n    const void *ctx;\n    \
+             const {entry}_source_t *entry;\n    size_t count;\n}} {ty};\n\n\
+             /* Make `*out` the list `walk` presents over `ctx`, each entry a source of\n \
+             * {entry}_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list\n \
+             * outside its bound, `*out` then as it was. */\n\
+             static inline sce_forge_codec_status_t {base}_make({ty} *out, \
+             const sce_forge_walk_t *walk, const void *ctx, const {entry}_source_t *entry) {{\n    \
+             size_t count = 0;\n    \
+             for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {{\n        \
+             ++count;\n\
+             {past}    }}\n\
+             {fewest}    out->walk = walk;\n    out->ctx = ctx;\n    out->entry = entry;\n    \
+             out->count = count;\n    return SCE_FORGE_CODEC_OK;\n\
+             }}\n\n"
+        )
     }
 }
 
@@ -523,7 +670,8 @@ pub(crate) fn derived_local(id: &str) -> String {
 /// The C11 text the printer gives a codec's header.
 pub(super) struct C11Source {
     /// After the value's struct and its decode, before the value's encode: the
-    /// view of each byte string and text, the table of a source and the pair a
+    /// view of each byte string and text, the list of each list and chain and
+    /// the walk of the value's array of it, the table of a source and the pair a
     /// parent presents a body as, the value's functions and table, the encode
     /// over any source, and the check of a value's arrays.
     pub(super) before_encode: String,
@@ -614,12 +762,23 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     let table = format!("{snake}_source_t");
     let mut out = String::new();
     for element in &plan.elements {
-        if matches!(element.value, Value::Bytes(_) | Value::Text(_)) {
-            let view = BoundedView::of(l, snake, element);
-            out.push_str(&view.declare(&element.field.id, &value));
-            if element.presence == Presence::Gated {
-                out.push_str(&view.declare_optional());
+        let gated = element.presence == Presence::Gated;
+        match &element.value {
+            Value::Bytes(_) | Value::Text(_) => {
+                let view = BoundedView::of(l, snake, element);
+                out.push_str(&view.declare(&element.field.id, &value));
+                if gated {
+                    out.push_str(&view.declare_optional());
+                }
             }
+            Value::List { .. } => {
+                let list = BoundedList::of(l, snake, element);
+                out.push_str(&list.declare(&element.field.id, &value));
+                if gated {
+                    out.push_str(&list.declare_optional());
+                }
+            }
+            _ => {}
         }
     }
     out.push_str(&format!(
@@ -720,6 +879,62 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                      {absent}    {prefix}_source_ref_t body;\n    \
                      body.table = {prefix}_value_source();\n    \
                      body.ctx = &{held};\n    \
+                     return {ret};\n"
+                )
+            }
+            // The entries the struct holds in its array, walked by the value's
+            // own begin and next over it, each a source of its codec by the
+            // table that presents a value of it, and counted by the length
+            // beside the array, within the bound the value's check holds it
+            // to.
+            Value::List { .. } => {
+                let list = BoundedList::of(l, snake, element);
+                let (list_ty, base, entry) = (list.ty(), &list.base, &list.entry);
+                let (data, len) = if gated {
+                    (
+                        format!("self->{name}.value.data"),
+                        format!("self->{name}.value.len"),
+                    )
+                } else {
+                    (format!("self->{name}"), format!("self->{name}_len"))
+                };
+                out.push_str(&format!(
+                    "/* The first entry of the `{name}` of the {value} at `ctx`, or NULL where\n \
+                     * it holds none. */\n\
+                     static inline const void *{snake}_value_{name}_begin(const void *ctx) {{\n    \
+                     const {value} *self = (const {value} *)ctx;\n    \
+                     return {len} > 0u ? (const void *)&{data}[0] : NULL;\n\
+                     }}\n\n\
+                     /* The entry after `entry` of the `{name}` of the {value} at `ctx`, or\n \
+                     * NULL where `entry` is its last. */\n\
+                     static inline const void *{snake}_value_{name}_next(const void *ctx, \
+                     const void *entry) {{\n    \
+                     const {value} *self = (const {value} *)ctx;\n    \
+                     const {entry}_t *at = (const {entry}_t *)entry + 1;\n    \
+                     return at < {data} + {len} ? (const void *)at : NULL;\n\
+                     }}\n\n"
+                ));
+                let (absent, ret) = if gated {
+                    (
+                        format!(
+                            "    if (!self->{name}.present) {{\n        \
+                             return {base}_optional_none();\n    }}\n"
+                        ),
+                        format!("{base}_optional_some(list)"),
+                    )
+                } else {
+                    (String::new(), "list".to_string())
+                };
+                format!(
+                    "    static const sce_forge_walk_t walk = {{\n        \
+                     {snake}_value_{name}_begin,\n        \
+                     {snake}_value_{name}_next,\n    }};\n    \
+                     const {value} *self = (const {value} *)ctx;\n\
+                     {absent}    {list_ty} list;\n    \
+                     list.walk = &walk;\n    \
+                     list.ctx = ctx;\n    \
+                     list.entry = {entry}_value_source();\n    \
+                     list.count = {len};\n    \
                      return {ret};\n"
                 )
             }
@@ -1041,9 +1256,29 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                             body_prefix(codec)
                         ));
                     }
-                    _ => unreachable!(
-                        "`unlowered` prints a fixed field, a VLE, a byte string or a body only"
-                    ),
+                    // A list or a chain that ends with its scope, its entries
+                    // walked from the first, each written by its codec's
+                    // encode over the source the list presents it as; no
+                    // more than the count the list's maker found, which a
+                    // count before it says.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        let Some(Value::List { codec, .. }) =
+                            element_of(plan, &field.id).map(|e| &e.value)
+                        else {
+                            unreachable!("a list or a chain is an element the value presents");
+                        };
+                        let held = read(field);
+                        body.push_str(&format!(
+                            "    {{\n        \
+                             const void *_at = {held}.walk->begin({held}.ctx);\n        \
+                             for (size_t _i = 0; _i < {held}.count && _at != NULL; ++_i) {{\n            \
+                             SCE_FORGE_TRY_WRITE({}_encode_source({held}.entry, _at, w));\n            \
+                             _at = {held}.walk->next({held}.ctx, _at);\n        \
+                             }}\n    \
+                             }}\n",
+                            body_prefix(codec)
+                        ));
+                    }
                 }
                 out.push_str(&match guard {
                     Guard::Always => body,
@@ -1139,7 +1374,8 @@ fn refuse_if(test: &str, refused: &str) -> String {
 
 /// `measure` as the encode reads it, off the local the source's element was
 /// read into: the bytes a view holds, less or more its `sce:length-arith`, a
-/// length less a number the bytes may be shorter than refused; or the bytes a
+/// length less a number the bytes may be shorter than refused; the entries a
+/// list's maker counted; or the bytes a
 /// body encodes to, counted by its codec's encode over the source the value
 /// presents it as into a counting sink, which stores nothing (docs/adr/0058
 /// §3) and passes on what the body refuses. A body is counted once into
@@ -1213,7 +1449,26 @@ fn measure_text(
                 gated: measure.gated,
             }
         }
-        _ => unreachable!("`unlowered` prints a number of byte strings, texts and bodies only"),
+        // The entries the list's maker counted, within its bound.
+        Measured::Entries { list } => {
+            let local = element_local(l, &list.id);
+            if measure.gated {
+                MeasureText {
+                    size: format!("{local}.value.count"),
+                    present: Some(format!("{local}.present")),
+                    gated: true,
+                }
+            } else {
+                MeasureText {
+                    size: format!("{local}.count"),
+                    present: None,
+                    gated: false,
+                }
+            }
+        }
+        _ => unreachable!(
+            "`unlowered` prints a number of byte strings, texts, lists and bodies only"
+        ),
     }
 }
 
@@ -1419,11 +1674,52 @@ fn encode_body(snake: &str) -> String {
 /// keep that length within the bound of the element's view; a value whose
 /// length is outside it, or whose text no UTF-8 holds, is no value of the
 /// codec, and is refused before the first byte, as a decode would refuse its
-/// frame. A body it holds is checked by its own codec's check, as the value's
-/// table presents the body's arrays through that codec's views.
+/// frame. A list's entries are held in an array beside their count in the same
+/// way, held to the most the list holds. A body or an entry it holds is
+/// checked by its own codec's check, as the value's table presents the body's
+/// and the entry's arrays through that codec's views.
 fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     let mut out = String::new();
     for element in &plan.elements {
+        // The array of a list within the most its list holds, and each entry
+        // it holds a value of its codec, by that codec's own check; where a
+        // gate decides the list, only where it is present.
+        if let Value::List { codec, .. } = &element.value {
+            let list = BoundedList::of(l, snake, element);
+            let name = l.codec_field_id(&element.field.id);
+            let held = u64::from(c11_held_entries(element.field, &plan.model.fields));
+            let most = list.bound.most.map_or(held, |most| most.min(held));
+            let (data, len) = if element.presence == Presence::Gated {
+                (
+                    format!("self->{name}.value.data"),
+                    format!("self->{name}.value.len"),
+                )
+            } else {
+                (format!("self->{name}"), format!("self->{name}_len"))
+            };
+            let mut checks = format!(
+                "    if (!sce_forge_length_within_bound({len}, {most})) {{\n        \
+                 return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n    }}\n"
+            );
+            if list.bound.least > 0 {
+                checks.push_str(&format!(
+                    "    if ({len} < {}u) {{\n        \
+                     return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }}\n",
+                    list.bound.least
+                ));
+            }
+            checks.push_str(&format!(
+                "    for (size_t _i = 0; _i < {len}; ++_i) {{\n        \
+                 SCE_FORGE_TRY_WRITE({}_check_value(&{data}[_i]));\n    }}\n",
+                body_prefix(codec)
+            ));
+            out.push_str(&if element.presence == Presence::Gated {
+                guarded(&format!("self->{name}.present"), &checks)
+            } else {
+                checks
+            });
+            continue;
+        }
         if let Value::Body { codec } = &element.value {
             let name = l.codec_field_id(&element.field.id);
             let check = format!("{}_check_value", body_prefix(codec));
@@ -1485,8 +1781,9 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     }
     format!(
         "/* Whether `self` is a value of {snake}_t: SCE_FORGE_CODEC_OK, or the\n \
-         * refusal of an array past the bound of its element's view or of a text no\n \
-         * UTF-8 holds, in it or in a body it holds (docs/adr/0081 §2). */\n\
+         * refusal of an array past the bound of its element's view or list or of a\n \
+         * text no UTF-8 holds, in it or in a body or an entry it holds\n \
+         * (docs/adr/0081 §2). */\n\
          static inline sce_forge_codec_status_t {snake}_check_value(const {snake}_t *self) {{\n\
          {out}    return SCE_FORGE_CODEC_OK;\n\
          }}\n"

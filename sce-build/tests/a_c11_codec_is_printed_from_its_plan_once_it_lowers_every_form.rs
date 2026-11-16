@@ -549,30 +549,126 @@ fn a_body_that_can_refuse_is_counted_before_the_first_byte() {
 }
 
 /// A body a gate decides, of a codec the C11 backend prints, is a form the
-/// printer lowers: each codec of the resources that holds one names no form of
-/// the body, and waits on forms of its own (here each holds a list).
+/// printer lowers: a codec that holds one beside a list of printed entries is
+/// printed whole, and one that holds one beside a chain of entries the C11
+/// backend does not print names no form of the body and waits on the chain.
 ///
-/// Turns red where `c11_source::positional_forms` names a gated body of a
-/// printed codec, or where one of these codecs stops holding a list, which
-/// would leave the census with nothing to say.
+/// Turns red where `c11_source::positional_forms` names a gated body or a list
+/// of a printed codec, or where `codec_zenoh_msg_del` stops holding a chain of
+/// unprinted entries, which would leave the census with nothing to say.
 #[test]
 fn a_gated_body_of_a_printed_codec_is_no_form_the_printer_leaves() {
-    for (name, body) in [
-        ("codec_zenoh_msg_del", "timestamp"),
-        ("codec_origin_envelope", "optional"),
-    ] {
-        let forms = unlowered(name);
-        assert!(
-            !forms
-                .iter()
-                .any(|f| f.starts_with(&format!("field '{body}'"))),
-            "{name}: the gated body `{body}` is lowered ({forms:?})"
-        );
-        assert!(
-            forms.iter().any(|f| f.contains("a list of")),
-            "{name}: the codec waits on a list ({forms:?})"
-        );
-    }
+    assert!(unlowered("codec_origin_envelope").is_empty());
+    let forms = unlowered("codec_zenoh_msg_del");
+    assert!(
+        !forms.iter().any(|f| f.starts_with("field 'timestamp'")),
+        "codec_zenoh_msg_del: the gated body `timestamp` is lowered ({forms:?})"
+    );
+    assert!(
+        forms.iter().any(|f| f.contains("a list of")),
+        "codec_zenoh_msg_del: the codec waits on its chain ({forms:?})"
+    );
+}
+
+/// A list is presented as a walk of its entries, made by a maker that counts
+/// them within the bound: the encode derives the count from what the maker
+/// counted, walks the entries from the first and writes each by its codec's
+/// encode over the source the list presents it as; the value holds no member
+/// of the count, its walk reads the array the value holds, its check holds
+/// each entry to its codec, and the decode reads the count into a local.
+///
+/// Turns red where `BoundedList::declare` stops declaring the list or its
+/// maker, where `measure_text` reads a count off anything but the list, where
+/// `encode_source` stops walking the entries, where `check_value` stops
+/// checking each entry, or where `repeat_streaming_decode_stmt` reads a
+/// derived count off the struct.
+#[test]
+fn a_list_is_presented_as_a_walk_and_its_count_derived_from_its_maker() {
+    assert!(unlowered("codec_repeat_basic").is_empty());
+    let text = resource_header("codec_repeat_basic");
+    holds(
+        "codec_repeat_basic",
+        &text,
+        &[
+            "typedef struct {\n    const sce_forge_walk_t *walk;\n    const void *ctx;\n    \
+             const codec_repeat_elem_source_t *entry;\n    size_t count;\n\
+             } codec_repeat_basic_frags_list_t;\n",
+            "static inline sce_forge_codec_status_t codec_repeat_basic_frags_list_make(\
+             codec_repeat_basic_frags_list_t *out, const sce_forge_walk_t *walk, \
+             const void *ctx, const codec_repeat_elem_source_t *entry) {\n",
+            "        if (!sce_forge_length_within_bound(count, 32)) {\n            \
+             return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n        }\n",
+            "    codec_repeat_basic_frags_list_t (*frags)(const void *ctx);\n",
+            "    return self->frags_len > 0u ? (const void *)&self->frags[0] : NULL;\n",
+            "    list.entry = codec_repeat_elem_value_source();\n    \
+             list.count = self->frags_len;\n",
+            "    const uint8_t _d_num_frags = (uint8_t)(_e_frags.count);\n",
+            "        const void *_at = _e_frags.walk->begin(_e_frags.ctx);\n        \
+             for (size_t _i = 0; _i < _e_frags.count && _at != NULL; ++_i) {\n            \
+             SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode_source(_e_frags.entry, _at, w));\n            \
+             _at = _e_frags.walk->next(_e_frags.ctx, _at);\n        }\n",
+            "    for (size_t _i = 0; _i < self->frags_len; ++_i) {\n        \
+             SCE_FORGE_TRY_WRITE(codec_repeat_elem_check_value(&self->frags[_i]));\n    }\n",
+            "size_t _n = (size_t)_d_num_frags;",
+        ],
+    );
+    holds_none(
+        "codec_repeat_basic",
+        &text,
+        &[
+            "    uint8_t num_frags;\n",
+            "out->num_frags",
+            "self->num_frags",
+        ],
+    );
+}
+
+/// A list a gate decides is presented as the optional value of its list: the
+/// flag that gates it is set from whether the source holds it, a count gated
+/// beside it is the count its maker found where it is there and zero where it
+/// is not, and its entries are written and checked only where it is there.
+///
+/// Turns red where `presented_type` presents a gated list as other than its
+/// optional value, where the value's reader stops answering it absent where
+/// the struct holds none, or where `check_value` checks a list that is absent.
+#[test]
+fn a_gated_list_is_presented_as_an_optional_list() {
+    assert!(unlowered("codec_repeat_present_if_basic").is_empty());
+    let text = resource_header("codec_repeat_present_if_basic");
+    holds(
+        "codec_repeat_present_if_basic",
+        &text,
+        &[
+            "SCE_OPTIONAL_DECLARE_NAMED(codec_repeat_present_if_basic_elems_list_optional, \
+             codec_repeat_present_if_basic_elems_list_t)\n",
+            "    codec_repeat_present_if_basic_elems_list_optional_t (*elems)(const void *ctx);\n",
+            "    if (!self->elems.present) {\n        \
+             return codec_repeat_present_if_basic_elems_list_optional_none();\n    }\n",
+            "    const uint8_t _d_num_elems = _e_elems.present ? (uint8_t)(_e_elems.value.count) \
+             : (uint8_t)0;\n",
+            "    if (_e_elems.present) {\n",
+            "    if (self->elems.present) {\n",
+        ],
+    );
+}
+
+/// A chain that ends with its scope is a list as any other: walked entry by
+/// entry, with no count before it.
+///
+/// Turns red where `positional_forms` names a chain that sets no flag of its
+/// entries, or where `encode_source` writes a chain other than as a walk.
+#[test]
+fn a_chain_that_ends_with_its_scope_is_walked_as_a_list() {
+    assert!(unlowered("codec_tlv_chain_basic").is_empty());
+    let text = resource_header("codec_tlv_chain_basic");
+    holds(
+        "codec_tlv_chain_basic",
+        &text,
+        &[
+            "    codec_tlv_chain_basic_extensions_list_t (*extensions)(const void *ctx);\n",
+            "SCE_FORGE_TRY_WRITE(codec_tlv_entry_encode_source(_e_extensions.entry, _at, w));\n",
+        ],
+    );
 }
 
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
@@ -672,6 +768,14 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_length_shared",
         "codec_length_stated",
         "codec_encoded_length_checked",
+        "codec_repeat_basic",
+        "codec_repeat_present_if_basic",
+        "codec_until_eof_basic",
+        "codec_tlv_chain_basic",
+        "codec_tlv_chain_present_if_basic",
+        "codec_nested_body",
+        "codec_nested_parent",
+        "codec_origin_envelope",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
@@ -687,6 +791,7 @@ const DRIVER: &str = r#"
 #include <string.h>
 
 #include "codec_length_ref.h"
+#include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
 
 /* A record the codec does not know, holding the elements in its own types. */
@@ -731,6 +836,48 @@ static codec_length_ref_payload_bytes_t message_payload(const void *ctx) {
 static const codec_length_ref_source_t message_source = {
     message_msg_id,
     message_payload,
+};
+
+/* A chain of nodes of its own, each holding a sequence number: a list the codec
+ * walks where it is held, by a begin and next pair of its own. */
+struct node {
+    unsigned seq;
+    const struct node *next;
+};
+
+static uint16_t node_seq(const void *ctx) {
+    return (uint16_t)((const struct node *)ctx)->seq;
+}
+
+static const codec_repeat_elem_source_t node_source = {
+    node_seq,
+};
+
+static const void *nodes_begin(const void *ctx) {
+    return ctx;
+}
+
+static const void *nodes_next(const void *ctx, const void *entry) {
+    (void)ctx;
+    return ((const struct node *)entry)->next;
+}
+
+static const sce_forge_walk_t nodes_walk = {
+    nodes_begin,
+    nodes_next,
+};
+
+/* A batch of its own, its list made once by the codec's maker. */
+struct batch {
+    codec_repeat_basic_frags_list_t frags;
+};
+
+static codec_repeat_basic_frags_list_t batch_frags(const void *ctx) {
+    return ((const struct batch *)ctx)->frags;
+}
+
+static const codec_repeat_basic_source_t batch_source = {
+    batch_frags,
 };
 
 static int failures = 0;
@@ -807,6 +954,27 @@ int main(void) {
               SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
           "a value past its array's bound is no value of the codec");
 
+    /* A list is walked where it is held: the count is what the list's maker
+     * counted, and each entry is written through the table of its own. */
+    const struct node second = {0xFACEu, NULL};
+    const struct node first = {0xBEEFu, &second};
+    struct batch b;
+    CHECK(codec_repeat_basic_frags_list_make(&b.frags, &nodes_walk, &first, &node_source) == SCE_FORGE_CODEC_OK,
+          "the nodes make a list");
+    static const uint8_t two[] = {0x02, 0xBE, 0xEF, 0xFA, 0xCE};
+    uint8_t by_batch[CODEC_REPEAT_BASIC_MAX_BYTES];
+    sce_forge_writer_t bw = sce_forge_writer_init_buf(by_batch, sizeof by_batch);
+    CHECK(codec_repeat_basic_encode_source(&batch_source, &b, &bw) == SCE_FORGE_CODEC_OK, "the batch encodes");
+    CHECK(bw.pos == sizeof two && memcmp(by_batch, two, sizeof two) == 0,
+          "the batch writes the count its maker found and each node");
+
+    /* A walk that never ends is refused once it passes the bound. */
+    struct node loop = {0x0001u, NULL};
+    loop.next = &loop;
+    CHECK(codec_repeat_basic_frags_list_make(&b.frags, &nodes_walk, &loop, &node_source) ==
+              SCE_FORGE_CODEC_TOO_MANY_ELEMENTS,
+          "a walk past the bound is refused");
+
     return failures == 0 ? 0 : 1;
 }
 "#;
@@ -821,7 +989,12 @@ int main(void) {
 #[test]
 fn a_record_of_its_own_is_encoded_through_a_table_of_its_own() {
     let dir = tempdir().expect("tempdir");
-    for name in ["codec_simple_frame", "codec_length_ref"] {
+    for name in [
+        "codec_simple_frame",
+        "codec_length_ref",
+        "codec_repeat_elem",
+        "codec_repeat_basic",
+    ] {
         for (file, text) in generated(&resources().join(format!("{name}.scxml")))
             .unwrap_or_else(|e| panic!("{name} generates on C11: {e}"))
         {
