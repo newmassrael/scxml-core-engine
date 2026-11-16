@@ -197,8 +197,12 @@ fn a_length_is_derived_from_the_view_it_measures_and_is_no_member_of_the_value()
             "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, _e_payload.data, _e_payload.len));\n",
             "    const uint8_t _d_len = raw[1];\n",
             "size_t _n = (size_t)_d_len;",
-            "    if (!sce_forge_length_within_bound(self->payload_len, 32)) {\n        \
+            "static inline sce_forge_codec_status_t codec_length_ref_check_value(\
+             const codec_length_ref_t *self) {\n    \
+             if (!sce_forge_length_within_bound(self->payload_len, 32)) {\n        \
              return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n    \
+             return SCE_FORGE_CODEC_OK;\n}\n",
+            "    SCE_FORGE_TRY_WRITE(codec_length_ref_check_value(self));\n    \
              return codec_length_ref_encode_source(codec_length_ref_value_source(), self, w);\n",
         ],
     );
@@ -384,6 +388,38 @@ fn a_gated_text_sets_its_flag_and_its_length_from_whether_it_is_there() {
     );
 }
 
+/// A body of a codec the C11 backend prints is presented as the table and the
+/// context of its codec's source, which the value's reader points at the body
+/// it holds, and written by its codec's encode over that source; the value's
+/// check holds the body's arrays to their bounds through its codec's check, as
+/// the encode over a source reads them through its views.
+///
+/// Turns red where `c11_source::positional_forms` refuses a body of a printed
+/// codec, where the encode over a source writes a body other than through its
+/// codec's `encode_source`, or where `check_value` stops checking a body.
+#[test]
+fn a_body_is_presented_as_its_codecs_source_and_written_by_its_encode() {
+    assert!(unlowered("codec_embed_basic").is_empty());
+    let text = resource_header("codec_embed_basic");
+    holds(
+        "codec_embed_basic",
+        &text,
+        &[
+            "#include \"sce/forge/optional.h\"",
+            "typedef struct {\n    const codec_embed_basic_source_t *table;\n    \
+             const void *ctx;\n} codec_embed_basic_source_ref_t;\n",
+            "SCE_OPTIONAL_DECLARE_NAMED(codec_embed_basic_source_ref_optional, \
+             codec_embed_basic_source_ref_t)\n",
+            "    codec_zenoh_locator_source_ref_t (*locator)(const void *ctx);\n",
+            "    body.table = codec_zenoh_locator_value_source();\n    \
+             body.ctx = &self->locator;\n",
+            "    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_encode_source(_e_locator.table, \
+             _e_locator.ctx, w));\n",
+            "    SCE_FORGE_TRY_WRITE(codec_zenoh_locator_check_value(&self->locator));\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// neither has an encode over a source.
@@ -476,6 +512,7 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_zenoh_frame",
         "codec_present_if_string",
         "codec_present_if_tail",
+        "codec_embed_basic",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
