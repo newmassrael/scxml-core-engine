@@ -875,6 +875,31 @@ old encode, the old encode and its templates are removed in the same landing.
    its count with. The catalog gains 8 sources and no refused case. Kotlin, Go, Python and C11 compile the codec
    as they compile every codec whose cases are `sources` alone, and Swift where its generator writes it; the codec
    and its `codec_repeat_elem` join `entries_that_take_a_flag_compile_on_every_backend`.
+
+   *The forty-fifth C++ landing, 2026-11-16:* the last form the forty-second landing left refused by name enters
+   with its document and cases (§5), and with it the Rust printer writes the form: a list always there, held to
+   the law its entries say their inputs by, that shares its count with a list a gate decides (docs/adr/0065 §6
+   R5, R8). The new resource `codec_repeat_flag_aligned_always` is `codec_repeat_flag_aligned_group` turned over:
+   its `links`, always on the wire, are handed `head.W` as the input they say, and its `weights`, there where
+   `head.H` holds, are plain. Every arm of the group of `head.H` holds the links, as the first list of the
+   `Aligned` where the arm holds both and alone in the other, so `head.W` is the start of the links whichever arm
+   the value holds. Writing the Rust side found the two defects the forty-fourth landing named and did not fix,
+   which no document had reached. The encode read the start of the list as if the value held it alone
+   (`start(&read)`), while the group binds each of its members off the arm the value holds as an `Option`, the
+   list always there among them; it now reads it through the `Option` wherever a group holds the list, as the
+   list's count was already read, and the measure is there exactly where a gate of the list's own leaves it in,
+   as the plan says (`rust_source::read_optional`, which the two checks a list is read for share). The eager
+   decode of a group by value declared a list it fills in place unassigned unless the statement called `refill`:
+   a list held to its law calls `refill_from`, so it was filled before it was assigned; it now starts from the
+   list's default either way (`generator::decode_into_local`). The pair's in-place door takes no list held to a
+   law in either place, as the forty-fourth landing found for the second, so such a group is decoded by value.
+   The C++ printer read the list off each arm as it reads any member of a group, so the refusal named nothing
+   it lacked, and `cpp_source::grouped_law_forms` is gone with it: the C++ printer refuses no form of a list held
+   to a law. `binary_model.py` already read the shape. The catalog gains 8 sources and no refused case: the
+   encode is total, the count held within its field by the lists' bound. The census holds the codec printed, and
+   a codec that embeds it printed whole. Kotlin, Go, Python and C11 compile the codec as they compile every codec
+   whose cases are `sources` alone, and Swift where its generator writes it; the codec joins
+   `entries_that_take_a_flag_compile_on_every_backend`.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

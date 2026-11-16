@@ -1613,6 +1613,21 @@ Landing: the commits that add this section. No codec of the repository changes: 
 - The list always there of such two, held to a law itself, stays refused by C++ by name (`a list always there held
   to the law its entries say their inputs by, sharing its count with a list a gate decides`); no codec uses it.
 
+## A list always there held to its law shares its count with a list a gate decides (ADR 0081 step 4)
+
+Landing: the commits that add this section. No codec of the repository changes: none used the form
+(`codec_repeat_flag_aligned_always` of the resources is the one that does now).
+
+- A list always there whose entries say the flag it hands them, and that shares its count with a list a gate
+  decides (docs/adr/0065 §6 R5, R8), is a `Lawful` of the list's law in every arm of the gate's group: the first
+  list of the `Aligned` the arm where the gate holds holds, and alone in the other. The bound flag is derived from
+  its start whichever arm the value holds: drop the code that set it. C++: such a codec is printed; it was refused
+  by the clause `a list always there held to the law its entries say their inputs by, sharing its count with a list
+  a gate decides`. Rust: such a codec did not compile, and now does. The encode read the list's start as if the
+  group bound it alone, where the group binds it off the arm the value holds as an `Option`, and the eager decode
+  declared the list unassigned before filling it from its start (`refill_from`); it now starts from the list's
+  default, as a list filled by `refill` does.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
