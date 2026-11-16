@@ -8,9 +8,14 @@
   by walking the one value type, each record's fields in the scope of the document
   that declares it (`Item` as `event_batch.scxml` imports it).
 
-  `check` accepts every expression here. No backend lowers a composed value yet, so
-  the machine is refused by name, `generate/unsupported-feature`, where it is
-  generated (section 7.3); the send of section 14.1 comes with the lowering.
+  `check` accepts every expression here. `kept` is a variable of a list of records
+  that each hold a list, a place no lowering holds (docs/adr/0086, section 7.3; a
+  lowering holds a record that holds a composition only as `optional<record:R>`,
+  docs/adr/0087, Landing order item 8), so the gate every route asks first refuses
+  the machine by name, `generate/unsupported-feature`, naming the field `tags`, for
+  every backend alike. What a lowering reads of a composed payload, and sends of one,
+  is run on every lane by `static_composed_payload` (with its replay scenario,
+  `scenarios/static_composed_payload.json`) and `static_composed_send`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
