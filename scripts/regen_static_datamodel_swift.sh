@@ -62,6 +62,10 @@ CANDIDATES+=("sce-build/tests/fixtures/host_processor/statechart_static_mesh_req
 # each call maps the machine's own sum into the type the union's unit declares, case by case, and back,
 # which only a compile of the machine beside the union's unit holds to the Swift compiler.
 CANDIDATES+=("sce-build/tests/fixtures/union/statechart_shape_crossing.scxml")
+# The static child that declares its variables with the values its invoke handed, in document
+# order (docs/adr/0098): an initial value that reads a variable declared before it, which only a
+# compile of the machine holds to the Swift compiler, and a driver to the order.
+CANDIDATES+=("tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml")
 MACHINES=()
 SOURCES=()
 # What a machine that is not lowered yet is refused for, one line each, so a run reads

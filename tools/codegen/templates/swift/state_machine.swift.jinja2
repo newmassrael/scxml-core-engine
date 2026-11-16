@@ -330,7 +330,11 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     var {{ field.name }}: {{ field.ty }} = {{ module_parameter_starts[field.id] }}
 {% else %}
     /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
-    var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+    {# Declared without a value: an initial value may read a variable declared
+       before it, which a property initializer cannot name, so every
+       initializer of the policy declares them in document order
+       (`declare_static_variables`). #}
+    var {{ field.name }}: {{ field.ty }}
 {% endif %}
 {% endfor %}
 {% for field in static_published %}
@@ -359,24 +363,61 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 {% endfor %}
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-{% for field in seeded_fields %}
-        if let value = params.{{ field.name }} {
-            {{ field.name }} = value
+{# The variables are declared again in document order, by the local name each
+   initial value reads, as the initializers declare them: a variable handed a value
+   takes it, every other one its own initial value, which can neither fail nor act
+   (one that could fail is refused where it is written), so declaring it a second
+   time is not observable. A module parameter keeps what its component filled. #}
+{% for field in static_fields %}
+{% if field.module_parameter %}
+{% elif field.seeded %}
+        let {{ field.name }}: {{ field.ty }}
+        if let handed = params.{{ field.name }} {
+            {{ field.name }} = handed
+        } else {
+            {{ field.name }} = {{ field.init }}
         }
+{% else %}
+        let {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
+{% endfor %}
+{% for field in static_fields %}
+{% if not field.module_parameter %}
+        self.{{ field.name }} = {{ field.name }}
+{% endif %}
 {% endfor %}
     }
 {% endif %}
 {% endif %}
 
+{# §scxml-5.3: the `sce-static` variables, declared in document order, each at its
+   initial value, which reads the variables declared before it by the local name each
+   is given here (`StaticTarget::initial_field_ref`); a module parameter keeps the value
+   its property starts at. The first statements of every initializer. #}
+{% macro declare_static_variables(fields) %}
+{% for field in fields %}
+{% if not field.module_parameter %}
+        let {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
+{% endfor %}
+{% for field in fields %}
+{% if not field.module_parameter %}
+        self.{{ field.name }} = {{ field.name }}
+{% endif %}
+{% endfor %}
+{% endmacro %}
 {% if has_native_actions %}
 {% if has_native_duties %}
     /// docs/adr/0038: `acceptSimulatedHost: true` states that this machine is built for a
     /// host that only simulates its duties (a recorder, a test double) on purpose. A machine
     /// that states a duty traps for a host that says it only simulates, unless it is.
     public init(actions: any {{ native_actions_interface }}, acceptSimulatedHost: Bool = false) {
+{{ declare_static_variables(static_fields) }}
         precondition(
             actions.realization == .performs || acceptSimulatedHost,
             "{{ machine_name }} states a duty and its host declares that it only simulates the duties: "
@@ -387,12 +428,14 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
     }
 {% else %}
     public init(actions: any {{ native_actions_interface }}) {
+{{ declare_static_variables(static_fields) }}
         self.actions = actions
         sessionID = drawSessionID()
     }
 {% endif %}
 {% else %}
     public init() {
+{{ declare_static_variables(static_fields) }}
         sessionID = drawSessionID()
     }
 {% endif %}
