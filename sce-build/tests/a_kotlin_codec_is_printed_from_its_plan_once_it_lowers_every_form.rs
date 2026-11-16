@@ -99,7 +99,7 @@ fn a_length_is_derived_from_the_bytes_it_measures_and_is_no_field_of_the_value()
             "import kotlin.jvm.JvmInline\n",
             "@JvmInline\nvalue class CodecLengthRefPayloadBytes private constructor(val bytes: ByteArray) {\n",
             "        const val MOST: Int = 32\n",
-            "        fun of(bytes: ByteArray): CodecLengthRefPayloadBytes? = \
+            "        fun of(bytes: ByteArray): CodecLengthRefPayloadBytes? =\n            \
              if (bytes.size <= MOST) CodecLengthRefPayloadBytes(bytes) else null\n",
             "interface CodecLengthRefSource {\n    val msgId: UByte\n    \
              val payload: CodecLengthRefPayloadBytes\n}\n",
@@ -187,18 +187,79 @@ fn a_codec_of_integers_is_printed_with_no_value_class() {
     );
 }
 
+/// A text is presented in the value class of its bound, counted in the bytes
+/// UTF-8 encodes it to, which the runtime counts and refuses a text no UTF-8
+/// holds; its length is derived from those bytes, and the bytes are written.
+///
+/// Turns red where `kotlin_source::bounded_class` counts a text in UTF-16
+/// units rather than through `Utf8.size`, or `encode_source` measures or
+/// writes a text other than as its UTF-8 bytes.
+#[test]
+fn a_text_is_held_to_its_bound_in_utf8_bytes_and_its_length_derived_from_them() {
+    assert!(unlowered("codec_zenoh_locator").is_empty());
+    let text = resource_file("codec_zenoh_locator");
+    holds(
+        "codec_zenoh_locator",
+        &text,
+        &[
+            "value class CodecZenohLocatorLocatorText private constructor(val text: String) {\n",
+            "            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null\n",
+            "            return if (size <= MOST) CodecZenohLocatorLocatorText(text) else null\n",
+            "    val locator: CodecZenohLocatorLocatorText\n",
+            "val _d_locator_len = _e_locator.text.encodeToByteArray().size.toULong()\n",
+            "w.writeVleU64(_d_locator_len)?.let { return it }\n",
+            "w.writeBytes(_e_locator.text.encodeToByteArray())?.let { return it }\n",
+            "                locator = CodecZenohLocatorLocatorText.of(locator) ?: return null",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_locator",
+        &text,
+        &["var locator_len: ", "src.locator_len"],
+    );
+}
+
+/// An element a gate decides is `null` where it is absent, written only where
+/// it is there, and the flag that gates it is derived from it and folded into
+/// its carrier in place of the value's bit.
+///
+/// Turns red where `kotlin_source::encode_source` reads the presence flag off
+/// the value rather than folding it from the gated element, or writes the
+/// gated element whether or not it is there.
+#[test]
+fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
+    assert!(unlowered("codec_present_if_basic").is_empty());
+    let text = resource_file("codec_present_if_basic");
+    holds(
+        "codec_present_if_basic",
+        &text,
+        &[
+            "    val seq: UShort?\n",
+            "            val _e_seq = src.seq\n",
+            "            val _c_flags = ((_e_flags.toUInt() and 0x1u.inv()) or \
+             (if (_e_seq != null) 0x1u else 0x0u)).toUByte()\n",
+            "            w.writeU8(_c_flags.toByte())?.let { return it }\n",
+            "            if (_e_seq != null) {\n                w.writeU8(",
+        ],
+    );
+    holds_none("codec_present_if_basic", &text, &["src.flags.toByte()"]);
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a variant, a CBOR map and an element a gate
-/// decides each name their form.
+/// template's encode whole: a variant, a CBOR map and a length the value states
+/// where its gated content is absent each name their form.
 ///
 /// Turns red where `kotlin_source::positional_forms` stops naming a variant or
-/// a gated element, or `unlowered_forms` a CBOR map.
+/// a stated length, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
-        ("codec_present_if_basic", "an element a gate decides"),
+        (
+            "codec_present_if_length_ref",
+            "a length the value states where its content is absent",
+        ),
     ] {
         let forms = unlowered(name);
         assert!(

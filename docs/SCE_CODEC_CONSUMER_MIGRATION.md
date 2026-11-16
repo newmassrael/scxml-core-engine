@@ -2321,3 +2321,18 @@ element is the length of one byte string held in a field of its own, and whose e
   and so is any class of yours that presents those properties. Each element's property is read by the name it had,
   so a read `msg.msgId` is unchanged.
 
+## A printed Kotlin codec holds text to its bound and derives the flag of a gated element (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that also hold a text, an element a flag of the codec's own gates, or a length gated beside its content.
+
+- A text element is a value of `{Codec}{Element}Text`, a value class over a `String` whose constructor is private.
+  `{Codec}{Element}Text.of(text)` makes one of a text within the element's bound in UTF-8 bytes and answers `null`
+  past it, or for a text no UTF-8 holds (a lone surrogate). Write `name = CodecXNameText.of(text) ?: return ...`
+  where you wrote `name = text`, and read `msg.name.text` where you read `msg.name`. A length derived from a text
+  is gone from the data class, as one derived from a byte string is.
+- An element a gate decides is `null` where it is absent, as before, and a byte string or a text a gate decides is
+  the optional of its value class. The flag that gates it is now derived: the encode sets it exactly where the
+  element is there and clears it where it is not, whatever bit the carrier you hand it holds. Stop setting the flag
+  before you encode; a value whose flag disagreed with its element is now written as the element says.
+

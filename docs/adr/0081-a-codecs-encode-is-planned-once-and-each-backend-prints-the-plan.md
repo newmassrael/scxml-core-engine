@@ -1326,6 +1326,19 @@ old encode, the old encode and its templates are removed in the same landing.
    and Python cases read it. The harness encodes the value by the companion's `encodeSource`, compares the bytes,
    decodes them and compares each element, a byte string by its content, as a value class over an array compares
    the array by identity. It states only the shapes the Kotlin printer prints and refuses any other by name.
+
+   *The second Kotlin landing, 2026-11-16:* text of a stated bound, an element one flag of the codec's own decides,
+   and the flags the encode derives from it, as the second Python landing. A text is a value of
+   `{Codec}{Element}Text`, a value class over a `String` whose `of` counts the text in the bytes UTF-8 encodes it to
+   (`com.sce.forge.runtime.Utf8.size`, which the forge runtime gains) and makes no value of a text no UTF-8 holds, a
+   lone surrogate, which `encodeToByteArray` would otherwise write as a replacement character; a length of it is
+   derived from those bytes. A gated element is `null` where it is absent: the source presents it as the optional
+   of its type, the encode reads it into a local, which Kotlin narrows where it tests it, folds the flag that gates
+   it into its carrier from whether it is there, worked on as the unsigned type of the carrier's width so a mask of
+   its top bit is a literal, in place of the bit the value presents, and writes it only where it is there. A length
+   gated beside it is derived as zero where it is absent and written where its gate holds, tested on the carrier as
+   the encode writes it. A length the value states where its content is absent (§4.6 R4b), a group, and a gate on
+   an input or a chain's entries stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

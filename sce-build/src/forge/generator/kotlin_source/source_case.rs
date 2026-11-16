@@ -8,12 +8,12 @@
 //!
 //! The case reads the notation of `source` where every printer's case reads it
 //! ([`source_members`] and the readers beside it), so one case states one value
-//! in every language. A byte string is made by the factory of the value class
-//! of its bound, which the literal reaches by the name the printer gives it
-//! ([`refinement_class`]). Every name is written whole, by the package of the
-//! document that declares it, so the harness imports nothing for a case. A
-//! shape the Kotlin printer does not print yet is refused by name, as the Rust
-//! case refuses what it does not spell.
+//! in every language. A byte string or a text is made by the factory of the
+//! value class of its bound, which the literal reaches by the name the printer
+//! gives it ([`refinement_class`]). Every name is written whole, by the package
+//! of the document that declares it, so the harness imports nothing for a
+//! case. A shape the Kotlin printer does not print yet is refused by name, as
+//! the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
@@ -198,11 +198,20 @@ fn member_literal(
             ))
         }
         Value::Scalar(_) => Err("a float or a bool is not spelled as a Kotlin literal yet".into()),
-        Value::Text(_) => Err(
-            "a text is not spelled as a Kotlin literal yet: the Kotlin printer prints no codec \
-             that holds one"
-                .into(),
-        ),
+        Value::Text(_) => {
+            let text = json
+                .as_str()
+                .ok_or_else(|| "text is a JSON string".to_string())?;
+            Ok(format!(
+                "{}.of({})!!",
+                path.qualified(&refinement_class(
+                    &path.type_name,
+                    &field.id,
+                    &field.sce_type
+                )),
+                string_literal(text)
+            ))
+        }
         Value::Body { .. } => Err(
             "a body is not spelled as a Kotlin literal yet: the Kotlin printer prints no codec \
              that holds one"
@@ -214,6 +223,24 @@ fn member_literal(
                 .into(),
         ),
     }
+}
+
+/// `text` as a Kotlin string literal of the same text: a quote, a backslash and
+/// a `$`, which would start a template, escaped, and every control character
+/// written as its UTF-16 unit, as Kotlin has no escape for most of them.
+fn string_literal(text: &str) -> String {
+    let mut literal = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => literal.push_str("\\\""),
+            '\\' => literal.push_str("\\\\"),
+            '$' => literal.push_str("\\$"),
+            c if c.is_control() => literal.push_str(&format!("\\u{:04X}", c as u32)),
+            c => literal.push(c),
+        }
+    }
+    literal.push('"');
+    literal
 }
 
 /// `n` as a Kotlin literal of the integer type `ty`, which the constructor's
@@ -262,4 +289,45 @@ fn integer_literal(n: i128, ty: &SceType) -> Result<String, String> {
         }
         _ => return Err(format!("a `{}` is no integer", ty.as_attr())),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A text reaches the harness as a Kotlin literal of the same text: what
+    /// would end the literal, escape, or start a template is escaped, and a
+    /// control character is written as its unit.
+    ///
+    /// Turns red where `string_literal` stops escaping a `$`, a quote or a
+    /// backslash, or writes a control character raw.
+    #[test]
+    fn a_text_is_spelled_as_a_kotlin_literal_of_the_same_text() {
+        assert_eq!(string_literal("abc"), "\"abc\"");
+        assert_eq!(string_literal("a\"b\\c$d"), "\"a\\\"b\\\\c\\$d\"");
+        assert_eq!(string_literal("\u{0c}\n"), "\"\\u000C\\u000A\"");
+        assert_eq!(string_literal("h\u{e9}llo"), "\"h\u{e9}llo\"");
+    }
+
+    /// A number is a literal of the element's type, which the parameter gives
+    /// it, and one its type does not hold is refused by name.
+    ///
+    /// Turns red where `integer_literal` spells a 64-bit unsigned number without
+    /// its `uL` suffix, a signed byte without its conversion, or lets a number
+    /// past its type through.
+    #[test]
+    fn a_number_is_a_literal_of_its_elements_type() {
+        assert_eq!(integer_literal(255, &SceType::Uint8).as_deref(), Ok("255u"));
+        assert_eq!(
+            integer_literal(18_446_744_073_709_551_615, &SceType::Uint64).as_deref(),
+            Ok("18446744073709551615uL")
+        );
+        assert_eq!(
+            integer_literal(-1, &SceType::Int8).as_deref(),
+            Ok("(-1).toByte()")
+        );
+        assert_eq!(integer_literal(-7, &SceType::Int64).as_deref(), Ok("-7L"));
+        assert!(integer_literal(256, &SceType::Uint8).is_err());
+        assert!(integer_literal(-1, &SceType::Uint32).is_err());
+    }
 }
