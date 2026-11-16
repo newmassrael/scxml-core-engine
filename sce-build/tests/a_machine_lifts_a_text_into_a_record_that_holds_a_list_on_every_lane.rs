@@ -187,3 +187,34 @@ fn a_swift_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
         "a record that holds a list is not read field by field:\n{code}"
     );
 }
+
+/// Pinned by the C11 row of `ComposedLowering::of`, `composed_record_variable_field`
+/// (the optional value of the record declared after it, `ComposedSpelling::take_declared`),
+/// `CTarget::lift`'s `Lifted::Whole` arm, and `C11Composed::read_list` and
+/// `C11Composed::saved_record_ext` (`sce-build/src/forge/composed_lowering/c11.rs`): the
+/// variable is the struct of a flag and the machine's own record, the lift reads it
+/// whole through `sce_payload_lift_value`, the list opened held to both its counts, and
+/// a saved state writes the record by its type and reads it back, the list held to its
+/// lower count.
+#[test]
+fn a_c11_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
+    let code = machine(Language::C11, "_sm.h");
+    holds(
+        &code,
+        &[
+            "} static_lift_list_record_plan_t;",
+            "sce_optional_record_static_lift_list_record_plan_t",
+            "sce_payload_lift_value(",
+            "sce_payload_list_open_within(sce_value, 1u, 3u, &sce_cursor)",
+            "static inline void static_lift_list_record_plan_t_saved_write(sce_jw_t *w, const \
+             static_lift_list_record_plan_t *value) {",
+            "static inline bool static_lift_list_record_plan_t_saved_read(sce_jv_t v, const char \
+             *what, unsigned at, static_lift_list_record_plan_t *out,",
+            "sce_saved_list_within(member, member_what, 1u, 3u, &count_",
+        ],
+    );
+    assert!(
+        !code.contains("sce_payload_lift("),
+        "a record that holds a list is not read field by field:\n{code}"
+    );
+}

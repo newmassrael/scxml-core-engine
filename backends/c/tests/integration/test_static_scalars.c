@@ -176,6 +176,7 @@
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
 #include "static_invoke_tree_sm.h"
+#include "static_lift_list_sm.h"
 #include "static_lift_sm.h"
 #include "static_list_assign_sm.h"
 #include "static_list_call_sm.h"
@@ -3016,6 +3017,42 @@ static const record_variable_t lift_records[] = {
 STATIC_OPTIONAL_SCENARIO(static_lift, lift_states, lift_variables, static_lift_text, lift_records, NULL,
                          static_lift_presence)
 
+// static_lift_list: a text read into a record that holds a list of records, or why it is not one
+// kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, "Landing order" item 8), at every
+// depth of the record. The record and its list are the machine's own structs, which no reader of
+// this file walks, so each variable a step states is read out of the machine's saved state, the
+// text every backend writes it by its type in.
+VARIABLE_READER(static_lift_list, lifts)
+VARIABLE_READER(static_lift_list, errors)
+
+// Saved with no delayed send to carry, so the wall clock it is saved at changes nothing it holds.
+#define LIFT_LIST_SAVED_AT_MS INT64_C(1700000000000)
+
+// The machine's saved text, ended by its terminator, or NULL for one it could not save.
+static const char *static_lift_list_saved(void *sm) {
+    static char text[16384];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    if (!static_lift_list_save((const static_lift_list_t *)sm, LIFT_LIST_SAVED_AT_MS, text, sizeof(text) - 1u, &len,
+                               &err)) {
+        (void)fprintf(stderr, "static_lift_list: the machine was not saved: %s\n", err.message);
+        return NULL;
+    }
+    text[len] = '\0';
+    return text;
+}
+
+static const name_value_t lift_list_states[] = {
+    {"lifting", STATIC_LIFT_LIST_STATE_LIFTING},
+};
+static const variable_t lift_list_variables[] = {
+    {"lifts", static_lift_list_read_lifts},
+    {"errors", static_lift_list_read_errors},
+};
+STATIC_SCENARIO_CORE_SAVED(static_lift_list, lift_list_states, lift_list_variables, NULL, no_lists, no_records, NULL,
+                           NULL, NULL, NULL, REQUIRE_STARTED(static_lift_list_init(&sm), STATIC_LIFT_LIST_START_OK),
+                           NULL, NULL, NULL, NULL, NULL, NULL, NULL, static_lift_list_saved)
+
 // static_union: a payload that holds a union, read by testing its tag (docs/adr/0092, sections 4
 // and 6.1), a union variable built where it is declared and one put in whole, a text lifted into a
 // union or why it is none, and the machine saved and restored, every union read back by its tag. A
@@ -3589,6 +3626,7 @@ int main(void) {
     bad |= static_state_algorithm_enum_scenario("static_state_algorithm_enum", 18);
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_lift_scenario("static_lift", 37);
+    bad |= static_lift_list_scenario("static_lift_list", 21);
     bad |= static_union_scenario("static_union", 25);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);

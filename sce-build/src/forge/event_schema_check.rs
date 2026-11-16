@@ -352,6 +352,7 @@ impl ComposedLowering {
 
             Language::C11 => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
 

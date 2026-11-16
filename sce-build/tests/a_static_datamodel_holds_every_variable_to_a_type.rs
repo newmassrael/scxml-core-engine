@@ -6123,10 +6123,8 @@ const INTERPRETER: &str = "interpreter";
 /// a union (docs/adr/0092, step 4) is replayed on every engine, and the scenario of a lift
 /// into a record that holds a list (docs/adr/0087, Landing order item 8) on each engine
 /// whose slice holds a variable of such a record, every other engine listed here.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("static_lift_list", "c11", LIFT_LIST_NOT_LOWERED),
-    ("static_lift_list", INTERPRETER, LIFT_LIST_NOT_LOWERED),
-];
+const NOT_YET_LOWERED: &[(&str, &str, &str)] =
+    &[("static_lift_list", INTERPRETER, LIFT_LIST_NOT_LOWERED)];
 
 /// Why the scenario of a lift into a record that holds a list is not replayed on
 /// an engine yet: the engine holds no variable of such a record

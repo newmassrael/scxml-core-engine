@@ -163,6 +163,15 @@ typedef struct {
     // time. False when the machine could not be saved or the text was refused. Unset for a driver
     // that does not restore, and a step that states `restore` then fails.
     bool (*restore)(void *sm);
+    // The machine's saved state (docs/adr/0045), as the text every backend saves: each
+    // variable a step states is then read as the value that text's `variables` holds
+    // it as, any JSON value, compared as the value it is, and not through the readers
+    // above. What a machine holds a composed value in (a record that holds a list of
+    // records, docs/adr/0087, "Landing order" item 8) is its own, which no reader here
+    // walks, and its saved form is the one spelling of it every lane shares. NULL from
+    // the call is a machine that could not be saved, which fails the step. Unset for a
+    // driver that reads its variables through the readers above.
+    const char *(*saved)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -925,6 +934,47 @@ static int sce_scenario_expect_recorded(sce_scenario_cursor_t *c, const sce_scen
     return 1;
 }
 
+// A variable `name` stated as any JSON value at `c`, against the value the machine's
+// saved state writes it as (the driver's `saved`): the member `name` of the saved
+// text's `variables`, the two compared as the values they are. `*well_formed` is set
+// once the stated value was read, whatever the machine holds; the rest of the file is
+// read only when it is.
+static int sce_scenario_expect_saved(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step,
+                                     const char *name, bool *well_formed) {
+    char message[160];
+    sce_scenario_space(c);
+    const char *from = c->at;
+    if (!sce_scenario_skip_value(c)) {
+        (void)snprintf(message, sizeof(message), "variable `%s` is not well formed", name);
+        return sce_scenario_fail(d, step, message);
+    }
+    *well_formed = true;
+    const char *text = d->saved(d->sm);
+    if (text == NULL) {
+        return sce_scenario_fail(d, step, "the machine could not be saved, so no variable of it can be read");
+    }
+    sce_scenario_cursor_t variables = {NULL};
+    sce_scenario_cursor_t got = {NULL};
+    if (!sce_scenario_member(text, "variables", &variables) || !sce_scenario_member(variables.at, name, &got)) {
+        (void)snprintf(message, sizeof(message), "the saved state holds no variable `%s`", name);
+        return sce_scenario_fail(d, step, message);
+    }
+    const char *got_from = got.at;
+    sce_scenario_cursor_t want = {from};
+    if (sce_scenario_same_json(&got, &want)) {
+        return 0;
+    }
+    // Written whole, not through the bounded message: a record is longer than that
+    // holds, and the part cut off is the part that differs as often as not.
+    sce_scenario_cursor_t got_end = {got_from};
+    if (!sce_scenario_skip_value(&got_end)) {
+        got_end.at = got_from;
+    }
+    (void)fprintf(stderr, "%s: FAIL [step %d] - variable `%s` is %.*s, not %.*s\n", d->machine, step, name,
+                  (int)(got_end.at - got_from), got_from, (int)(c->at - from), from);
+    return 1;
+}
+
 // What a step expects, read from its `expect` object — the object `c` is at.
 // `asked` is what the machine told its host in this step, or NULL for a driver
 // that records none, `children` what the child hosts its host answered were asked
@@ -1048,6 +1098,22 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                         return sce_scenario_fail(d, step, "a variable has no name");
                     }
                     sce_scenario_space(c);
+                    if (d->saved != NULL) {
+                        // Every variable read as the machine's saved state writes it.
+                        bool well_formed = false;
+                        const int mismatch = sce_scenario_expect_saved(c, d, step, name, &well_formed);
+                        if (!well_formed) {
+                            return mismatch;
+                        }
+                        bad |= mismatch;
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
                     if (*c->at == '{') {
                         // A record is stated as an object of its fields.
                         bool well_formed = false;

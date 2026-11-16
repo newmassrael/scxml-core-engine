@@ -183,9 +183,13 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // DELIVER hands a step's `invoke` event to the running child of that path through
 // the Mesh router the driver gave it, or is NULL for a machine whose children are
 // given none. PRESENCE answers whether a value that may be absent is present
-// (docs/adr/0055), or is NULL for a machine that holds none.
-#define STATIC_SCENARIO_CORE_RESTORING(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, \
-                                       INIT, ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, RESTORE)       \
+// (docs/adr/0055), or is NULL for a machine that holds none. RESTORE saves the machine
+// and restores it from the text, or is NULL for a driver that does not, and SAVED
+// answers the machine's saved text, every variable a step states read out of it
+// (the driver's `saved`), or is NULL for a driver that reads its variables
+// through the readers above.
+#define STATIC_SCENARIO_CORE_SAVED(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,     \
+                                   INIT, ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, RESTORE, SAVED)    \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -288,7 +292,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               CHILD_HOSTS,                                                             \
                                               DELIVER,                                                                 \
                                               PRESENCE,                                                                \
-                                              RESTORE};                                                                \
+                                              RESTORE,                                                                 \
+                                              SAVED};                                                                  \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -307,6 +312,12 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         INIT;                                                                                                          \
         return M##_replay(&sm, SENT, scenario, min_steps);                                                             \
     }
+
+// A machine whose driver reads each variable through the readers of its type.
+#define STATIC_SCENARIO_CORE_RESTORING(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, \
+                                       INIT, ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, RESTORE)       \
+    STATIC_SCENARIO_CORE_SAVED(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,   \
+                               ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, RESTORE, NULL)
 
 // A machine whose driver does not save and restore it, which is every machine but a tree.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \

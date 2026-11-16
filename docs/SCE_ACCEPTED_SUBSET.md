@@ -5042,8 +5042,8 @@ in a `\u` escape, no repeated name, and `-0` no whole number. Rust, Go, Kotlin, 
 C++, Swift, C11 and the Interpreter lower it, and each replays
 `scenarios/static_lift.json`. A lift into a record that holds a list of records is
 replayed by `scenarios/static_lift_list.json` on each engine whose row holds
-`records` (Rust, Kotlin, Go, Python, C++ and Swift), every other engine refusing its variable by name until
-its own landing.
+`records`, which is every generated backend's, the Interpreter refusing its variable
+by name until its own landing.
 
 **A text rendered from a template: `<sce:render>`** (docs/adr/0087, section 3.1,
 item 6). `<sce:render template="AskDate" location="prompt">` with one `<sce:set
@@ -5654,7 +5654,7 @@ not lower.
 
 - `python` lowers reads, copies, unions, records, sends; refuses none
 
-- `c11` lowers reads, copies, unions, sends; refuses records
+- `c11` lowers reads, copies, unions, records, sends; refuses none
 
 - `swift` lowers reads, copies, unions, records, sends; refuses none
 

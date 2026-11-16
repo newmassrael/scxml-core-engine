@@ -6119,6 +6119,14 @@ fn composed_record_variable_field(
         &*spelling,
     )
     .map_err(refused)?;
+    // A target that declares a type per shape of a composition (C11) declares
+    // the optional value of the record after the record, once however many
+    // variables hold one, as it declares a union's.
+    for def in spelling.take_declared() {
+        if !declarations.type_defs.contains(&def) {
+            declarations.type_defs.push(def);
+        }
+    }
     let init = absent_value(target, &record_ty, &what)?;
     Ok(StaticField {
         id: var.id.clone(),
@@ -6127,8 +6135,9 @@ fn composed_record_variable_field(
         init,
         published: var.direction == Some(crate::forge::model::Direction::Out),
         // Owned and compared whole: a host is lent it, and the snapshot clones
-        // it, as a union variable is.
-        view: Some(field_ty),
+        // it, as a union variable is; a target whose reader answers it by value
+        // (C11's plain data) names no view.
+        view: target.whole_value_view(&field_ty),
         read: None,
         bound: None,
         // A saved state holds it as `null` or as the record it holds, which
