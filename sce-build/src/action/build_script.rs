@@ -46,6 +46,9 @@ use std::path::{Path, PathBuf};
 use super::generation::{GenerationError, Generator, READS_FLAG};
 use super::identity::{GeneratorIdentity, IdentityError};
 use super::materialize::{materialize, remove_unproduced, MaterializeError};
+use super::provenance::{
+    self, tree_provenance, GeneratedProvenance, GeneratorRecord, ProvenanceError, PROVENANCE_FILE,
+};
 use super::store::LocalStore;
 use super::tree::{self, ExpandedTree, ManifestError, MANIFEST_DIRECTORY};
 
@@ -128,6 +131,8 @@ pub enum BuildScriptError {
     Manifest(#[from] ManifestError),
     #[error("{0}")]
     Materialize(#[from] MaterializeError),
+    #[error("{0}")]
+    Provenance(#[from] ProvenanceError),
 }
 
 /// When this process was started as the generator of a run, run that
@@ -149,7 +154,8 @@ pub fn serve_generator_runs() {
 /// Each tree is written at the paths it has under the checkout's root,
 /// beneath `OUT_DIR/`[`TREES_DIRECTORY`]; a file an earlier build wrote that
 /// the tree no longer produces is removed. Nothing is formatted but by the
-/// tree's own `[[format]]` rules.
+/// tree's own `[[format]]` rules. What the trees were made from is recorded
+/// beside them, in [`PROVENANCE_FILE`] of that directory.
 pub fn materialize_trees(trees: &[&str]) -> Result<Materialized, BuildScriptError> {
     serve_generator_runs();
     let manifest_dir = build_variable("CARGO_MANIFEST_DIR")?;
@@ -166,11 +172,13 @@ pub fn materialize_trees(trees: &[&str]) -> Result<Materialized, BuildScriptErro
 
     let mut files = BTreeSet::new();
     let mut watched = BTreeSet::new();
+    let mut made = GeneratedProvenance::new(GeneratorRecord::of(generator.identity()));
     for name in trees {
         watched.insert(root.join(MANIFEST_DIRECTORY).join(format!("{name}.toml")));
         let expanded = tree::tree(&root, name)?.expand(&root)?;
         let report = materialize(&generator, &store, &expanded, &into)?;
         remove_unproduced(&expanded, &into, &report)?;
+        made.record(tree_provenance(name, None, &report, &into)?);
         watched.extend(watched_paths(
             &root,
             &expanded,
@@ -179,6 +187,9 @@ pub fn materialize_trees(trees: &[&str]) -> Result<Materialized, BuildScriptErro
         ));
         files.extend(report.files);
     }
+    // The trees of this build and no other: written whole, so a tree the
+    // package no longer compiles leaves the record with it.
+    provenance::write(&into.join(PROVENANCE_FILE), &made)?;
     for path in &watched {
         println!("cargo:rerun-if-changed={}", path.display());
     }

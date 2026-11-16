@@ -19,6 +19,8 @@
 //! - [`tree`]: the manifest of a generated tree, `tools/codegen/trees/<tree>.toml`.
 //! - [`materialize`]: a tree written into a directory from its actions, and
 //!   compared with a committed copy.
+//! - [`provenance`]: what a materialized tree was made from,
+//!   `generated-provenance.json`, the record a package carries.
 //! - `build_script` (with the `cli` feature): the trees of a package written
 //!   into its `OUT_DIR` by its build script, which runs as their generator.
 
@@ -28,6 +30,7 @@ pub mod generation;
 pub mod identity;
 pub mod input_root;
 pub mod materialize;
+pub mod provenance;
 pub mod reapi;
 pub mod store;
 pub mod tree;

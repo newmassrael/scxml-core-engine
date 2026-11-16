@@ -4118,6 +4118,14 @@ enum Commands {
         /// tree's own. A generation whose manifest names its engine keeps it.
         #[arg(long = "script-engine", value_name = "LANG")]
         script_engine: Option<String>,
+        /// Record what the tree was made from in FILE, the
+        /// `generated-provenance.json` a package carries (ADR 0097, section
+        /// 7): the generator, each action's key and the roots of what it read
+        /// and wrote, the digest of every file read, and the root of the tree
+        /// as written. A tree the file records already is replaced; the
+        /// file's other trees stay.
+        #[arg(long, value_name = "FILE")]
+        provenance: Option<PathBuf>,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
@@ -4799,11 +4807,13 @@ pub fn main() {
             into,
             replace,
             script_engine,
+            provenance,
         } => cmd_materialize(
             &tree,
             &into,
             replace,
             script_engine.as_deref(),
+            provenance.as_deref(),
             error_format,
         ),
         Commands::Addr2Sce {
@@ -15019,14 +15029,18 @@ fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
 /// (ADR 0097), through this machine's action cache, and say on stderr how
 /// many actions the cache answered and how many ran. With `replace`, also
 /// remove the generated files under the tree's roots that it did not write.
+/// With `provenance`, record what the tree was made from in that file.
 fn cmd_materialize(
     tree: &str,
     into: &Path,
     replace: bool,
     script_engine: Option<&str>,
+    provenance: Option<&Path>,
     error_format: ErrorFormat,
 ) {
-    use crate::action::{generation, identity, materialize, store, tree as trees};
+    use crate::action::{
+        generation, identity, materialize, provenance as record, store, tree as trees,
+    };
     let fail = |detail: String| -> ! {
         error_format.emit_and_exit(
             &CliError::ScxmlGenerate {
@@ -15065,6 +15079,16 @@ fn cmd_materialize(
         for file in &removed {
             eprintln!("materialize {tree}: removed {file}, which the tree no longer writes");
         }
+    }
+    if let Some(file) = provenance {
+        let made = record::tree_provenance(tree, script_engine, &report, into)
+            .unwrap_or_else(|e| fail(e.to_string()));
+        record::record(
+            file,
+            record::GeneratorRecord::of(generator.identity()),
+            made,
+        )
+        .unwrap_or_else(|e| fail(e.to_string()));
     }
     eprintln!(
         "materialize {tree}: {} file(s) into {}; {} action(s) from the cache, {} run",
