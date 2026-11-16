@@ -53,7 +53,7 @@ os   = "linux"
 arch = "x86_64"
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
-# posts to localhost:8080, and without the echo server they route to their
+# posts to the echo server on localhost, and without it they route to their
 # `<transition event="*"/>` fail branch — 25 failures that say nothing about
 # the backend. The gates start it for the same reason.
 #
@@ -533,13 +533,23 @@ run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -
 # The echo server is started here rather than assumed: a bare workspace run
 # reports failures that look like backend defects and are not.
 #
-# The order is not cosmetic. The C++ suite brings up its OWN listener on
-# 8080, so a server started before ctest makes that bind fail; the Rust
-# workspace has no such fixture and needs one already listening. So: ctest
-# with the port free, then the server, then cargo. Both statuses are OR'd so
-# a red ctest cannot be hidden by a green cargo run.
+# It binds a port the kernel assigns (`0`), and the workspace is pointed at the
+# port its `[READY] port=<n>` line names through SCE_W3C_HTTP_PORT, the variable
+# every harness reads (tests/w3c/basic_http_test_endpoint.h). A fixed port made
+# this action depend on the host: on a build machine another account held the
+# header's default, the server died of EADDRINUSE, and the Rust BasicHTTP tests
+# then failed against a server that was not this one. The path is the owned
+# default the server takes when given none. A server that never reports
+# `[READY]` fails the action with its own log, which names the address it could
+# not hold, rather than leaving the workspace to fail for a reason it cannot
+# name.
+#
+# ctest runs first and with no SCE_W3C_HTTP_PORT of this action's: the C++ W3C
+# runner's in-process listener takes a kernel-assigned port of its own, and the
+# C11 suite's CMake fixture binds the port the tree was configured with. Both
+# statuses are OR'd so a red ctest cannot be hidden by a green cargo run.
 [commands.verify]
-run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
+run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tests/w3c/standalone_http_server.js 0 >"$log" 2>&1 & srv=$!; port=; i=0; while [ -z "$port" ] && [ $i -lt 150 ] && kill -0 $srv 2>/dev/null; do sleep 0.2; port=$(sed -n "s/^\[READY\] port=\([0-9][0-9]*\)$/\1/p" "$log"); i=$((i+1)); done; if [ -z "$port" ]; then cat "$log" >&2; echo "verify: the W3C BasicHTTP echo server never reported [READY]; its log is above" >&2; kill $srv 2>/dev/null; rm -f "$log"; exit 1; fi; SCE_W3C_HTTP_PORT=$port cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; rm -f "$log"; exit $(( c | r ))'
 
 # THE REGENERATION OF THE COMMITTED GENERATED TREES, AS ONE ACTION PER STEP (2026-11-07). A step
 # writes into the tree; declared as an action it runs on a build machine and only the files it
