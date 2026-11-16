@@ -44,9 +44,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
 /// the length of one byte string or text in a field of its own that the length
 /// fits, its `sce:length-arith` never taking it below zero, that takes no flag
 /// input and whose encode refuses nothing: its writes are the fixed bytes and
-/// the byte strings of a positional layout and, of a streamed layout of
-/// numbers alone, whole fixed fields and variable-length integers. A CBOR map
-/// and a content-line component keep their own templates' encodes.
+/// the byte strings of a positional layout and, of a streamed one, whole fixed
+/// fields, variable-length integers and byte strings. A CBOR map and a
+/// content-line component keep their own templates' encodes.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan),
@@ -111,16 +111,6 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
         forms.push("an encode that can refuse a value".to_string());
     }
     let numbers = derived_numbers(plan);
-    let streamed = plan
-        .program
-        .iter()
-        .any(|write| matches!(write, Write::Streamed { .. }));
-    // A streamed decode reads each field through its own statement, which
-    // reads a length off the struct it decodes into; a length the encode
-    // derives is no member of it.
-    if streamed && !numbers.is_empty() {
-        forms.push("a length a streamed layout carries".to_string());
-    }
     for write in &plan.program {
         match write {
             Write::Whole(field) => forms.extend(unread_form(plan, &numbers, field)),
@@ -156,10 +146,8 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
                         "field '{}': a variable-length integer of {width_bits} bits",
                         field.id
                     )),
-                    BitSize::Tail | BitSize::LengthRef => forms.push(format!(
-                        "field '{}': a byte string of a streamed layout",
-                        field.id
-                    )),
+                    // Written whole from the view the source presents.
+                    BitSize::Tail | BitSize::LengthRef => {}
                     // A body or a list, which the elements above name.
                     BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {}
                 }
@@ -241,6 +229,27 @@ fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 /// decode reads it into a local of its own.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
     derived_numbers(plan).contains(id)
+}
+
+/// The numbers a codec's C11 value holds no member of, as its decode reads
+/// them: the encode printed from its plan derives each (docs/adr/0081 §3), so
+/// the decode reads each into a local of its own, [`derived_local`], and reads
+/// a length or a count off that local where it would read the member. Empty
+/// for a codec on the template's encode, whose value holds every field, and
+/// for every language whose decode binds every field to a local anyway.
+#[derive(Default)]
+pub(crate) struct Derived(BTreeSet<String>);
+
+impl Derived {
+    /// The numbers of `plan`, a plan [`unlowered`] answers `None` for.
+    pub(super) fn of(plan: &EncodePlan<'_>) -> Self {
+        Derived(derived_numbers(plan))
+    }
+
+    /// Whether the value holds no member `id`.
+    pub(crate) fn contains(&self, id: &str) -> bool {
+        self.0.contains(id)
+    }
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value does
@@ -335,20 +344,7 @@ impl BoundedView {
             Some(most) => format!("{least} to {most} {unit}"),
             None => format!("{least} or more {unit}, the protocol stating no most"),
         };
-        let mut outside = Vec::new();
-        if least > 0 {
-            outside.push(format!("len < {least}u"));
-        }
-        if let Some(most) = self.bound.most {
-            outside.push(format!("len > {most}u"));
-        }
-        let mut checks = String::new();
-        if !outside.is_empty() {
-            checks.push_str(&format!(
-                "    if ({}) {{\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }}\n",
-                outside.join(" || ")
-            ));
-        }
+        let mut checks = length_refusal("len", least, self.bound.most);
         if self.text {
             checks.push_str(
                 "    if (!sce_forge_is_valid_utf8((const uint8_t *)data, len)) {\n        \
@@ -371,6 +367,28 @@ impl BoundedView {
     }
 }
 
+/// The statement that refuses the length `len` outside `least` and `most`
+/// bytes, or nothing where every length is within them. The most is asked of
+/// the runtime's `sce_forge_length_within_bound` and not compared where it is
+/// written: on a target whose `size_t` is narrower than the bound, that
+/// comparison is one the type decides, a warning under -Wtype-limits.
+fn length_refusal(len: &str, least: u64, most: Option<u64>) -> String {
+    let mut outside = Vec::new();
+    if least > 0 {
+        outside.push(format!("{len} < {least}u"));
+    }
+    if let Some(most) = most {
+        outside.push(format!("!sce_forge_length_within_bound({len}, {most})"));
+    }
+    if outside.is_empty() {
+        return String::new();
+    }
+    format!(
+        "    if ({}) {{\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }}\n",
+        outside.join(" || ")
+    )
+}
+
 /// The name of the local the encode reads the element `id` into, once.
 fn element_local(l: &LangCtx, id: &str) -> String {
     format!("_e_{}", l.codec_field_id(id))
@@ -378,8 +396,10 @@ fn element_local(l: &LangCtx, id: &str) -> String {
 
 /// The name of the local the encode derives the number `id` into, and the
 /// decode reads it into: the value holds no member of it (docs/adr/0081 §3).
-pub(super) fn derived_local(l: &LangCtx, id: &str) -> String {
-    format!("_d_{}", l.codec_field_id(id))
+/// The member it stands for would be named in snake case, as every C11 member
+/// of a codec is (`LangCtx::codec_field_id`).
+pub(crate) fn derived_local(id: &str) -> String {
+    format!("_d_{}", filters::to_snake_case(id.to_string()))
 }
 
 /// The C11 text the printer gives a codec's header.
@@ -532,19 +552,30 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         let ty = l.type_name(&into.sce_type);
         out.push_str(&format!(
             "    const {ty} {} = ({ty})({count});\n",
-            derived_local(l, id)
+            derived_local(id)
         ));
     }
     let numbers = derived_numbers(plan);
     let read = |field: &CodecField| {
         if numbers.contains(&field.id) {
-            derived_local(l, &field.id)
+            derived_local(&field.id)
         } else {
             element_local(l, &field.id)
         }
     };
     let write =
         |byte: &str| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {byte}));\n");
+    // A byte string or a text, whole, from the view the source presents: a
+    // text's view points at `char`, which the writer takes as its bytes.
+    let view_bytes = |field: &CodecField| {
+        let local = read(field);
+        let data = if field.sce_type == SceType::String {
+            format!("(const uint8_t *){local}.data")
+        } else {
+            format!("{local}.data")
+        };
+        format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, {data}, {local}.len));\n")
+    };
     let endian = plan.model.default_endian;
     for step in &plan.program {
         match step {
@@ -568,7 +599,10 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     out.push_str(&vle_encode_block(&value, *width_bits, l.lang));
                     out.push('\n');
                 }
-                _ => unreachable!("`unlowered` prints a fixed field or a VLE only"),
+                // Its length, where the frame carries one, a field of its own
+                // the program writes before it.
+                BitSize::Tail | BitSize::LengthRef => out.push_str(&view_bytes(field)),
+                _ => unreachable!("`unlowered` prints a fixed field, a VLE or a byte string only"),
             },
             // A byte string or a text of a positional layout, whole, after
             // zeros up to its offset where the layout aligns it.
@@ -580,15 +614,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         field.byte_offset
                     ));
                 }
-                let local = read(field);
-                let data = if field.sce_type == SceType::String {
-                    format!("(const uint8_t *){local}.data")
-                } else {
-                    format!("{local}.data")
-                };
-                out.push_str(&format!(
-                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, {data}, {local}.len));\n"
-                ));
+                out.push_str(&view_bytes(field));
             }
             Write::Variant => unreachable!("`unlowered` prints no variant"),
         }
@@ -614,16 +640,10 @@ fn encode_body(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         // The array's own bound, where it is below the element's.
         let held = u64::from(c11_held_bytes(element.field, &plan.model.fields));
         let most = view.bound.most.map_or(held, |most| most.min(held));
-        let mut outside = Vec::new();
-        if view.bound.least > 0 {
-            outside.push(format!("self->{name}_len < {}u", view.bound.least));
-        }
-        outside.push(format!(
-            "!sce_forge_length_within_bound(self->{name}_len, {most})"
-        ));
-        out.push_str(&format!(
-            "    if ({}) {{\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }}\n",
-            outside.join(" || ")
+        out.push_str(&length_refusal(
+            &format!("self->{name}_len"),
+            view.bound.least,
+            Some(most),
         ));
         if view.text {
             out.push_str(&format!(
