@@ -6044,9 +6044,10 @@ fn read_composed_texts_through_buffers(
 /// the payload with a composed value on the way to it, or the item of a loop
 /// over a list a place holds ([`TypeCtx::place_items`]) or a place below it,
 /// which no rename spells, or a place below a variable of a union, whose case's
-/// record the walks declare. No other variable holds one: a variable whose
-/// type names a record that holds a composition is refused where it is
-/// declared.
+/// record the walks declare, or below a variable of a record that holds a
+/// composition, or of one that may be absent, which the walks declare as they
+/// declare a union's (docs/adr/0087, "Landing order" item 8). No other variable
+/// holds one: a record of entries' texts are spelled by the renames.
 fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&str, &str>) -> bool {
     if renames.contains_key(path) {
         return false;
@@ -6075,16 +6076,31 @@ fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&st
             // A variable of a union, or of one that may be absent, holds its
             // case's record as the walks over a composed value declare it
             // (docs/adr/0092, section 7), a text of it in the buffer of its bound.
-            let holds_a_union = || {
+            // A variable of a record that holds a composition, or of one that
+            // may be absent, is the machine's own record the walks declare,
+            // each text of it at any depth in the buffer of its bound.
+            let holds_a_composed_value = || {
                 ctx.value_of(root).is_some_and(|place| {
-                    let held = match &place.ty {
-                        crate::forge::value_type::ValueType::Optional { elem } => &**elem,
+                    let held = match place.ty {
+                        crate::forge::value_type::ValueType::Optional { elem } => *elem,
                         other => other,
                     };
-                    matches!(held, crate::forge::value_type::ValueType::Union { .. })
+                    match held {
+                        crate::forge::value_type::ValueType::Union { .. } => true,
+                        record @ crate::forge::value_type::ValueType::Record { .. } => {
+                            crate::forge::value_path::holds_composition(
+                                ctx.value_scope,
+                                &crate::forge::value_path::Place {
+                                    ty: record,
+                                    scope: place.scope,
+                                },
+                            )
+                        }
+                        _ => false,
+                    }
                 })
             };
-            ctx.place_items.contains(root) || (path != root && holds_a_union())
+            ctx.place_items.contains(root) || (path != root && holds_a_composed_value())
         }
     }
 }

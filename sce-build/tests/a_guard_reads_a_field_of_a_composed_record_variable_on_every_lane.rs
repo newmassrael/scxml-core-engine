@@ -138,6 +138,25 @@ fn swift_reads_the_fields_of_the_present_record() {
     );
 }
 
+/// Pinned by `held_by_a_composed_value` (`sce-build/src/forge/expr.rs`): C11 holds
+/// each text of the machine's own record in the buffer of its bound, so the title is
+/// compared as the buffer's text, as a text of an optional record of entries is
+/// (`sm->policy.v_pick.value.title.data`); the number and the list are read as they
+/// are held, the list by its view's length.
+#[test]
+fn c11_reads_the_text_of_the_present_record_through_its_buffer() {
+    holds(
+        "C11",
+        &machine(Language::C11),
+        &[
+            "sm->policy.v_answer.present",
+            "strcmp(sm->policy.v_answer.value.title.data, \"Week\") == 0",
+            "sm->policy.v_answer.value.priority",
+            "(sm->policy.v_answer.value.items).len",
+        ],
+    );
+}
+
 /// Pinned by the Interpreter's proven read (`emit_js`), which reads the plain object
 /// the variable holds.
 #[test]
