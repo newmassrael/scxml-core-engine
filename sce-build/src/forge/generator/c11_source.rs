@@ -53,8 +53,11 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// value states beside content that says another, and what a body or an entry
 /// it holds refuses. Its writes are the fixed bytes and the byte strings of a
 /// positional layout and, of a streamed one, whole fixed fields,
-/// variable-length integers, byte strings, bodies, and lists and chains that
-/// end with their scope, walked entry by entry. A CBOR map and a
+/// variable-length integers, byte strings, bodies, and lists and chains,
+/// walked entry by entry, a chain closed by an entry flag setting it on each
+/// entry but the last through the entry's overrides; and the one-bit flags a
+/// parent may set in place of the value's are overrides it folds in last. A
+/// CBOR map and a
 /// content-line component keep their own templates' encodes. `imports` are the
 /// codec's own, which say whether a codec it holds is printed
 /// ([`ImportContext::c11_printed`]).
@@ -165,11 +168,13 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     if !plan.groups().is_empty() {
         forms.push("a group of fields a gate decides together".to_string());
     }
-    if !plan.overridable.is_empty() {
-        forms.push("a flag a parent sets in place of the value's".to_string());
-    }
+    // A flag a parent may set in place of the value's is an override the
+    // encode folds in last (`{codec}_overrides_t`, [`declare_overrides`]), and
+    // the flag a chain's entries end on is set by the walk of the chain, in
+    // place of each entry's own.
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
+            (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             (ElementId::Field(_) | ElementId::Flag { .. }, Derive::Number(number)) => {
                 forms.extend(number_form(&derived.element, number));
                 if let ElementId::Flag { field, .. } = &derived.element {
@@ -199,6 +204,13 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             )),
         }
     }
+    for (carrier, def) in &plan.overridable {
+        let element = ElementId::Flag {
+            field: carrier.id.clone(),
+            flag: def.name.clone(),
+        };
+        forms.extend(carrier_form(plan, &element, &carrier.id));
+    }
     // The encode refuses what the derivations above refuse, and what a body
     // it holds refuses, which a count of its writes finds first; a gate it
     // cannot derive and an input a held codec says are checks of their own.
@@ -220,17 +232,15 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Write::Tail { field, .. } => forms.extend(unread_form(plan, &numbers, field)),
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                // A walk of each entry in turn; a chain that sets its entries'
-                // flag, hands an entry what the one before it was, holds a
-                // bare entry's place or is held to a law is not printed yet.
+                // A walk of each entry in turn, setting on each but the last
+                // the flag a chain's entries end on; a chain that hands an
+                // entry what the one before it was, holds a bare entry's place
+                // or is held to a law is not printed yet.
                 if list.as_ref().is_some_and(|walk| {
-                    !walk.previous.is_empty()
-                        || walk.slots.is_some()
-                        || walk.ends.is_some()
-                        || walk.lawful
+                    !walk.previous.is_empty() || walk.slots.is_some() || walk.lawful
                 }) {
                     forms.push(format!(
-                        "field '{}': a chain whose walk sets or hands its entries a flag",
+                        "field '{}': a chain whose walk hands its entries a flag",
                         field.id
                     ));
                 }
@@ -995,13 +1005,30 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         .refusals()
         .iter()
         .any(|r| r.kind == RefusalKind::Child);
+    // A codec whose flags a parent may set is encoded by
+    // `{snake}_encode_source_overriding`, handed the flags the parent sets
+    // (`{snake}_overrides_t`), and `{snake}_encode_source` is that encode
+    // handed none, so every other caller calls it as it calls any codec's.
+    let overriding = !plan.overridable.is_empty();
+    let (params, args, encode) = if overriding {
+        (
+            format!(", {snake}_overrides_t overrides"),
+            ", overrides",
+            "encode_source_overriding",
+        )
+    } else {
+        (String::new(), "", "encode_source")
+    };
     let signature = |name: &str| {
         format!(
             "static inline sce_forge_codec_status_t {snake}_{name}(const {snake}_source_t *src, \
-             const void *ctx, sce_forge_writer_t *w) {{\n"
+             const void *ctx, sce_forge_writer_t *w{params}) {{\n"
         )
     };
     let mut out = String::new();
+    if overriding {
+        out.push_str(&declare_overrides(plan, l, snake));
+    }
     if children_refuse {
         // A body's own refusal passes on through each write of it, which the
         // count before the writes finds first.
@@ -1011,7 +1038,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             }
         }
         out.push_str(&format!(
-            "/* {snake}_encode_source without the count that finds a refusal of a body\n \
+            "/* {snake}_{encode} without the count that finds a refusal of a body\n \
              * the source holds before the first byte is written. */\n\
              {}",
             signature("write_source")
@@ -1022,7 +1049,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
              * once and written where the codec's encode plan lays it out\n \
              * (docs/adr/0081). {refuses} */\n\
              {}",
-            signature("encode_source")
+            signature(encode)
         ));
     }
     if plan.elements.is_empty() {
@@ -1098,8 +1125,25 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     folds.entry(carrier).or_default().push(fold);
                 }
             }
-            _ => unreachable!("`unlowered` prints a derived number or a presence flag only"),
+            // Set by the walk of the chain that holds the entry, not here.
+            (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
+            _ => unreachable!(
+                "`unlowered` prints a derived number, a presence flag or a chain's flag only"
+            ),
         }
+    }
+    // A flag a parent sets in place of the one the value presents (the flag a
+    // chain's entries end on), folded last: what the parent says is what the
+    // wire holds, and where it says nothing the value's own bit stays.
+    for (carrier, def) in &plan.overridable {
+        let member = override_member(l, &carrier.id, &def.name);
+        folds.entry(carrier.id.as_str()).or_default().push(Fold {
+            flag: def.name.clone(),
+            named: format!("{}.{}", carrier.id, def.name),
+            bits: format!("(uint64_t)overrides.{member}.value"),
+            count: None,
+            present: Some(format!("overrides.{member}.present")),
+        });
     }
     // Each carrier as the source presents it, each derived bit-range replaced
     // in turn, the bits it holds no wider than the grammar bounds them.
@@ -1268,15 +1312,38 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                             unreachable!("a list or a chain is an element the value presents");
                         };
                         let held = read(field);
+                        let entry = body_prefix(codec);
+                        let ends = match step {
+                            Write::Streamed {
+                                list: Some(walk), ..
+                            } => walk.ends.as_ref(),
+                            _ => None,
+                        };
+                        // A chain sets on each entry but the last the flag its
+                        // entries end on, in place of the one the entry
+                        // presents (docs/adr/0058 §1), by the entry's codec's
+                        // overrides.
+                        let write = match ends {
+                            Some((carrier, flag)) => format!(
+                                "            {entry}_overrides_t _o = {entry}_overrides_none();\n            \
+                                 _o.{member} = sce_optional_bool_some(_i + 1u < {held}.count);\n            \
+                                 SCE_FORGE_TRY_WRITE({entry}_encode_source_overriding({held}.entry, \
+                                 _at, w, _o));\n",
+                                member = override_member(l, carrier, flag)
+                            ),
+                            None => format!(
+                                "            SCE_FORGE_TRY_WRITE({entry}_encode_source({held}.entry, \
+                                 _at, w));\n"
+                            ),
+                        };
                         body.push_str(&format!(
                             "    {{\n        \
                              const void *_at = {held}.walk->begin({held}.ctx);\n        \
-                             for (size_t _i = 0; _i < {held}.count && _at != NULL; ++_i) {{\n            \
-                             SCE_FORGE_TRY_WRITE({}_encode_source({held}.entry, _at, w));\n            \
+                             for (size_t _i = 0; _i < {held}.count && _at != NULL; ++_i) {{\n\
+                             {write}            \
                              _at = {held}.walk->next({held}.ctx, _at);\n        \
                              }}\n    \
-                             }}\n",
-                            body_prefix(codec)
+                             }}\n"
                         ));
                     }
                 }
@@ -1316,14 +1383,68 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
              * source holds is met before the first byte. */\n\
              {}    {{\n        \
              sce_forge_writer_t _count = sce_forge_writer_init_counting();\n        \
-             SCE_FORGE_TRY_WRITE({snake}_write_source(src, ctx, &_count));\n    \
+             SCE_FORGE_TRY_WRITE({snake}_write_source(src, ctx, &_count{args}));\n    \
              }}\n    \
-             return {snake}_write_source(src, ctx, w);\n\
+             return {snake}_write_source(src, ctx, w{args});\n\
              }}\n",
-            signature("encode_source")
+            signature(encode)
+        ));
+    }
+    if overriding {
+        out.push_str(&format!(
+            "\n/* {snake}_encode_source_overriding with no flag set in place of the\n \
+             * value's: the encode every caller but a parent that sets one calls. */\n\
+             static inline sce_forge_codec_status_t {snake}_encode_source(\
+             const {snake}_source_t *src, const void *ctx, sce_forge_writer_t *w) {{\n    \
+             return {snake}_encode_source_overriding(src, ctx, w, {snake}_overrides_none());\n\
+             }}\n"
         ));
     }
     out
+}
+
+/// The member of `{codec}_overrides_t` that sets `flag` of the carrier
+/// `carrier`, the codec's own name for it, which a chain holding the codec
+/// spells alike: the name of the flag as an element ([`number_name`]).
+fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
+    number_name(
+        l,
+        &ElementId::Flag {
+            field: carrier.to_string(),
+            flag: flag.to_string(),
+        },
+    )
+}
+
+/// `{snake}_overrides_t`, the one-bit flags of the codec a parent may set in
+/// place of the ones a value presents, each absent where the parent sets
+/// none, and `{snake}_overrides_none()`, which sets none: a chain whose
+/// entries are of the codec sets the flag its entries end on this way, as an
+/// entry cannot know where it stands (docs/adr/0081 §1).
+fn declare_overrides(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
+    let mut members = String::new();
+    let mut none = String::new();
+    for (carrier, def) in &plan.overridable {
+        let member = override_member(l, &carrier.id, &def.name);
+        members.push_str(&format!(
+            "    /* The `{}` flag of `{}`, where a parent sets it. */\n    \
+             sce_optional_bool_t {member};\n",
+            def.name, carrier.id
+        ));
+        none.push_str(&format!("    none.{member} = sce_optional_bool_none();\n"));
+    }
+    format!(
+        "/* One-bit flags of {snake}_t a parent may set in place of the ones a value\n \
+         * presents, such as the flag a chain whose entries are {snake}_t ends them\n \
+         * on, which the chain derives from where each entry stands. A flag absent\n \
+         * here is the value's own. */\n\
+         typedef struct {{\n{members}}} {snake}_overrides_t;\n\n\
+         /* The overrides that set no flag. */\n\
+         static inline {snake}_overrides_t {snake}_overrides_none(void) {{\n    \
+         {snake}_overrides_t none;\n\
+         {none}    return none;\n\
+         }}\n\n"
+    )
 }
 
 /// One measure of a derived number as the encode reads it.
