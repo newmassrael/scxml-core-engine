@@ -1075,6 +1075,29 @@ old encode, the old encode and its templates are removed in the same landing.
    to its local off the pair where the arm holds both and off the arm where it holds the first alone, so the count is
    derived from the first as before and the second is no measure of it; the decode pairs the two lists it read. The
    case printer states the pair as `Aligned` of the two lists the source states by their own ids.
+
+   *The twelfth Python landing, 2026-11-16:* a variant. The value's `body` holds the arm itself: a value of a named
+   arm's codec's class, or a `{Codec}Default` of the tag the default arm keeps and its body, and its type
+   `{Codec}Variant` is the `typing.Union` of those classes, as the C++ value holds a `std::variant` of a source of
+   each arm's codec and the catch-all struct. The decision was between this and a dataclass for every arm, which a
+   group's arms are: the class of a named arm's body already says which arm it is, so a wrapper would state it twice,
+   and the catch-all needs one only because its body may be of a named arm's class. Two named arms whose codecs are
+   one Python class could not be told apart, and `python_source::unlowered` names that form; no codec of the
+   resources has it. The default arm holds its tag in `{Codec}UnknownTag`, a subclass of the runtime's `UnknownTag`
+   (R3): an `int` made only by a constructor that refuses a tag an arm names or one past the tag's bits, with
+   `ValueError`, as `chr` refuses a number no character is, and the default arm's `__setattr__` holds it wherever it
+   is set. The encode refuses a `body` that holds no arm with `TypeError`, before the first byte. It derives the tag
+   from the arm into the field or the flag that holds it (`Derive::VariantTag`), writes the arm by its codec's own
+   `encode_source`, handed what that codec takes, and holds the input an arm says to what the arm is handed
+   (`CheckSite::Arm`). A flag bound to an input the arms say is what the arm the value holds says
+   (`Measured::ArmSays`), and an input the arms say (`EveryArm`, `SomeArms`) is read off the arm by the module's
+   `input_<name>`. A variant whose caller hands its tag has the module's `tag(src)`, the tag of the arm any source
+   holds, and the value's `tag()` answers it; a parent derives the bits a held body's arm fills
+   (`Derive::ParentTag`) through that body's codec's `tag`, a printed parent and a parent the template writes alike.
+   The decode makes the arm it read, the default arm of the tag it read and the body. A peek byte is the arm's own
+   header and needs nothing of the parent. The case printer states the arm as the arm's codec's value, or the
+   default arm's class of the tag and the body, hands a caller's tag to the decode after the inputs, and holds the
+   value and its decode to answering it.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

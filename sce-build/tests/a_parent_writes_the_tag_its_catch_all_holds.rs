@@ -252,18 +252,29 @@ fn the_cpp_parent_of_a_gated_variant_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// The Python parent tests the catch-all's `kind` ahead of the arms, whose
-/// last one is the fallthrough the catch-all reached before, and reads the
-/// tag the body keeps in `default_tag`.
+/// The Python parent, printed from its plan (docs/adr/0081 step 4), reads the
+/// tag of the arm the body holds through the body's codec's own `tag`, which
+/// answers the tag the catch-all keeps, masked to K's bits.
 #[test]
 fn the_python_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Python);
     assert_holds(
         &code,
-        "        _derived_header = (((self.key.body.default_tag & 0x3) << 5) \
-         if self.key.body.kind == \"Default\" \
-         else ((0x00 if self.key.body.kind == \"CaLocal\" else 0x20)))\n",
-        "the Python parent does not derive K from the catch-all's tag",
+        "    _p_header_k = 0\n    _p_header_k |= sce_ca_child.tag(src.key) & 0x3\n",
+        "the Python parent does not derive K from the tag the body holds",
+    );
+    let dir = catch_all_fixture(false);
+    let files = generate_all(&dir, Language::Python);
+    let _ = std::fs::remove_dir_all(&dir);
+    let child = files
+        .into_iter()
+        .find(|(name, _)| name == "ca_child.py")
+        .map(|(_, text)| text)
+        .expect("the child is generated");
+    assert_holds(
+        &child,
+        "    if isinstance(_v, CaChildDefault):\n        return _v.tag\n",
+        "the Python child does not answer the tag its catch-all keeps",
     );
 }
 
@@ -332,15 +343,21 @@ fn the_cpp_parent_writes_k_from_the_body_alone() {
     );
 }
 
-/// The Python parent clears K in the stored header before it adds the derived
-/// bits.
+/// The Python parent clears K in the header the source presents before it
+/// adds the derived bits, and writes the header as it folded it.
 #[test]
 fn the_python_parent_writes_k_from_the_body_alone() {
     let code = parent_code(false, Language::Python);
     assert_holds(
         &code,
-        "w.write_u8(((self.header & 0x9F) | _derived_header) & 0xFF)",
+        "    _c_header = src.header\n    \
+         _c_header = (_c_header & ~0x60) | ((_p_header_k & 0x3) << 5)\n",
         "the Python parent writes the stored K bits with the derived ones",
+    );
+    assert!(
+        code.lines()
+            .any(|line| line.contains("w.write_u8(") && line.contains("_c_header")),
+        "the Python parent writes the header it folded:\n{code}"
     );
 }
 
@@ -563,7 +580,9 @@ import sys
 
 from sce_forge_runtime.codec import SceCursor
 
+from ca.ca_child import CaChildDefault
 from ca.ca_parent import CaParent
+from ca.ca_wide import CaWide
 
 failed = False
 
@@ -590,13 +609,13 @@ def rewrite(frame, stale):
 held = rewrite(bytes([0x5D, 0x07]), 0x3D)
 if (
     held is None
-    or held.key.body.kind != "Default"
-    or held.key.body.default_tag != 2
-    or held.key.body.default_body.payload != 0x07
+    or not isinstance(held.key.body, CaChildDefault)
+    or held.key.body.tag != 2
+    or held.key.body.body.payload != 0x07
 ):
     fail("tag 2 must reach the catch-all, which keeps it")
 named = rewrite(bytes([0x3D, 0x12, 0x34]), 0x5D)
-if named is None or named.key.body.kind != "CaWide" or named.key.body.ca_wide.payload != 0x1234:
+if named is None or not isinstance(named.key.body, CaWide) or named.key.body.payload != 0x1234:
     fail("tag 1 must reach the two-byte arm")
 sys.exit(1 if failed else 0)
 "#;

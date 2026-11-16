@@ -6,7 +6,13 @@ so the encode over it has nothing of the bound to refuse."""
 
 import pytest
 
-from sce_forge_runtime.bounded import Aligned, BoundedBytes, BoundedText, BoundedTuple
+from sce_forge_runtime.bounded import (
+    Aligned,
+    BoundedBytes,
+    BoundedText,
+    BoundedTuple,
+    UnknownTag,
+)
 from sce_forge_runtime.codec import (
     InconsistentSource,
     InvalidUtf8,
@@ -115,6 +121,22 @@ def test_a_list_short_of_its_least_is_refused():
     with pytest.raises(LengthOutOfRange):
         _OneEntryOrMore([])
     assert len(_OneEntryOrMore(range(50))) == 50
+
+
+class _TagOfTwoBits(UnknownTag):
+    MOST = 3
+    KNOWN = frozenset({0, 2})
+
+
+def test_an_unknown_tag_is_a_tag_no_arm_names_within_the_bits():
+    assert _TagOfTwoBits(1) == 1
+    assert _TagOfTwoBits(3) == 3
+    assert isinstance(_TagOfTwoBits(1), int)
+    for refused in (0, 2, 4, -1):
+        with pytest.raises(ValueError):
+            _TagOfTwoBits(refused)
+    with pytest.raises(TypeError):
+        _TagOfTwoBits(True)
 
 
 def test_two_lists_of_one_count_are_made_and_hold_both():

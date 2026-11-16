@@ -16,7 +16,7 @@ C++ runtime.
 
 from __future__ import annotations
 
-from typing import Generic, Iterable, Optional, Sized, TypeVar, Union
+from typing import FrozenSet, Generic, Iterable, Optional, Sized, TypeVar, Union
 
 from .codec import InconsistentSource, InvalidUtf8, LengthOutOfRange, TooManyElements
 
@@ -94,6 +94,31 @@ class BoundedTuple(tuple):
         if len(held) < cls.LEAST:
             raise LengthOutOfRange(cls.__name__)
         return held
+
+
+class UnknownTag(int):
+    """The tag the default arm of a variant holds (docs/adr/0065 §6 R3): a
+    number the tag's bits hold, at most ``MOST``, that no arm of the variant
+    names (``KNOWN``). A subclass names the tags of one variant by its two
+    class attributes.
+
+    A default arm that held a tag an arm names would be read back as that arm,
+    so such a tag is no value of the class: its constructor raises
+    :class:`ValueError`, as ``chr`` does for a number no character is, since a
+    tag is not a length and no :class:`CodecError` names it. An ``int`` cannot
+    change after it is made, so a value of the class holds what it was checked
+    to be for as long as it lives. Mirrors ``UnknownTag`` of the Rust
+    runtime's generated codecs."""
+
+    MOST: int = 0xFF
+    KNOWN: FrozenSet[int] = frozenset()
+
+    def __new__(cls, tag: int) -> "UnknownTag":
+        if isinstance(tag, bool) or not isinstance(tag, int):
+            raise TypeError(f"{cls.__name__} is made of an int")
+        if tag < 0 or tag > cls.MOST or tag in cls.KNOWN:
+            raise ValueError(f"{cls.__name__}: {tag} is a tag an arm names or past the bits")
+        return super().__new__(cls, tag)
 
 
 A = TypeVar("A", bound=Sized)

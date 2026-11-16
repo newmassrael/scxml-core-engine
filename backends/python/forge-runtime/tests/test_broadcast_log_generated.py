@@ -396,19 +396,16 @@ class TestGeneratedBroadcastLogContext(unittest.TestCase):
     def flagged_item(self, seq: int, element: Any, has_value: bool) -> Any:
         return self.flagged.BroadcastLogConformanceFlaggedItem(seq, element, self.flags(has_value))
 
+    # The choice holds the arm itself, a value of the arm's codec (docs/adr/0081
+    # step 4), which says which arm it is.
+
     def small(self, payload: int) -> Any:
         arm = self.choice_small.BroadcastLogConformanceChoiceSmall(payload=payload)
-        body = self.choice.BroadcastLogConformanceChoiceVariant(
-            kind="BroadcastLogConformanceChoiceSmall", broadcast_log_conformance_choice_small=arm
-        )
-        return self.choice.BroadcastLogConformanceChoice(body=body)
+        return self.choice.BroadcastLogConformanceChoice(body=arm)
 
     def large(self, payload: int) -> Any:
         arm = self.choice_large.BroadcastLogConformanceChoiceLarge(payload=payload)
-        body = self.choice.BroadcastLogConformanceChoiceVariant(
-            kind="BroadcastLogConformanceChoiceLarge", broadcast_log_conformance_choice_large=arm
-        )
-        return self.choice.BroadcastLogConformanceChoice(body=body)
+        return self.choice.BroadcastLogConformanceChoice(body=arm)
 
     def chosen_item(self, seq: int, element: Any) -> Any:
         return self.chosen.BroadcastLogConformanceChosenItem(seq, element)

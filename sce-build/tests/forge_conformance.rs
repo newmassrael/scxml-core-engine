@@ -16567,11 +16567,10 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Parent-tag dispatcher self-gen Gap 8 — Python consumer dispatches via
-/// `.body.kind == "<ArmName>"` string equality (matches Python codec
-/// template's `body.kind` discriminator at lines 28-50 + 154), NOT
-/// `isinstance(body, X.Y)` against a class hierarchy (Python variant
-/// body has no nested arm classes).
+/// Parent-tag dispatcher self-gen Gap 8 — the Python consumer derives the
+/// dispatch flag from the arm the dispatcher holds, read through the
+/// dispatcher's own `tag`, which tells the arm by its class: the value of a
+/// printed dispatcher holds the arm itself (docs/adr/0081 step 4).
 #[test]
 fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -16645,19 +16644,17 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
 
-    // Gap 8: emit must dispatch via `.body.kind == "<ArmName>"` string
-    // equality. Arms emit in declaration order with the LAST arm as
-    // ternary fallthrough — at least one arm name must appear in the
-    // explicit `if ... ==` clause(s).
+    // The parent and the dispatcher are printed from their plans (docs/adr/
+    // 0081 step 4): the dispatcher's value holds the arm itself, and the
+    // parent derives M from the tag the dispatcher's own `tag` answers for
+    // the arm the body holds, masked to M's one bit.
     assert!(
-        parent_py.contains("self.key.body.kind == \"B5nuPyNonlocal\"")
-            || parent_py.contains("self.key.body.kind == \"B5nuPyLocal\""),
-        "Python consumer must dispatch via .kind string equality on one of \
-         the variant arms; got:\n{parent_py}"
+        parent_py.contains("    _p_header_m = 0\n") && parent_py.contains(".tag(src.key) & 0x1\n"),
+        "Python consumer must derive M through the dispatcher's `tag`; got:\n{parent_py}"
     );
     assert!(
-        !parent_py.contains("isinstance(self.key.body,"),
-        "Python consumer must NOT use isinstance (Gap 8 regression);\n{parent_py}"
+        !parent_py.contains(".body.kind"),
+        "Python consumer reads no `kind` of a printed dispatcher;\n{parent_py}"
     );
     compile_codec_set_python(
         &dir,
@@ -20896,7 +20893,9 @@ const QUERY_NOT_ADJACENT: &[u8] = &[0x84, 0x85, 0x43, 0x04, 0xDE, 0xAD, 0xBE, 0x
 
 fn query_value_python_program() -> String {
     flag_hex_frames(
-        r#"from qv_pkg.codec_zenoh_query_value import CodecZenohQueryValue
+        r#"from qv_pkg.codec_zenoh_ext_unit import CodecZenohExtUnit
+from qv_pkg.codec_zenoh_query_value import CodecZenohQueryValue
+from qv_pkg.codec_zenoh_value_zbuf import CodecZenohValueZbuf
 from sce_forge_runtime.codec import SceCursor
 
 SHM = bytes([@SHM@])
@@ -20911,27 +20910,35 @@ def read(frame, label):
 # The captured bytes: the marker, then the ZBuf in sliced form.
 v = read(SHM, "shm")
 assert [e.header for e in v.exts] == [0x84, 0x43], "shm headers"
-assert v.exts[0].body.kind == "CodecZenohExtUnit", "the marker is a unit extension"
-z = v.exts[1].body.codec_zenoh_value_zbuf
-assert z.value_len == 1026, "the declared length is read, not trusted"
-assert z.value is None, "no plain value after the marker"
-assert z.encoding == 0 and z.slice_count == 1, "encoding and slice count"
-assert [(s.kind, len(s.data), s.data) for s in z.slices] == [
-    (1, 7, bytes([0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]))
+assert isinstance(v.exts[0].body, CodecZenohExtUnit), "the marker is a unit extension"
+# The entry holds the arm itself, and the ZBuf the side of `after_shm` its
+# frame says, as one field (docs/adr/0065 §6 R4b): the sliced side holds the
+# declared length, which no content says, and the slices, whose count and
+# each slice's length the encode derives.
+z = v.exts[1].body
+assert isinstance(z, CodecZenohValueZbuf), "the ZBuf is the second extension"
+sliced = z.after_shm
+assert sliced.value_len == 1026, "the declared length is read, not trusted"
+assert not hasattr(sliced, "value"), "no plain value after the marker"
+assert sliced.encoding == 0 and len(sliced.slices) == 1, "encoding and slice count"
+assert [(s.kind, s.data) for s in sliced.slices] == [
+    (1, bytes([0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]))
 ], "the slice"
 assert v.encode_to_bytes() == SHM, "shm round trip"
 
-# No marker: the same ZBuf header, an ordinary body.
+# No marker: the same ZBuf header, an ordinary body, whose length the encode
+# derives from the value.
 v = read(PLAIN, "plain")
-z = v.exts[0].body.codec_zenoh_value_zbuf
-assert z.value_len == 4 and z.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]), "plain value"
-assert z.slices is None and z.encoding is None, "no sliced body without the marker"
+plain = v.exts[0].body.after_shm
+assert plain.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]), "plain value"
+assert not hasattr(plain, "slices"), "no sliced body without the marker"
 assert v.encode_to_bytes() == PLAIN, "plain round trip"
 
 # An extension between the marker and the ZBuf: adjacency, so the plain layout.
 v = read(NOT_ADJACENT, "not adjacent")
-z = v.exts[2].body.codec_zenoh_value_zbuf
-assert z.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]) and z.slices is None, "not adjacent"
+plain = v.exts[2].body.after_shm
+assert plain.value == bytes([0xDE, 0xAD, 0xBE, 0xEF]), "not adjacent"
+assert not hasattr(plain, "slices"), "not adjacent holds no slices"
 assert v.encode_to_bytes() == NOT_ADJACENT, "not adjacent round trip"
 "#,
     )

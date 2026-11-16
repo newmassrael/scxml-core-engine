@@ -162,8 +162,10 @@ fn the_kotlin_codec_without_a_catch_all_binds_nothing() {
 
 // ── Python ──────────────────────────────────────────────────────────────
 
-/// The Python method compares the `kind` the decode sets, by the same names,
-/// and returns the tag the catch-all keeps in `default_tag`.
+/// The Python codec is printed from its plan (docs/adr/0081 step 4): the
+/// value holds the arm itself, and the module's `tag`, over any source, tells
+/// the arm by its class and returns the tag the catch-all keeps; the value's
+/// method answers it of itself.
 #[test]
 fn the_python_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
     let text = code("tg_open", Language::Python);
@@ -172,14 +174,20 @@ fn the_python_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
         "    def tag(self) -> int:\n",
         "the Python codec has no `tag` method",
     );
+    assert_holds(
+        &text,
+        "        return tag(self)\n",
+        "the Python codec's method does not answer the module's `tag`",
+    );
     let chain = [
-        "        if self.body.kind == \"TgSmall\":",
-        "            return 1",
-        "        if self.body.kind == \"TgLarge\":",
-        "            return 2",
-        "        if self.body.kind == \"Default\":",
-        "            return self.body.default_tag",
-        "        raise ValueError(f\"no variant arm is named {self.body.kind!r}\")",
+        "    _v = src.body",
+        "    if isinstance(_v, sce_tg_small.TgSmall):",
+        "        return 1",
+        "    if isinstance(_v, sce_tg_large.TgLarge):",
+        "        return 2",
+        "    if isinstance(_v, TgOpenDefault):",
+        "        return _v.tag",
+        "    raise TypeError(",
     ]
     .join("\n");
     assert_holds(&text, &chain, "the Python codec does not return its tag");

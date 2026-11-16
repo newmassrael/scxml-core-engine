@@ -54,7 +54,9 @@ from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_field
 from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}{{ ", Union" if python_source.union else "" }}
 
 
-{% if has_variant %}
+{# docs/adr/0081 step 4: a codec printed from its plan holds its variant as the
+   `Union` of a class for each arm, which the printer names in `before`. #}
+{% if has_variant and not python_source.variant %}
 {% set ns = namespace(default_arm=none) %}
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
 @dataclass
@@ -133,7 +135,9 @@ class {{ struct_name }}:
 {% for group in python_source.groups %}
     {{ group.name }}: {{ group.ty }} = {{ group.default }}
 {% endfor %}
-{% if has_variant %}
+{% if python_source.variant %}
+    body: {{ struct_name }}Variant = {{ python_source.variant.default }}
+{% elif has_variant %}
     body: {{ struct_name }}Variant = field(default_factory={{ struct_name }}Variant)
 {% endif %}
 {% endif %}
@@ -203,17 +207,35 @@ class {{ struct_name }}:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
+{# A printed codec's value holds the arm itself, the decoded body of a named
+   arm or its `{Codec}Default` of the tag it read and the body. #}
+{% if not python_source.variant %}
         body = {{ struct_name }}Variant()
+{% endif %}
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
+{% if not python_source.variant %}
             body.kind = "{{ arm.variant_name }}"
-            body.{{ arm.c_union_field }} = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
+{% endif %}
+            _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
+{% if python_source.variant %}
+            body = _arm
+{% else %}
+            body.{{ arm.c_union_field }} = _arm
+{% endif %}
 {% endfor %}
         else:
 {% if variant.default_arm %}
+{% if not python_source.variant %}
             body.kind = "{{ variant.default_arm.variant_name }}"
             body.default_tag = {{ variant.tag_store_expr }}
-            body.{{ variant.default_arm.c_union_field }} = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
+{% endif %}
+            _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
+{% if python_source.variant %}
+            body = {{ python_source.variant.default_arm }}(tag={{ variant.tag_store_expr }}, body=_arm)
+{% else %}
+            body.{{ variant.default_arm.c_union_field }} = _arm
+{% endif %}
 {% else %}
             # codec/variant-arm-unreachable proves every tag names an arm, so
             # no frame reaches here.
@@ -354,6 +376,12 @@ class {{ struct_name }}:
 {% endif %}
 {% if has_variant and has_caller_tag %}
     def tag(self) -> int:
+{% if python_source.variant %}
+        """The tag of the arm this value holds: the one the arm declares, or
+        the one the default arm keeps. It is the ``tag`` the decode of a value
+        of this arm takes. The module's :func:`tag` says it of any source."""
+        return tag(self)
+{% else %}
         """The tag of the arm this value holds: the one the arm declares,
         or, for the catch-all arm, the unknown tag it holds in
         ``default_tag``. It is the ``tag`` the decode of a value of this arm
@@ -368,6 +396,7 @@ class {{ struct_name }}:
             return self.body.default_tag
 {% endif %}
         raise ValueError(f"no variant arm is named {self.body.kind!r}")
+{% endif %}
 
 {% endif %}
     def encode(self, w: SceSink{{ encode_params_after_first_arg }}) -> None:

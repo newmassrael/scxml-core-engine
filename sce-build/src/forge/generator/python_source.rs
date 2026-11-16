@@ -51,7 +51,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// beside its content where its content is, a flag set exactly where the one
 /// field it gates is there, or a flag a body says; whose every flag input the
 /// value says is said by the field gated on it alone or by a body it is handed
-/// on to; and whose encode refuses only what it raises itself, before the first
+/// on to or by the arm of its variant; whose variant's arms are codecs it
+/// prints, no two named ones of one class; and whose encode refuses only what
+/// it raises itself, before the first
 /// byte: a gate it cannot derive, an input a body or the entries of a list say
 /// otherwise than they are handed, measures that disagree, a number past its
 /// field, or what a codec it holds refuses. A CBOR
@@ -78,20 +80,46 @@ fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i I
 fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
-    if m.variant.is_some() {
-        forms.push("a variant".to_string());
+    // A variant is presented as the arm the value holds, a value of the arm's
+    // codec's class, the default arm a `{Codec}Default` of the tag it keeps and
+    // its body; the class of the arm says which arm it is, so two arms whose
+    // codecs are one class could not be told apart. Each arm is written by its
+    // codec's own `encode_source`, which a codec the Python backend prints has.
+    let mut classes: BTreeMap<(String, String), &str> = BTreeMap::new();
+    for arm in &plan.arms {
+        let Some(import) = printed_import(imports, arm.codec) else {
+            forms.push(format!(
+                "the arm `{}` is a codec the Python backend does not print",
+                arm.codec
+            ));
+            continue;
+        };
+        if arm.tag.is_none() {
+            continue;
+        }
+        let class = (import.namespace.clone(), import.type_name.clone());
+        if let Some(other) = classes.insert(class, arm.codec) {
+            forms.push(format!(
+                "the arms `{other}` and `{}` are values of one Python class, which a value \
+                 cannot tell apart",
+                arm.codec
+            ));
+        }
     }
     // An input the value says (docs/adr/0065 §6 R4a) is read off it, by a
     // function of the module a parent calls, `input_<name>`, and by the encode
     // where a gate or a check reads it; one it does not say is a parameter of
     // the encode. It is said by the field gated on it alone, by the group
-    // gated on it, or by the body, always there, it is handed on to, through
-    // that body's codec's own function, which a codec the Python backend
-    // prints has.
+    // gated on it, by the body, always there, it is handed on to, or by the
+    // arm of the variant the value holds, through that body's or arm's codec's
+    // own function, which a codec the Python backend prints has.
     for said in &plan.said {
         let by = match &plan.roles.inputs[&said.input.name] {
-            InputSource::Gate { .. } | InputSource::Forward { .. } | InputSource::Group => continue,
-            InputSource::EveryArm { .. } | InputSource::SomeArms { .. } => "the arms of a variant",
+            InputSource::Gate { .. }
+            | InputSource::Forward { .. }
+            | InputSource::Group
+            | InputSource::EveryArm { .. }
+            | InputSource::SomeArms { .. } => continue,
             InputSource::List { .. } => "the start of a list held to a law",
         };
         forms.push(format!(
@@ -134,9 +162,15 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             // A flag of a disjunction, what the arm the value holds gives it
             // (docs/adr/0065 §6 R4c).
             (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
+            // The tag of the arm of the variant the value holds, into a field
+            // or a flag of a carrier, and the bits of a carrier the arm of
+            // each embedded body's variant fills, each read through that
+            // body's codec's own `tag`.
+            (ElementId::Field(_) | ElementId::Flag { .. }, Derive::VariantTag) => {}
+            (ElementId::Flag { .. }, Derive::ParentTag(_)) => {}
             (element, _) => forms.push(format!(
                 "element '{element}': an element the encode derives other than a length, \
-                 a presence flag or a group's flag"
+                 a presence flag, a group's flag or a variant's tag"
             )),
         }
     }
@@ -152,18 +186,14 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // (docs/adr/0065 §6 R4e).
     for check in &plan.input_checks {
         match (&check.site, &check.against) {
-            (CheckSite::Arm { .. }, _) => forms.push(format!(
-                "input '{}': an input an arm says, held to what the arm is handed",
-                check.input
-            )),
             (_, Against::PreviousEntry { .. }) => forms.push(format!(
                 "input '{}': an input a chain's entry says, held to the entry before",
                 check.input
             )),
-            (CheckSite::List { .. } | CheckSite::Embed { .. }, _) => {}
+            (CheckSite::List { .. } | CheckSite::Embed { .. } | CheckSite::Arm { .. }, _) => {}
         }
     }
-    let numbers = derived_numbers(plan);
+    let numbers = derived_whole(plan);
     for write in &plan.program {
         match write {
             Write::Whole(field) | Write::Tail { field, .. } => {
@@ -274,18 +304,15 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
     let mut forms = Vec::new();
     for measure in &number.measures {
         match &measure.of {
-            // The input a body says, read through its codec's own function.
+            // The input a body or the arm the value holds says, read through
+            // its codec's own function.
             Measured::Bytes { .. }
             | Measured::Entries { .. }
             | Measured::Encoded { .. }
-            | Measured::Says { .. } => {}
+            | Measured::Says { .. }
+            | Measured::ArmSays { .. } => {}
             Measured::Start { .. } => {
                 forms.push(format!("element '{element}': a flag a list's start says"));
-            }
-            Measured::ArmSays { .. } => {
-                forms.push(format!(
-                    "element '{element}': a flag the arm a value holds says"
-                ));
             }
         }
     }
@@ -326,9 +353,22 @@ fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
         .collect()
 }
 
+/// The fields of `plan` the encode derives whole, each written as its local
+/// `_d_<field>`: a number, or the tag of the arm of the variant the value
+/// holds.
+fn derived_whole(plan: &EncodePlan<'_>) -> BTreeSet<String> {
+    let mut whole = derived_numbers(plan);
+    for derived in &plan.derivations {
+        if let (ElementId::Field(id), Derive::VariantTag) = (&derived.element, &derived.by) {
+            whole.insert(id.clone());
+        }
+    }
+    whole
+}
+
 /// Whether the printer cannot read `field` as a write reads it: the value
-/// presents it alone or as a member of a group, or the encode derives it as a
-/// number.
+/// presents it alone or as a member of a group, or the encode derives it
+/// whole.
 fn unread_form(
     plan: &EncodePlan<'_>,
     numbers: &BTreeSet<String>,
@@ -355,7 +395,7 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 /// and the value does not state it while its content is absent, or a group
 /// holds it (docs/adr/0065 §6 R4), which is the value's field.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    (derived_numbers(plan).contains(id) || plan.roles.group_of(id).is_some())
+    (derived_whole(plan).contains(id) || plan.roles.group_of(id).is_some())
         && element_of(plan, id).is_none()
 }
 
@@ -421,9 +461,26 @@ pub(super) struct PythonSource {
     /// the order of the plan's groups; its members are no fields of their own.
     pub(super) groups: Vec<GroupField>,
     /// Whether the module names `typing.Union`, the type of a group of several
-    /// arms.
+    /// arms and of a variant.
     pub(super) union: bool,
+    /// The variant the value holds in its `body`, where the codec has one.
+    pub(super) variant: Option<VariantField>,
 }
+
+/// The variant as the value holds it: its `body`, of the type
+/// `{Codec}Variant`, the `Union` of a class for each arm.
+pub(super) struct VariantField {
+    /// The default `body` takes: a factory of the arm the document marks as
+    /// the one a value starts in, or else of the first.
+    pub(super) default: String,
+    /// The class of the default arm, which the decode makes of the tag it
+    /// read and the body, where the variant has one.
+    pub(super) default_arm: Option<String>,
+}
+
+/// The attribute a value holds its variant's arm in, as every printer names
+/// it (`VARIANT_MEMBER`).
+const VARIANT: &str = super::rust_source::VARIANT_MEMBER;
 
 impl PythonSource {
     /// What the codec's template reads of the printed text, as its
@@ -447,6 +504,10 @@ impl PythonSource {
                     "decoded": group.decoded,
                 }))
                 .collect::<Vec<_>>(),
+            "variant": self.variant.as_ref().map(|variant| serde_json::json!({
+                "default": variant.default,
+                "default_arm": variant.default_arm,
+            })),
         })
     }
 }
@@ -469,6 +530,105 @@ pub(super) struct GroupField {
 /// of its value.
 fn body_module(import: &ImportContext) -> (String, &str) {
     (python_module_alias(&import.namespace), &import.type_name)
+}
+
+/// One arm of the codec's variant as the printed module reads it off the arm
+/// a value holds: by the class of the arm, a value of the arm's codec's class
+/// or, for the default arm, the `{Codec}Default` that keeps its tag beside its
+/// body.
+struct ArmRead {
+    /// The class `isinstance` tests the arm a value holds against.
+    class: String,
+    /// The alias the module imports the arm's codec's module under, whose
+    /// `encode_source` and `input_<name>` read the arm's body.
+    module: String,
+    /// The import alias of the arm's codec, which the plan names it by.
+    alias: String,
+    /// The tag the arm names, `None` for the default arm, which keeps its own.
+    tag: Option<u64>,
+}
+
+impl ArmRead {
+    /// The arm's body, a source of its codec, read off `arm`, what the value
+    /// holds where it holds this arm: the arm itself, or the default arm's
+    /// body.
+    fn body(&self, arm: &str) -> String {
+        match self.tag {
+            Some(_) => arm.to_string(),
+            None => format!("{arm}.body"),
+        }
+    }
+
+    /// The tag of the arm, read off `arm` for the default arm.
+    fn tag(&self, arm: &str) -> String {
+        match self.tag {
+            Some(tag) => tag.to_string(),
+            None => format!("{arm}.tag"),
+        }
+    }
+}
+
+/// The class of the default arm of the variant of the codec `struct_name`.
+fn default_arm_class(struct_name: &str) -> String {
+    format!("{struct_name}Default")
+}
+
+/// The local the encode reads the arm the value holds by.
+const ARM: &str = "_v_body";
+
+/// The arms of the variant of `plan`, in the plan's order (those it names,
+/// then the default), each a codec the Python backend prints; empty where the
+/// codec has no variant.
+fn variant_arms(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> Vec<ArmRead> {
+    plan.arms
+        .iter()
+        .map(|arm| {
+            let import = printed_import(imports, arm.codec)
+                .expect("`unlowered` prints a variant whose every arm is printed");
+            let (module, class) = body_module(import);
+            ArmRead {
+                class: match arm.tag {
+                    Some(_) => format!("{module}.{class}"),
+                    None => default_arm_class(struct_name),
+                },
+                module,
+                alias: arm.codec.to_string(),
+                tag: arm.tag,
+            }
+        })
+        .collect()
+}
+
+/// A Python expression that is `each(arm)` of the arm `held` holds among
+/// `arms`, each tested by its class but the last, which is what `held` holds
+/// where it holds none of the others; `otherwise` where `held` may hold an arm
+/// outside `arms`, which then ends the chain.
+fn arm_chain(
+    arms: &[&ArmRead],
+    held: &str,
+    otherwise: Option<&str>,
+    each: &dyn Fn(&ArmRead) -> String,
+) -> String {
+    let mut chain = String::new();
+    for (i, arm) in arms.iter().enumerate() {
+        if i + 1 == arms.len() && otherwise.is_none() {
+            chain.push_str(&each(arm));
+        } else {
+            chain.push_str(&format!(
+                "{} if isinstance({held}, {}) else ",
+                each(arm),
+                arm.class
+            ));
+        }
+    }
+    if let Some(otherwise) = otherwise {
+        chain.push_str(otherwise);
+    }
+    format!("({chain})")
 }
 
 /// The class a byte string, a text or a list of `struct_name` is held in, the
@@ -581,6 +741,12 @@ pub(super) fn render(
         presented.insert(field.name.clone(), presents);
         groups.push(field);
     }
+    // The variant, its classes after the groups'.
+    let variant = variant_part(&mut gathered, plan, imports, struct_name);
+    if variant.is_some() {
+        union = true;
+        presented.insert(VARIANT.to_string(), format!("{struct_name}Variant"));
+    }
     let Gathered {
         classes: mut before,
         runtime,
@@ -601,6 +767,12 @@ pub(super) fn render(
         .iter()
         .map(|element| (l.codec_field_id(&element.field.id), &element.field.id))
         .chain(groups.iter().map(|group| (group.name.clone(), &group.name)));
+    let variant_key = VARIANT.to_string();
+    let names = names.chain(
+        variant
+            .is_some()
+            .then(|| (variant_key.clone(), &variant_key)),
+    );
     for (name, key) in names {
         before.push_str(&format!(
             "\n    @property\n    def {name}(self) -> {}: ...\n",
@@ -615,11 +787,13 @@ pub(super) fn render(
 
     PythonSource {
         before: format!(
-            "{}\n\n\n{}{}",
+            "{}\n\n\n{}{}{}",
             before.trim_end_matches('\n'),
             encode_source(plan, l, imports, struct_name),
-            input_functions(plan, l, imports, struct_name)
+            input_functions(plan, l, imports, struct_name),
+            tag_function(plan, imports, struct_name)
         ),
+        variant,
         hold: hold.trim_end_matches('\n').to_string(),
         declared,
         runtime: runtime.into_iter().collect::<Vec<_>>().join(", "),
@@ -1047,6 +1221,138 @@ fn gate_holds(struct_name: &str, group: &GateGroup, gate: usize, held: &str) -> 
     }
 }
 
+/// The classes of the variant of `plan`, into `gathered`, and how the value
+/// holds it, where the codec has one: the arm a value holds is a value of the
+/// arm's codec's class, imported whole as a body's is, or a `{Codec}Default`
+/// of the tag the default arm keeps, held to the tags no arm names
+/// (`{Codec}UnknownTag`, docs/adr/0065 §6 R3), and its body; the variant is the
+/// `Union` of the arms' classes, `{Codec}Variant`.
+fn variant_part(
+    gathered: &mut Gathered,
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> Option<VariantField> {
+    let variant = plan.model.variant.as_ref()?;
+    let arms = variant_arms(plan, imports, struct_name);
+    let mut default_arm = None;
+    for arm in &arms {
+        let import = printed_import(imports, &arm.alias)
+            .expect("`unlowered` prints a variant whose every arm is printed");
+        gathered.modules.insert(format!(
+            "from . import {} as {}",
+            import.namespace, arm.module
+        ));
+        if arm.tag.is_some() {
+            continue;
+        }
+        let unknown = crate::forge::codec_totality::unknown_tag(plan.model)
+            .expect("a variant with a default arm holds its tag as an unknown tag");
+        let tag_class = format!("{struct_name}UnknownTag");
+        let mut known = unknown.known.clone();
+        known.sort_unstable();
+        known.dedup();
+        let known = if known.is_empty() {
+            "frozenset()".to_string()
+        } else {
+            format!(
+                "frozenset({{{}}})",
+                known
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        let least = (0..=unknown.max()).find(|tag| unknown.admits(*tag)).expect(
+            "a default arm is reached by a tag no arm names (codec/variant-arm-unreachable)",
+        );
+        let body = format!("{}.{}", arm.module, import.type_name);
+        let class = default_arm_class(struct_name);
+        gathered.runtime.insert("UnknownTag");
+        gathered.factory = true;
+        gathered.classes.push_str(&format!(
+            "class {tag_class}(UnknownTag):\n\
+             \x20   \"\"\"The tag the default arm of :class:`{struct_name}`'s variant keeps: at\n\
+             \x20   most {most}, and none an arm names (docs/adr/0065 §6 R3).\"\"\"\n\
+             \n\
+             \x20   MOST = {most}\n\
+             \x20   KNOWN = {known}\n\n\n\
+             @dataclass\n\
+             class {class}:\n\
+             \x20   \"\"\"The default arm of :class:`{struct_name}`'s variant: the tag no arm\n\
+             \x20   names, which it keeps, and its body.\"\"\"\n\
+             \n\
+             \x20   tag: {tag_class} = {tag_class}({least})\n\
+             \x20   body: {body} = field(default_factory={body})\n\
+             \n\
+             \x20   def __setattr__(self, name: str, value: object) -> None:\n\
+             \x20       # The tag is held to the tags no arm names wherever it is set,\n\
+             \x20       # where the arm is made and after (docs/adr/0065 §6 R3).\n\
+             \x20       if name == \"tag\":\n\
+             \x20           value = {tag_class}(value)\n\
+             \x20       object.__setattr__(self, name, value)\n\n\n",
+            most = unknown.max(),
+        ));
+        default_arm = Some(class);
+    }
+    let classes: Vec<&str> = arms.iter().map(|arm| arm.class.as_str()).collect();
+    gathered.classes.push_str(&format!(
+        "{struct_name}Variant = Union[{}]\n\
+         \"\"\"The arm a value of :class:`{struct_name}` holds: a value of the arm's codec,\n\
+         or the default arm.\"\"\"\n\n\n",
+        classes.join(", ")
+    ));
+    // The arm a value starts in: the one the document marks, or the first.
+    let start = variant
+        .arms
+        .iter()
+        .position(|arm| arm.is_default)
+        .unwrap_or(0);
+    gathered.factory = true;
+    Some(VariantField {
+        default: format!("field(default_factory={})", classes[start]),
+        default_arm,
+    })
+}
+
+/// The module's `tag`, over any source of the codec of `plan`, where its
+/// variant takes its tag from its caller: the tag of the arm the source holds,
+/// the one the arm names or the one the default arm keeps. It is what a parent
+/// that holds the codec writes where the arm says the bits of its carrier, and
+/// the tag a caller hands the decode. A variant with a tag of its own writes
+/// it itself, and has none, as in every printer. It follows the text before
+/// it, two blank lines apart; empty where the codec has no such variant.
+fn tag_function(plan: &EncodePlan<'_>, imports: &[ImportContext], struct_name: &str) -> String {
+    if !plan
+        .model
+        .variant
+        .as_ref()
+        .is_some_and(|variant| variant.tag_field.is_none())
+    {
+        return String::new();
+    }
+    let arms = variant_arms(plan, imports, struct_name);
+    let mut cases = String::new();
+    for arm in &arms {
+        cases.push_str(&format!(
+            "    if isinstance(_v, {}):\n        return {}\n",
+            arm.class,
+            arm.tag("_v")
+        ));
+    }
+    format!(
+        "\n\n\ndef tag(src: {struct_name}Source) -> int:\n\
+         \x20   \"\"\"The tag of the arm a source of :class:`{struct_name}` holds: the one the\n\
+         \x20   arm names, or the one the default arm keeps. It is what a parent writes\n\
+         \x20   where the arm says its bits, and the tag a caller hands the decode.\n\
+         \x20   Raises :class:`TypeError` for a source whose ``{VARIANT}`` is no arm.\"\"\"\n\
+         \x20   _v = src.{VARIANT}\n\
+         {cases}\
+         \x20   raise TypeError(f\"{{type(_v).__name__}} is no arm of {struct_name}'s variant\")"
+    )
+}
+
 /// `value`, the bytes or text `field` holds, as the bytes it is written as.
 fn wire_bytes(field: &CodecField, value: &str) -> String {
     if field.sce_type == SceType::String {
@@ -1192,6 +1498,20 @@ fn encode_source(
             out.push_str(&format!("    {} = {bound}\n", source(id)));
         }
     }
+    // The arm of the variant the value holds, read once and held to being one
+    // of the arms, so each statement after it that tests which arm it is
+    // takes the last arm it tests for as the one held where it is none of
+    // the others.
+    let arms = variant_arms(plan, imports, struct_name);
+    if !arms.is_empty() {
+        let classes: Vec<&str> = arms.iter().map(|arm| arm.class.as_str()).collect();
+        out.push_str(&format!(
+            "    {ARM} = src.{VARIANT}\n\
+             \x20   if not isinstance({ARM}, ({},)):\n\
+             \x20       raise TypeError(f\"{{type({ARM}).__name__}} is no arm of {struct_name}'s variant\")\n",
+            classes.join(", ")
+        ));
+    }
     // Each input the value says that a gate or a check of the codec reads,
     // read off the source under the name the gate reads it by, as a parent
     // reads it through `input_<name>`; one no gate reads is left to the parent
@@ -1237,7 +1557,7 @@ fn encode_source(
                 let measured: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| plain_measure(plan, l, imports, measure))
+                    .map(|measure| plain_measure(plan, l, imports, &arms, measure))
                     .collect();
                 if let Some((carrier, statement)) =
                     derive_number(plan, l, element, &number.into, &measured, &mut out)
@@ -1287,6 +1607,66 @@ fn encode_source(
                     gate_holds(struct_name, group, *gate, &held)
                 ));
             }
+            // The tag of the arm the value holds: the one the arm names, or
+            // the one the default arm keeps, into the field that holds it or
+            // masked to the bits of its flag.
+            (element, Derive::VariantTag) => {
+                let every: Vec<&ArmRead> = arms.iter().collect();
+                let tag_of = |arm: &ArmRead| arm.tag(ARM);
+                out.push_str(&format!(
+                    "    _t_body = {}\n",
+                    arm_chain(&every, ARM, None, &tag_of)
+                ));
+                match element {
+                    ElementId::Field(id) => {
+                        out.push_str(&format!("    _d_{} = _t_body\n", l.codec_field_id(id)));
+                    }
+                    ElementId::Flag { field, flag } => {
+                        let (mask, width_mask, bit) = flag_masks(plan, field, flag);
+                        let c = format!("_c_{}", l.codec_field_id(field));
+                        folds.entry(field.clone()).or_default().push(format!(
+                            "{c} = ({c} & ~0x{mask:X}) | ((_t_body & 0x{width_mask:X}) << {bit})\n"
+                        ));
+                    }
+                    ElementId::Variant => unreachable!(
+                        "a variant whose caller hands its tag derives none: the caller writes it"
+                    ),
+                }
+            }
+            // The bits of a carrier the arm of each embedded body's variant
+            // fills: the tag of the arm the body holds, read through its
+            // codec's own `tag`, which a variant whose caller hands its tag
+            // has, masked to the bits; nothing where a gate leaves the body
+            // out.
+            (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
+                let local = format!("_p_{}", derived_local(l, &derived.element));
+                out.push_str(&format!("    {local} = 0\n"));
+                for term in &tag.terms {
+                    let import = printed_import(imports, &term.codec)
+                        .expect("`unlowered` prints a body of a printed codec only");
+                    let body = element_read(plan, l, &term.body.id);
+                    let fill = format!(
+                        "{local} |= {}.tag({body}) & 0x{:X}\n",
+                        body_module(import).0,
+                        term.mask
+                    );
+                    if term.body.present_if.is_some()
+                        || plan.roles.group_of(&term.body.id).is_some()
+                    {
+                        out.push_str(&indented(&format!(
+                            "if {body} is not None:\n{}",
+                            indented(&fill)
+                        )));
+                    } else {
+                        out.push_str(&indented(&fill));
+                    }
+                }
+                let (mask, width_mask, bit) = flag_masks(plan, field, flag);
+                let c = format!("_c_{}", l.codec_field_id(field));
+                folds.entry(field.clone()).or_default().push(format!(
+                    "{c} = ({c} & ~0x{mask:X}) | (({local} & 0x{width_mask:X}) << {bit})\n"
+                ));
+            }
             _ => unreachable!("`unlowered` prints no other derivation"),
         }
     }
@@ -1299,9 +1679,10 @@ fn encode_source(
             out.push_str(&indented(statement));
         }
     }
+    let whole = derived_whole(plan);
     let read = |f: &CodecField| -> String {
         let name = l.codec_field_id(&f.id);
-        if numbers.contains(&f.id) {
+        if whole.contains(&f.id) {
             format!("_d_{name}")
         } else if folds.contains_key(&f.id) {
             format!("_c_{name}")
@@ -1377,7 +1758,9 @@ fn encode_source(
     // input of its own, and each gate the encode cannot derive the presence
     // from, to the field it gates.
     for check in &plan.input_checks {
-        out.push_str(&indented(&input_check(plan, l, imports, check, &read)));
+        out.push_str(&indented(&input_check(
+            plan, l, imports, &arms, check, &read,
+        )));
     }
     for field in &plan.gate_checks {
         out.push_str(&format!(
@@ -1519,7 +1902,28 @@ fn encode_source(
                     Guard::Gate => format!("    if {}:\n{}", gate_test(field), indented(&body)),
                 });
             }
-            Write::Variant => unreachable!("`unlowered` prints no variant"),
+            // The arm the value holds, written by its codec's encode over its
+            // body, each handed what its codec takes and does not say.
+            Write::Variant => {
+                for (i, arm) in arms.iter().enumerate() {
+                    let keyword = match i {
+                        0 => format!("if isinstance({ARM}, {}):", arm.class),
+                        _ if i + 1 == arms.len() => "else:".to_string(),
+                        _ => format!("elif isinstance({ARM}, {}):", arm.class),
+                    };
+                    let write = format!(
+                        "{}.encode_source({}, w{})\n",
+                        arm.module,
+                        arm.body(ARM),
+                        handed(&arm.alias)
+                    );
+                    if arms.len() == 1 {
+                        out.push_str(&indented(&write));
+                    } else {
+                        out.push_str(&format!("    {keyword}\n{}", indented(&indented(&write))));
+                    }
+                }
+            }
         }
     }
     if staged {
@@ -1625,7 +2029,32 @@ fn said_input(
                 gate_holds(struct_name, group, at, &held)
             )
         }
-        InputSource::EveryArm { .. } | InputSource::SomeArms { .. } | InputSource::List { .. } => {
+        // What the arm the value holds says, read through that arm's codec
+        // off its body (docs/adr/0065 §6 R4d); an arm whose codec does not
+        // read the input has no bit it could change, and says nothing of it
+        // (R4e).
+        InputSource::EveryArm { arms: bound } | InputSource::SomeArms { arms: bound } => {
+            let arms = variant_arms(plan, imports, struct_name);
+            let saying: Vec<&ArmRead> = arms
+                .iter()
+                .filter(|arm| bound.contains_key(&arm.alias))
+                .collect();
+            let nothing = if plan.roles.says_input_partly(input) {
+                "None"
+            } else {
+                "0"
+            };
+            let held = format!("src.{VARIANT}");
+            arm_chain(&saying, &held, Some(nothing), &|arm: &ArmRead| {
+                format!(
+                    "{}.input_{}({})",
+                    arm.module,
+                    input_name(&bound[&arm.alias]),
+                    arm.body(&held)
+                )
+            })
+        }
+        InputSource::List { .. } => {
             unreachable!("`unlowered` prints no other way a value says an input")
         }
     }
@@ -1635,13 +2064,15 @@ fn said_input(
 /// the codec `check` names to what this codec hands it for its input
 /// (docs/adr/0065 §6 R4a): `_h`, the bit of a carrier as the encode writes it
 /// (`read`) or an input of this codec's own, against what the body or each
-/// entry of the list says through its codec's own `input_<name>`. A value
-/// that says nothing of the input disagrees with nothing (R4e), and a body or
-/// a list a gate leaves out holds nothing that could disagree.
+/// entry of the list, or the arm of the variant the value holds where it is
+/// one of the arms checked, says through its codec's own `input_<name>`. A
+/// value that says nothing of the input disagrees with nothing (R4e), and a
+/// body or a list a gate leaves out holds nothing that could disagree.
 fn input_check(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     imports: &[ImportContext],
+    arms: &[ArmRead],
     check: &InputCheck<'_>,
     read: &dyn Fn(&CodecField) -> String,
 ) -> String {
@@ -1680,7 +2111,21 @@ fn input_check(
             (list, walk)
         }
         CheckSite::Embed { body } => (body, test(&element_read(plan, l, &body.id))),
-        CheckSite::Arm { .. } => unreachable!("`unlowered` prints no input an arm says"),
+        // The arm the value holds, where it is one the check names; every
+        // arm is there, so nothing gates it.
+        CheckSite::Arm { arms: checked } => {
+            let mut statements = String::new();
+            for (n, &i) in checked.iter().enumerate() {
+                let arm = &arms[i];
+                let keyword = if n == 0 { "if" } else { "elif" };
+                statements.push_str(&format!(
+                    "{keyword} isinstance({ARM}, {}):\n{}",
+                    arm.class,
+                    indented(&test(&arm.body(ARM)))
+                ));
+            }
+            return format!("_h = {handed}\n{statements}");
+        }
     };
     // A gated element, or a member of a group the arm the value holds may not
     // hold, is read where it is there.
@@ -1735,6 +2180,7 @@ fn plain_measure(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     imports: &[ImportContext],
+    arms: &[ArmRead],
     measure: &Measure<'_>,
 ) -> MeasureText {
     let (content, size) = match &measure.of {
@@ -1775,8 +2221,42 @@ fn plain_measure(
             (content, size)
         }
         Measured::Encoded { .. } => unreachable!("a number of encoded lengths is counted apart"),
-        Measured::Start { .. } | Measured::ArmSays { .. } => {
-            unreachable!("`unlowered` prints no flag a list's start or an arm says")
+        // The input the arm the value holds says, 0 or 1, read through the
+        // arm's codec off its body, where the value holds one of the arms
+        // that say it; where it holds another, a field beside it holds zero
+        // and a flag keeps the bits the value presents.
+        Measured::ArmSays { arms: said } => {
+            let mut saying: Vec<&ArmRead> = Vec::new();
+            for input in said {
+                let import = printed_import(imports, &input.codec)
+                    .expect("`unlowered` prints a variant whose every arm is printed");
+                if import.codec_partly_says_inputs.contains(&input.input) {
+                    unreachable!("`{}`: {}", input.codec, SAYS_IN_EVERY_VALUE);
+                }
+                saying.push(&arms[input.arm]);
+            }
+            let size = arm_chain(&saying, ARM, Some("0"), &|arm: &ArmRead| {
+                let input = said
+                    .iter()
+                    .find(|one| arms[one.arm].alias == arm.alias)
+                    .expect("each arm that says the input names it");
+                format!(
+                    "{}.input_{}({})",
+                    arm.module,
+                    input_name(&input.input),
+                    arm.body(ARM)
+                )
+            });
+            let classes: Vec<&str> = saying.iter().map(|arm| arm.class.as_str()).collect();
+            return MeasureText {
+                size,
+                present: measure
+                    .gated
+                    .then(|| format!("isinstance({ARM}, ({},))", classes.join(", "))),
+            };
+        }
+        Measured::Start { .. } => {
+            unreachable!("`unlowered` prints no flag a list's start says")
         }
     };
     MeasureText {
@@ -1829,6 +2309,24 @@ fn largest_of(ty: &SceType) -> Option<u64> {
     } else {
         (1u64 << bits) - 1
     })
+}
+
+/// The bits of the flag `flag` of the carrier `carrier`: the mask of them in
+/// place, the mask of their width, and the lowest bit.
+fn flag_masks(plan: &EncodePlan<'_>, carrier: &str, flag: &str) -> (u64, u64, u32) {
+    let def = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == carrier)
+        .and_then(|c| c.flags.iter().find(|d| d.name == flag))
+        .expect("a derived flag is a flag of a carrier of the codec");
+    let width_mask = if def.width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << def.width) - 1
+    };
+    (width_mask << def.bit, width_mask, def.bit)
 }
 
 /// The name the encode's locals of the derived `element` are named by.

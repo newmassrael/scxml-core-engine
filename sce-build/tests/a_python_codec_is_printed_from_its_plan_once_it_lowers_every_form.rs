@@ -467,13 +467,21 @@ fn a_flag_input_the_value_says_is_read_off_the_value_and_not_handed() {
             "    def encode_to_bytes(self) -> bytes:\n",
         ],
     );
+    // The parent hands the arm's encode no input the arm says, whether the
+    // template writes the parent or the printer does, which writes the arm the
+    // value holds by its codec's own encode.
     let parent = resource_module("codec_zenoh_declaration");
+    let arm_write = if unlowered("codec_zenoh_declaration").is_empty() {
+        "sce_codec_zenoh_undecl_token.encode_source(_v_body, w)\n"
+    } else {
+        "self.body.codec_zenoh_undecl_token.encode(w)\n"
+    };
     holds(
         "codec_zenoh_declaration",
         &parent,
         &[
             "CodecZenohUndeclToken.decode(cursor, ((f_header >> 7) & 0x1))\n",
-            "self.body.codec_zenoh_undecl_token.encode(w)\n",
+            arm_write,
         ],
     );
 }
@@ -611,12 +619,67 @@ fn two_lists_of_one_count_are_one_aligned_member_of_their_arm() {
     holds_none(name, &text, &["    weights: ", "weights=f_weights"]);
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a variant and a CBOR map each name their form, and
-/// so does a group of a chain's memberships.
+/// A variant is held as the arm the value holds: a value of a named arm's
+/// codec, or the default arm's class of the tag it keeps, held to the tags no
+/// arm names (docs/adr/0065 §6 R3), and its body. The encode writes the arm
+/// by its codec's own encode, and the decode makes the arm it read.
 ///
-/// Turns red where `python_source::positional_forms` stops naming a variant or
-/// a group of a chain's memberships, or `unlowered_forms` a CBOR map.
+/// Turns red where `python_source::positional_forms` names a variant
+/// unlowered again, `variant_part` stops holding the default arm's tag in its
+/// class or starts the value in another arm than the document marks, or the
+/// template's decode stops making the default arm's class.
+#[test]
+fn a_variant_is_the_arm_the_value_holds_and_the_default_arm_keeps_its_tag() {
+    let name = "codec_variant_default_marker";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    let arm_a = "sce_codec_default_marker_arm_a.CodecDefaultMarkerArmA";
+    let arm_b = "sce_codec_default_marker_arm_b.CodecDefaultMarkerArmB";
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.bounded import UnknownTag\n",
+            "class CodecVariantDefaultMarkerUnknownTag(UnknownTag):\n",
+            "    MOST = 3\n    KNOWN = frozenset({1, 2})\n",
+            "    tag: CodecVariantDefaultMarkerUnknownTag = CodecVariantDefaultMarkerUnknownTag(0)\n",
+            &format!("    body: {arm_b} = field(default_factory={arm_b})\n"),
+            &format!(
+                "CodecVariantDefaultMarkerVariant = Union[{arm_a}, {arm_b}, \
+                 CodecVariantDefaultMarkerDefault]\n"
+            ),
+            &format!(
+                "    body: CodecVariantDefaultMarkerVariant = field(default_factory={arm_b})\n"
+            ),
+            "    def body(self) -> CodecVariantDefaultMarkerVariant: ...\n",
+            &format!(
+                "    if isinstance(_v_body, {arm_a}):\n        \
+                 sce_codec_default_marker_arm_a.encode_source(_v_body, w)\n"
+            ),
+            "    else:\n        sce_codec_default_marker_arm_b.encode_source(_v_body.body, w)\n",
+            "            body = CodecVariantDefaultMarkerDefault(tag=",
+            "            body = _arm\n",
+        ],
+    );
+    // The arm's own header holds its tag (a peek byte), so the value has no
+    // tag a caller hands, and no `tag`.
+    holds_none(
+        name,
+        &text,
+        &[
+            "class CodecVariantDefaultMarkerVariant:",
+            "body.kind = ",
+            "\ndef tag(",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole: a CBOR map names its form, and so does a group of
+/// a chain's memberships.
+///
+/// Turns red where `python_source::positional_forms` stops naming a group of a
+/// chain's memberships, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     let forms = unlowered("codec_chain_has_envelope");
@@ -626,22 +689,18 @@ fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
             .any(|f| f.contains("a group of a chain's memberships")),
         "codec_chain_has_envelope: a group of a chain's memberships is not printed yet: {forms:?}"
     );
-    for (name, form) in [
-        ("codec_variant_default_marker", "a variant"),
-        ("codec_cbor_map", "a CBOR map"),
-    ] {
-        let forms = unlowered(name);
-        assert!(
-            forms.iter().any(|f| f.contains(form)),
-            "{name}: the printer names `{form}` among {forms:?}"
-        );
-        let text = resource_module(name);
-        holds_none(
-            name,
-            &text,
-            &["def encode_source(", "(Protocol):", "BoundedBytes"],
-        );
-    }
+    let name = "codec_cbor_map";
+    let forms = unlowered(name);
+    assert!(
+        forms.iter().any(|f| f.contains("a CBOR map")),
+        "{name}: the printer names a CBOR map among {forms:?}"
+    );
+    let text = resource_module(name);
+    holds_none(
+        name,
+        &text,
+        &["def encode_source(", "(Protocol):", "BoundedBytes"],
+    );
 }
 
 /// Every codec of the resources is printed exactly where the printer lowers
@@ -712,6 +771,8 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_length_ref_dotted_basic",
         "codec_chain_handed_entry",
         "codec_zenoh_undecl_token",
+        "codec_repeat_unconditional_count",
+        "codec_variant_default_marker",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

@@ -2035,3 +2035,19 @@ codecs whose gated list takes its count from a list always there (docs/adr/0065 
   it as its own member, as before.
 - Neither list can be set apart from the other: replace the pair whole, which compares the counts again.
 
+## A printed Python codec holds its variant's arm itself (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that hold a variant whose arms Python prints: a tag field, a tag flag, a peek byte or a tag the caller hands.
+
+- `{Codec}Variant` is no longer a dataclass of `kind` and an optional field for each arm. It is the `Union` of the
+  arms' classes, and `body` holds the arm: replace
+  `Msg(body=MsgVariant(kind="CodecPut", codec_put=put))` with `Msg(body=put)`, and `msg.body.kind == "CodecPut"`
+  with `isinstance(msg.body, CodecPut)`.
+- The default arm is `{Codec}Default(tag=.., body=..)`: replace `body.default_tag` with `body.tag` and
+  `body.default_body` with `body.body`. Its tag is a `{Codec}UnknownTag`, which raises `ValueError` for a tag an arm
+  names, since a frame of that tag reads back as that arm.
+- The tag field or flag is derived from the arm on encode: the value no longer has the tag field, and the tag bits
+  it holds in a flag set are not written.
+- A variant whose caller hands its tag keeps `msg.tag()`; the module's `tag(src)` answers it of any source.
+

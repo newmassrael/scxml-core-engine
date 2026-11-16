@@ -15,7 +15,8 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, enum_variant, gates_label, group_accessor, group_choice,
-    integer_value, source_members, CodecPath as RustCodecPath, HeldCodecs,
+    integer_value, source_members, variant_choice, CodecPath as RustCodecPath, HeldCodecs,
+    CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -82,10 +83,12 @@ pub(crate) struct SourceCase {
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
 /// the flag inputs `inputs` states: each to the decode, one the value does not
 /// say to the encode too, and the value held to saying each other one. A group
-/// is the class of the arm the source states. A codec whose case hands it a
-/// caller's tag (`tag`), or that holds a variant, is one the Python printer
-/// does not print, and its case is refused by name; so is a source that states
-/// an element the value does not present or leaves out one it does.
+/// is the class of the arm the source states, and a variant the arm: a value
+/// of the arm's codec, or the default arm of the tag it keeps and its body. A
+/// caller's tag (`tag`) is handed to the decode after the inputs, and the
+/// value and its decode are held to answering it. A source that states an
+/// element the value does not present or leaves out one it does is refused
+/// by name.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -120,11 +123,7 @@ pub(crate) fn source_case(
         };
         said.push((format!("flag input {}", input.name), holds));
     }
-    if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
-        return Err("a Python case states no variant yet: the Python printer \
-                    prints no codec that holds one"
-            .to_string());
-    }
+    let tag = case_tag(plan, source, tag)?;
     let literal = value_literal(plan, path, source, held)?;
     let l = LangCtx::new(crate::generator::Language::Python, &[]);
     // A body is its codec's dataclass, compared whole as a dataclass is, and
@@ -148,7 +147,28 @@ pub(crate) fn source_case(
             format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
         ));
     }
+    // The arm, the same class on both sides, its body equal, and the default
+    // arm's tag too.
+    if plan.model.variant.is_some() {
+        checks.push((
+            VARIANT_MEMBER.to_string(),
+            format!("{DECODED}.{VARIANT_MEMBER} == {VALUE}.{VARIANT_MEMBER}"),
+        ));
+    }
     checks.extend(said);
+    if let Some(tag) = tag {
+        // The decode takes the tag after the flag inputs, and the value made
+        // and the value decoded under it both answer it (`tag`): it is what a
+        // caller writes for the arm the value holds.
+        decode_inputs.push(tag.to_string());
+        checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!(
+                "{module}.tag({VALUE}) == {tag} and {module}.tag({DECODED}) == {tag}",
+                module = path.module
+            ),
+        ));
+    }
     Ok(SourceCase {
         literal,
         checks,
@@ -236,6 +256,29 @@ fn value_literal(
             }
         };
         args.push(format!("{}={value}", group_accessor(group)));
+    }
+    // The arm of the variant, a value of the arm's codec, reached as a body
+    // is, or the default arm of the tag it keeps and its body.
+    if plan.model.variant.is_some() {
+        let json = object
+            .get(VARIANT_MEMBER)
+            .ok_or_else(|| format!("the source states no `{VARIANT_MEMBER}`, the variant's arm"))?;
+        let (arm, body) =
+            variant_choice(plan, json).map_err(|e| format!("`{VARIANT_MEMBER}`: {e}"))?;
+        let literal = held
+            .read(arm.codec, &mut |plan, held_path, held| {
+                value_literal(plan, &held_codec(path, held_path), body, held)
+            })
+            .map_err(|e| format!("`{VARIANT_MEMBER}`: {e}"))?;
+        let value = match arm.default_tag {
+            None => literal,
+            Some(tag) => format!(
+                "{}.{}(tag={tag}, body={literal})",
+                path.module,
+                super::default_arm_class(&path.type_name)
+            ),
+        };
+        args.push(format!("{VARIANT_MEMBER}={value}"));
     }
     Ok(format!("{}({})", path.class(), args.join(", ")))
 }
