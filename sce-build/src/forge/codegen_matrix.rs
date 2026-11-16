@@ -432,6 +432,7 @@ pub const TEST_PROFILE_UNION_BACKENDS: &[Language] = &[
     Language::Kotlin,
     Language::Go,
     Language::Swift,
+    Language::Python,
 ];
 
 /// The backends that lower an algorithm over a union (docs/adr/0092, Landing
@@ -1326,8 +1327,8 @@ mod tests {
 
     /// docs/adr/0092, section 7, last paragraph: a backend's test profile
     /// matches a union only where the backend generates the union's unit the
-    /// template names, and names it once. C++, Python and C11 generate the unit
-    /// and do not match one in a template yet.
+    /// template names, and names it once. C++ and C11 generate the unit and do
+    /// not match one in a template yet.
     #[test]
     fn a_test_profile_matches_a_union_only_where_its_unit_is_generated() {
         for &lang in TEST_PROFILE_UNION_BACKENDS {
@@ -1338,7 +1339,7 @@ mod tests {
                 .count();
             assert_eq!(times, 1, "{lang:?}");
         }
-        for lang in [Language::Cpp, Language::Python, Language::C11] {
+        for lang in [Language::Cpp, Language::C11] {
             assert!(UNION_BACKENDS.contains(&lang), "{lang:?}");
             assert!(!TEST_PROFILE_UNION_BACKENDS.contains(&lang), "{lang:?}");
         }

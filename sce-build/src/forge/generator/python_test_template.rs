@@ -31,11 +31,12 @@
 //! contents under `==`, and a byte string is immutable, so a value built from
 //! one a parameter gives holds it as given. A length restriction on a text
 //! counts its characters through the profile's runtime ([`TEXT_LENGTH`]),
-//! which a Python text, a sequence of code points, counts by its `len`. Python
-//! generates a union's unit, and its test profile matches no union yet
-//! ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so a
-//! template whose type reaches one is refused by the walk before anything is
-//! spelled.
+//! which a Python text, a sequence of code points, counts by its `len`. Python's
+//! test profile matches a union
+//! ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]): a case is
+//! told apart by the declared name of the tag the unit's `kind` answers, its
+//! record read as the case's `value`, and a value built by the class of its
+//! case through the module of the union's document.
 //!
 //! A template over a record also writes `TYPE` and `canonical`, the name and
 //! the canonical form of a message of it in the test log (§12.5), spelled by
@@ -202,10 +203,8 @@ pub(super) struct CanonicalAt {
 /// body of the unit's `canonical`: a list is a generator over its elements,
 /// and a field that may be absent is bound by an assignment expression and
 /// written only where it holds a value, `None`, which the record omits,
-/// where it holds none. Python's test profile matches no union yet
-/// ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so the walk
-/// refuses one before it asks for its form, and the trait's refusal stands for
-/// it. The unit of a test configuration writes its records' forms with it too,
+/// where it holds none; a union is a table of its cases by the declared name of
+/// its tag. The unit of a test configuration writes its records' forms with it too,
 /// beside their readers ([`PythonReading`]).
 pub(super) struct PythonCanonical;
 
@@ -310,6 +309,38 @@ impl CanonicalSpelling for PythonCanonical {
             .collect();
         format!("{PYTHON_CANONICAL}.record({})", fields.join(", "))
     }
+
+    /// A table of the cases by the declared name of the union's tag, which the
+    /// unit's `kind` answers through its enum, so the unit names no module of
+    /// the tag's enum: each a lambda of the union's value that writes the
+    /// runtime's `union_case` of its variant, with the form of the record a
+    /// case holds, bound from the case's `value`, or nothing.
+    fn union(
+        &self,
+        at: &CanonicalAt,
+        _union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let held = format!("union_{}", at.depth);
+        let arms: Vec<String> = cases
+            .into_iter()
+            .map(|(variant, case)| {
+                let name = python_literal(&variant);
+                let form = match case {
+                    Some((binding, written)) => {
+                        format!("(lambda {binding}: {written})({held}.value)")
+                    }
+                    None => "None".to_string(),
+                };
+                format!("{name}: lambda {held}: {PYTHON_CANONICAL}.union_case({name}, {form})")
+            })
+            .collect();
+        Ok(format!(
+            "(lambda {held}: {{{}}}[{held}.kind.declared_name()]({held}))({})",
+            arms.join(", "),
+            at.expr
+        ))
+    }
 }
 
 /// The name the unit of a test configuration imports the readers of the
@@ -388,9 +419,8 @@ impl PythonReadAt {
 /// keywords; a list a comprehension over its elements; a value that may be
 /// absent the runtime's `optional_field` or `nullable` with its read as a
 /// lambda. Every name a lambda or a comprehension binds is numbered by how
-/// deep it stands, so none hides another. Python's test profile matches no
-/// union yet ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]),
-/// so a union is refused by name, as its writer refuses it.
+/// deep it stands, so none hides another. A union is read by the runtime's
+/// `union_case` and built a case at a time.
 ///
 /// The reader names the payload class of each record and the class of each
 /// enum through the module of its document, which it notes ([`Self::named`]),
@@ -457,9 +487,8 @@ impl CanonicalForm for PythonReading {
         (name, value)
     }
 
-    /// The case's binding stands for its record. Python's test profile matches
-    /// no union yet, which [`Self::union`] refuses once the walk has read its
-    /// cases.
+    /// The case's binding stands for its record, the case's value
+    /// [`Self::union`] binds it to.
     fn case_record(&self, bound: PythonReadAt, _record: &str) -> PythonReadAt {
         bound
     }
@@ -606,15 +635,59 @@ impl CanonicalForm for PythonReading {
         )
     }
 
-    /// Python's test profile matches no union yet: refused by name, as
-    /// [`PythonCanonical`] refuses to write one.
+    /// The runtime's `union_case`, which holds the value to an object of one
+    /// member naming a case the union declares and answers the variant and the
+    /// case's value, then a table of the cases by their variants, each a lambda
+    /// that binds the case's value and builds the case's class through the
+    /// module of the union's document from the record read from it, or, for a
+    /// case that holds none, reads the empty object it is and builds the case.
     fn union(
         &self,
-        _at: &PythonReadAt,
+        at: &PythonReadAt,
         union: &ScopedUnion,
-        _cases: Vec<CanonicalCase>,
+        cases: Vec<CanonicalCase>,
     ) -> Result<String, String> {
-        Err(crate::forge::value_type::union_unlowered(&union.name))
+        self.names_document(&union.name);
+        let union_type = union_unit_type(&union.name, Language::Python);
+        let read = format!("union_{}", at.depth);
+        let variants: Vec<String> = cases.iter().map(|(name, _)| python_literal(name)).collect();
+        let arms: Vec<String> = cases
+            .into_iter()
+            .map(|(name, held)| {
+                let arm = match held {
+                    Some((binding, written)) => format!(
+                        "lambda {binding}: {}",
+                        crate::forge::generator::algorithm_union_case(
+                            Language::Python,
+                            &union_type,
+                            &name,
+                            Some(&written),
+                        )
+                    ),
+                    None => format!(
+                        "lambda case_{depth}: ({PYTHON_FROM_CANONICAL}.no_record(case_{depth}, \
+                         {}), {})[1]",
+                        python_literal(&format!("{}.{name}", at.what)),
+                        crate::forge::generator::algorithm_union_case(
+                            Language::Python,
+                            &union_type,
+                            &name,
+                            None,
+                        ),
+                        depth = at.depth
+                    ),
+                };
+                format!("{}: {arm}", python_literal(&name))
+            })
+            .collect();
+        Ok(format!(
+            "(lambda {read}: {{{}}}[{read}[0]]({read}[1]))({PYTHON_FROM_CANONICAL}.union_case({}, \
+             [{}], {}))",
+            arms.join(", "),
+            at.json,
+            variants.join(", "),
+            python_literal(&at.what)
+        ))
     }
 }
 
@@ -672,12 +745,12 @@ impl UnitNames for PythonNames<'_> {
             event_schema_payload_type(&record.name, Language::Python)
         })
     }
-    // Never asked: Python's test profile matches no union yet
-    // (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so the walk refuses one by
-    // name (`TemplateWalk::refuse_unlowered_unions`) before `unit_type` is asked
-    // to spell a type.
-    fn union(&self, _alias: &str) -> Option<String> {
-        None
+    // The class the union's unit declares, through its document's module.
+    fn union(&self, alias: &str) -> Option<String> {
+        self.scope.unions.get(alias).map(|union| {
+            self.spelling.names_document(&union.name);
+            union_unit_type(&union.name, Language::Python)
+        })
     }
     // No Python type is named by a mangled composition.
     fn enum_mangle(&self, alias: &str) -> String {
@@ -814,21 +887,36 @@ impl JoinSpelling for PythonSpelling {
         }
     }
 
-    /// Never asked: Python's test profile matches no union yet, and the walk
-    /// refuses a `union-match` on a backend whose profile matches none before it
-    /// builds the test of a case (`TemplateWalk::union_case`).
+    /// The declared name of the union's tag, which the unit's `kind` answers
+    /// through its enum, compared with the variant of the case (`!=` where
+    /// `negated`), so the unit names no module of the tag's enum; where the
+    /// case's matcher reads its record, joined in one conjunction with the test
+    /// of the record, which reads the case's `value` ([`TemplateSpelling::case`]):
+    /// Python's `and` reads it only where the comparison holds. The
+    /// conjunction is in parentheses, so `not` before it negates it whole.
     fn case_test(
         &self,
-        _at: &PythonAt,
-        union: &ScopedUnion,
-        _variant: &str,
-        _record: CaseTest<'_, '_, PythonAt>,
-        _negated: bool,
+        at: &PythonAt,
+        _union: &ScopedUnion,
+        variant: &str,
+        record: CaseTest<'_, '_, PythonAt>,
+        negated: bool,
     ) -> String {
-        unreachable!(
-            "the walk refuses the union `{}` on Python before it asks for the test of a case",
-            union.name
-        )
+        let tag = format!("{}.kind.declared_name()", at.expr);
+        let variant = python_literal(variant);
+        match record {
+            CaseTest::Empty | CaseTest::AnyRecord => {
+                let operator = if negated { "!=" } else { "==" };
+                format!("{tag} {operator} {variant}")
+            }
+            CaseTest::Holds { then, .. } => self.connectives().negate(
+                format!(
+                    "({tag} == {variant} and {})",
+                    self.join(then, false, Stands::Conjunct)
+                ),
+                negated,
+            ),
+        }
     }
 }
 
@@ -994,5 +1082,38 @@ impl TemplateSpelling for PythonSpelling {
     /// The list of the elements.
     fn list_value(&self, _at: &Position<'_, PythonAt>, elements: Vec<String>) -> String {
         format!("[{}]", elements.join(", "))
+    }
+
+    /// The record of the case, the `value` of the unit's case, which
+    /// [`JoinSpelling::case_test`] reads only after the comparison of the
+    /// union's `kind` that proves the case.
+    fn case(
+        &self,
+        at: &PythonAt,
+        _union: &ScopedUnion,
+        _variant: &str,
+    ) -> Result<PythonAt, String> {
+        Ok(PythonAt {
+            expr: format!("{}.value", at.expr),
+        })
+    }
+
+    /// The class of the case, through the module of the union's document,
+    /// given its record, or nothing for a case that holds none: the only way
+    /// the unit builds a value.
+    fn case_value(
+        &self,
+        _at: &Position<'_, PythonAt>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        self.names_document(&union.name);
+        Ok(crate::forge::generator::algorithm_union_case(
+            Language::Python,
+            &union_unit_type(&union.name, Language::Python),
+            variant,
+            record.as_deref(),
+        ))
     }
 }

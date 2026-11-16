@@ -13,9 +13,6 @@ The expected logs are the files every backend is held to, the canonical logs a
 reviewed run of the Rust runner wrote. Each test is the twin of the Rust case of
 the same name in
 ``backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs``.
-orders_suite and nested_suite are not replayed here: their mapped record holds a
-union, which Python's test profile matches no value of
-(``codegen_matrix::TEST_PROFILE_UNION_BACKENDS``).
 """
 
 from __future__ import annotations
@@ -32,7 +29,12 @@ sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
 # The suite's unit is imported as a module and read through it, as the runtime
 # suite's test reads its own.
-from integration.static_datamodel import boundary_suite, job_suite  # noqa: E402 -- path inserted above
+from integration.static_datamodel import (  # noqa: E402 -- path inserted above
+    boundary_suite,
+    job_suite,
+    nested_suite,
+    orders_suite,
+)
 from sce_runtime.testprofile import ParameterReader, Suite, run_runner  # noqa: E402
 
 #: The directory of the runs of the suites of the corpus but runtime_suite, a
@@ -109,5 +111,35 @@ def test_the_job_suite_replays_to_its_expected_logs(tmp_path: Path) -> None:
         job_suite.module_parameter,
         "job-timeout,job-retry",
         ["completes_in_time pass"],
+        tmp_path / "logs",
+    )
+
+
+def test_the_orders_suite_replays_to_its_expected_logs(tmp_path: Path) -> None:
+    """docs/SCE_TEST_PROFILE.md §9.5: an order of two lines, a customer and a
+    card, which ``order_placed_match`` accepts over its union, its list of
+    records and its template references, at 1 ms."""
+    replays(
+        "orders_suite",
+        orders_suite.suite(),
+        orders_suite.module_parameter,
+        "",
+        ["orders_case pass"],
+        tmp_path / "logs",
+    )
+
+
+def test_the_nested_suite_replays_to_its_expected_logs(tmp_path: Path) -> None:
+    """docs/SCE_TEST_PROFILE.md §4.5 (P5), §4.7 (P7): an order at 100 ms, which
+    the atomic state's own targetless branch takes before its ancestor's, and
+    one at 500 ms, which the ancestor's internal branch takes, restarting the
+    running timer; the inner timer then runs out twice and the tester passes at
+    1250 ms."""
+    replays(
+        "nested_suite",
+        nested_suite.suite(),
+        nested_suite.module_parameter,
+        "",
+        ["nested_case pass"],
         tmp_path / "logs",
     )

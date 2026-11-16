@@ -10,10 +10,9 @@
 //! through the module of its own document, which the unit imports exactly
 //! where its text names it. The tests are joined in Python's words (`and`,
 //! `or`, `not`, `True`, `False`); a value that may be absent is tested by
-//! `is None` and read as it is. Python generates a union's unit, and its test
-//! profile matches no union yet (docs/adr/0092;
-//! `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so a template whose type
-//! reaches one is refused as C++ refuses it. A
+//! `is None` and read as it is. Python's test profile matches a union
+//! (docs/adr/0092; `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is
+//! told apart by the declared name of the union's tag. A
 //! template over a record also declares `TYPE` and `canonical`, the name of its
 //! record type and its value's canonical form in the test log
 //! (docs/SCE_TEST_PROFILE.md §12.5).
@@ -24,9 +23,6 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -394,50 +390,27 @@ fn an_enum_a_byte_string_and_a_text_take_their_canonical_forms() {
     );
 }
 
-/// The detail of a `generate/unsupported-feature` refusal.
-fn unsupported(name: &str, err: Located<ForgeError>) -> String {
-    assert!(
-        matches!(
-            err.error.to_diagnostics()[0].code,
-            DiagnosticCode::GenerateUnsupportedFeature
-        ),
-        "{name} on Python: {err:?}"
-    );
-    match err.error {
-        ForgeError::Generate(boxed) => match *boxed {
-            GenerateError::UnsupportedFeature { detail, .. } => detail,
-            other => panic!("{name} on Python: {other:?}"),
-        },
-        other => panic!("{name} on Python: {other:?}"),
-    }
-}
-
-/// A template whose type reaches a union, in itself or below a field, is
-/// refused on Python by the union's own refusal: Python generates the union's
-/// unit, and its test profile matches no union yet
-/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+/// docs/adr/0092, section 7: a template whose type reaches a union, in itself
+/// or below a field, is generated on Python, whose test profile matches a
+/// union (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart
+/// by the declared name of the union's tag, which the unit's `kind` answers,
+/// and its record read as the case's `value` where the comparison holds; the
+/// unit imports the union's module and writes a value's form by the runtime's
+/// `union_case`.
 #[test]
-fn a_template_that_reaches_a_union_is_refused_on_python() {
-    for (path, alias) in [
-        (profile_dir().join("shape_is_circle.scxml"), "Shape"),
-        (imports_dir().join("order_placed_match.scxml"), "Payment"),
-    ] {
-        let name = path.file_stem().and_then(|s| s.to_str()).expect("a stem");
-        let Err(err) = sce_build::compile_forge_file(
-            &path,
-            Language::Python,
-            &[],
-            &ForgeCompileOptions::default(),
-        ) else {
-            panic!("{name} generated on Python");
-        };
-        let detail = unsupported(name, err);
-        assert!(
-            detail.starts_with(&format!("test-template '{name}': `union:{alias}`: ")),
-            "{detail}"
-        );
-        assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
-    }
+fn a_template_that_reaches_a_union_is_generated_on_python() {
+    let circle = unit_of(&profile_dir(), "shape_is_circle");
+    holds_each(&circle, &[".kind.declared_name() == \"circle\""]);
+    let order = unit_of(&imports_dir(), "order_placed_match");
+    holds_each(
+        &order,
+        &[
+            ".kind.declared_name() == \"card\"",
+            ".union_case(\"card\", (lambda case_",
+            "[union_",
+            ".kind.declared_name()](union_",
+        ],
+    );
 }
 
 /// The record schema the documents of a test of its own import: two `bool`

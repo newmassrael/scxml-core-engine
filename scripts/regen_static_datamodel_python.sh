@@ -182,13 +182,16 @@ fi
 # their modules; test_a_test_template_matches_its_values.py matches them against values.
 # The Rust, Kotlin and Go trees generate the same templates
 # (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh,
-# scripts/regen_static_datamodel_go.sh), the ones over a union besides, which Python,
-# whose test profile matches no union yet (codegen_matrix::TEST_PROFILE_UNION_BACKENDS),
-# refuses by name though it generates the union's unit.
+# scripts/regen_static_datamodel_go.sh), the two over a union among them, which Python's test
+# profile matches (codegen_matrix::TEST_PROFILE_UNION_BACKENDS), beside the unions their units
+# name, the tags' enums and the cases' records, a module each.
 TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
-TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within shape_is_circle)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+TEST_PROFILE_IMPORTS+=(payment_kind order_payment order_placed order_placed_match)
+UNION_DIR="sce-build/tests/fixtures/union"
+UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 # The test components test_a_test_component_runs_through_its_doors.py runs through the
 # profile's runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine and the
 # component beside it, generated as a module of its own as a fixture's machine is, beside
@@ -225,9 +228,9 @@ TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
 # The corpus's suite test_a_corpus_suite_replays_to_its_expected_logs.py replays from its traces
 # (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite, of what runtime_suite leaves out of every run,
 # its record, templates and tables a module each, its components' machines alone as above,
-# beside the runtime's records, templates and asking_configuration, which it reuses. orders_suite
-# and nested_suite are not replayed on Python: their mapped record holds a union, which Python's
-# test profile matches no value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is
+# beside the runtime's records, templates and asking_configuration, which it reuses; orders_suite
+# and nested_suite, whose records, union and templates TEST_PROFILE_IMPORTS generates above,
+# their tables a module each and their components' machines alone. job_suite is
 # replayed: its records and templates TEST_PROFILE generates above, with the job's completion of
 # the kind examples its port sends, its components' machines alone and its tables a module each.
 # The Rust tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
@@ -239,6 +242,10 @@ BOUNDARY_MODULES+=(exchanges_signed_numbers answers_another_job sets_no_verdict 
 BOUNDARY_MODULES+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
 BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
 BOUNDARY_COMPONENTS+=(leaving_logger)
+TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
+TTCN3_EXPORT_MODULES=(orders_configuration orders_case orders_suite)
+TTCN3_EXPORT_MODULES+=(nested_configuration nested_case nested_suite)
+TTCN3_EXPORT_COMPONENTS=(orders_tester nested_tester)
 JOB_SUITE_MODULES=(tester_and_helper completes_in_time job_suite)
 JOB_SUITE_COMPONENTS=(job_tester helper)
 JOB_COMPLETED="sce-build/kind-examples/event-schema.scxml"
@@ -263,6 +270,9 @@ for document in "${TEST_PROFILE[@]}"; do
 done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l python -o "$TMP/profile_$document/"
+done
+for document in "${UNIONS[@]}"; do
+    "$CODEGEN" generate "$UNION_DIR/$document.scxml" -l python -o "$TMP/profile_$document/"
 done
 for document in "${TEST_PROFILE_RUNTIME[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l python -o "$TMP/runtime_$document/"
@@ -292,6 +302,12 @@ for document in "${JOB_SUITE_MODULES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l python -o "$TMP/boundary_$document/"
 done
 "$CODEGEN" generate "$JOB_COMPLETED" -l python -o "$TMP/boundary_job_completed/"
+for document in "${TTCN3_EXPORT_MODULES[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$document.scxml" -l python -o "$TMP/boundary_$document/"
+done
+for component in "${TTCN3_EXPORT_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
+done
 for component in "${JOB_SUITE_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
 done
@@ -328,7 +344,7 @@ for i in "${!ENUMS[@]}"; do
     done
 done
 
-for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
+for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}" "${UNIONS[@]}"; do
     for generated in "$TMP/profile_$document"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
@@ -363,7 +379,7 @@ for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
     done
 done
 
-for document in "${BOUNDARY_MODULES[@]}" "${JOB_SUITE_MODULES[@]}" job_completed; do
+for document in "${BOUNDARY_MODULES[@]}" "${JOB_SUITE_MODULES[@]}" job_completed "${TTCN3_EXPORT_MODULES[@]}"; do
     for generated in "$TMP/boundary_$document"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
@@ -375,7 +391,8 @@ for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done
-for component in "${TEST_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" "${JOB_SUITE_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" "${JOB_SUITE_COMPONENTS[@]}" \
+    "${TTCN3_EXPORT_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done

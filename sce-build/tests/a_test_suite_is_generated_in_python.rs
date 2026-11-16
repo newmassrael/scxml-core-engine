@@ -321,8 +321,7 @@ fn trace_forms_dir() -> PathBuf {
 /// `from_underlying`, a list of optional elements and an optional field each by
 /// its runtime reader with the read as a lambda, a list of records by a
 /// comprehension whose record binds its own object, a byte string by its hex.
-/// Python's test profile matches no union yet, so the configuration whose
-/// record holds one is refused by the union's name.
+/// The configuration whose record holds a union reads and writes it too.
 #[test]
 fn a_configuration_reads_a_record_of_every_form() {
     let forms = file_at(
@@ -388,10 +387,19 @@ fn a_configuration_reads_a_record_of_every_form() {
         "{readers}"
     );
 
-    let Err(err) = generate(&trace_forms_dir().join("forms_configuration.scxml")) else {
-        panic!("a configuration whose record holds a union generated on Python");
-    };
-    assert!(format!("{err:?}").contains("union"), "{err:?}");
+    // docs/adr/0092: the configuration whose record holds a union reads and
+    // writes it too, by the runtime's `union_case`, a case at a time.
+    let with_union = file_at(
+        &trace_forms_dir().join("forms_configuration.scxml"),
+        "forms_configuration",
+    );
+    for needle in [
+        "_sce_from_canonical.union_case(",
+        "_sce_from_canonical.no_record(case_",
+        "_sce_canonical.union_case(",
+    ] {
+        assert!(with_union.contains(needle), "`{needle}` in\n{with_union}");
+    }
 }
 
 /// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports

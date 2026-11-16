@@ -2402,7 +2402,12 @@ GATES: dict[str, dict] = {
                   # and the job's completion of the kind examples its port
                   # sends.
                   "sce-build/tests/fixtures/test_profile/*.scxml",
-                  "sce-build/kind-examples/event-schema.scxml"],
+                  "sce-build/kind-examples/event-schema.scxml",
+                  # The documents of orders_suite and nested_suite, the records
+                  # and templates over a union they import, and the unions.
+                  "sce-build/tests/fixtures/ttcn3_export/**",
+                  "sce-build/tests/fixtures/test_profile/imports/**",
+                  "sce-build/tests/fixtures/union/**"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",
