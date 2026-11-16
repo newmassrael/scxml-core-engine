@@ -742,10 +742,35 @@ recorded here because each changes what a manifest is.
    a pattern, so a tree whose root is a wildcard leaves out what another tree owns beneath it. An index
    names the modules a materialization placed, not what a directory holds, so a file an older copy
    left is no module of the new tree.
+6. **The generated diff is a script, and a lane of its own** (section 6). Each side of the diff is
+   materialized by the generator of its own commit, since an action is keyed by its generator and
+   the binary refuses a checkout it was not built from; a subcommand of one binary cannot be the
+   generator of another commit, so `materialize --diff` became `scripts/generated_diff.sh <base>
+   <head> [tree...]`, which builds the base's generator in a worktree and reuses the checkout's for a
+   head the checkout holds. `generated-diff.yml` runs it for every change to `main`: a pull request
+   against its base, a push from the head of the last run that published, so a replaced run's
+   commits fall inside the next diff. It publishes the patches as an artifact and the summary as the
+   run's summary, not as a comment, which a run for a fork has no right to write. It is a
+   publication and reaches no verdict, so no gate mirrors it.
+7. **The determinism check stays a test until the fleet cache exists** (section 5). What
+   `generated-deterministic` would run on one machine, every declared tree materialized twice from
+   empty caches into two paths and compared, is
+   `a_declared_tree_reproduces_its_committed_tree::every_declared_tree_is_the_same_from_two_runs`,
+   run by the workspace suite on every change. A gate that ran it again would be a second copy of
+   one check; the gate's own content is the comparison across machines and against a fleet entry of
+   the same key, and it lands with the fleet cache it reads.
+8. **Landing 1 needs the generator in process first.** A build script cannot run `sce-codegen`:
+   Cargo builds no binary of another package for a build script on a stable toolchain, and a nested
+   `cargo build` from one contends for the lock of the build that runs it. The command
+   implementations (`generate`, `generate-w3c`, `--with-imports`, `--children`) live in the binary
+   (`sce-build/src/bin/sce_codegen.rs`), and `action::Generator` runs that binary as a process. So
+   the commands move into the library first, behind one entry point a `Generator` calls in process
+   with the same arguments and the same read set, and the binary becomes a thin parser over it; the
+   test crate's `build.rs` then calls `action::materialize` as section 4 has it.
 
-Still owed, in order: landing 1 (the Rust test trees built by `build.rs` into `OUT_DIR`, the W3C tests
-one target), the `generated-diff` job and the `generated-deterministic` gate of section 5, then the
-release pipeline. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
+Still owed, in order: the commands in the library (item 8), landing 1 (the Rust test trees built by
+`build.rs` into `OUT_DIR`, the W3C tests one target), the release pipeline, and with the fleet cache
+the `generated-deterministic` gate of section 5. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
 `sce_build::action::store` already speaks (an `ActionResult` per action key, SHA-256 digests) and a
 store configured to the site's instance in place of `LocalStore`.
 
