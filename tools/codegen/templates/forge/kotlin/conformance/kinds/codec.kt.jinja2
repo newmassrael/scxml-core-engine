@@ -28,7 +28,12 @@
 {% if f.fields %}
             val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
 {% endif %}
-{% for field in f.fields %}
+{# A codec printed from its plan holds no element its encode derives
+   (docs/adr/0081 §3): the value is made without it, and the decode gives
+   none back. A byte string or a text it holds in the class of its bound
+   (`field.refined`) is made through the class's checked factory, and read
+   back out of the class. #}
+{% for field in f.fields if not (f.printed and field.derived) %}
 {% if field.optional %}
             {# An absent entry is JSON `null` in the case and `null` in the class. #}
             val input{{ field.name | to_pascal_case }} = decoded["{{ field.name }}"]!!.let { el ->
@@ -49,8 +54,14 @@
 
             if (!decodeOnly) {
                 val valueObj = {{ f.name | to_pascal_case }}(
-{% for field in f.fields %}
+{% for field in f.fields if not (f.printed and field.derived) %}
+{% if field.refined and field.optional %}
+                    {{ field.name }} = input{{ field.name | to_pascal_case }}?.let { {{ f.name | kotlin_forge_package }}.{{ field.refined }}.of(it)!! }{% if not loop.last %},{% endif %}
+{% elif field.refined %}
+                    {{ field.name }} = {{ f.name | kotlin_forge_package }}.{{ field.refined }}.of(input{{ field.name | to_pascal_case }})!!{% if not loop.last %},{% endif %}
+{% else %}
                     {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
+{% endif %}
 {% endfor %}
                 )
 {% if f.cbor or f.encode_refuses_bound %}
@@ -75,17 +86,24 @@
                 !decodeOnly || cursor.remaining() == 0,
                 "{{ f.name }} case $i: a decode-only frame is read whole",
             )
-{% for field in f.fields %}
+{% for field in f.fields if not (f.printed and field.derived) %}
+{% set q = '?' if field.optional else '' %}
+{% if field.refined and field.type == "bytes" %}
+{% set read = 'roundTripped.' ~ field.name ~ q ~ '.bytes' %}
+{% elif field.refined %}
+{% set read = 'roundTripped.' ~ field.name ~ q ~ '.text' %}
+{% else %}
+{% set read = 'roundTripped.' ~ field.name %}
+{% endif %}
 {% if field.type == "bytes" %}
             assertTrue(
-                roundTripped.{{ field.name }}.contentEquals(input{{ field.name | to_pascal_case }}),
-{% set q = '?' if field.optional else '' %}
-                "{{ f.name }} case $i decode {{ field.name }}: actual_size=${roundTripped.{{ field.name }}{{ q }}.size} expected_size=${input{{ field.name | to_pascal_case }}{{ q }}.size}",
+                {{ read }}.contentEquals(input{{ field.name | to_pascal_case }}),
+                "{{ f.name }} case $i decode {{ field.name }}: actual_size=${ {{- read }}{{ q }}.size} expected_size=${input{{ field.name | to_pascal_case }}{{ q }}.size}",
             )
 {% else %}
             assertEquals(
                 input{{ field.name | to_pascal_case }},
-                roundTripped.{{ field.name }},
+                {{ read }},
                 "{{ f.name }} case $i decode {{ field.name }}",
             )
 {% endif %}

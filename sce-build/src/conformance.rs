@@ -456,6 +456,14 @@ pub struct StructField {
     /// `optional`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub derived: bool,
+    /// The class the backend the harness is rendered for holds this byte string
+    /// or text in, where that backend prints the codec from its plan and holds
+    /// such an element in a class of its bound made only by a checked factory
+    /// (docs/adr/0081 §2, Kotlin), so a fragment makes the element through that
+    /// factory and reads it back out of the class. Derived per language from
+    /// the document, like `optional`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refined: Option<String>,
     /// The field is a list — a property of an `sce:encoding="content-line"`
     /// codec that declares `sce:max-count` (a list of lines) or
     /// `sce:separator` (a list of the values of one line), which each language
@@ -1697,6 +1705,15 @@ impl Manifest {
                             "fixture {}: field `{}` states `enum_document` or `enum_open`, which are derived \
                              from the SCXML (the enum an `enum:<alias>` content-line entry \
                              imports); remove it from fixtures.json",
+                            f.name, field.name
+                        ));
+                    }
+                    if let Some(field) = fields.iter().find(|field| field.refined.is_some()) {
+                        return Err(format!(
+                            "fixture {}: field `{}` states `refined`, which is \
+                             derived from the SCXML (the class of its bound a \
+                             backend that prints the codec holds it in); remove \
+                             it from fixtures.json",
                             f.name, field.name
                         ));
                     }
@@ -2945,6 +2962,7 @@ fn derive_codec_shape(
                             optional: !p.is_required(),
                             bounded: false,
                             derived: false,
+                            refined: None,
                             list: false,
                             enum_document: entry_document(p)?,
                             enum_open: entry_open(p)?,
@@ -2960,6 +2978,7 @@ fn derive_codec_shape(
                     optional: false,
                     bounded: false,
                     derived: false,
+                    refined: None,
                     list: has_list,
                     enum_document: entry_document(entry)?,
                     enum_open: entry_open(entry)?,
@@ -4596,10 +4615,10 @@ pub fn render_harness(
             } => {
                 // Whether this language's backend prints the codec from its
                 // plan (docs/adr/0081 step 4): C++ every codec it writes, Python
-                // and Swift (step 5) each whose forms its printer lowers. A
-                // Swift codec printed from its plan holds no element its encode
-                // derives and each byte string and text in its bounded type,
-                // which its `cases` fragment makes.
+                // Swift (step 5) and Kotlin each whose forms its printer lowers.
+                // A Swift codec printed from its plan holds no element its
+                // encode derives and each byte string and text in its bounded
+                // type, which its `cases` fragment makes.
                 if document_exists(&scxml_path) {
                     let options = crate::ForgeCompileOptions::default();
                     let read = match language {
@@ -4612,7 +4631,10 @@ pub fn render_harness(
                         Language::Swift => {
                             Some(crate::swift_codec_printed_file(&scxml_path, &[], &options))
                         }
-                        Language::Rust | Language::Kotlin | Language::Go | Language::C11 => None,
+                        Language::Kotlin => {
+                            Some(crate::kotlin_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Rust | Language::Go | Language::C11 => None,
                     };
                     if let Some(read) = read {
                         *printed = read
@@ -4645,6 +4667,27 @@ pub fn render_harness(
                                 &model.fields,
                                 language,
                             );
+                        // A Kotlin codec printed from its plan holds each byte
+                        // string and text it presents in the class of its
+                        // bound, made only by its checked factory, which a
+                        // fragment makes the element through (docs/adr/0081
+                        // §2); the class is named where the printer names it.
+                        if *printed && matches!(language, Language::Kotlin) {
+                            let struct_name = crate::filters::to_pascal_case(fixture_name.clone());
+                            for field in fields.iter_mut().filter(|field| !field.derived) {
+                                let ty = match field.ty {
+                                    CanonicalType::Bytes => crate::forge::model::SceType::Bytes,
+                                    CanonicalType::String => crate::forge::model::SceType::String,
+                                    _ => continue,
+                                };
+                                field.refined =
+                                    Some(crate::forge::generator::kotlin_refinement_class(
+                                        &struct_name,
+                                        &field.name,
+                                        &ty,
+                                    ));
+                            }
+                        }
                         // A positional codec has an eager form at the default
                         // profile only where `Inline` holds every list of it
                         // and of what it holds; otherwise a fragment names the
@@ -5083,6 +5126,7 @@ mod tests {
             optional: false,
             bounded: false,
             derived: false,
+            refined: None,
             list: false,
             enum_document: None,
             enum_open: false,

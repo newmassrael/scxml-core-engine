@@ -43,6 +43,9 @@ import com.sce.forge.runtime.SceSink
 {{ imp.include_stmt }}
 {% endif %}
 {% endfor %}
+{% if kotlin_source.inline %}
+import kotlin.jvm.JvmInline
+{% endif %}
 
 {% if has_variant %}
 // RFC §synth-5-B variant primitive: discriminated-union body for the
@@ -65,11 +68,18 @@ sealed class {{ struct_name }}Variant {
 }
 
 {% endif %}
+{# docs/adr/0081 step 4: a codec printed from its plan names the value class of
+   each byte string's bound and the interface a source of it implements before
+   the value's class, which implements it too. #}
+{% if kotlin_source %}
+{{ kotlin_source.before }}
+
+{% endif %}
 {% if has_no_fields %}
 // RFC §synth-5-B empty body — Kotlin's `data class` requires at least
 // one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
 // KeepAlive) emit as a plain class with a no-arg constructor.
-class {{ struct_name }} {
+class {{ struct_name }}{% if kotlin_source %} : {{ struct_name }}Source{% endif %} {
 {% else %}
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -78,9 +88,12 @@ class {{ struct_name }} {
 // success — the carrier's zero for a number, and for an enum the first
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
+{# An element the encode derives is no field of a value printed from its plan
+   (docs/adr/0081 §3), and each element it presents overrides the property of
+   the codec's source interface. #}
 data class {{ struct_name }}(
-{% for field in fields %}
-    var {{ field.id }}: {{ field.kt_type }} = {% if field.kt_flag_default_literal is defined %}{{ field.kt_flag_default_literal }}{% else %}{{ field.kt_default }}{% endif %}{{ "," if not loop.last or has_variant else "" }}
+{% for field in fields if not field.derived %}
+    {{ "override " if kotlin_source else "" }}var {{ field.id }}: {{ field.kt_type }} = {% if field.kt_flag_default_literal is defined %}{{ field.kt_flag_default_literal }}{% else %}{{ field.kt_default }}{% endif %}{{ "," if not loop.last or has_variant else "" }}
 {% endfor %}
 {% if has_variant %}
 {% set ns = namespace(default_arm=none) %}
@@ -98,7 +111,7 @@ data class {{ struct_name }}(
     var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ variant.default_arm.variant_name }}(tag = {{ variant.kt_zero_tag_literal }}, body = {{ variant.default_arm.body_type }}())
 {% endif %}
 {% endif %}
-) {
+){% if kotlin_source %} : {{ struct_name }}Source{% endif %} {
 {% endif %}
 {% if has_quantity %}
     // NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
@@ -195,6 +208,11 @@ data class {{ struct_name }}(
     @Suppress("UNUSED_PARAMETER")
 {% endif %}
     fun encode(w: SceSink{{ params_after_first_arg }}): CodecError? {
+{% if kotlin_source %}
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present.
+        return encodeSource(this, w)
+{% else %}
 {% if has_parent_tag_derivation %}
         // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
@@ -281,6 +299,7 @@ data class {{ struct_name }}(
 {% endfor %}
         return null
 {% endif %}
+{% endif %}
     }
 
 {% if encode_can_refuse %}
@@ -311,6 +330,10 @@ data class {{ struct_name }}(
 {% endif %}
 
     companion object {
+{% if kotlin_source %}
+{{ kotlin_source.encode }}
+
+{% endif %}
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -381,8 +404,8 @@ data class {{ struct_name }}(
             }
             return Decoded.Ok(
                 {{ struct_name }}(
-{% for field in fields %}
-                    {{ field.id }} = {{ field.id }},
+{% for field in fields if not field.derived %}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }},
 {% endfor %}
                     body = body
                 )
@@ -413,8 +436,8 @@ data class {{ struct_name }}(
 {% endfor %}
             return Decoded.Ok(
                 {{ struct_name }}(
-{% for field in fields %}
-                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+{% for field in fields if not field.derived %}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )
@@ -432,8 +455,8 @@ data class {{ struct_name }}(
             // literally named `value` cannot shadow a result-struct local.
             return Decoded.Ok(
                 {{ struct_name }}(
-{% for field in fields %}
-                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+{% for field in fields if not field.derived %}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )
@@ -447,8 +470,8 @@ data class {{ struct_name }}(
             // literally named `value` cannot shadow a result-struct local.
             return Decoded.Ok(
                 {{ struct_name }}(
-{% for field in fields %}
-                    {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+{% for field in fields if not field.derived %}
+                    {{ field.id }} = {{ field.kt_made if field.kt_made is defined else field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
                 )
             )

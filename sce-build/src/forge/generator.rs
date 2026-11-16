@@ -30,6 +30,7 @@ mod cpp_test_tables;
 mod cpp_test_template;
 mod go_test_tables;
 mod go_test_template;
+mod kotlin_source;
 mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
@@ -105,6 +106,11 @@ pub(crate) fn swift_codec_printed(
 ) -> bool {
     swift_codec::source::unlowered(plan, imports).is_none()
 }
+
+/// The class a printed Kotlin codec holds a byte string or a text element in,
+/// within its bound (docs/adr/0081 §2), which the conformance harness makes a
+/// value of. See [`kotlin_source::refinement_class`].
+pub(crate) use kotlin_source::refinement_class as kotlin_refinement_class;
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
@@ -10752,6 +10758,22 @@ pub(crate) fn python_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) 
     )
 }
 
+/// Whether the Kotlin backend prints `m` from its encode plan (docs/adr/0081
+/// step 4, §6): its plan uses only the forms the Kotlin printer lowers. Such a
+/// value implements the source interface of its codec, holds no element the
+/// encode derives, and holds each byte string in the value class of its bound;
+/// any other codec keeps the template's encode whole.
+pub(crate) fn kotlin_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    kotlin_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+}
+
+/// Every form of `m`'s encode plan the Kotlin printer does not lower, as the
+/// clause that names it, in the order the printer meets them; empty where
+/// [`kotlin_codec_printed`].
+pub(crate) fn kotlin_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    kotlin_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+}
+
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
@@ -13646,6 +13668,25 @@ fn render_codec(
     } else {
         None
     };
+    // docs/adr/0081 step 4: a Kotlin codec whose plan uses only the forms the
+    // Kotlin printer lowers is printed from its plan, its data class
+    // implementing the codec's source interface and its encode over any source;
+    // any other keeps the template's encode whole (§6), so no codec has two.
+    // The plan is kept beside the text, as the fields of the value are read
+    // off it.
+    let kotlin_printed = if matches!(lang, crate::generator::Language::Kotlin) {
+        let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+        match (kotlin_source::unlowered(&plan), plan) {
+            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
+                let printed =
+                    kotlin_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                Some((p, printed))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
@@ -15036,6 +15077,21 @@ fn render_codec(
                     obj.insert("py_decoded".into(), made.clone().into());
                 }
             }
+            // docs/adr/0081 §3: a Kotlin value printed from its plan holds no
+            // element the encode derives, and holds each byte string in the
+            // value class of its bound, made within it by default and made by
+            // its checked factory of what the decode read.
+            if let Some((plan, printed)) = &kotlin_printed {
+                obj.insert(
+                    "derived".into(),
+                    kotlin_source::derived_field(plan, &f.id).into(),
+                );
+                if let Some(held) = printed.held.get(&f.id) {
+                    obj.insert(type_key.into(), held.ty.clone().into());
+                    obj.insert("kt_default".into(), held.default.clone().into());
+                    obj.insert("kt_made".into(), held.made.clone().into());
+                }
+            }
             Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -15094,6 +15150,16 @@ fn render_codec(
     }
     if let Some((_, printed)) = &python_printed {
         ctx.insert("python_source".into(), printed.context());
+    }
+    if let Some((_, printed)) = &kotlin_printed {
+        ctx.insert(
+            "kotlin_source".into(),
+            serde_json::json!({
+                "before": printed.before,
+                "encode": printed.encode,
+                "inline": printed.inline,
+            }),
+        );
     }
     // The fields each form holds and the fields the wire reads: on Rust a group
     // of fields one gate decides is held as one entry (docs/adr/0065 §6 R4b),
@@ -15434,6 +15500,8 @@ fn render_codec(
     let encode_can_refuse = if cpp_printed.is_some() {
         cpp_printed_refuses
     } else if let Some((plan, _)) = &python_printed {
+        !plan.totality.is_total()
+    } else if let Some((plan, _)) = &kotlin_printed {
         !plan.totality.is_total()
     } else {
         refuses_mismatch || !bound_lines.is_empty()

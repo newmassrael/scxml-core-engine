@@ -2295,3 +2295,29 @@ Landing: the commit that adds this section, and each later one that names a form
   value holds `nil` where some of the content was in the frame. Stating another number beside the content is
   refused with `inconsistentSource`.
 
+## A printed Kotlin codec derives its byte strings' lengths, and holds each byte string in the value class of its bound (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. It moves the positional
+codecs whose elements are integers, flag sets, enums and byte strings, each always there, whose every derived
+element is the length of one byte string held in a field of its own, and whose encode refuses nothing (the codecs
+`sce_build::kotlin_codec_printed_file` answers `Some(true)` for). Every other Kotlin codec is unchanged.
+
+- A length the encode derives is no longer a property of the data class: `msg.len` is gone, the constructor takes
+  no `len =`, `copy` takes none, and `decode` gives none back. The encode writes the length of the bytes it writes,
+  less or more what `sce:length-arith` says. Drop the length from your constructor calls; read
+  `msg.payload.bytes.size` where you read it.
+- A byte string element is a value of a value class the file declares, `{Codec}{Element}Bytes` (for example
+  `CodecLengthRefPayloadBytes`), whose constructor is private. `{Codec}{Element}Bytes.of(bytes)` makes one of bytes
+  within the element's bound and answers `null` past it; `LEAST` and, where the protocol states one, `MOST` name
+  the bound, and `fewest()` makes the value the data class holds by default. Write
+  `CodecLengthRef(msgId = 1u, payload = CodecLengthRefPayloadBytes.of(bytes) ?: return ...)` where you wrote
+  `payload = bytes`, and read `msg.payload.bytes` where you read `msg.payload`. A payload past its bound is refused
+  where you make it, not at `encode`.
+- `encode` no longer answers `CodecError.LengthOutOfRange` for a byte string past its bound, as no value holds one,
+  so `encodeToByteArray()` answers `ByteArray`, not `ByteArray?`: drop the `?:` or `!!` after it, which kotlinc
+  warns of, and `-Werror` refuses.
+- The data class implements `{Codec}Source`, an interface with a property for each element the value presents, and
+  `{Codec}.encodeSource(src, w)` of its companion object encodes any implementation of it: the data class is one,
+  and so is any class of yours that presents those properties. Each element's property is read by the name it had,
+  so a read `msg.msgId` is unchanged.
+

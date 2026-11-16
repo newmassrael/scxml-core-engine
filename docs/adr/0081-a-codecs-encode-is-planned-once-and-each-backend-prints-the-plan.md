@@ -1286,6 +1286,38 @@ old encode, the old encode and its templates are removed in the same landing.
    whose lists start with entries made by default is made anew for every value, since such an entry is a dataclass
    a caller can change. With this the census of the codecs the Python backend prints is the C++ census again, one
    list of 170 codecs of the resources.
+   *The Kotlin interface, decided 2026-11-16 under the owner's standing rule.* A Kotlin value presents its elements
+   as the properties of an interface, `{Codec}Source`, the idiom §2 gives Kotlin. The codec's data class implements
+   it with the properties it already had (`override var`), so a read of an element (`frame.msgId`) and a procedure's
+   `<assign>` to one stay as they are, as in Python; a consumer's own class joins by implementing the interface. A
+   refinement is a value class (`@JvmInline value class`) whose constructor is private and whose one factory, `of`,
+   answers `null` outside the bound, as the Rust runtime's `Bounded::new` answers `None`: the factory is the only way
+   to make a value, so the check runs once where it is made (Liskov and Zilles, 1974), and a value class is no box at
+   run time. A `ByteArray`'s count and a `String` cannot change after they are made, so the value holds its bound
+   for as long as it lives. Considered and refused: a class whose `init` block checks and throws, which makes a
+   refusal an exception where §2 gives Kotlin `CodecError?`; and a subclass of a runtime type, as Python's is, which
+   Kotlin cannot hold a bound in, having no const generics and a final `ByteArray`. The encode over any source is
+   `encodeSource(src, w)` of the data class's companion object, beside `decode`, so a parent and a harness reach it
+   as `{Codec}.encodeSource` and no property of the value can take its name. It reads each element off the source
+   once, into a local, before its first write, as the C++ encode keeps what it reads (`Detail::Kept`): a property
+   that computes is read once, and an element a gate decides is narrowed through a stable local, which Kotlin's
+   smart cast asks of an interface's property.
+
+   *The first Kotlin landing, 2026-11-16:* the forms of the first Python landing, each printed from its plan
+   (`sce-build/src/forge/generator/kotlin_source.rs`, `kotlin_source::unlowered` naming the first form any other
+   codec uses, which keeps the template's encode whole, §6): the positional codecs whose elements are integers, flag
+   sets, enums and byte strings, each always there, whose every derived element is the length of one byte string,
+   held in a field of its own that the length fits, its `sce:length-arith` never taking it below zero, and whose
+   encode refuses nothing. A byte string is a value of `{Codec}{Element}Bytes`, the value class of its bound, which
+   the data class holds and its decode makes by `of` of the bytes it read; the data class holds no derived length
+   (§3), and its `encode` is `encodeSource(this, w)`, which derives each length from the bytes the source presents
+   and writes the plan's program by the byte expressions the template's encode wrote. The harness runs each printed
+   codec's `cases` without the elements the encode derives, as the Python harness did first, each byte string made
+   by the factory of the class the fixture's field names (`refined`, `kotlin_source::refinement_class`, the one
+   place the name is made). `a_kotlin_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a printed
+   codec's file and that every codec of the resources is printed exactly where the printer lowers every form of it.
+   The broadcast log of records holds a payload past its bound as no value, as its C++ test does, where its Kotlin
+   test held the encode's refusal.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

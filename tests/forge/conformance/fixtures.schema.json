@@ -990,6 +990,13 @@
           "description": "The field may be absent — an entry of an `sce:encoding=\"cbor\"` codec typed `optional<T>` (SCE_FORGE.md §4.6.1), which each language carries as its optional type. A round-trip case writes an absent value as JSON `null`. Derived from the document at render time, like `has_test_vectors`; fixtures.json never states it.",
           "type": "boolean"
         },
+        "refined": {
+          "description": "The class the backend the harness is rendered for holds this byte string or text in, where that backend prints the codec from its plan and holds such an element in a class of its bound made only by a checked factory (docs/adr/0081 §2, Kotlin), so a fragment makes the element through that factory and reads it back out of the class. Derived per language from the document, like `optional`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "type": {
           "$ref": "#/definitions/CanonicalType"
         }

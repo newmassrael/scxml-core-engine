@@ -3315,6 +3315,44 @@ pub fn python_codec_unlowered_file(
     )
 }
 
+/// Whether the Kotlin tree prints the codec at `path` from its encode plan
+/// (docs/adr/0081 step 4): its data class implements the codec's source
+/// interface, holds no element the encode derives, and holds each byte string
+/// in the value class of its bound. Read as the Kotlin tree reads it, its
+/// imports resolved. `None` for a document that is not a codec.
+pub fn kotlin_codec_printed_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Kotlin,
+        |model, imports, _| forge::generator::kotlin_codec_printed(&model, imports),
+    )
+}
+
+/// Every form of the codec at `path` that the Kotlin printer does not lower
+/// (docs/adr/0081 step 4), in the order the printer meets them; empty where it
+/// lowers every form and the codec is printed. A codec it does not print keeps
+/// the template's encode whole. Read as [`kotlin_codec_printed_file`] reads it.
+/// `None` for a document that is not a codec.
+pub fn kotlin_codec_unlowered_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<Vec<String>>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::Kotlin,
+        |model, imports, _| forge::generator::kotlin_codec_unlowered(&model, imports),
+    )
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.

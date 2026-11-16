@@ -19,7 +19,6 @@
 
 package com.sce.forge.runtime.broadcastlog
 
-import com.sce.forge.runtime.CodecError
 import com.sce.generated.broadcast_log_conformance_event.BroadcastLogConformanceEvent
 import com.sce.generated.broadcast_log_conformance_literal.BroadcastLogConformanceLiteral
 import com.sce.generated.broadcast_log_conformance_literal.BroadcastLogConformanceLiteralPublish
@@ -46,10 +45,12 @@ import com.sce.generated.broadcast_log_conformance_recent_records.newBroadcastLo
 import com.sce.generated.broadcast_log_conformance_recent_records.publish as publishRecord
 import com.sce.generated.broadcast_log_conformance_recent_records.read as readRecord
 import com.sce.generated.broadcast_log_conformance_record.BroadcastLogConformanceRecord
+import com.sce.generated.broadcast_log_conformance_record.BroadcastLogConformanceRecordPayloadBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 // The generated aliases are the runtime's types: these accept the alias and
@@ -65,9 +66,18 @@ private fun literalPublisherAsRuntime(publisher: BroadcastLogConformanceLiteralP
 private fun event(sensor: Int, value: Int) =
     BroadcastLogConformanceEvent(sensor_id = sensor.toUByte(), value = value.toUShort())
 
-/** A record of the other log: a tag and a payload of the bytes given. */
+/**
+ * A record of the other log: a tag and a payload of the bytes given, made within
+ * its bound by the class the record holds it in (docs/adr/0081 step 4).
+ */
 private fun record(tag: Int, vararg payload: Int) =
-    BroadcastLogConformanceRecord(tag = tag.toUByte(), payload = ByteArray(payload.size) { payload[it].toByte() })
+    BroadcastLogConformanceRecord(
+        tag = tag.toUByte(),
+        payload = assertNotNull(
+            BroadcastLogConformanceRecordPayloadBytes.of(ByteArray(payload.size) { payload[it].toByte() }),
+            "a payload of ${payload.size} bytes is within its bound",
+        ),
+    )
 
 private fun BroadcastLogConformanceLiteralPublisher.publishedAs(event: BroadcastLogConformanceEvent): Long {
     val published = assertIs<BroadcastLogConformanceLiteralPublish.Published>(publishEvent(this, event))
@@ -100,7 +110,7 @@ private fun assertRecordItem(
     val item = assertIs<BroadcastLogConformanceRecentRecordsRead.Item>(readRecord(log, reader))
     assertEquals(seq, item.seq)
     assertEquals(tag.toUByte(), item.element.tag)
-    assertEquals(payload.map { it.toByte() }, item.element.payload.toList(), "the payload is what was published, no longer and no shorter")
+    assertEquals(payload.map { it.toByte() }, item.element.payload.bytes.toList(), "the payload is what was published, no longer and no shorter")
 }
 
 class BroadcastLogGeneratedTest {
@@ -223,20 +233,25 @@ class BroadcastLogGeneratedTest {
     }
 
     @Test
-    fun aRecordLargerThanItsBoundIsRefusedAndNeverTruncated() {
+    fun aRecordLargerThanItsBoundCannotBeMadeAndIsNeverTruncated() {
         val log = newBroadcastLogConformanceRecentRecords()
         val publisher = assertNotNull(log.publisher())
         val reader = log.readerOldest()
-        // A payload of 9 bytes encodes to 1 + 9 = 10 bytes, one more than the 9 the log holds.
-        val refused = assertIs<BroadcastLogConformanceRecentRecordsPublish.Refused>(
-            publishRecord(publisher, record(5, 1, 2, 3, 4, 5, 6, 7, 8, 9)),
-        )
-        // The codec refuses the payload before its first byte, with the error a
-        // decode of that frame gives (docs/adr/0077 §3).
-        assertEquals(CodecError.LengthOutOfRange, refused.error, "the codec refuses what its bound does not hold")
-        assertEquals(0L, log.head(), "a refused element publishes nothing")
+        // The record holds its payload as `BroadcastLogConformanceRecordPayloadBytes`,
+        // which holds at most eight bytes (docs/adr/0077 §3, docs/adr/0081 step 4): a
+        // record of 1 + 9 = 10 bytes, one past the entry's 9, or of 1 + 20 = 21 has no
+        // value to publish, so the encode has nothing to refuse and the log nothing
+        // to truncate.
+        assertEquals(8, BroadcastLogConformanceRecordPayloadBytes.MOST)
+        for (length in listOf(9, 20)) {
+            assertNull(
+                BroadcastLogConformanceRecordPayloadBytes.of(ByteArray(length) { 0xAA.toByte() }),
+                "a payload of $length bytes, past its bound, cannot be made",
+            )
+        }
+        assertEquals(0L, log.head(), "nothing was published")
         assertEquals(BroadcastLogConformanceRecentRecordsRead.Empty, readRecord(log, reader))
-        // The sequence has no gap where the refused element was: the next one is the first.
+        // Exactly the bound is made and published whole: the first entry of the log.
         assertEquals(0L, publisher.publishedAs(record(5, 1, 2, 3, 4, 5, 6, 7, 8)))
         assertRecordItem(log, reader, 0, 5, listOf(1, 2, 3, 4, 5, 6, 7, 8))
     }
