@@ -3953,7 +3953,7 @@ impl<P: StatePolicy> Engine<P> {
     /// §scxml-C-2: Register an HTTP send dispatcher callback.
     ///
     /// The callback receives an [`HttpSendRequest`] and answers what became of
-    /// it ([`HttpSendOutcome`](crate::HttpSendOutcome)): `Ok(Some(response))`
+    /// it ([`HttpSendOutcome`]): `Ok(Some(response))`
     /// is a delivery the receiver answered with an event, which the engine
     /// injects into the external queue — enabling real HTTP round-trips against
     /// the shared W3C test server (`standalone_http_server.js`); `Ok(None)` is a
