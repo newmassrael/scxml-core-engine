@@ -15386,13 +15386,16 @@ fn render_codec(
         "params_first_arg_with_comma".into(),
         flag_input_call_args_with_comma.into(),
     );
-    // The Rust encode, and that of a C++ or a Python codec printed from its
-    // plan, is handed only the inputs its value does not say (docs/adr/0065 §6
-    // R4a); the decode is handed every input. Another encode is handed every
-    // input until it takes the source interface.
+    // The Rust encode, and that of a C++, a Python or a Kotlin codec printed
+    // from its plan, is handed only the inputs its value does not say
+    // (docs/adr/0065 §6 R4a); the decode is handed every input. Another encode
+    // is handed every input until it takes the source interface. A printed
+    // Kotlin value's own `encode` keeps every input its template's callers
+    // hand it, and hands its encode over a source these.
     let encode_inputs: Vec<FlagInput> = if matches!(lang, crate::generator::Language::Rust)
         || cpp_printed.is_some()
         || python_printed.is_some()
+        || kotlin_printed.is_some()
     {
         let roles = crate::forge::codec_roles::classify(m, imports);
         m.flag_inputs
