@@ -502,6 +502,56 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
     );
 }
 
+/// A codec whose one field is gated on a flag input alone says the input
+/// (docs/adr/0065 §6 R4a): its encode over a source is not handed it and reads
+/// it off the field, its companion answers it off any source for a parent, and
+/// the value's own `encode`, which its callers hand every input, holds what it
+/// is handed to what the value says.
+///
+/// Turns red where `kotlin_source::positional_forms` names an input a gated
+/// field says unlowered, `encode_source` takes it as a parameter, `said_value`
+/// reads it other than off the field's presence, or `render` stops holding a
+/// handed input to it.
+#[test]
+fn an_input_the_value_says_is_read_off_it_and_not_handed() {
+    const SAYS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="said_record" version="1.0">
+  <sce:flag-inputs>
+    <sce:flag-input name="S" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="detail" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="S"/>
+  </datamodel>
+</scxml>"#;
+    let output = sce_build::compile_forge_from_string(
+        SAYS,
+        sce_build::DocumentLabel::symmetric("said_record"),
+        Language::Kotlin,
+    )
+    .unwrap_or_else(|e| panic!("said_record generates on Kotlin: {e:?}"));
+    let text = output
+        .files
+        .into_iter()
+        .find(|(file, _)| file.ends_with(".kt"))
+        .map(|(_, text)| text)
+        .expect("said_record generates a Kotlin file");
+    holds(
+        "said_record",
+        &text,
+        &[
+            "        fun encodeSource(src: SaidRecordSource, w: SceSink): CodecError? {\n",
+            "        fun inputS(src: SaidRecordSource): UByte =\n            \
+             (if (src.detail != null) 1 else 0).toUByte()",
+            "        if (s != inputS(this)) return CodecError.PresentIfMismatch\n\
+             \x20       return encodeSource(this, w)\n",
+            "    fun encodeToByteArray(s: UByte): ByteArray? {\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a group that holds a
 /// length the value states beside its content each name their form.

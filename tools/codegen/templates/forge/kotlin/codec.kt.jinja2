@@ -210,10 +210,11 @@ data class {{ struct_name }}(
     fun encode(w: SceSink{{ params_after_first_arg }}): CodecError? {
 {% if kotlin_source %}
         // docs/adr/0081 step 4: the encode over any source, which derives
-        // every element the value does not present. A printed codec's value
-        // says none of its flag inputs, so the encode is handed every one,
-        // as the decode is.
-        return encodeSource(this, w{{ params_first_arg_with_comma }})
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+{{ kotlin_source.said_held }}        return encodeSource(this, w{{ encode_args_with_comma }})
 {% else %}
 {% if has_parent_tag_derivation %}
         // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded

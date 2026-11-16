@@ -1405,6 +1405,20 @@ old encode, the old encode and its templates are removed in the same landing.
    encode writes it, or an input of the codec's own passed on. The case printer hands a case's inputs to the
    decode and the encode. An input the value says (R4a), and an entry handed what the entry before it was, stay
    unlowered.
+
+   *The ninth Kotlin landing, 2026-11-16:* the inputs a value says (§6 R4a) through the one field gated on the
+   input alone, or through a body always there that says it in every value, and what a parent derives from or
+   checks against such a body or list entry. `encodeSource` is not handed such an input: it reads it off the value
+   where a gate or a check reads it. The companion answers each off any source, `input<Name>(src): UByte`, which
+   a printed parent reads to derive the flag it binds to the input (`Measured::Says`) and to hold a body or each
+   entry of a list it hands the input from a carrier or an input of its own (`input_checks`, refused as
+   `PresentIfMismatch`). The data class's own `encode` keeps every input as a parameter, since a codec on the
+   template's encode and the broadcast log hand every input to it, and holds each one the value says to what the
+   value says before it writes, refusing a contradiction as `PresentIfMismatch` as the template's encode did; it
+   hands the rest on. The decision was between that and dropping the parameter, as the Rust and C++ encodes do,
+   which would leave a parent on the template's encode writing its own flag beside a body that says otherwise,
+   unchecked; the parameter goes with the template's encode (§6). An input said through a group, a variant, a
+   list's law or a body that says it in some values only stays unlowered with those forms.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

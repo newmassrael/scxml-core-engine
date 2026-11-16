@@ -15186,6 +15186,7 @@ fn render_codec(
                 "before": printed.before,
                 "encode": printed.encode,
                 "inline": printed.inline,
+                "said_held": printed.said_held,
             }),
         );
     }
@@ -15533,7 +15534,9 @@ fn render_codec(
     } else if let Some((plan, _)) = &python_printed {
         !plan.totality.is_total()
     } else if let Some((plan, _)) = &kotlin_printed {
-        !plan.totality.is_total()
+        // A printed Kotlin value's own `encode` also holds each input its value
+        // says to what its caller hands it.
+        !plan.totality.is_total() || !plan.said.is_empty()
     } else {
         refuses_mismatch || !bound_lines.is_empty()
     };

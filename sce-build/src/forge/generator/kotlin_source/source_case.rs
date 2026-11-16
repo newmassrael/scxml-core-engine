@@ -81,11 +81,11 @@ pub(crate) struct SourceCase {
 }
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
-/// the flag inputs `inputs` states. A codec whose value says an input, whose
-/// case hands it a caller's tag (`tag`), or that holds a group or a variant, is
-/// one the Kotlin printer does not print, and its case is refused by name; so
-/// is a source that states an element the value does not present or leaves out
-/// one it does.
+/// the flag inputs `inputs` states, each to the decode and those the value does
+/// not say to the encode. A codec whose case hands it a caller's tag (`tag`),
+/// or that holds a group or a variant, is one the Kotlin printer does not
+/// print, and its case is refused by name; so is a source that states an
+/// element the value does not present or leaves out one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -98,16 +98,11 @@ pub(crate) fn source_case(
     // them, and those the value does not say as the encode is handed them.
     let mut decode_inputs = Vec::new();
     let mut encode_inputs = Vec::new();
-    for (input, value, given) in case_inputs(plan, inputs)? {
-        if !given {
-            return Err(format!(
-                "a Kotlin case states no input the value says yet (`{}`): the Kotlin \
-                 printer prints no codec whose value says one",
-                input.name
-            ));
-        }
+    for (_, value, given) in case_inputs(plan, inputs)? {
         decode_inputs.push(format!("{value}u"));
-        encode_inputs.push(format!("{value}u"));
+        if given {
+            encode_inputs.push(format!("{value}u"));
+        }
     }
     if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
         return Err("a Kotlin case states no variant yet: the Kotlin printer \

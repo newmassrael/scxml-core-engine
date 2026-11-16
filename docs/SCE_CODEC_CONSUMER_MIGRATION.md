@@ -2407,3 +2407,14 @@ codecs that take flag inputs (`<sce:flag-inputs>`) their value does not say.
   absent, or leaves it out where the input says it is there, is refused with `CodecError.PresentIfMismatch`
   before a byte is written.
 
+## A printed Kotlin codec reads the flag inputs its value says (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose value says a flag input: the one field gated on the input alone, or a body that says it.
+
+- `{Codec}.encodeSource(src, w, ...)` takes only the inputs the value does not say. `{Codec}.input<Name>(src)`
+  answers one it says, as a `UByte`, off any source.
+- `encode(w, input...)` still takes every input, and answers `CodecError.PresentIfMismatch` where one you hand
+  disagrees with what the value says, so `encodeToByteArray(...)` answers `ByteArray?` for such a codec. Hand what
+  the value says, or call `encodeSource` and hand nothing for it.
+
