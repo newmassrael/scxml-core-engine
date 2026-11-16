@@ -761,21 +761,141 @@ fn a_list_held_to_a_law_is_a_lawful_whose_start_derives_its_bound_flag() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a CBOR map names its form, and so does a group of
-/// a chain's memberships.
+/// A chain a chain supplies an input from the entry before, held to a law,
+/// reads each entry's input through the entry codec's own `input_<name>` by an
+/// `AfterKey` that waits for the kind a class of the codec tells.
 ///
-/// Turns red where `python_source::positional_forms` stops naming a group of a
-/// chain's memberships, or `unlowered_forms` a CBOR map.
+/// Turns red where `python_source::law_part` stops printing an `AfterKey` of
+/// the kind, or `key_class` stops reading the kind off the chain's `entry-id`.
+#[test]
+fn an_input_the_entry_before_decides_is_an_after_key_law_of_its_kind() {
+    let name = "codec_chain_prev_carrier";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.law import AfterKey, Lawful, Uniform\n",
+            "Uniform(sce_codec_chain_prev_entry.input_tagged)",
+            "AfterKey(sce_codec_chain_prev_entry.input_after_marker, ",
+            "    def matches(entry: sce_codec_chain_prev_entry.CodecChainPrevEntrySource) -> bool:\n",
+            "        return ((entry.header >> 0) & 0xF) == 0x4\n",
+        ],
+    );
+}
+
+/// The gates on a chain's entries make a group whose arms hold the chain by
+/// the kinds each says (docs/adr/0065 §6 R6b): a `Chain` of an entry of each
+/// kind the arm sets and of none it clears, a field gated on a membership
+/// written where the arm the value holds says it, and the decode making the
+/// arm its read chain's kinds select. A bare entry's arm holds the others and
+/// the entry's place (R6a), and the named entry is made by the kind's class,
+/// its arm the one its identifier's tag bits select.
+///
+/// Turns red where `python_source::positional_forms` names a group of a
+/// chain's memberships unlowered again, `chain_member` stops holding the
+/// chain as a `Chain` or a `Placed`, `decoded_arm_test` stops reading a
+/// membership off the decoded chain, or `named_entry` stops making the named
+/// entry's arm through the entry codec's `ARM_CLASSES`.
+#[test]
+fn a_chains_memberships_are_a_group_whose_arms_hold_the_chain_by_its_kinds() {
+    let name = "codec_chain_has_envelope";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.membership import Chain\n",
+            "    \"\"\"The kind of entry of ``extensions`` of :class:`CodecChainHasEnvelope` a gate or a\n",
+            "    def matches(entry: sce_codec_zenoh_ext_entry.CodecZenohExtEntrySource) -> bool:\n",
+            "Chain(Chain):\n",
+            "    HOLDS = (CodecChainHasEnvelope",
+            "    LACKS = (CodecChainHasEnvelope",
+            " is not None and any(",
+        ],
+    );
+    holds_none(name, &text, &["(Placed):\n", "def named("]);
+    let name = "codec_chain_has_marker";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.membership import Chain, Placed\n",
+            "Placed(Placed):\n",
+            "    def named() -> sce_codec_zenoh_ext_entry.CodecZenohExtEntry:\n",
+            "        return sce_codec_zenoh_ext_entry.CodecZenohExtEntry(header=0x12, \
+             body=sce_codec_zenoh_ext_entry.ARM_CLASSES[0x0]())\n",
+            "Placed.place_first(",
+        ],
+    );
+    let entry = resource_module("codec_zenoh_ext_entry");
+    holds("codec_zenoh_ext_entry", &entry, &["\nARM_CLASSES = {0x0: "]);
+}
+
+/// An input a chain's entry says, which the chain supplies from the entry
+/// before, is held entry by entry to whether the entry before was of the kind
+/// where the chain's memberships hold it to no law (docs/adr/0065 §6 R8b): the
+/// encode refuses an entry that says otherwise before the first byte.
+///
+/// Turns red where `python_source::input_check` stops walking the chain with
+/// the entry before's kind, or `positional_forms` names such a check unlowered.
+#[test]
+fn an_input_the_entry_before_decides_is_checked_where_no_law_holds_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let entry = "codec_chain_prev_entry.scxml";
+    std::fs::copy(resources().join(entry), dir.path().join(entry)).expect("copy the entry");
+    let holder = dir.path().join("codec_prev_checked.scxml");
+    std::fs::write(
+        &holder,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_prev_checked">
+  <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
+    <sce:flag-bind input="tagged" source="head.T"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="T" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_prev_entry" sce:byte="1"
+                   max-depth="4" entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+    <sce:field id="marker_note" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="entries.has(0x4)"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("write the holding codec");
+    let forms = python_codec_unlowered_file(&holder, &[], &ForgeCompileOptions::default())
+        .expect("the holding codec reads")
+        .expect("the holding codec is a codec");
+    assert!(forms.is_empty(), "{forms:?}");
+    let text = module_of(&holder).expect("the holding codec generates on Python");
+    holds(
+        "codec_prev_checked",
+        &text,
+        &[
+            "    _prev = False\n",
+            "sce_codec_chain_prev_entry.input_after_marker(_x)",
+            "    _prev = ((_x.header >> 0) & 0xF) == 0x4\n",
+            "raise PresentIfMismatch(\"entries\")",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole: a CBOR map names its form.
+///
+/// Turns red where `python_source::unlowered_forms` stops naming a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
-    let forms = unlowered("codec_chain_has_envelope");
-    assert!(
-        forms
-            .iter()
-            .any(|f| f.contains("a group of a chain's memberships")),
-        "codec_chain_has_envelope: a group of a chain's memberships is not printed yet: {forms:?}"
-    );
     let name = "codec_cbor_map";
     let forms = unlowered(name);
     assert!(
@@ -860,6 +980,10 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_zenoh_undecl_token",
         "codec_repeat_unconditional_count",
         "codec_variant_default_marker",
+        "codec_repeat_flag_carrier",
+        "codec_chain_prev_carrier",
+        "codec_chain_has_envelope",
+        "codec_chain_has_marker",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

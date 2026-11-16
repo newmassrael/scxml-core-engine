@@ -1127,6 +1127,28 @@ old encode, the old encode and its templates are removed in the same landing.
    nothing. As in C++, a list on one side of a gate held to a law over the codec's own input, or sharing its count
    with another (R5), stays unlowered. The case printer states the list as its `Lawful` of the start and the entries
    the source states.
+
+   *The fifteenth Python landing, 2026-11-16:* the gates on a chain's entries (docs/adr/0065 §6 R6). A group of a
+   chain's memberships holds the chain in each arm as a class of the arm's own, `{Arm}Chain`, a subclass of the
+   runtime's `Chain` (`sce_forge_runtime/membership.py`): a tuple of the entries where they stand, made only where it
+   holds an entry of each kind of `HOLDS` and of none of `LACKS`, `Optional` where a gate of the chain's own may leave
+   it out and the arm holds no kind (R6b). Where the one gate on a bare entry holds, the arm holds `{Arm}Placed`, a
+   subclass of the runtime's `Placed`: the other entries and the place of the first entry of the kind among them,
+   which reads as the chain whole, the named entry made by the kind's `named()` at its place, so the walk that writes
+   a chain and the count that measures it read it as they read a list (R6a). The decision was between this and a walk
+   of slots in the encode, as C++ and Rust write it: a `Placed` that reads as its entries keeps the slots in the one
+   class that holds the place, and the encode's walk, count and kinds read every chain alike. Each kind is a class
+   `{Codec}{Chain}{Kind}Key`, named as every printer names it, whose `matches` reads the chain's `entry-id` and, for a
+   bare entry's kind, whose `named()` makes the entry of its identifier, its arm the one its tag bits select through
+   the entry codec's `ARM_CLASSES`, which every printed module with a variant now defines: the class of the arm each
+   tag names. A gate on a membership a group holds is what the arm the value holds says; any other is whether the
+   chain the value holds has an entry of the kind, read as the chain's `entry-id` says, and the decode makes the arm
+   its read chain's kinds select. A value made by default holds the arm present while no gate holds, as in C++,
+   which for a group of a chain's memberships is the arm whose chain must hold no kind. An input a chain's entry says
+   that the chain supplies from the entry before, where the memberships hold the chain to no law, is held entry by
+   entry to whether the entry before was of the kind (`Against::PreviousEntry`, R8b). As in C++, a chain of slots
+   whose entries are held to an input stays unlowered. The case printer states the chain as the arm's `Chain` of its
+   entries, or its `Placed` of `{"rest", "place"}`.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

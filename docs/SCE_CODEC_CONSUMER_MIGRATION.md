@@ -2077,3 +2077,18 @@ to every entry, an input of its own, or whether the entry before is of a kind.
 - An input the list's start says is read off the value by the module's `input_<name>`, not handed to the encode.
 - A decode whose entries break the law answers `None`, as a frame a field refuses does.
 
+## A printed Python codec holds a chain in the arm of the gates on its entries (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose fields are gated on `<chain>.has(<kind>)` (docs/adr/0065 §6 R6).
+
+- The chain and the fields its memberships gate are one group field, as a flag's group is: each arm a dataclass
+  that holds the chain as `{Arm}Chain`, a tuple made only where it holds an entry of each kind the arm says and of
+  none it clears (`PresentIfMismatch` otherwise). Replace `Msg(extensions=[..], payload=..)` with
+  `Msg(<group>=<Arm>(extensions=<Arm>Chain([..]), payload=..))`, where `<group>` is the group's field and `<Arm>`
+  the class of the arm the chain's kinds select, both as the module names them.
+- Where the one gate is on a bare entry, the arm holding it holds `{Arm}Placed(rest, place)`: the other entries
+  and where the bare entry stands. It reads as the whole chain, the bare entry made at its place.
+- A group made by default holds the arm present while no gate holds; before, it held the first arm.
+- Every printed module whose codec has a variant defines `ARM_CLASSES`, the class of the arm each tag names.
+

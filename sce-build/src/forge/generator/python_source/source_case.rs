@@ -14,9 +14,10 @@
 //! refused by name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, gates_label, group_accessor, group_choice,
-    integer_value, law_start_bits, lawful_parts, source_members, variant_choice,
-    CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    byte_values, case_inputs, case_tag, chain_optional_in, enum_variant, gates_label,
+    group_accessor, group_choice, integer_value, law_start_bits, lawful_parts, placed_parts,
+    source_members, variant_choice, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL,
+    VARIANT_MEMBER,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -238,6 +239,50 @@ fn value_literal(
                     // `Aligned` of the two (docs/adr/0065 §6 R5), each stated
                     // by its own id.
                     if group.is_second_in(chosen.arm, id) {
+                        continue;
+                    }
+                    // The chain whose memberships are the group's gates, as
+                    // the arm holds it (docs/adr/0065 §6 R6): a bare entry's
+                    // others and place, `{"rest": [..], "place": n}`, as its
+                    // `Placed`; otherwise its entries whole as its `Chain`,
+                    // `None` where the arm may hold none.
+                    if group.chain() == Some(id.as_str()) {
+                        let field = plan
+                            .model
+                            .fields
+                            .iter()
+                            .find(|f| f.id == *id)
+                            .expect("a group's chain is a field of the codec");
+                        let Value::List { codec, .. } = plan.value(field) else {
+                            unreachable!("the chain whose memberships are gates is a list")
+                        };
+                        let json = chosen
+                            .members
+                            .get(id.as_str())
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                        let json = &json;
+                        let placed =
+                            group.member_is_bare() && !group.kinds_in(chosen.arm).0.is_empty();
+                        let member = if placed {
+                            let (rest, place) =
+                                placed_parts(json).map_err(|e| format!("`{label}`: {e}"))?;
+                            format!(
+                                "{}.{class}Placed([{}], {place})",
+                                path.module,
+                                entry_literals(codec, path, rest, &mut *held)?
+                            )
+                        } else if json.is_null() && chain_optional_in(group, field, chosen.arm) {
+                            "None".to_string()
+                        } else {
+                            format!(
+                                "{}.{class}Chain([{}])",
+                                path.module,
+                                entry_literals(codec, path, json, &mut *held)
+                                    .map_err(|e| format!("`{label}`: `{id}`: {e}"))?
+                            )
+                        };
+                        members.push(format!("{}={member}", l.codec_field_id(id)));
                         continue;
                     }
                     let (name, member) = match group.second_of(chosen.arm, id) {
