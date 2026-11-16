@@ -99,8 +99,11 @@ pub(crate) use swift_codec::source_case::{
 /// Whether the Swift backend prints the encode of the codec `plan` from the plan (docs/adr/0081
 /// step 5), and not from its template: the codecs whose byte cases the Swift harness runs as the
 /// value its printer presents.
-pub(crate) fn swift_codec_printed(plan: &crate::forge::encode_plan::CodecPlan<'_>) -> bool {
-    swift_codec::source::unlowered(plan).is_none()
+pub(crate) fn swift_codec_printed(
+    plan: &crate::forge::encode_plan::CodecPlan<'_>,
+    imports: &[ImportContext],
+) -> bool {
+    swift_codec::source::unlowered(plan, imports).is_none()
 }
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec

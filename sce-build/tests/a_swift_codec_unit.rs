@@ -257,6 +257,9 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_zenoh_wireexpr.scxml",
         "tests/forge/resources/codec_zenoh_open_body.scxml",
         "tests/forge/resources/codec_init_cookie_body.scxml",
+        "tests/forge/resources/codec_zenoh_timestamp_ext.scxml",
+        "tests/forge/resources/codec_zenoh_decl_kexpr.scxml",
+        "tests/forge/resources/codec_embed_basic.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -271,8 +274,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         );
     }
     for (template, why) in [(
-        "tests/forge/resources/codec_zenoh_timestamp_ext.scxml",
-        "an embedded body",
+        "tests/forge/resources/codec_repeat_flag_carrier.scxml",
+        "a list of entries",
     )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
@@ -723,10 +726,26 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
         "{forwarded}"
     );
     // The body is printed from its plan and says `N` itself (docs/adr/0065 §6 R4a), so its encode
-    // is handed nothing; its decode is still handed the bit.
+    // is handed nothing, and the codec that holds it says `N` by what the body says; the decode is
+    // still handed the bit.
     assert!(
-        forwarded.contains("try self.wireexpr.encode(into: &piece)\n"),
+        forwarded.contains(
+            "        try CodecZenohWireexpr.encodeSource(source.wireexpr, into: &wireexpr_piece)\n"
+        ),
         "{forwarded}"
+    );
+    assert!(
+        forwarded.contains(
+            "public static func inputN<Source: CodecZenohDeclKexprSource>(_ source: Source) -> UInt8 {\n        CodecZenohWireexpr.inputN(source.wireexpr)\n    }"
+        ),
+        "{forwarded}"
+    );
+    // A codec still of its template's encode hands a printed arm no input the arm says.
+    let arms = swift_of("tests/forge/resources/codec_every_arm_says.scxml")
+        .expect("a variant whose arms say their inputs is written");
+    assert!(
+        arms.contains("try arm.encode(into: &piece)\n") && !arms.contains("encode(into: &piece, "),
+        "{arms}"
     );
     let carrier = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
         .expect("a list whose entries are handed a bit of a carrier is written");
@@ -1302,11 +1321,29 @@ fn an_embedded_codec_is_laid_in_place_and_adds_its_own_length() {
         code.contains("public var ts: CodecZenohTimestamp = CodecZenohTimestamp()"),
         "{code}"
     );
+    // docs/adr/0081 §3: the body is encoded into bytes of its own once, before the frame, and its
+    // encoded length, which `ext_size` holds, is the count of them: the value holds no `ext_size`.
+    let encoded = code
+        .find(
+            "        var ts_piece = BytesSink()\n        try CodecZenohTimestamp.encodeSource(source.ts, into: &ts_piece)\n        let ts_bytes = ts_piece.bytes\n",
+        )
+        .unwrap_or_else(|| panic!("the body is encoded by its own codec: {code}"));
+    let counted = code
+        .find("        let ext_size_derived: UInt64 = UInt64(ts_bytes.count)\n")
+        .unwrap_or_else(|| panic!("the length is the count of the body's bytes: {code}"));
+    let written = code
+        .find("        frame += ts_bytes\n")
+        .unwrap_or_else(|| panic!("an encode writes the bytes where the field stands: {code}"));
+    assert!(encoded < counted && counted < written, "{code}");
     assert!(
-        code.contains(
-            "do {\n            var piece = BytesSink()\n            try self.ts.encode(into: &piece)\n            frame += piece.bytes\n        }"
-        ),
-        "an encode writes its bytes where the field stands: {code}"
+        code.contains("    associatedtype Ts_Source: CodecZenohTimestampSource\n")
+            && code.contains("    var ts: Ts_Source { get }\n")
+            && code.contains("    public typealias Ts_Source = CodecZenohTimestamp\n"),
+        "the body is presented as a source of its codec, bound to its value: {code}"
+    );
+    assert!(
+        !code.contains("ext_size: UInt64 = 0") && !code.contains("ext_size: ext_size"),
+        "the value holds no length the encode derives: {code}"
     );
     assert!(
         code.contains("public static let frameLength = 1 + CodecZenohTimestamp.frameLength"),

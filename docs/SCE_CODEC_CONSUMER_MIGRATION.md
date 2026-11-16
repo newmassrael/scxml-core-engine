@@ -2212,4 +2212,11 @@ Landing: the commit that adds this section, and each later one that names a form
   holds a printed one hands it no such input. A Swift broadcast log over such an element reads the flag off the
   element: `publish` takes `given: GivenFlags` of the others, or nothing where the element says every one, and an
   item still holds them all in `Flags`. The generic parameter of `encodeSource` is now named `Source`.
+- An embedded body of a codec the printer prints is printed: the protocol requires it as a source of the body's
+  codec, `associatedtype {Field}_Source: {Body}Source`, which the generated struct binds to the body's struct
+  (`public typealias {Field}_Source = {Body}`), so a host type presents a body of its own type. The encoded length
+  of a body (`sce:length-from`) is derived: it is no member of the value and no parameter of its initializer, and
+  the encode writes the count of the bytes the body encodes to. A call site moves from
+  `CodecZenohTimestampExt(ext_size: 4, ts: ts)` to `CodecZenohTimestampExt(ts: ts)`. A codec that hands its own
+  input on to a body that says it (`CodecZenohDeclKexpr`'s `N`) says it too, and its encode takes no `N`.
 

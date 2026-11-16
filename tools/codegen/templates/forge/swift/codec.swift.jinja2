@@ -39,6 +39,10 @@ public enum {{ variant_enum.name }}: Equatable, Sendable {
 /// `{{ struct_name }}.encodeSource(_:into:)` writes a frame from. A type of the host's own that
 /// declares them is written with no copy into `{{ struct_name }}`, which conforms itself.
 public protocol {{ printed.protocol }} {
+{% for b in printed.bodies %}
+    /// What `{{ b.field }}` is presented as: a source of `{{ b.type }}`, written by its encode.
+    associatedtype {{ b.name }}: {{ b.protocol }}
+{% endfor %}
 {% for r in printed.requirements %}
     var {{ r.name }}: {{ r.type }} { get }
 {% endfor %}
@@ -64,6 +68,11 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
         public static let least = {{ b.least }}
         public static let most: Int? = {{ b.most }}
     }
+{% endfor %}
+{% for b in printed.bodies %}
+
+    /// The value presents `{{ b.field }}` as a value of its own codec.
+    public typealias {{ b.name }} = {{ b.type }}
 {% endfor %}
 {% endif %}
 {# An element the encode derives is no member of a value printed from its plan (docs/adr/0081

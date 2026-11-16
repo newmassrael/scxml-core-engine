@@ -3249,9 +3249,10 @@ pub fn swift_codec_printed_file(
         options,
         generator::Language::Swift,
         |model, imports, _| {
-            forge::generator::swift_codec_printed(&forge::encode_plan::CodecPlan::of(
-                &model, imports,
-            ))
+            forge::generator::swift_codec_printed(
+                &forge::encode_plan::CodecPlan::of(&model, imports),
+                imports,
+            )
         },
     )
 }

@@ -16,7 +16,7 @@ final class CodecEmbedUnitTests: XCTestCase {
     func testAnEmbeddedCodecIsReadFromTheBytesTheLengthGives() throws {
         var cursor = SceCursor([0x04, 0x05, 0x02, 0xAA, 0xBB, 0x77])
         let frame = try CodecZenohTimestampExt.decode(&cursor)
-        XCTAssertEqual(frame.ext_size, 4)
+        // The size is the encode's to derive (docs/adr/0081 §3): the value holds the body alone.
         XCTAssertEqual(frame.ts.time, 5)
         XCTAssertEqual(frame.ts.zid.bytes, [0xAA, 0xBB])
         XCTAssertEqual(cursor.remaining, 1, "what follows the bounded bytes is the caller's")
@@ -46,9 +46,19 @@ final class CodecEmbedUnitTests: XCTestCase {
         XCTAssertEqual(cursor.remaining, 2)
     }
 
-    func testAnEncodeWritesTheLengthAndThenTheEmbeddedBytes() throws {
+    // The size is the count of the bytes the body encodes to, measured once.
+    func testAnEncodeWritesTheLengthItMeasuresAndThenTheEmbeddedBytes() throws {
         let zid = try XCTUnwrap(BoundedBytes<CodecZenohTimestamp.ZidBound>([0xAA, 0xBB]))
-        let frame = CodecZenohTimestampExt(ext_size: 4, ts: CodecZenohTimestamp(time: 5, zid: zid))
+        let frame = CodecZenohTimestampExt(ts: CodecZenohTimestamp(time: 5, zid: zid))
+        var sink = BytesSink()
+        try frame.encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0x04, 0x05, 0x02, 0xAA, 0xBB])
+    }
+
+    // A body that took fewer bytes than its frame said is written back with the size it takes.
+    func testABodyReadFromMoreBytesThanItTakesIsWrittenWithItsOwnSize() throws {
+        var cursor = SceCursor([0x05, 0x05, 0x02, 0xAA, 0xBB, 0xEE])
+        let frame = try CodecZenohTimestampExt.decode(&cursor)
         var sink = BytesSink()
         try frame.encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x04, 0x05, 0x02, 0xAA, 0xBB])

@@ -1337,6 +1337,22 @@ old encode, the old encode and its templates are removed in the same landing.
    the codec. The case printer hands the decode every input and holds the value to saying each said one through
    its reader. The generic parameter of `encodeSource` is named `Source`, since a flag input is often one capital
    letter and a local of its name would hide a parameter `S`.
+   *Embedded bodies, 2026-11-16:* a body, always there or gated, of a codec the Swift printer prints is printed;
+   one of a codec it does not print keeps the holder on its template, so a printed codec holds printed bodies alone.
+   The protocol presents the body as an associated type bound to a source of the body's codec (`{Field}_Source`,
+   whose `_` no codec's type name has, so it hides none), which the generated value binds to the body's struct: a
+   host's type is written with no copy, as through Rust's associated source type. The encode writes each body into
+   bytes of its own by the body codec's `encodeSource`, before the frame, handed each input it does not say from
+   the carrier as the encode writes it (its derived and overridden flags folded in) or from an input of the
+   holder's own; the encoded length a field holds is the count of those bytes, so the body is encoded once and
+   counted without a second pass (docs/adr/0058 §3), and a refusal of the body is thrown before a byte reaches the
+   sink. A flag bound to an input the body says is read off it through the body codec's `input{Name}(_:)`, an input
+   the holder hands on to a body that says it in every value (`InputSource::Forward`) is said by the holder, and
+   an input the body says that the holder hands it from elsewhere is held to it before the first byte
+   (`InputCheck` at an embed). A decode presents each body as its codec's value, and a value of a printed codec is
+   `Equatable` down into its bodies, so the case printer makes a body by its codec's initializer and compares it
+   whole. An encoded length into the bits of a flag, a body's input bound to nothing, and a body that says an input
+   in some of its values only stay refused by name.
 
 ## Consequences
 

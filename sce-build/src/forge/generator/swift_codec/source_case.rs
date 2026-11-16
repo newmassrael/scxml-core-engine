@@ -7,9 +7,9 @@
 //!
 //! The case reads the notation of `source` where every printer's case reads it
 //! (`rust_source::source_members` and the readers beside it), so one case states one value in every
-//! language. It is written for a codec the Swift printer prints ([`super::source::unlowered`]), and
-//! refuses any other by the form the printer does not lower, as a case of a shape no printer spells
-//! is refused by name.
+//! language. It is written for a codec the Swift printer prints ([`super::source::unlowered`],
+//! which the conformance generator asks first), and refuses by name a shape the printer does not
+//! lower, as a case of a shape no printer spells is refused by name.
 
 use super::super::rust_source::{
     case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
@@ -50,12 +50,8 @@ pub(crate) fn source_case(
     tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
-    if let Some(form) = super::source::unlowered_positional(plan) {
-        return Err(format!(
-            "the Swift printer does not print {form}, so no value of the codec is made from a case"
-        ));
-    }
-    let object = source_members(plan, source)?;
+    let mut bindings = Vec::new();
+    let literal = value_literal(plan, type_name, source, held, &mut bindings)?;
     // The decode is handed every flag input, in the order the codec declares them, by its label;
     // the encode the ones the value does not say, and the value is held to saying each other one
     // as the case hands it, through the input's own function (docs/adr/0065 §6 R4a). A printed
@@ -81,16 +77,53 @@ pub(crate) fn source_case(
     if case_tag(plan, source, tag)?.is_some() {
         return Err("a case hands a tag to a codec whose variant takes none".to_string());
     }
+    // A decode presents each element as the value holds it, and every value the Swift printer
+    // prints is `Equatable`, a body's down into its own elements: one comparison an element.
+    let mut checks: Vec<(String, String)> = plan
+        .elements
+        .iter()
+        .map(|element| {
+            let id = &element.field.id;
+            (id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}"))
+        })
+        .collect();
+    checks.extend(said);
+    Ok(SourceCase {
+        bindings,
+        literal,
+        checks,
+        inputs: decode_inputs,
+        encode_inputs,
+    })
+}
+
+/// The value of the codec `plan`, whose Swift type is `type_name`, that `source` states, made by
+/// its initializer, each element in declaration order: a byte string or a text through its bound's
+/// one door, bound first in `bindings`, which the harness requires to answer; a body by the
+/// initializer of its own codec's value; a number as a literal. An element a gate leaves out is
+/// `nil`. A shape the Swift printer does not print (a group, a list, a variant) is refused by name,
+/// and so is a source that states an element the value does not present or leaves out one it does.
+fn value_literal(
+    plan: &EncodePlan<'_>,
+    type_name: &str,
+    source: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    if plan.model.variant.is_some() || !plan.groups().is_empty() {
+        return Err(format!(
+            "the Swift printer does not print `{}`, which holds a variant or a gate group, so no \
+             value of it is made from a case",
+            plan.model.name
+        ));
+    }
+    let object = source_members(plan, source)?;
     let mut arguments = Vec::new();
-    let mut checks = Vec::new();
-    let mut bindings = Vec::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let value = object
             .get(id)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
-        // An element a gate leaves out is `nil`, and a decode presents it so. A byte string or a
-        // text is made through its bound's one door first, which the harness requires to answer.
         let spelled = if value.is_null() && element.presence.optional() {
             "nil".to_string()
         } else if let Some(bounded) = super::source::bounded_type(type_name, element) {
@@ -99,23 +132,22 @@ pub(crate) fn source_case(
                 _ => bytes_literal(value),
             }
             .map_err(|e| format!("`{id}`: {e}"))?;
-            let local = format!("bound_{id}");
+            // Numbered, as a body's elements are bound beside its holder's.
+            let local = format!("bound{}", bindings.len());
             bindings.push(format!("let {local} = try #require({bounded}({raw}))"));
             local
+        } else if let Value::Body { codec } = &element.value {
+            held.read(codec, &mut |plan, _, held| {
+                let type_name = filters::to_pascal_case(plan.model.name.clone());
+                value_literal(plan, &type_name, value, held, bindings)
+            })
+            .map_err(|e| format!("`{id}`: {e}"))?
         } else {
             number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?
         };
         arguments.push(format!("{id}: {spelled}"));
-        checks.push((id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}")));
     }
-    checks.extend(said);
-    Ok(SourceCase {
-        bindings,
-        literal: format!("{type_name}({})", arguments.join(", ")),
-        checks,
-        inputs: decode_inputs,
-        encode_inputs,
-    })
+    Ok(format!("{type_name}({})", arguments.join(", ")))
 }
 
 /// The Swift array literal of the bytes a source states, an array of numbers each a byte.

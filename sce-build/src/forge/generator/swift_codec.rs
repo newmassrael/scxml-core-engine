@@ -1305,7 +1305,7 @@ pub(super) fn render(
     // template's own encode where it does not yet (§6), never both. A printed value holds each byte
     // string and text in the bounded type its plan gives it (docs/adr/0065 §6 R1).
     let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
-    let prints = source::unlowered_positional(&plan).is_none();
+    let prints = source::unlowered_positional(&plan, imports).is_none();
     let struct_name = filters::to_pascal_case(m.name.clone());
     let bounded_of = |f: &CodecField| {
         plan.elements
@@ -1719,7 +1719,7 @@ pub(super) fn render(
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.
     ctx.insert("sequential".into(), sequential.into());
-    let printed = prints.then(|| source::context(&l, &plan, &carriers));
+    let printed = prints.then(|| source::context(&l, &plan, &carriers, &element_types));
     ctx.insert("printed".into(), printed.into());
     l.render(env, "codec", ctx)
 }

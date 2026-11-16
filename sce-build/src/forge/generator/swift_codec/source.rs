@@ -22,33 +22,60 @@
 //! value does not say is a parameter of the encode, as it is of the decode, and a gate on it, which
 //! the encode cannot derive, is a check the value is held to before the first byte
 //! (`presentIfMismatch`); fields that each say one flag must say the same (`inconsistentSource`).
-//! A flag input the value says by the field gated on it alone (docs/adr/0065 §6 R4a) is no
-//! parameter of the encode: the encode reads it off the value, and so does a parent or a log
-//! through the codec's `input{Name}(_:)`; the decode is still handed it.
+//! A flag input the value says by the field gated on it alone, or by the body it hands it on to
+//! (docs/adr/0065 §6 R4a), is no parameter of the encode: the encode reads it off the value, and so
+//! does a parent or a log through the codec's `input{Name}(_:)`; the decode is still handed it.
 //! A one-bit flag a parent may set in place of the one the value presents
 //! (`EncodePlan::overridable`) is a member of the codec's `Overrides`, which the encode is handed
 //! and folds into its carrier.
+//!
+//! An embedded body of a codec the Swift printer prints is presented as a source of that codec, an
+//! associated type of the protocol the generated value binds to the body's own value, and is
+//! encoded into bytes of its own once, before the frame is written: its encoded length, where a
+//! field holds it, is the count of those bytes (docs/adr/0058 §3, measured once), and a flag bound
+//! to an input the body says is read off the body through its codec's `input{Name}(_:)`. The body
+//! is handed each input it does not say from the carrier as the encode writes it or from an input
+//! of the parent's own, and an input it says that the parent hands it from elsewhere is a check
+//! (`presentIfMismatch`).
 
 use super::*;
 use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Bound, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, Measured, Narrow, Number,
-    NumberInto, Offset, Presence, PresenceFlag, Value, Write,
+    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
+    HandedFrom, InputCheck, Measured, Narrow, Number, NumberInto, Offset, Presence, PresenceFlag,
+    Value, Write,
 };
 
+/// The Swift struct of each codec a codec holds as a body, by the id of the field that holds it.
+pub(crate) type HeldTypes = std::collections::HashMap<String, String>;
+
 /// The first form of `plan` the Swift printer does not lower yet, described for a reader; `None`
-/// where it prints the codec whole.
-pub(crate) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
+/// where it prints the codec whole. `imports` says which codec each import is and whether the
+/// Swift printer prints it.
+pub(crate) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
     match plan {
-        CodecPlan::Positional(plan) => unlowered_positional(plan),
+        CodecPlan::Positional(plan) => unlowered_positional(plan, imports),
         CodecPlan::Cbor(_) => Some("a CBOR map".to_string()),
         CodecPlan::ContentLine(_) => Some("a component of content lines".to_string()),
     }
 }
 
+/// The import `alias` of a codec.
+fn import_of<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i ImportContext> {
+    imports.iter().find(|i| i.alias == alias)
+}
+
+/// Whether the codec imported as `alias` says its input `input` in some of its values only.
+fn says_partly(imports: &[ImportContext], alias: &str, input: &str) -> bool {
+    import_of(imports, alias).is_some_and(|i| i.codec_partly_says_inputs.iter().any(|s| s == input))
+}
+
 /// [`unlowered`] of a positional codec's plan.
-pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
+pub(crate) fn unlowered_positional(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+) -> Option<String> {
     if plan.model.variant.is_some() {
         return Some("a `<sce:variant>`".to_string());
     }
@@ -64,7 +91,14 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
             Value::Scalar(t) if is_number(t) => None,
             Value::Scalar(t) => Some(format!("a `{}` value", t.as_attr())),
             Value::Bytes(_) | Value::Text(_) => None,
-            Value::Body { .. } => Some("an embedded body".to_string()),
+            // A body is written by its own codec's printed encode, so the Swift printer prints the
+            // codec it holds first.
+            Value::Body { codec } => match import_of(imports, codec) {
+                Some(import) if import.swift_printed => None,
+                _ => Some(format!(
+                    "an embedded body of `{codec}`, which the Swift printer does not print"
+                )),
+            },
             Value::List { .. } => Some("a list of entries".to_string()),
         }
         .or_else(|| match element.presence {
@@ -76,6 +110,17 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
         if let Some(what) = what {
             return Some(format!("field '{id}': {what}"));
         }
+    }
+    // A body is handed each input it does not say from the parent's carrier or its own input.
+    if let Some((alias, handed)) = plan
+        .handed
+        .iter()
+        .find_map(|(alias, handed)| Some((alias, handed.iter().find(|h| h.from.is_none())?)))
+    {
+        return Some(format!(
+            "the input `{}` of `{alias}`, which no declaration binds",
+            handed.input
+        ));
     }
     // A presence flag is read off the fields it gates that say it: the first, or every one where
     // they may disagree.
@@ -90,16 +135,33 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
     if let Some(derived) = plan.derivations.iter().find(|derived| {
         let presence = presence_flag(&derived.element, &derived.by)
             .is_some_and(|(_, _, presence)| readable(presence));
-        !presence && byte_length(&derived.element, &derived.by).is_none()
+        !presence && printed_number(&derived.element, &derived.by).is_none()
     }) {
         return Some(format!("`{}`, which the encode derives", derived.element));
     }
-    // An input the value says is read off the field gated on it alone; one a held codec or a
-    // group says waits for the form that holds it.
+    // A body that says an input in some of its values only says nothing in the others.
+    if let Some(derived) = plan.derivations.iter().find(|derived| {
+        printed_number(&derived.element, &derived.by).is_some_and(|number| {
+            number.measures.iter().any(|measure| {
+                matches!(
+                    &measure.of,
+                    Measured::Says { codec, input, .. } if says_partly(imports, codec, input)
+                )
+            })
+        })
+    }) {
+        return Some(format!(
+            "`{}`, bound to an input its body says in some of its values only",
+            derived.element
+        ));
+    }
+    // An input the value says is read off the field gated on it alone, or off the body always
+    // there that it hands it on to and that says it in every value; one a group, a list or an arm
+    // says waits for the form that holds it.
     if let Some(said) = plan.said.iter().find(|said| {
         !matches!(
             plan.roles.inputs[&said.input.name],
-            InputSource::Gate { .. }
+            InputSource::Gate { .. } | InputSource::Forward { partly: false, .. }
         )
     }) {
         return Some(format!(
@@ -107,7 +169,11 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
             said.input.name
         ));
     }
-    if let Some(check) = plan.input_checks.first() {
+    if let Some(check) = plan
+        .input_checks
+        .iter()
+        .find(|check| !matches!(check.site, CheckSite::Embed { .. }))
+    {
         return Some(format!(
             "the input `{}` the held codec `{}` says",
             check.input, check.codec
@@ -153,14 +219,18 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
             "field '{}': a gate on the entries of a chain",
             field.id
         )),
-        // A number or a byte string or text in turn, always there or where the value holds it, and a
-        // number the encode derives whole where its gate holds: the bytes of its carrier, its chain,
-        // or its bytes.
+        // A number or a byte string or text in turn, always there or where the value holds it, a
+        // number the encode derives whole where its gate holds, and a body where the value holds
+        // it: the bytes of its carrier, its chain, its bytes, or the body's own frame.
         Write::Streamed {
             field, list: None, ..
         } if matches!(
             field.bit_size,
-            BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Tail | BitSize::LengthRef
+            BitSize::Fixed { .. }
+                | BitSize::Vle { .. }
+                | BitSize::Tail
+                | BitSize::LengthRef
+                | BitSize::Embed
         ) =>
         {
             None
@@ -175,17 +245,27 @@ pub(crate) fn unlowered_positional(plan: &EncodePlan<'_>) -> Option<String> {
     })
 }
 
-/// The number `element` is, where `by` derives it as one the printer writes: the length of the
-/// byte strings and texts it measures, into a field of its own (zero where a gate leaves every one
-/// of them out, beside which the field is gated too) or into a flag of a carrier.
-fn byte_length<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d Number<'m>> {
+/// The number `element` is, where `by` derives it as one the printer writes: a number of the byte
+/// strings and texts it measures, of the inputs the bodies it measures say, or of the bytes the
+/// bodies it measures encode to, into a field of its own (zero where a gate leaves every one of
+/// them out, beside which the field is gated too) or, but for an encoded length, into a flag of a
+/// carrier.
+fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d Number<'m>> {
     let Derive::Number(number) = by else {
         return None;
     };
-    let measures_bytes = number
-        .measures
-        .iter()
-        .all(|measure| matches!(measure.of, Measured::Bytes { .. }));
+    let encoded = |measured: &Measured<'_>| matches!(measured, Measured::Encoded { .. });
+    let measures = number.measures.iter().all(|measure| {
+        matches!(
+            measure.of,
+            Measured::Bytes { .. } | Measured::Says { .. } | Measured::Encoded { .. }
+        )
+    });
+    // An encoded length is counted once the bodies are encoded, after every carrier is folded, so
+    // it goes into a field and measures nothing else.
+    let counted = !number.measures.iter().any(|m| encoded(&m.of))
+        || (matches!(element, ElementId::Field(_))
+            && number.measures.iter().all(|m| encoded(&m.of)));
     let into = match (element, &number.into) {
         (ElementId::Field(_), NumberInto::Field { absent, .. }) => {
             matches!(absent, Absent::Never | Absent::Zero)
@@ -193,7 +273,15 @@ fn byte_length<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d
         (ElementId::Flag { .. }, NumberInto::Flag) => true,
         _ => false,
     };
-    (measures_bytes && into).then_some(number)
+    (measures && counted && into).then_some(number)
+}
+
+/// Whether `number` is the encoded length of bodies, counted once they are encoded.
+fn is_encoded_length(number: &Number<'_>) -> bool {
+    number
+        .measures
+        .iter()
+        .any(|measure| matches!(measure.of, Measured::Encoded { .. }))
 }
 
 /// The presence flag `element` is, where `by` derives it as one: a flag of a carrier set exactly
@@ -211,23 +299,30 @@ fn presence_flag<'d, 'm>(
 }
 
 /// Whether the printer writes the refusal of `kind` at `element`: the presence of a field held to a
-/// gate the encode cannot derive; fields that each say one flag, or byte strings and texts that each
-/// say one length, and may disagree; a length past the field that holds it where the plan checks
-/// it, past the bits of the flag that holds it, or below what its arithmetic takes off.
+/// gate the encode cannot derive, or an input a body says held to what the parent hands it; fields
+/// that each say one flag, or measures that each say one number, and may disagree; a length past
+/// the field that holds it where the plan checks it, past the bits of the flag that holds it, or
+/// below what its arithmetic takes off; and the refusal of a body whose codec refuses, which its
+/// encode throws.
 fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bool {
     let derived_at =
         |derived: &&crate::forge::encode_plan::Derived<'_>| derived.element.to_string() == element;
     match kind {
-        RefusalKind::PresentIfMismatch => plan.gate_checks.iter().any(|f| f.id == element),
+        RefusalKind::PresentIfMismatch => {
+            plan.gate_checks.iter().any(|f| f.id == element)
+                || plan.input_checks.iter().any(|check| {
+                    check.at == element && matches!(check.site, CheckSite::Embed { .. })
+                })
+        }
         RefusalKind::InconsistentSource => {
             plan.derivations.iter().filter(derived_at).any(|derived| {
                 presence_flag(&derived.element, &derived.by).is_some()
-                    || byte_length(&derived.element, &derived.by)
+                    || printed_number(&derived.element, &derived.by)
                         .is_some_and(|number| number.measures.len() > 1)
             })
         }
         RefusalKind::LengthOutOfRange => plan.derivations.iter().any(|derived| {
-            let Some(number) = byte_length(&derived.element, &derived.by) else {
+            let Some(number) = printed_number(&derived.element, &derived.by) else {
                 return false;
             };
             let past_its_field = derived_at(&derived)
@@ -246,6 +341,10 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
             });
             past_its_field || below_its_arithmetic
         }),
+        RefusalKind::Child => plan
+            .elements
+            .iter()
+            .any(|e| e.field.id == element && matches!(e.value, Value::Body { .. })),
         _ => false,
     }
 }
@@ -267,21 +366,41 @@ pub(crate) fn said_reader(input: &str) -> String {
     format!("input{}", filters::to_pascal_case(input.to_string()))
 }
 
+/// The associated type of a printed codec's protocol that the body `field` is a source of, which
+/// the generated value binds to the body's own value: the field's name in upper camel case and
+/// `_Source`. The name of a codec's struct or protocol is in upper camel case and holds no `_`, so
+/// the associated type hides none of them, the body's own protocol among them.
+fn body_source_type(field: &str) -> String {
+    format!("{}_Source", filters::to_pascal_case(field.to_string()))
+}
+
 /// The `UInt8` the flag input `input` that the value says holds, read off `source`, a source of
 /// the codec of `plan`: set exactly where the field gated on it alone is present (absent, for a
-/// field gated on its clear state). [`unlowered`] refuses every other way a value says one.
-fn said_input(plan: &EncodePlan<'_>, input: &str, source: &str) -> String {
+/// field gated on its clear state), or what the body always there that it hands it on to says,
+/// read through the body's codec. [`unlowered`] refuses every other way a value says one.
+fn said_input(plan: &EncodePlan<'_>, held: &HeldTypes, input: &str, source: &str) -> String {
     match &plan.roles.inputs[input] {
         InputSource::Gate { field, when_clear } => {
             let test = if *when_clear { "==" } else { "!=" };
             format!("{source}.{field} {test} nil ? 1 : 0")
         }
-        InputSource::Forward { .. }
+        InputSource::Forward {
+            embed,
+            input,
+            partly: false,
+            ..
+        } => {
+            let child = held
+                .get(embed)
+                .expect("an input forwarded from a body is said by a body the codec holds");
+            format!("{child}.{}({source}.{embed})", said_reader(input))
+        }
+        InputSource::Forward { partly: true, .. }
         | InputSource::Group
         | InputSource::EveryArm { .. }
         | InputSource::SomeArms { .. }
         | InputSource::List { .. } => {
-            unreachable!("`unlowered` refuses an input a held codec or a group says")
+            unreachable!("`unlowered` refuses an input a group, a list or an arm says")
         }
     }
 }
@@ -326,12 +445,15 @@ pub(super) fn bounded_type(struct_name: &str, element: &Element<'_>) -> Option<S
     ))
 }
 
-/// The Swift type the value of `plan` presents `element` as: its number, or its bounded byte
-/// string or text, optional where a gate decides it.
+/// The Swift type the protocol of `plan` presents `element` as: its number, its bounded byte string
+/// or text, or the associated type its body is a source of, optional where a gate decides it.
 fn presented_type(l: &LangCtx, plan: &EncodePlan<'_>, element: &Element<'_>) -> String {
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
-    let ty = bounded_type(&struct_name, element)
-        .unwrap_or_else(|| l.type_name(&element.field.sce_type).into_owned());
+    let ty = match &element.value {
+        Value::Body { .. } => body_source_type(&element.field.id),
+        _ => bounded_type(&struct_name, element)
+            .unwrap_or_else(|| l.type_name(&element.field.sce_type).into_owned()),
+    };
     if element.presence.optional() {
         format!("{ty}?")
     } else {
@@ -358,6 +480,12 @@ fn derived_local(element: &ElementId) -> String {
         ElementId::Flag { field, flag } => format!("{field}_{flag}_derived"),
         ElementId::Variant => unreachable!("a variant's tag is no number of bytes"),
     }
+}
+
+/// The local the encode holds the bytes the body `field` encodes to in, `nil` where a gate leaves
+/// the body out. A field is read through the source and never bare, so the local hides no field.
+fn body_bytes(field: &str) -> String {
+    format!("{field}_bytes")
 }
 
 /// The largest value the integer type `ty` holds, or `None` for another type.
@@ -434,16 +562,58 @@ fn combine(
     }
 }
 
+/// The derived number `size` (there where `present` holds, if it may not be), held in the local of
+/// the field `id` it goes `into`, of that field's type: refused where it may not fit (docs/adr/0065
+/// §5), and zero where nothing it measures is there, beside which the field is gated and no write
+/// reads it.
+fn field_number(
+    l: &LangCtx,
+    plan: &EncodePlan<'_>,
+    id: &str,
+    into: &NumberInto<'_>,
+    size: &str,
+    present: Option<&str>,
+    body: &mut Vec<String>,
+) {
+    let NumberInto::Field { field, narrow, .. } = into else {
+        unreachable!("a number held in a field goes into that field")
+    };
+    let ty = l.type_name(&field.sce_type).into_owned();
+    if *narrow == Narrow::Checked {
+        let most = largest_of(&field.sce_type)
+            .expect("a length that may not fit its field is held in an integer field");
+        let past = format!("{size} > 0x{most:X}");
+        let test = match present {
+            Some(there) => format!("{there} && {past}"),
+            None => past,
+        };
+        body.push(format!(
+            "if {test} {{ {} }}",
+            refusal(plan, RefusalKind::LengthOutOfRange, id)
+        ));
+    }
+    let value = match present {
+        None => format!("{ty}({size})"),
+        Some(there) => format!("{there} ? {ty}({size}) : 0"),
+    };
+    body.push(format!(
+        "let {}: {ty} = {value}",
+        derived_local(&ElementId::Field(id.to_string()))
+    ));
+}
+
 /// What the template writes for the codec of `plan`, which [`unlowered`] has found nothing to
 /// refuse in: the protocol and its requirements, one read-only property per element in
-/// declaration order, the flag inputs the encode is handed, and the statements of `encodeSource`:
-/// each carrier with the flags the encode derives or a parent sets folded in, the checks the value
-/// is held to, and the writes of the plan's program, one after another, into a frame written in
-/// one write.
+/// declaration order, the associated type each body is a source of, the flag inputs the encode is
+/// handed, and the statements of `encodeSource`: each carrier with the flags the encode derives or
+/// a parent sets folded in, each body encoded into bytes of its own, the checks the value is held
+/// to, and the writes of the plan's program, one after another, into a frame written in one write.
+/// `held` is the Swift struct of each body by its field.
 pub(super) fn context(
     l: &LangCtx,
     plan: &EncodePlan<'_>,
     carriers: &std::collections::HashMap<String, Carrier>,
+    held: &HeldTypes,
 ) -> serde_json::Value {
     let requirements: Vec<serde_json::Value> = plan
         .elements
@@ -452,6 +622,26 @@ pub(super) fn context(
             serde_json::json!({
                 "name": element.field.id,
                 "type": presented_type(l, plan, element),
+            })
+        })
+        .collect();
+    let held_of = |f: &CodecField| {
+        held.get(&f.id)
+            .expect("every body the printer writes holds a codec of the module")
+    };
+    // The source each body is presented as: an associated type the protocol requires to be a
+    // source of the body's codec, which the generated value binds to the body's own value.
+    let bodies: Vec<serde_json::Value> = plan
+        .elements
+        .iter()
+        .filter(|element| matches!(element.value, Value::Body { .. }))
+        .map(|element| {
+            let child = held_of(element.field);
+            serde_json::json!({
+                "name": body_source_type(&element.field.id),
+                "field": element.field.id,
+                "protocol": format!("{child}Source"),
+                "type": child,
             })
         })
         .collect();
@@ -486,14 +676,26 @@ pub(super) fn context(
             .expect("a derived flag is a flag of a field of the codec")
     };
     let mut body: Vec<String> = Vec::new();
-    // Each input the value says (docs/adr/0065 §6 R4a) that a gate of the codec reads, read off
-    // what the value holds under the name the gate reads it by; one no gate reads is left to the
-    // parent that asks for it.
-    for said in plan.said.iter().filter(|said| said.read) {
+    // Each input the value says (docs/adr/0065 §6 R4a) that a gate of the codec reads, or that the
+    // codec hands a body or holds a body to, read off what the value holds under the name the gate
+    // reads it by; one nothing reads is left to the parent that asks for it.
+    let handed_on = |name: &str| {
+        plan.handed.values().flatten().any(
+            |handed| matches!(&handed.from, Some(HandedFrom::Input { name: from }) if from == name),
+        ) || plan
+            .input_checks
+            .iter()
+            .any(|check| matches!(&check.against, Against::Input { name: from } if from == name))
+    };
+    for said in plan
+        .said
+        .iter()
+        .filter(|said| said.read || handed_on(&said.input.name))
+    {
         body.push(format!(
             "let {}: UInt8 = {}",
             said.input.name,
-            said_input(plan, &said.input.name, SOURCE)
+            said_input(plan, held, &said.input.name, SOURCE)
         ));
     }
     // Each carrier the encode writes otherwise than the value presents it, folded into a local
@@ -506,87 +708,94 @@ pub(super) fn context(
         }
         local
     };
-    // Each length a byte string or text says, which a field holds or a flag of a carrier, made
-    // from what it measures (docs/adr/0058 §1).
+    // Each number the value's elements say, which a field holds or a flag of a carrier, made from
+    // what it measures (docs/adr/0058 §1): the length of a byte string or a text, and the input a
+    // body says. The encoded length of a body is counted once the body is encoded, below.
     let mut below: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut derived_fields: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for derived in &plan.derivations {
-        let Some(number) = byte_length(&derived.element, &derived.by) else {
+        let Some(number) = printed_number(&derived.element, &derived.by) else {
             continue;
         };
+        if is_encoded_length(number) {
+            continue;
+        }
         let named = derived.element.to_string();
         let measures: Vec<MeasureText> = number
             .measures
             .iter()
-            .map(|measure| {
-                let Measured::Bytes { field, offset } = &measure.of else {
-                    unreachable!("`byte_length` holds a number of bytes and texts alone")
-                };
-                let content = format!("{SOURCE}.{}", field.id);
-                let (raw, present) = if measure.gated {
-                    (
-                        format!("({content}?.byteCount ?? 0)"),
-                        Some(format!("{content} != nil")),
-                    )
-                } else {
-                    (format!("{content}.byteCount"), None)
-                };
-                // A wire that holds the count less what its arithmetic takes off holds no count
-                // below that (docs/adr/0065 §5).
-                if let Offset::Less { by, held: false } = offset {
-                    if plan
-                        .totality
-                        .refuses(RefusalKind::LengthOutOfRange, &field.id)
-                        && below.insert(field.id.clone())
-                    {
-                        let test = match &present {
-                            Some(there) => format!("{there} && {raw} < {by}"),
-                            None => format!("{raw} < {by}"),
-                        };
-                        body.push(format!(
-                            "if {test} {{ {} }}",
-                            refusal(plan, RefusalKind::LengthOutOfRange, &field.id)
-                        ));
+            .map(|measure| match &measure.of {
+                Measured::Bytes { field, offset } => {
+                    let content = format!("{SOURCE}.{}", field.id);
+                    let (raw, present) = if measure.gated {
+                        (
+                            format!("({content}?.byteCount ?? 0)"),
+                            Some(format!("{content} != nil")),
+                        )
+                    } else {
+                        (format!("{content}.byteCount"), None)
+                    };
+                    // A wire that holds the count less what its arithmetic takes off holds no
+                    // count below that (docs/adr/0065 §5).
+                    if let Offset::Less { by, held: false } = offset {
+                        if plan
+                            .totality
+                            .refuses(RefusalKind::LengthOutOfRange, &field.id)
+                            && below.insert(field.id.clone())
+                        {
+                            let test = match &present {
+                                Some(there) => format!("{there} && {raw} < {by}"),
+                                None => format!("{raw} < {by}"),
+                            };
+                            body.push(format!(
+                                "if {test} {{ {} }}",
+                                refusal(plan, RefusalKind::LengthOutOfRange, &field.id)
+                            ));
+                        }
+                    }
+                    let size = match offset {
+                        Offset::None => raw,
+                        Offset::Less { by, .. } => format!("({raw} - {by})"),
+                        Offset::More { by } => format!("({raw} + {by})"),
+                    };
+                    MeasureText {
+                        size,
+                        present,
+                        gated: measure.gated,
                     }
                 }
-                let size = match offset {
-                    Offset::None => raw,
-                    Offset::Less { by, .. } => format!("({raw} - {by})"),
-                    Offset::More { by } => format!("({raw} + {by})"),
-                };
-                MeasureText {
-                    size,
-                    present,
-                    gated: measure.gated,
+                // The input a body says, read off the source the value presents it by through its
+                // codec (docs/adr/0065 §6 R4a); where a gate leaves the body out, it says nothing.
+                Measured::Says {
+                    body: holder,
+                    input,
+                    ..
+                } => {
+                    let child = held_of(holder);
+                    let reader = said_reader(input);
+                    let content = format!("{SOURCE}.{}", holder.id);
+                    if measure.gated {
+                        MeasureText {
+                            size: format!("({content}.map {{ Int({child}.{reader}($0)) }} ?? 0)"),
+                            present: Some(format!("{content} != nil")),
+                            gated: true,
+                        }
+                    } else {
+                        MeasureText {
+                            size: format!("Int({child}.{reader}({content}))"),
+                            present: None,
+                            gated: false,
+                        }
+                    }
                 }
+                _ => unreachable!("`printed_number` holds bytes, inputs and encoded lengths alone"),
             })
             .collect();
         let local = derived_local(&derived.element);
         let (size, present) = combine(plan, &named, &local, &measures, &mut body);
         match (&derived.element, &number.into) {
-            (ElementId::Field(id), NumberInto::Field { field, narrow, .. }) => {
-                let ty = l.type_name(&field.sce_type).into_owned();
-                // A number past what the field holds is no frame (docs/adr/0065 §5).
-                if *narrow == Narrow::Checked {
-                    let most = largest_of(&field.sce_type)
-                        .expect("a length that may not fit its field is held in an integer field");
-                    let past = format!("{size} > 0x{most:X}");
-                    let test = match &present {
-                        Some(there) => format!("{there} && {past}"),
-                        None => past,
-                    };
-                    body.push(format!(
-                        "if {test} {{ {} }}",
-                        refusal(plan, RefusalKind::LengthOutOfRange, &named)
-                    ));
-                }
-                // Where nothing it measures is there, the field is gated beside its content and
-                // holds zero, which no write reads.
-                let value = match &present {
-                    None => format!("{ty}({size})"),
-                    Some(there) => format!("{there} ? {ty}({size}) : 0"),
-                };
-                body.push(format!("let {local}: {ty} = {value}"));
+            (ElementId::Field(id), into @ NumberInto::Field { .. }) => {
+                field_number(l, plan, id, into, &size, present.as_deref(), &mut body);
                 derived_fields.insert(id.clone());
             }
             (ElementId::Flag { field, flag }, NumberInto::Flag) => {
@@ -594,7 +803,7 @@ pub(super) fn context(
                     .flags
                     .iter()
                     .find(|def| def.name == *flag)
-                    .expect("the parser found the flag a length names");
+                    .expect("the parser found the flag a number names");
                 let width = def.width.max(1);
                 let bits = if width >= 64 {
                     u64::MAX
@@ -626,7 +835,7 @@ pub(super) fn context(
                     None => set,
                 });
             }
-            _ => unreachable!("`byte_length` holds a number into its own kind of element"),
+            _ => unreachable!("`printed_number` holds a number into its own kind of element"),
         }
     }
     // A flag set exactly where what it gates is present (clear, for a field gated on its clear
@@ -690,15 +899,135 @@ pub(super) fn context(
             "carrier": carrier.id,
         }));
     }
+    // A carrier as the encode writes it: the local its flags are folded into, else the source's.
+    let carrier_read = |f: &CodecField| {
+        if folded.contains(&f.id) {
+            folded_carrier(&f.id)
+        } else {
+            format!("{SOURCE}.{}", f.id)
+        }
+    };
+    // Each input a body says that the parent hands it from elsewhere, held to what the parent
+    // hands it, before the first byte (docs/adr/0065 §6 R4a): a value whose body says otherwise
+    // has no frame.
+    for check in &plan.input_checks {
+        body.extend(input_check(plan, held, check, &carrier_read));
+    }
+    // Each body, encoded into bytes of its own by its codec, handed the inputs it does not say: its
+    // encoded length is the count of those bytes, measured once (docs/adr/0058 §3).
+    for element in &plan.elements {
+        let Value::Body { codec } = element.value else {
+            continue;
+        };
+        let id = &element.field.id;
+        let child = held_of(element.field);
+        let arguments: String = plan
+            .handed
+            .get(codec)
+            .into_iter()
+            .flatten()
+            .map(|handed| {
+                let value = match &handed.from {
+                    Some(HandedFrom::Carrier {
+                        carrier,
+                        bit,
+                        width,
+                    }) => {
+                        let mask = if *width >= 64 {
+                            u64::MAX
+                        } else {
+                            (1u64 << width) - 1
+                        };
+                        format!(
+                            "UInt8(truncatingIfNeeded: ({} >> {bit}) & 0x{mask:X})",
+                            carrier_read(carrier)
+                        )
+                    }
+                    Some(HandedFrom::Input { name }) => name.clone(),
+                    None => unreachable!("`unlowered` refuses a body's input no declaration binds"),
+                };
+                format!(", {}: {value}", handed.input)
+            })
+            .collect();
+        // A body whose codec refuses a value throws its refusal, which this encode passes on.
+        if plan.totality.refuses(RefusalKind::Child, id) {
+            plan.totality.require(RefusalKind::Child, id);
+        }
+        let bytes = body_bytes(id);
+        let encode = |value: &str, piece: &str| {
+            format!("try {child}.encodeSource({value}, into: &{piece}{arguments})")
+        };
+        if element.presence.optional() {
+            body.push(format!("var {bytes}: [UInt8]? = nil"));
+            body.push(format!("if let {HELD} = {SOURCE}.{id} {{"));
+            body.push("    var piece = BytesSink()".to_string());
+            body.push(format!("    {}", encode(HELD, "piece")));
+            body.push(format!("    {bytes} = piece.bytes"));
+            body.push("}".to_string());
+        } else {
+            let piece = format!("{id}_piece");
+            body.push(format!("var {piece} = BytesSink()"));
+            body.push(encode(&format!("{SOURCE}.{id}"), &piece));
+            body.push(format!("let {bytes} = {piece}.bytes"));
+        }
+    }
+    // The encoded length of each body a field holds, the count of the bytes it encoded to.
+    for derived in &plan.derivations {
+        let Some(number) = printed_number(&derived.element, &derived.by) else {
+            continue;
+        };
+        if !is_encoded_length(number) {
+            continue;
+        }
+        let measures: Vec<MeasureText> = number
+            .measures
+            .iter()
+            .map(|measure| {
+                let Measured::Encoded { body: holder, .. } = &measure.of else {
+                    unreachable!(
+                        "`printed_number` holds an encoded length that measures nothing else"
+                    )
+                };
+                let bytes = body_bytes(&holder.id);
+                if measure.gated {
+                    MeasureText {
+                        size: format!("({bytes}?.count ?? 0)"),
+                        present: Some(format!("{bytes} != nil")),
+                        gated: true,
+                    }
+                } else {
+                    MeasureText {
+                        size: format!("{bytes}.count"),
+                        present: None,
+                        gated: false,
+                    }
+                }
+            })
+            .collect();
+        let named = derived.element.to_string();
+        let local = derived_local(&derived.element);
+        let (size, present) = combine(plan, &named, &local, &measures, &mut body);
+        let ElementId::Field(id) = &derived.element else {
+            unreachable!("`printed_number` holds an encoded length into a field")
+        };
+        field_number(
+            l,
+            plan,
+            id,
+            &number.into,
+            &size,
+            present.as_deref(),
+            &mut body,
+        );
+        derived_fields.insert(id.clone());
+    }
     // A field as the encode reads it: the number it derives, the carrier the flags are folded into,
     // else the source's.
     let read = |f: &CodecField| {
         if derived_fields.contains(&f.id) {
             derived_local(&ElementId::Field(f.id.clone()))
-        } else if folded.contains(&f.id) {
-            folded_carrier(&f.id)
         } else {
-            format!("{SOURCE}.{}", f.id)
+            carrier_read(f)
         }
     };
     // A gate, as the encode writes the carriers it reads and is handed the inputs it reads.
@@ -782,6 +1111,19 @@ pub(super) fn context(
                     body.push(piece_write(l, carrier_of(f), &read(f), at, piece));
                 }
             }
+            // A body appends the bytes it encoded to, where the value holds it.
+            Write::Streamed {
+                field: f, guard, ..
+            } if matches!(f.bit_size, BitSize::Embed) => {
+                let bytes = body_bytes(&f.id);
+                match guard {
+                    Guard::Always => body.push(format!("frame += {bytes}")),
+                    Guard::Present => {
+                        body.push(format!("if let {HELD} = {bytes} {{ frame += {HELD} }}"))
+                    }
+                    Guard::Gate => unreachable!("a body is presented, never derived"),
+                }
+            }
             Write::Streamed {
                 field: f, guard, ..
             } => {
@@ -845,13 +1187,14 @@ pub(super) fn context(
             serde_json::json!({
                 "input": said.input.name,
                 "reader": said_reader(&said.input.name),
-                "expr": said_input(plan, &said.input.name, SOURCE),
+                "expr": said_input(plan, held, &said.input.name, SOURCE),
             })
         })
         .collect();
     serde_json::json!({
         "protocol": source_protocol(&plan.model.name),
         "requirements": requirements,
+        "bodies": bodies,
         "said": said,
         "given": plan.given.iter().map(|input| input.name.clone()).collect::<Vec<_>>(),
         "refuses": !plan.totality.is_total(),
@@ -859,6 +1202,57 @@ pub(super) fn context(
         "body": body,
         "overrides": overrides,
     })
+}
+
+/// The statements that hold the input a body says to what the parent hands it from elsewhere
+/// ([`InputCheck`], docs/adr/0065 §6 R4a), in a scope of their own: the value is refused with
+/// `presentIfMismatch` where its body says otherwise. A body that says the input in some of its
+/// values only disagrees with nothing in the others (§6 R4e).
+fn input_check(
+    plan: &EncodePlan<'_>,
+    held: &HeldTypes,
+    check: &InputCheck<'_>,
+    carrier_read: &dyn Fn(&CodecField) -> String,
+) -> Vec<String> {
+    let CheckSite::Embed { body: holder } = &check.site else {
+        unreachable!("`unlowered` refuses a check of an input a list or an arm says")
+    };
+    let child = held
+        .get(&holder.id)
+        .expect("a body whose input is checked holds a codec of the module");
+    let handed = match &check.against {
+        Against::Carrier { carrier, bit } => {
+            format!("(({} >> {bit}) & 1) != 0", carrier_read(carrier))
+        }
+        Against::Input { name } => format!("{name} != 0"),
+        Against::PreviousEntry { .. } => {
+            unreachable!("an input the entry before decides is handed to the entries of a chain")
+        }
+    };
+    let reader = said_reader(&check.input);
+    let says_otherwise = |value: &str| {
+        if check.partly {
+            format!("({child}.{reader}({value}).map {{ ($0 != 0) != handed }} ?? false)")
+        } else {
+            format!("(({child}.{reader}({value}) != 0) != handed)")
+        }
+    };
+    let refuse = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
+    let differs = if holder.present_if.is_some() {
+        format!(
+            "let {HELD} = {SOURCE}.{}, {}",
+            holder.id,
+            says_otherwise(HELD)
+        )
+    } else {
+        says_otherwise(&format!("{SOURCE}.{}", holder.id))
+    };
+    vec![
+        "do {".to_string(),
+        format!("    let handed: Bool = {handed}"),
+        format!("    if {differs} {{ {refuse} }}"),
+        "}".to_string(),
+    ]
 }
 
 /// The member of a printed codec's `Overrides` that sets the flag `flag` of the carrier `carrier`:
