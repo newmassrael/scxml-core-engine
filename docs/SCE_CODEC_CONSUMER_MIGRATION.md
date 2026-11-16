@@ -2689,3 +2689,18 @@ was, and a codec with a group, a variant or an input its value says, are unchang
   carries `frame.WireCount()`.
 - An encode over a list whose entries' encode can refuse returns that refusal before its first byte.
 
+## A printed Go codec counts a body handed a derived flag or an input of its own (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree is regenerated after them. They move the positional
+codecs that also count the frame of a body handed a flag the encode derives, or a flag input of the codec's own.
+No document of the catalog has either shape, so no generated codec of the catalog changes.
+
+- The encode counts such a body once it has folded every derived flag into its carrier, so the length agrees
+  with the body it writes.
+- A length counting a body handed a flag input of the codec's own is answered by a method that takes the input,
+  as `EncodeSource` does: `frame.WireSize(marker)`. A validator, a procedure or an algorithm is not offered the
+  number as a member of the value, as it does not hold the input; an expression that reads it is refused when it
+  is generated, where the template's value had answered the number it held.
+- A carrier whose flag such a body is handed is answered as the frame carries it by `Wire{Carrier}()`, beside the
+  bits the value presents (`frame.Flags()`).
+

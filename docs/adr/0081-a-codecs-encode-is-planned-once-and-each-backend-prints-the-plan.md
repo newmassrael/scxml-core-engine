@@ -1763,6 +1763,20 @@ old encode, the old encode and its templates are removed in the same landing.
    runtime's module, the modules the tests build generated Go in, and the Go setup of the forge-conformance and
    mutation workflows move from 1.22 to 1.23. A chain that sets its entries' flag, hands an entry what the one before
    it was, holds a bare entry's place or is held to a law (R6, R7, R8) stays unlowered.
+
+   *Amendment of 2026-11-17: a counted body is handed what the frame carries.* The fourth landing counted a body
+   for its length before the encode folded a flag it derives into a carrier, so a body handed such a flag stayed
+   unlowered, and a length counting a body handed a flag input of the codec's own had no `Wire{Field}()`. The encode
+   now counts every body a length measures once each carrier is folded, as the C++ printer does, so the body is
+   handed each flag as the frame carries it; a length of encoded bodies goes into the field `sce:length-from` names,
+   so no fold waits on it. The method that answers such a length hands the body the same flags: a carrier with a
+   flag the encode derives is answered by `Wire{Carrier}()`, the bits the value presents with each presence flag and
+   each number held in a flag folded in as the encode folds them, and an input of the codec's own is a parameter of
+   the method (`WireSize(marker byte)`), as it is of the encode, since the value does not hold it. The decision was
+   between that parameter and leaving the number without a method: a reader that holds the value and not the input
+   cannot know the number, which is a function of the input, and a method over the input states exactly that. Such
+   a number is therefore no member a validator, a procedure or an algorithm is offered (`GoPrinted::answers`), so an
+   expression that reads it is refused where it is generated; no document reads one.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
