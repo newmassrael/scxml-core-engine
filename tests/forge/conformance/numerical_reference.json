@@ -42607,6 +42607,11 @@
       ],
       "rejects": [
         {
+          "why": "the value of the undeclared key 2 is sixteen nested arrays, one level past the skip's bound",
+          "encoded": [161, 2, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 0],
+          "error": "cbor-too-deep"
+        },
+        {
           "why": "the required pattern entry (key 3) is absent from a four-entry map",
           "encoded": [164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 5, 66, 222, 173, 7, 245],
           "error": "cbor-required-key-missing"
@@ -44107,6 +44112,13 @@
         {"source": {"carrier": 1, "text": ""}, "encoded": [1, 0], "note": "empty text is present: its length is zero"},
         {"source": {"carrier": 1, "text": "abc"}, "encoded": [1, 3, 97, 98, 99], "note": "has_text and the length are derived"},
         {"source": {"carrier": 1, "text": "h\u00e9llo"}, "encoded": [1, 6, 104, 195, 169, 108, 108, 111], "note": "the length counts UTF-8 bytes"}
+      ],
+      "rejects": [
+        {
+          "why": "the two text bytes C3 28 are a lead byte with no continuation, which is not UTF-8",
+          "encoded": [1, 2, 195, 40],
+          "error": "invalid-utf8"
+        }
       ]
     },
     "codec_present_if_tail": {
@@ -44934,6 +44946,13 @@
         {"source": {"flags": 1, "flags.has_session": {"arm": 0, "state": "safetySystem", "attempts": 255}}, "encoded": [1, 64, 255], "note": "safetySystem is written as 64, and attempts at its largest"},
         {"source": {"flags": 255, "flags.has_session": {"arm": 0, "state": "extendedDiagnostic", "attempts": 1}}, "encoded": [255, 3, 1], "note": "the bits beside has_session are kept"},
         {"source": {"flags": 254, "flags.has_session": null}, "encoded": [254], "note": "the bits beside has_session are kept where the group is absent"}
+      ],
+      "rejects": [
+        {
+          "why": "the state carries 4, which no variant of the closed enum declares",
+          "encoded": [1, 4, 0],
+          "error": "undeclared-enum-value"
+        }
       ]
     },
     "codec_chain_has_input": {
