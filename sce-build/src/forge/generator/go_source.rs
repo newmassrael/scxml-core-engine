@@ -33,7 +33,12 @@
 //! runtime's `codec.List` of its entries' source interface, held to its bound
 //! and walked through an `iter.Seq`. A number the encode
 //! derives into a field is answered by a method of the value,
-//! `Wire{Field}`, as the frame carries it.
+//! `Wire{Field}`, as the frame carries it; one that counts a body handed a
+//! flag input of the codec's own takes the input, as the encode does, and a
+//! carrier a counted body is handed a derived flag of is answered by a
+//! method of its own, its derived flags folded in. The encode counts a body
+//! once every carrier is folded, so the body is handed each flag as the
+//! frame carries it.
 //!
 //! An encode that can refuse returns the refusal the plan's totality names,
 //! the runtime's sentinel of its name (`codec.ErrPresentIfMismatch`,
@@ -167,22 +172,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     let folded = folded_carriers(plan);
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
-            // A number into a field, or into a flag of a carrier.
+            // A number into a field, or into a flag of a carrier. The encoded
+            // length of a body is counted once every carrier is folded, so the
+            // body is handed each flag as the encode writes it.
             (_, Derive::Number(number)) => {
                 forms.extend(number_form(&derived.element, number));
-                // The encoded length of a body is counted before any carrier
-                // is folded, so the body is handed what the value presents.
-                for measure in &number.measures {
-                    if let Measured::Encoded { codec, .. } = &measure.of {
-                        if handed_from_folded(plan, &folded, codec) {
-                            forms.push(format!(
-                                "element '{}': the encoded length of a body handed a flag the \
-                                 encode derives",
-                                derived.element
-                            ));
-                        }
-                    }
-                }
             }
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
                 forms.extend(presence_form(&derived.element, presence));
@@ -345,17 +339,6 @@ fn folded_carriers<'p>(plan: &'p EncodePlan<'_>) -> BTreeSet<&'p str> {
         .collect()
 }
 
-/// Whether the body of the codec `alias` is handed a flag of a carrier in
-/// `folded`, whose bits the encode derives.
-fn handed_from_folded(plan: &EncodePlan<'_>, folded: &BTreeSet<&str>, alias: &str) -> bool {
-    plan.handed.get(alias).is_some_and(|handed| {
-        handed.iter().any(|h| {
-            matches!(&h.from, Some(HandedFrom::Carrier { carrier, .. })
-                if folded.contains(carrier.id.as_str()))
-        })
-    })
-}
-
 /// The fields of `plan` whose value the encode derives as a number.
 fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
     plan.derivations
@@ -434,8 +417,19 @@ pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
 pub struct GoPrinted {
     /// Each element the value presents, in declaration order.
     presented: Vec<GoPresented>,
-    /// The field id of each number the encode derives into a field.
-    derived: Vec<String>,
+    /// Each number the encode derives into a field.
+    derived: Vec<GoDerived>,
+}
+
+/// One number a printed Go value answers by its [`wire_method`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GoDerived {
+    /// The field id.
+    id: String,
+    /// The flag inputs of the codec's own the method takes: those a body the
+    /// number counts is handed, which the encode is handed and the value
+    /// does not hold. Empty where the value answers the number alone.
+    inputs: Vec<String>,
 }
 
 /// One element a printed Go value presents.
@@ -499,9 +493,27 @@ impl GoPrinted {
             .collect();
         let derived = wire_numbers(plan)
             .into_iter()
-            .map(|(id, _)| id.to_string())
+            .map(|(id, number)| GoDerived {
+                id: id.to_string(),
+                inputs: wire_inputs(plan, number)
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            })
             .collect();
         GoPrinted { presented, derived }
+    }
+
+    /// Whether a reader that holds a value, and none of the inputs its encode
+    /// is handed, can read the element `id` through [`GoPrinted::read`]: every
+    /// element but a number whose method takes the inputs a body it counts is
+    /// handed. A reader is not offered the others as members, so an
+    /// expression that reads one is refused where it is generated.
+    pub(crate) fn answers(&self, id: &str) -> bool {
+        !self
+            .derived
+            .iter()
+            .any(|derived| derived.id == id && !derived.inputs.is_empty())
     }
 
     /// The read of the element `id`, of the type `ty`, of the value `held`:
@@ -513,8 +525,17 @@ impl GoPrinted {
     /// absent as the number the frame carries, which that method answers too.
     /// A byte string or a text a gate decides is read as the optional type of
     /// the slice or the string, as the template's value held it.
+    ///
+    /// # Panics
+    ///
+    /// Where the value does not answer `id` alone ([`GoPrinted::answers`]),
+    /// which no reader is offered.
     pub(crate) fn read(&self, held: &str, id: &str, ty: &SceType) -> String {
-        if self.derived.iter().any(|derived| derived == id) {
+        if let Some(derived) = self.derived.iter().find(|derived| derived.id == id) {
+            assert!(
+                derived.inputs.is_empty(),
+                "`{id}` is offered to no reader: its method takes the inputs the encode is handed"
+            );
             return format!("{held}.{}()", wire_method(id));
         }
         let call = format!("{held}.{}()", filters::to_pascal_case(id.to_string()));
@@ -581,11 +602,8 @@ impl GoPrinted {
     }
 }
 
-/// Each number the encode of `plan` derives into a field that the value
-/// answers by its own elements, by the field's id, in the order of the
-/// derivations, each field once. A number that counts a body handed a flag
-/// input of the codec's own is not one: the encode is handed the input, and
-/// the value does not hold it.
+/// Each number the encode of `plan` derives into a field, by the field's id,
+/// in the order of the derivations, each field once.
 fn wire_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<(&'p str, &'p Number<'m>)> {
     let mut seen = BTreeSet::new();
     plan.derivations
@@ -598,16 +616,28 @@ fn wire_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<(&'p str, &'p Number<'m
             }
             _ => None,
         })
-        .filter(|(_, number)| {
-            number.measures.iter().all(|measure| match &measure.of {
-                Measured::Encoded { codec, .. } => !plan.handed.get(*codec).is_some_and(|h| {
-                    h.iter()
-                        .any(|h| matches!(h.from, Some(HandedFrom::Input { .. })))
-                }),
-                _ => true,
-            })
-        })
         .filter(|(id, _)| seen.insert(*id))
+        .collect()
+}
+
+/// The flag inputs of the codec's own a body `number` counts is handed, in
+/// the order the encode is handed them: the value does not hold them, so the
+/// method that answers the number takes them, as the encode does.
+fn wire_inputs<'p>(plan: &'p EncodePlan<'_>, number: &Number<'_>) -> Vec<&'p str> {
+    let handed_to_a_counted_body = |name: &str| {
+        number.measures.iter().any(|measure| match &measure.of {
+            Measured::Encoded { codec, .. } => plan.handed.get(*codec).is_some_and(|handed| {
+                handed.iter().any(
+                    |h| matches!(&h.from, Some(HandedFrom::Input { name: from }) if from == name),
+                )
+            }),
+            _ => false,
+        })
+    };
+    plan.given
+        .iter()
+        .map(|input| input.name.as_str())
+        .filter(|name| handed_to_a_counted_body(name))
         .collect()
 }
 
@@ -629,6 +659,11 @@ pub(crate) fn wire_method(id: &str) -> String {
 /// length gated beside its content, no number, as the field is then not on
 /// the wire. A value whose measures disagree has no frame, and its encode
 /// refuses it; the method answers its first measure.
+///
+/// A body a number counts is handed its flags as the encode hands them: a
+/// flag of a carrier as the frame carries it, folded by the carrier's own
+/// method ([`wire_carrier`]) where the encode derives a flag of it, and an
+/// input of the codec's own as the method's parameter ([`wire_inputs`]).
 fn wire_methods(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
@@ -636,14 +671,40 @@ fn wire_methods(
     struct_name: &str,
 ) -> String {
     let mut out = String::new();
-    // A carrier a body is handed a flag of, read off the value.
-    let carrier = |c: &CodecField| format!("s.{}()", l.codec_field_id(&c.id));
+    let folded = folded_carriers(plan);
+    // A carrier a body is handed a flag of, read off the value as the frame
+    // carries it.
+    let carrier = |c: &CodecField| {
+        if folded.contains(c.id.as_str()) {
+            format!("s.{}()", wire_method(&c.id))
+        } else {
+            format!("s.{}()", l.codec_field_id(&c.id))
+        }
+    };
+    // The carriers whose method a counted body reads, each once.
+    let mut carriers: BTreeSet<&str> = BTreeSet::new();
     for (id, number) in wire_numbers(plan) {
         let NumberInto::Field { field, absent, .. } = &number.into else {
             unreachable!("`wire_numbers` keeps a number into a field");
         };
+        for measure in &number.measures {
+            if let Measured::Encoded { codec, .. } = &measure.of {
+                for handed in plan.handed.get(*codec).into_iter().flatten() {
+                    if let Some(HandedFrom::Carrier { carrier: c, .. }) = &handed.from {
+                        if folded.contains(c.id.as_str()) {
+                            carriers.insert(c.id.as_str());
+                        }
+                    }
+                }
+            }
+        }
         let ty = l.type_name(&field.sce_type).into_owned();
         let method = wire_method(id);
+        let parameters: Vec<String> = wire_inputs(plan, number)
+            .iter()
+            .map(|name| format!("{} byte", input_name(name)))
+            .collect();
+        let parameters = parameters.join(", ");
         let optional = *absent == Absent::Zero;
         let returned = if optional {
             format!("optional.Of[{ty}]")
@@ -687,13 +748,126 @@ fn wire_methods(
                 });
             }
         }
+        let handed = if parameters.is_empty() {
+            ""
+        } else {
+            " A body it counts is\n\
+             // handed the flag inputs the encode is, which the value does not hold."
+        };
         out.push_str(&format!(
             "\n// {method} returns the {id} the frame of the value carries, which the\n\
-             // encode derives from what it measures (docs/adr/0081 §3).\n\
-             func (s *{struct_name}) {method}() {returned} {{\n{body}}}\n"
+             // encode derives from what it measures (docs/adr/0081 §3).{handed}\n\
+             func (s *{struct_name}) {method}({parameters}) {returned} {{\n{body}}}\n"
         ));
     }
+    for id in carriers {
+        out.push_str(&wire_carrier(plan, l, imports, struct_name, id));
+    }
     out
+}
+
+/// The method of the value `struct_name` that answers the carrier `id` as
+/// the frame carries it: the bits the value presents, each flag the encode
+/// derives folded in in place of the value's, as the encode folds it. A
+/// presence flag is set exactly where the element it gates is there, or
+/// exactly where it is not for an element gated on the flag's clear state; a
+/// number is the first measure always there, or the first one there, and
+/// where none is the carrier keeps the value's bits. A value whose measures
+/// disagree, or whose number the flag cannot hold, has no frame; the method
+/// answers the bits of its first measure.
+fn wire_carrier(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+    id: &str,
+) -> String {
+    let field = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == id)
+        .expect("a folded carrier is a field of the codec");
+    let ty = l.type_name(&field.sce_type).into_owned();
+    let method = wire_method(id);
+    // A number held in a flag counts bytes or entries, never a body's frame
+    // (`sce:length-from` names a field), so no body is handed a carrier here.
+    let presented = |c: &CodecField| format!("s.{}()", l.codec_field_id(&c.id));
+    let mut body = format!("\t_c := s.{}()\n", l.codec_field_id(id));
+    for derived in &plan.derivations {
+        let ElementId::Flag {
+            field: carrier,
+            flag,
+        } = &derived.element
+        else {
+            continue;
+        };
+        if carrier != id {
+            continue;
+        }
+        let def = flag_def(plan, carrier, flag);
+        let mask = flag_width_mask(def) << def.bit;
+        match &derived.by {
+            Derive::Presence(presence) => {
+                let (gated, when_clear) =
+                    presence.of.first().expect("a presence flag gates a field");
+                let there = format!("s.{}().IsPresent()", l.codec_field_id(&gated.id));
+                let test = if *when_clear {
+                    format!("!{there}")
+                } else {
+                    there
+                };
+                body.push_str(&format!(
+                    "\t_c &^= 0x{mask:X}\n\
+                     \tif {test} {{\n\
+                     \t\t_c |= 0x{mask:X}\n\
+                     \t}}\n"
+                ));
+            }
+            Derive::Number(number) => {
+                let set = |size: &str, indent: &str| {
+                    format!(
+                        "{indent}_c = (_c &^ 0x{mask:X}) | ({ty}({size}) << {})\n",
+                        def.bit
+                    )
+                };
+                match number.measures.iter().find(|measure| !measure.gated) {
+                    Some(anchor) => {
+                        let (counted, size) = held_measure(
+                            plan,
+                            imports,
+                            &presented,
+                            anchor,
+                            &held_element(l, anchor),
+                            "\t",
+                        );
+                        body.push_str(&counted);
+                        body.push_str(&set(&size, "\t"));
+                    }
+                    None => {
+                        for (i, measure) in number.measures.iter().enumerate() {
+                            let (counted, size) =
+                                held_measure(plan, imports, &presented, measure, "_v", "\t\t");
+                            let keyword = if i == 0 { "\tif" } else { " else if" };
+                            body.push_str(&format!(
+                                "{keyword} _v, ok := {}.Get(); ok {{\n{counted}{}\t}}",
+                                held_element(l, measure),
+                                set(&size, "\t\t")
+                            ));
+                        }
+                        body.push('\n');
+                    }
+                }
+            }
+            _ => unreachable!("`unlowered` folds a presence or a number into a carrier only"),
+        }
+    }
+    format!(
+        "\n// {method} returns the {id} the frame of the value carries: its flags as\n\
+         // the value presents them, each flag the encode derives folded in\n\
+         // (docs/adr/0081 §3).\n\
+         func (s *{struct_name}) {method}() {ty} {{\n{body}\treturn _c\n}}\n"
+    )
 }
 
 /// The read of the content `measure` measures off the value, by the method
@@ -1322,34 +1496,26 @@ fn encode_source(
     let mut folds: BTreeMap<String, Vec<String>> = BTreeMap::new();
     // The bodies counted over a sink that keeps nothing, each once.
     let mut counted: BTreeSet<String> = BTreeSet::new();
-    // A body counted before the carriers are folded is handed their bits as
-    // the source presents them, which `unlowered` holds to be what the encode
-    // writes.
-    let presented_carrier = |c: &CodecField| reads.value(&c.id);
+    // The numbers that count a body's frame, counted once every carrier is
+    // folded, so a body is handed each flag as the encode writes it. Such a
+    // number counts nothing else and goes into a field (`sce:length-from`
+    // names a field declared before the body), so no fold waits on it.
+    let mut encoded: Vec<(&ElementId, &Number<'_>)> = Vec::new();
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
+            (element, Derive::Number(number))
+                if number
+                    .measures
+                    .iter()
+                    .any(|measure| matches!(measure.of, Measured::Encoded { .. })) =>
+            {
+                encoded.push((element, number));
+            }
             (element, Derive::Number(number)) => {
                 let measured: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| match &measure.of {
-                        Measured::Encoded { body, codec, .. } => {
-                            let k = count_body(
-                                imports,
-                                &reads,
-                                body,
-                                codec,
-                                &presented_carrier,
-                                &mut counted,
-                                &mut out,
-                            );
-                            MeasureText {
-                                size: format!("{k}.Position()"),
-                                present: measure.gated.then(|| reads.present(&body.id)),
-                            }
-                        }
-                        _ => plain_measure(&reads, measure),
-                    })
+                    .map(|measure| plain_measure(&reads, measure))
                     .collect();
                 if let Some((carrier, statement)) =
                     derive_number(plan, l, &reads, element, &number.into, &measured, &mut out)
@@ -1401,6 +1567,27 @@ fn encode_source(
             reads.value(&f.id)
         }
     };
+    // How many bytes each body a number counts encodes to, over a sink that
+    // keeps nothing, handed the carriers as the encode writes them.
+    for (element, number) in encoded {
+        let measured: Vec<MeasureText> = number
+            .measures
+            .iter()
+            .map(|measure| {
+                let Measured::Encoded { body, codec, .. } = &measure.of else {
+                    unreachable!("a number of encoded lengths counts nothing else");
+                };
+                let k = count_body(imports, &reads, body, codec, &read, &mut counted, &mut out);
+                MeasureText {
+                    size: format!("{k}.Position()"),
+                    present: measure.gated.then(|| reads.present(&body.id)),
+                }
+            })
+            .collect();
+        if derive_number(plan, l, &reads, element, &number.into, &measured, &mut out).is_some() {
+            unreachable!("an encoded length goes into the field `sce:length-from` names");
+        }
+    }
     // A gate, tested on the carriers as the encode writes them and on the
     // inputs it is handed.
     let gate_test = |f: &CodecField| -> String {

@@ -41057,6 +41057,12 @@ fn collect_bc_foreach_member_types(
                             printed.names.is_some_and(|p| p.contains(elem_snake)) || go.is_some();
                         if let Some(fields) = schemas.get(elem_snake) {
                             for (fname, fty, len_field) in fields {
+                                // A number a printed Go element answers only
+                                // with the inputs its encode is handed is no
+                                // member of the item (`GoPrinted::answers`).
+                                if go.is_some_and(|printed| !printed.answers(fname)) {
+                                    continue;
+                                }
                                 let path = format!("{item}.{fname}");
                                 out.types.push((path.clone(), fty.clone()));
                                 if by_accessor {

@@ -630,6 +630,180 @@ fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures()
     holds_none(name, &validator, &["sceSelf.Frame.Len"]);
 }
 
+/// A codec named `name` that holds `codec_chain_handed_entry`, which takes
+/// `after_marker` and does not say it, bound as `bind` says, measured by
+/// `size` and declared after `before` (the codec's own inputs and fields
+/// before the body) and followed by `after`.
+fn counted_handed_entry(name: &str, inputs: &str, bind: &str, before: &str, after: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="{name}">
+  <sce:import src="codec_chain_handed_entry.scxml" kind="codec" as="codec_chain_handed_entry">
+    <sce:flag-bind input="after_marker" source="{bind}"/>
+  </sce:import>
+{inputs}  <datamodel>
+{before}    <sce:embed id="entry" type="codec_chain_handed_entry" sce:byte="2"
+               sce:length-from="size"/>
+{after}  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// A codec that counts a body handed a flag input of its own: the codec takes
+/// the input, which the value does not hold.
+fn counted_body_handed_an_input() -> String {
+    counted_handed_entry(
+        "go_counted_body_handed_an_input",
+        "  <sce:flag-inputs>\n    <sce:flag-input name=\"marker\" width=\"1\"/>\n  </sce:flag-inputs>\n",
+        "marker",
+        "    <sce:field id=\"head\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\"/>\n\
+         \x20   <sce:field id=\"size\" sce:type=\"uint8\" sce:byte=\"1\" sce:bit-size=\"8\"/>\n",
+        "",
+    )
+}
+
+/// The length of a body handed a flag input of the codec's own is answered
+/// by a method that takes the input, as the encode is handed it, and the
+/// encode counts the body handed the input it is handed.
+///
+/// Turns red where `wire_numbers` leaves out a number that counts a body
+/// handed an input, or where `wire_methods` stops declaring the inputs
+/// `wire_inputs` names as the method's parameters.
+#[test]
+fn the_length_of_a_body_handed_an_input_is_answered_by_a_method_taking_it() {
+    let name = "go_counted_body_handed_an_input";
+    let text = go_of_document(name, &counted_body_handed_an_input())
+        .unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &text,
+        &[
+            "\nfunc EncodeSource(src GoCountedBodyHandedAnInputSource, w codec.SceSink, marker byte) error {\n",
+            "\tif err := codec_chain_handed_entry.EncodeSource(src.Entry(), &_kEntry, marker); err != nil {\n",
+            "func (s *GoCountedBodyHandedAnInput) WireSize(marker byte) uint8 {\n\
+             \tvar _k codec.CountingSink\n\
+             \t_ = codec_chain_handed_entry.EncodeSource(s.Entry(), &_k, marker)\n",
+        ],
+    );
+}
+
+/// A reader that holds a value of a printed codec, and none of the inputs its
+/// encode is handed, is not offered a number the value answers only with
+/// them: a validator that reads it is refused where it is generated.
+///
+/// Turns red where `GoPrinted::answers` answers every element, where
+/// `validate_and_enrich_imports` offers every field of a printed Go codec as
+/// a member, or where `GoPrinted::read` reads the number without the inputs.
+#[test]
+fn a_reader_is_not_offered_a_length_that_takes_the_encodes_inputs() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    std::fs::copy(
+        resources().join("codec_chain_handed_entry.scxml"),
+        dir.path().join("codec_chain_handed_entry.scxml"),
+    )
+    .expect("the entry codec is copied");
+    std::fs::write(
+        dir.path().join("go_counted_body_handed_an_input.scxml"),
+        counted_body_handed_an_input(),
+    )
+    .expect("the codec is written");
+    let validator = |plausibility: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="go_counted_body_handed_an_input.scxml" kind="codec" as="frame"/>
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="32"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="{plausibility}"/>
+  </datamodel>
+</scxml>
+"#
+        )
+    };
+    let options = ForgeCompileOptions {
+        go_module_prefix: Some("example.com/sce-forge".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let compile = |plausibility: &str| {
+        compile_forge_with_imports(
+            &validator(plausibility),
+            DocumentLabel::symmetric("go_validator_reads_handed_length"),
+            Language::Go,
+            dir.path(),
+            &options,
+        )
+        .map(|_| ())
+        .map_err(|e| format!("{:?}", e.error))
+    };
+    // The value answers its own element.
+    compile("frame.head === n").expect("a validator reads an element the value presents");
+    let refusal = compile("frame.size === n")
+        .expect_err("a length that takes the encode's inputs is no member of the value");
+    assert!(
+        refusal.contains("size"),
+        "the refusal names the member: {refusal}"
+    );
+}
+
+/// The length of a body handed a flag of a carrier the encode derives is
+/// counted once the carrier is folded, the body handed the flag as the frame
+/// carries it; the value answers the carrier as the frame carries it by a
+/// method of its own, which the length's method hands the body.
+///
+/// Turns red where `positional_forms` names the shape again, where
+/// `encode_source` counts the body before the carriers are folded (the call
+/// would read `src.Flags()`), or where `wire_methods` hands the body the
+/// carrier the value presents rather than `wire_carrier`'s.
+#[test]
+fn the_length_of_a_body_handed_a_derived_flag_is_counted_after_the_fold() {
+    let name = "go_counted_body_handed_a_derived_flag";
+    let document = counted_handed_entry(
+        name,
+        "",
+        "flags.has_x",
+        "    <sce:flags id=\"flags\" sce:type=\"uint8\" sce:byte=\"0\" sce:bit-size=\"8\">\n\
+         \x20     <sce:flag name=\"has_x\" bit=\"0\"/>\n\
+         \x20   </sce:flags>\n\
+         \x20   <sce:field id=\"size\" sce:type=\"uint8\" sce:byte=\"1\" sce:bit-size=\"8\"/>\n",
+        "    <sce:field id=\"x\" sce:type=\"uint8\" sce:byte=\"3\" sce:bit-size=\"8\"\n\
+         \x20              sce:present-if=\"flags.has_x\"/>\n",
+    );
+    let text =
+        go_of_document(name, &document).unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &text,
+        &[
+            "\t_cFlags := src.Flags()\n\
+             \t_cFlags &^= 0x1\n\
+             \tif src.X().IsPresent() {\n\
+             \t\t_cFlags |= 0x1\n\
+             \t}\n\
+             \tvar _kEntry codec.CountingSink\n\
+             \tif err := codec_chain_handed_entry.EncodeSource(src.Entry(), &_kEntry, \
+             byte((_cFlags >> 0) & 0x1)); err != nil {\n",
+            "\t_ = codec_chain_handed_entry.EncodeSource(s.Entry(), &_k, \
+             byte((s.WireFlags() >> 0) & 0x1))\n",
+            "func (s *GoCountedBodyHandedADerivedFlag) WireFlags() uint8 {\n\
+             \t_c := s.Flags()\n\
+             \t_c &^= 0x1\n\
+             \tif s.X().IsPresent() {\n\
+             \t\t_c |= 0x1\n\
+             \t}\n\
+             \treturn _c\n\
+             }\n",
+        ],
+    );
+    holds_none(name, &text, &["byte((src.Flags() >> 0)"]);
+}
+
 /// A codec of a form the Go printer does not lower keeps the template's
 /// encode whole: its fields stay exported, and it has no source, constructor
 /// or encode over a source.

@@ -8144,13 +8144,17 @@ fn validate_and_enrich_imports(
                 // group is no member of the value a reader names alone, nor is
                 // a number its encode derives that a source does not say all of
                 // what it measures; an expression that names one is refused as
-                // naming no member of the import.
+                // naming no member of the import. A number a printed Go value
+                // answers only with the inputs its encode is handed is no
+                // member a reader holding the value can read either
+                // (`GoPrinted::answers`).
                 ctx.member_field_types = doc
                     .record_fields()
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|(field, _)| {
                         !matches!(&ctx.cpp_printed, Some(printed) if !printed.reads(field))
+                            && !matches!(&ctx.go_printed, Some(printed) if !printed.answers(field))
                     })
                     .map(|(field, ty)| (format!("{}.{}", ctx.alias, field), ty))
                     .collect();
