@@ -113,8 +113,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
 
-      - name: Setup ccache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      # The compiler cache: a directory named for ccache, a restore here and a
+      # save after the gate that runs whatever the gate did. The reason for the
+      # three steps is written beside the same steps in cpp-suite.yml.
+      - name: Keep ccache in the directory its cache restores and saves
+        run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        id: ccache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-install-consumer-${{ github.sha }}
@@ -126,3 +133,10 @@ jobs:
       # `sce-codegen` first, through its `codegen-build` gate.
       - name: Build generated C++ against an installed SCE
         run: scripts/gate install-consumer
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}

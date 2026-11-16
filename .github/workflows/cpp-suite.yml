@@ -325,8 +325,34 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-sce-codegen-plans-cpp-suite-
 
-    - name: Setup ccache
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+    # The compiler cache, and the reason it is three steps and an environment
+    # variable rather than one `actions/cache` step. Every lane that caches
+    # ccache follows this shape and points here.
+    #
+    # ccache 4 keeps its cache in ~/.cache/ccache unless ~/.ccache exists or
+    # CCACHE_DIR names a directory, and a fresh runner has neither. So the
+    # compiler filled one directory and the cache step saved another: the
+    # post-job save of every run read "Path Validation Error: Path(s)
+    # specified in the action for caching do(es) not exist, hence no cache is
+    # being saved" (C++ W3C Tests, job 132834013918), and no ccache entry was
+    # left in the repository's cache. Every build was cold. Cold, the build of
+    # the main tree outlasts this job's ceiling, and `actions/cache` saves only
+    # after a job that succeeded, so no run could warm the next: all ten runs
+    # of this job from 2026-11-12 to 2026-11-15 ended at its ceiling, and the
+    # three logs read ended inside "building the main tree". C11 W3C Tests
+    # ended at its own ceiling inside its build the same way (job
+    # 132834013514).
+    #
+    # CCACHE_DIR names the one directory the steps restore and save. The save
+    # is a step of its own that runs whatever the build did, a run stopped at
+    # the ceiling included, so a run that ends early still leaves the objects
+    # it compiled to the next one.
+    - name: Keep ccache in the directory its cache restores and saves
+      run: echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+
+    - name: Restore ccache
+      id: ccache
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.ccache
         key: ${{ runner.os }}-ccache-cpp-suite-${{ github.sha }}
@@ -341,6 +367,13 @@ jobs:
       run: |
         ulimit -c unlimited
         scripts/gate cpp-suite
+
+    - name: Save ccache
+      if: always() && steps.ccache.outputs.cache-primary-key != ''
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.ccache
+        key: ${{ steps.ccache.outputs.cache-primary-key }}
 
     - name: Debug Environment
       if: failure()
