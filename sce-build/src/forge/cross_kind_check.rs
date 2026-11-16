@@ -37,19 +37,29 @@ use crate::forge::model::{ForgeImport, ParsedForge};
 ///
 /// The cycle path is reported in traversal order from the back-edge
 /// target through the recursion frames back to the originating node,
-/// e.g. `a.scxml → b.scxml → a.scxml`.
+/// e.g. `a.scxml → b.scxml → a.scxml`, each document named by the `src`
+/// that reached it (the entry by its file name).
+///
+/// ⚠ Two things the walk once got wrong (measured 2026-09-25). The entry
+/// document was not on the stack, so `a ↔ b` compiled from `a` re-read `a`
+/// as an import and reported `b → a → b`. And the start of the cycle was
+/// found by comparing the `src` SPELLINGS on the stack, falling back to the
+/// whole stack when none matched, so a document imported as `x.scxml` and
+/// again as `./x.scxml` put documents outside the cycle into its path. A
+/// document is now one place on the stack, keyed by its canonical path,
+/// and the entry is on it from the start whenever it is a file.
 pub(crate) fn check_imports_acyclic(
     entry_imports: &[ForgeImport],
     entry_label: &str,
     base_dir: &Path,
 ) -> Result<Vec<PathBuf>, Located<crate::forge::error::ForgeError>> {
     // `visited` holds documents fully processed (no cycle through them);
-    // `on_stack` holds the current DFS frontier so a back-edge into it
-    // is the cycle signal. `path` mirrors `on_stack` but as a Vec so we
-    // can render the cycle in traversal order on the diagnostic.
+    // `stack` is the current DFS frontier, each document's canonical path
+    // and the name the cycle path gives it, so a back-edge into it is the
+    // cycle signal and the cycle is the stack from that document on.
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut on_stack: HashSet<PathBuf> = HashSet::new();
-    let mut path: Vec<String> = Vec::new();
+    let mut stack: Vec<(PathBuf, String)> =
+        entry_identity(entry_label, base_dir).into_iter().collect();
     // Every document this walk read, in traversal order. The walk
     // already visits the transitive closure of `<sce:import>` to decide
     // acyclicity; returning what it read costs nothing and is the only
@@ -64,8 +74,7 @@ pub(crate) fn check_imports_acyclic(
         imports: &[ForgeImport],
         base_dir: &Path,
         visited: &mut HashSet<PathBuf>,
-        on_stack: &mut HashSet<PathBuf>,
-        path: &mut Vec<String>,
+        stack: &mut Vec<(PathBuf, String)>,
         sources: &mut Vec<PathBuf>,
     ) -> Result<(), Located<crate::forge::error::ForgeError>> {
         for imp in imports {
@@ -75,15 +84,14 @@ pub(crate) fn check_imports_acyclic(
             let canonical =
                 crate::confine::canonicalize(&child_path).unwrap_or_else(|_| child_path.clone());
 
-            if on_stack.contains(&canonical) {
-                // Cycle detected. Render the cycle slice of `path`
-                // from the first occurrence of the child up to the
-                // current frame, then close it with the child name
-                // again.
-                let child_label = imp.src.clone();
-                let cycle_start = path.iter().position(|p| p == &child_label).unwrap_or(0);
-                let mut cycle: Vec<String> = path[cycle_start..].to_vec();
-                cycle.push(child_label);
+            if let Some(start) = stack.iter().position(|(on, _)| on == &canonical) {
+                // Cycle detected: the stack from the document this import
+                // reaches again, closed with the import that reaches it.
+                let mut cycle: Vec<String> = stack[start..]
+                    .iter()
+                    .map(|(_, name)| name.clone())
+                    .collect();
+                cycle.push(imp.src.clone());
                 return Err(Located::new(
                     ValidationError::CrossKindCircularDependency { cycle }.into(),
                     doc_label,
@@ -94,8 +102,7 @@ pub(crate) fn check_imports_acyclic(
             if visited.contains(&canonical) {
                 continue;
             }
-            on_stack.insert(canonical.clone());
-            path.push(imp.src.clone());
+            stack.push((canonical.clone(), imp.src.clone()));
 
             // Re-parse the imported document to read its own imports.
             // Read errors / parse errors flow up from the import
@@ -130,12 +137,10 @@ pub(crate) fn check_imports_acyclic(
                 &child_imports,
                 &child_base_dir,
                 visited,
-                on_stack,
-                path,
+                stack,
                 sources,
             )?;
-            on_stack.remove(&canonical);
-            path.pop();
+            stack.pop();
             visited.insert(canonical);
         }
         Ok(())
@@ -146,11 +151,25 @@ pub(crate) fn check_imports_acyclic(
         entry_imports,
         base_dir,
         &mut visited,
-        &mut on_stack,
-        &mut path,
+        &mut stack,
         &mut sources,
     )?;
     Ok(sources)
+}
+
+/// The entry document's place on the import graph: its canonical path and
+/// its file name, when its label names a file in the directory its imports
+/// resolve against — which is where an import that comes back to it
+/// resolves. `None` for a document given as text with no such file (an
+/// in-memory label), which no import can reach again.
+fn entry_identity(entry_label: &str, base_dir: &Path) -> Option<(PathBuf, String)> {
+    let name = Path::new(entry_label).file_name()?;
+    let file = base_dir.join(name);
+    if !file.is_file() {
+        return None;
+    }
+    let canonical = crate::confine::canonicalize(&file).ok()?;
+    Some((canonical, name.to_string_lossy().into_owned()))
 }
 
 /// Refuse a cyclic `<sce:import>` graph below `parsed`, and return every

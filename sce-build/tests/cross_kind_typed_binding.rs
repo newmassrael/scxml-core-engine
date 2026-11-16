@@ -195,22 +195,86 @@ fn negative_circular_import_dependency() {
     match err.error {
         sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindCircularDependency { cycle } => {
-                // Cycle traversal starts at the root caller's import
-                // edge, walks `cycle_a → cycle_b`, then the back-edge
-                // re-enters `cycle_a`. Two `cycle_a` entries close
-                // the loop.
-                assert!(
-                    cycle.iter().any(|p| p.ends_with("cycle_a.scxml")),
-                    "cycle path must include cycle_a.scxml; got: {cycle:?}"
+                // The document compiled is on the walk from the start, so
+                // the cycle starts and ends at it: the import in cycle_b
+                // that comes back to cycle_a closes it. It read
+                // `cycle_b → cycle_a → cycle_b` while the entry was not on
+                // the stack and was read again as an import.
+                assert_eq!(
+                    cycle,
+                    vec!["cycle_a.scxml", "cycle_b.scxml", "cycle_a.scxml"],
+                    "the cycle runs from the document compiled"
                 );
-                assert!(
-                    cycle.iter().any(|p| p.ends_with("cycle_b.scxml")),
-                    "cycle path must include cycle_b.scxml; got: {cycle:?}"
-                );
-                assert!(
-                    cycle.len() >= 2,
-                    "cycle must have at least two nodes; got: {cycle:?}"
-                );
+            }
+            other => panic!("expected CrossKindCircularDependency, got {other:?}"),
+        },
+        other => panic!("expected Validation, got {other:?}"),
+    }
+}
+
+/// A codec named `name` importing each of `imports` (`src`, `as`).
+fn codec_importing(name: &str, imports: &[(&str, &str)]) -> String {
+    let imports: String = imports
+        .iter()
+        .map(|(src, alias)| {
+            format!("  <sce:import src=\"{src}\" kind=\"codec\" as=\"{alias}\"/>\n")
+        })
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec"
+       name="{name}"
+       version="1.0">
+{imports}  <datamodel>
+    <sce:field id="x" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// A cycle below the document compiled is the documents on it and no
+/// others, whichever spelling of a document's `src` reached it.
+///
+/// `top` imports `a`, which imports `./b.scxml`, and `c` comes back to
+/// `b.scxml`. The cycle is `b → c → b`. Found by comparing `src` spellings,
+/// `b.scxml` matched nothing on the stack and the whole stack was taken,
+/// `a` included.
+#[test]
+fn a_cycle_holds_only_its_documents_whatever_spelling_reached_them() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "top.scxml",
+        &codec_importing("top", &[("a.scxml", "a")]),
+    );
+    write_fixture(
+        dir.path(),
+        "a.scxml",
+        &codec_importing("a", &[("./b.scxml", "b")]),
+    );
+    write_fixture(
+        dir.path(),
+        "b.scxml",
+        &codec_importing("b", &[("c.scxml", "c")]),
+    );
+    write_fixture(
+        dir.path(),
+        "c.scxml",
+        &codec_importing("c", &[("b.scxml", "b")]),
+    );
+    let err = compile_expect_err(dir.path(), "top.scxml");
+    assert_eq!(
+        err.location.file, "c.scxml",
+        "the import that closes the cycle"
+    );
+    assert_eq!(err.location.line, Some(7), "the row of c's import");
+    match err.error {
+        sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindCircularDependency { cycle } => {
+                assert_eq!(cycle, vec!["./b.scxml", "c.scxml", "b.scxml"]);
             }
             other => panic!("expected CrossKindCircularDependency, got {other:?}"),
         },
