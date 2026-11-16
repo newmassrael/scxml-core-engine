@@ -5907,6 +5907,70 @@ mod tests {
         assert!(!folded && value.get("sources").is_none());
     }
 
+    /// A list of a byte case of a printed C11 codec is set entry by entry into
+    /// the array the struct holds, each entry member by member as its codec's
+    /// own case sets it, with the count beside the array, and checked the same
+    /// way; the count the encode derives is set nowhere (docs/adr/0081 §3, §5).
+    ///
+    /// Turns red where `c11_source::source_case` refuses a list, sets an entry
+    /// other than through the array, or leaves out the length beside it.
+    #[test]
+    fn a_list_of_a_c11_source_case_is_set_entry_by_entry() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let mut fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_repeat_basic")
+            .expect("the catalog holds codec_repeat_basic")
+            .clone();
+        if let FixtureSpec::Codec { printed, .. } = &mut fixture.spec {
+            *printed = true;
+        }
+        let reference = serde_json::json!({ "codecs": { "codec_repeat_basic": { "sources": [{
+            "source": { "frags": [{ "seq": 1 }, { "seq": 43981 }] },
+            "encoded": [2, 0, 1, 171, 205],
+            "note": "two entries"
+        }] } } });
+        let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            &fixture,
+            Language::C11,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("C11 states a list");
+        assert!(folded);
+        assert_eq!(
+            value["sources"][0]["bindings"],
+            serde_json::json!([
+                "value.frags_len = 2;",
+                "value.frags[0].seq = 1u;",
+                "value.frags[1].seq = 43981u;",
+            ])
+        );
+        assert_eq!(
+            value["sources"][0]["checks"],
+            serde_json::json!([
+                { "element": "frags", "holds": "decoded.frags_len == value.frags_len" },
+                {
+                    "element": "frags[0].seq",
+                    "holds": "decoded.frags[0].seq == value.frags[0].seq"
+                },
+                {
+                    "element": "frags[1].seq",
+                    "holds": "decoded.frags[1].seq == value.frags[1].seq"
+                },
+            ])
+        );
+    }
+
     /// The byte case `case` of the codec fixture `name`, folded for the
     /// harness of `language` as a codec its backend prints, as the render would
     /// fold it: what the fragment renders the case from.
