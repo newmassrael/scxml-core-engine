@@ -219,6 +219,93 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
     }
 {% endif %}
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5), the same cases the Rust, C++ and Python fragments run,
+   for a codec the C11 backend prints from its plan: each `source` is a value of
+   the codec's struct, zeroed and then set member by member by statements the
+   generator wrote from the codec's plan, and its bytes were computed by an
+   independent model. The value is encoded by the encode over any source,
+   through the value's own table, and compared with the bytes (law 4 of
+   docs/adr/0058 §5), and the bytes are decoded and what the decode presents
+   compared with the value, element by element (law 1). The values are static,
+   as a struct that holds a large array is too large for a stack. Independent of
+   `oracle_eligible`, which speaks of the `cases`. #}
+{% set source_max = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
+{% for s in f.sources %}
+{% set source_index = loop.index0 %}
+    {
+        static {{ f.name }}_t value;
+        memset(&value, 0, sizeof value);
+{% for b in s.bindings %}
+        {{ b }}
+{% endfor %}
+        static const uint8_t source_expected[] = { {% if s.encoded %}{{ s.encoded | join(", ") }}{% else %}0{% endif %} };
+        const size_t source_len = {{ s.encoded | length }};
+        uint8_t source_buf[{{ source_max }} > 0u ? {{ source_max }} : 1u];
+        sce_forge_writer_t source_w = sce_forge_writer_init_buf(source_buf, sizeof source_buf);
+        sce_forge_codec_status_t source_st =
+            {{ f.name }}_encode_source({{ f.name }}_value_source(), &value, &source_w{% for v in s.encode_inputs %}, {{ v }}{% endfor %});
+        if (source_st != SCE_FORGE_CODEC_OK || source_w.pos != source_len ||
+            memcmp(source_buf, source_expected, source_len) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} source {{ source_index }} encode (status=%d len=%zu expected=%zu): %s\n",
+                (int)source_st, source_w.pos, source_len, "{{ s.note }}");
+            ++g_failures;
+        } else {
+            static {{ f.name }}_t decoded;
+            memset(&decoded, 0, sizeof decoded);
+            sce_forge_cursor_t source_cursor = sce_forge_cursor_init(source_expected, source_len);
+            if ({{ f.name }}_decode(&source_cursor, &decoded{% for v in s.inputs %}, {{ v }}{% endfor %}) != SCE_FORGE_CODEC_OK) {
+                fprintf(stderr, "FAIL: {{ f.name }} source {{ source_index }}: decode refused: %s\n", "{{ s.note }}");
+                ++g_failures;
+            } else {
+                if (sce_forge_cursor_remaining(&source_cursor) != 0) {
+                    fprintf(stderr,
+                        "FAIL: {{ f.name }} source {{ source_index }}: the decode left %zu byte(s) of the frame unread\n",
+                        sce_forge_cursor_remaining(&source_cursor));
+                    ++g_failures;
+                }
+{% for c in s.checks %}
+                if (!({{ c.holds }})) {
+                    fprintf(stderr,
+                        "FAIL: {{ f.name }} source {{ source_index }}: the decode presents another {{ c.element }}: %s\n",
+                        "{{ s.note }}");
+                    ++g_failures;
+                }
+{% endfor %}
+            }
+        }
+    }
+{% endfor %}
+{# Refused cases (docs/adr/0081 §5): `source` is a value of the interface its
+   encode refuses (docs/adr/0065 §2), made as a `sources` value is, and `symbol`
+   the status the encode answers it with; the encode writes nothing before it
+   refuses. #}
+{% for r in f.refused %}
+    {
+        static {{ f.name }}_t value;
+        memset(&value, 0, sizeof value);
+{% for b in r.bindings %}
+        {{ b }}
+{% endfor %}
+        uint8_t refused_buf[{{ source_max }} > 0u ? {{ source_max }} : 1u];
+        sce_forge_writer_t refused_w = sce_forge_writer_init_buf(refused_buf, sizeof refused_buf);
+        sce_forge_codec_status_t refused_st =
+            {{ f.name }}_encode_source({{ f.name }}_value_source(), &value, &refused_w{% for v in r.encode_inputs %}, {{ v }}{% endfor %});
+        if (refused_st != {{ r.symbol }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} refused {{ loop.index0 }}: the encode did not answer {{ r.error }} (status=%d): %s\n",
+                (int)refused_st, "{{ r.note }}");
+            ++g_failures;
+        }
+        if (sce_forge_writer_position(&refused_w) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} refused {{ loop.index0 }}: the encode wrote %zu byte(s) before it refused\n",
+                sce_forge_writer_position(&refused_w));
+            ++g_failures;
+        }
+    }
+{% endfor %}
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. C11 has a name for the failure (the status enum), so the assertion
    is on the exact status and not merely on non-OK. Each vector gets its own

@@ -23,6 +23,8 @@
 use super::*;
 use crate::forge::encode_plan::{CodecPlan, Element, EncodePlan, Guard, Presence, Value, Write};
 
+pub(super) mod source_case;
+
 /// The first form of `plan` the C11 printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
 pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
