@@ -261,9 +261,17 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             Measured::Entries { .. } => {
                 forms.push(format!("element '{element}': a count of a list"));
             }
-            Measured::Encoded { .. } => {
-                forms.push(format!("element '{element}': the encoded length of a body"))
+            // Counted by its codec's encode into a counting sink, which can
+            // pass on no refusal of the body's.
+            Measured::Encoded { refuses: true, .. } => forms.push(format!(
+                "element '{element}': the encoded length of a body whose encode can refuse"
+            )),
+            Measured::Encoded { .. } if matches!(number.into, NumberInto::Flag) => {
+                forms.push(format!(
+                    "element '{element}': the encoded length of a body, in a flag"
+                ));
             }
+            Measured::Encoded { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!("element '{element}': a flag a held codec says"));
             }
@@ -755,8 +763,51 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 let [measure] = number.measures.as_slice() else {
                     unreachable!("`unlowered` prints a number of one measure only");
                 };
+                // The encoded length of a body: what its codec's encode over
+                // the source the value presents it as writes into a counting
+                // sink, which stores nothing (docs/adr/0058 §3); zero where a
+                // gate leaves the body out.
+                if let Measured::Encoded { body, codec, .. } = &measure.of {
+                    let (ElementId::Field(id), NumberInto::Field { field: into, .. }) =
+                        (element, &number.into)
+                    else {
+                        unreachable!("`unlowered` prints an encoded length into a field only");
+                    };
+                    let ty = l.type_name(&into.sce_type);
+                    let local = element_local(l, &body.id);
+                    let held = if measure.gated {
+                        format!("{local}.value")
+                    } else {
+                        local.clone()
+                    };
+                    let sink = format!("_k_{}", l.codec_field_id(&body.id));
+                    let derived = derived_local(id);
+                    let count = format!(
+                        "sce_forge_writer_t {sink} = sce_forge_writer_init_counting();\n    \
+                         SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, &{sink}));\n",
+                        body_prefix(codec)
+                    );
+                    if measure.gated {
+                        out.push_str(&format!(
+                            "    {ty} {derived} = ({ty})0;\n{}",
+                            guarded(
+                                &format!("{local}.present"),
+                                &format!(
+                                    "    {count}    {derived} = ({ty})sce_forge_writer_position(&{sink});\n"
+                                )
+                            )
+                        ));
+                    } else {
+                        out.push_str(&format!(
+                            "    {count}    const {ty} {derived} = ({ty})sce_forge_writer_position(&{sink});\n"
+                        ));
+                    }
+                    continue;
+                }
                 let Measured::Bytes { field, offset } = &measure.of else {
-                    unreachable!("`unlowered` prints the length of a byte string or a text only");
+                    unreachable!(
+                        "`unlowered` prints the length of a byte string, a text or a body only"
+                    );
                 };
                 let local = element_local(l, &field.id);
                 let len = if measure.gated {
