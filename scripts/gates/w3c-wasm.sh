@@ -43,12 +43,10 @@ sce_gate_requires_tool emcmake emsdk || exit 0
 sce_gate_requires_tool node emsdk || exit 0
 
 # The fixture listener is started by the program's own Node host
-# (tests/w3c/wasm_polyfill.js) on the endpoint's port, for both programs, so a
-# listener already there makes the BasicHTTP fixtures fail against somebody
-# else's server. A port named in SCE_W3C_HTTP_PORT is the one both sides use:
-# the host binds it, and the program reads it from the host's environment,
-# which NODERAWFS makes the program's own.
-sce_gate_requires_free_http_port
+# (tests/w3c/wasm_polyfill.js), for both programs, on the port SCE_W3C_HTTP_PORT
+# names or else one the kernel assigns; the host then sets SCE_W3C_HTTP_PORT to
+# the port it bound, and the program reads it from the host's environment, which
+# NODERAWFS makes the program's own. No port need be free.
 
 # The configure asks the generator for its plans and refuses a stale one.
 sce_gate_codegen >/dev/null \

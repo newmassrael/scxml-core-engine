@@ -2153,11 +2153,10 @@ fn a_casefile_whose_suite_needs_the_http_fixture_declares_it() {
 ///
 /// The port is the reason it is a stand-in. This test runs inside `cargo test
 /// --workspace`, which the `workspace-tests` gate runs with a real fixture
-/// server already holding the endpoint: a second one would refuse to bind, and
-/// one this test held would make the C++ ctest suite report 13 of its cases
-/// Not Run — the shape `sce_gate_requires_free_http_port` refuses. What is
-/// under test is whether the gate PROVISIONS a declared service around the
-/// round that declared it, not the service's HTTP.
+/// server already up and its port exported in `SCE_W3C_HTTP_PORT`: a second
+/// server told that port would refuse to bind. What is under test is whether
+/// the gate PROVISIONS a declared service around the round that declared it,
+/// not the service's HTTP.
 ///
 /// The marker is written at start and removed on the way out, which is what
 /// makes "was the service up while THIS round ran" a fact the round reads
@@ -2289,15 +2288,15 @@ fn rounds_observed(rounds: &[&str]) -> RoundsRun {
         .env("SCE_MUTATION_ROUNDS", rounds.join(","))
         .env("SCE_ROUND_SERVICE_MARKER", &marker)
         .env("SCE_ROUND_OBSERVED", &observed)
-        // A port of this test's OWN, because the endpoint header's default is
-        // already held when this runs: `workspace-tests` starts a gate-wide
-        // fixture server on it, and this test executes another gate inside
-        // that one. The stand-in then loses the bind, dies before anything
-        // signals it, and leaves its marker behind — which reads as "the
-        // service was still up for the round after", a true statement about
-        // the wrong thing. `sce_http_endpoint_port` honours this variable for
-        // exactly this reason: the header holds the default, and the variable
-        // is what moves the endpoint.
+        // A port of this test's OWN, because the port `workspace-tests`
+        // exported is already held when this runs: that gate starts a
+        // gate-wide fixture server and exports its port, and this test executes
+        // another gate inside that one, which would inherit the variable. The
+        // stand-in then loses the bind, dies before anything signals it, and
+        // leaves its marker behind — which reads as "the service was still up
+        // for the round after", a true statement about the wrong thing.
+        // `sce_http_endpoint_port` honours this variable: it is what names the
+        // endpoint's port, which has no default.
         .env("SCE_W3C_HTTP_PORT", "18080")
         // The selection is settled by the variable above; a dry run would stop
         // the gate before the loop this test is about, and a change set left in

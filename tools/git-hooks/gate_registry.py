@@ -1020,6 +1020,13 @@ GATES: dict[str, dict] = {
             # reads.
             "tests/w3c/conformance/fixtures.json",
             "cmake/SCEW3CRegistry.cmake",
+            # The C11 ctest fixture's BasicHTTP listener and the script that
+            # hands its port to the runners, which
+            # `the_c11_http_fixture_hands_its_runners_the_port_it_bound` runs.
+            "tests/w3c/http_server_fixture.sh",
+            "tests/w3c/standalone_http_server.js",
+            "tests/w3c/http_endpoint.js",
+            "tests/w3c/basic_http_test_endpoint.h",
             # The C11 runtime's build, whose vocabulary of what a machine
             # requires `a_c11_machine_includes_what_it_states_it_requires`
             # compiles in and holds to what the generator can state.

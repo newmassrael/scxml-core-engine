@@ -14,9 +14,9 @@
 #
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
-#   RUNNING the generated test additionally needs the W3C harness server
-#   (`node tests/w3c/standalone_http_server.js 8080 /test`), because the
-#   fixture posts over BasicHTTP.
+#   RUNNING the generated test needs a BasicHTTP listener, because the
+#   fixture posts over BasicHTTP: the conftest starts one in the pytest
+#   process, on a port the kernel assigns.
 
 set -euo pipefail
 

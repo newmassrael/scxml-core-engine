@@ -29,6 +29,21 @@ file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
 set(SCE_C_INTEGRATION_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_generated")
 file(MAKE_DIRECTORY "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
+# §scxml-C-2-3: where a runner of the `w3c_c_http_server` fixture finds the
+# port its listener bound. The listener is started after ctest has fixed each
+# test's environment, so the port reaches the runners through this file, which
+# the fixture writes from the server's `[READY] port=<n>` line
+# (tests/w3c/http_server_fixture.sh, tests/w3c/basic_http_test_endpoint.h).
+# The port it is told is SCE_W3C_HTTP_FIXTURE_PORT, or 0 for one the kernel
+# assigns.
+set(SCE_C_W3C_HTTP_PORT_FILE "${CMAKE_CURRENT_BINARY_DIR}/w3c_http_server.port")
+set(SCE_C_W3C_HTTP_ENDPOINT_ENVIRONMENT "SCE_W3C_HTTP_PORT_FILE=${SCE_C_W3C_HTTP_PORT_FILE}")
+if(SCE_W3C_HTTP_FIXTURE_PORT STREQUAL "")
+    set(SCE_C_W3C_HTTP_FIXTURE_LISTEN_PORT 0)
+else()
+    set(SCE_C_W3C_HTTP_FIXTURE_LISTEN_PORT "${SCE_W3C_HTTP_FIXTURE_PORT}")
+endif()
+
 # sce_c_integration_generation(<PREFIX> <document> [<sce_codegen_generation option>...])
 #
 #   One generation of <document> into the integration directory, declared
@@ -150,14 +165,13 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
             LABELS "w3c;c11;aot"
         )
         if(_harness STREQUAL "http")
-            # The runner reads the endpoint from the environment at run time
-            # (basic_http_test_endpoint.h), so the tree's configured port has
-            # to reach it here. Without this the fixture would bind the
-            # configured port while the machine published the header default,
-            # and the fixture would fail on any tree that moved the port.
+            # The runner reads the endpoint at run time
+            # (basic_http_test_endpoint.h), from the port file the fixture
+            # writes once its listener has bound: the published location names
+            # the port that listener holds, whichever it was given.
             set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
                 FIXTURES_REQUIRED w3c_c_http_server
-                ENVIRONMENT "SCE_W3C_HTTP_PORT=${SCE_W3C_HTTP_PORT}"
+                ENVIRONMENT "${SCE_C_W3C_HTTP_ENDPOINT_ENVIRONMENT}"
             )
             list(APPEND W3C_C_AOT_HTTP_TESTS ${TEST_NUM})
         endif()
@@ -765,6 +779,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         TIMEOUT 30
         LABELS "integration;c11;aot"
         FIXTURES_REQUIRED w3c_c_http_server
+        ENVIRONMENT "${SCE_C_W3C_HTTP_ENDPOINT_ENVIRONMENT}"
     )
 
     # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
@@ -5070,8 +5085,8 @@ set_tests_properties(c11_integration_event_schema_lifted PROPERTIES
 
 # ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
 #
-# The W3C SCXML C.2 corpus addresses `http://localhost:8080/test` on the
-# fixture-side and expects a server to echo events back. The cpp side's
+# The W3C SCXML C.2 corpus addresses the BasicHTTP location its machine
+# publishes and expects a server there to echo events back. The cpp side's
 # `w3c_test_cli` runs the same expectation via in-process orchestration
 # (`tests/w3c/standalone_http_server.js` spawned by the WASM polyfill;
 # native cpp uses the in-process httplib server). C11 fixtures run as
@@ -5079,10 +5094,14 @@ set_tests_properties(c11_integration_event_schema_lifted PROPERTIES
 # FIXTURES_SETUP every `w3c_c_aot_<N>` test of the registry's `http` harness
 # would hit a dead socket and time out in `sce_test_http_post`.
 #
-# The setup arm launches `node tests/w3c/standalone_http_server.js
-# 8080 /test`, waits for the `[READY]` line on stdout (capped at 5s),
-# and records the pid. The cleanup arm reads the pid and SIGTERMs it
-# (KILL fallback after 2s). Both arms are idempotent so a partial-run
+# The setup arm launches `node tests/w3c/standalone_http_server.js <port>
+# <path>` with port 0 unless SCE_W3C_HTTP_FIXTURE_PORT names one, waits for
+# its `[READY] port=<n>` line (capped at 5s), writes <n> into the port file
+# the runners are pointed at (SCE_C_W3C_HTTP_PORT_FILE, above) and records the
+# pid. No run needs a fixed port free: on a host where another account held
+# the old fixed one, this fixture failed and took every BasicHTTP runner with
+# it. The cleanup arm reads the pid and SIGTERMs it (KILL fallback after 2s)
+# and removes the port file. Both arms are idempotent so a partial-run
 # `ctest -R w3c_c_aot_513` followed by another ctest invocation does
 # not stack server instances.
 # W3C_C_AOT_HTTP_TESTS holds the runners the loop above scheduled with the
@@ -5097,14 +5116,16 @@ if(W3C_C_AOT_HTTP_TESTS)
         set(_http_fixture_sh "${CMAKE_SOURCE_DIR}/tests/w3c/http_server_fixture.sh")
         set(_http_server_js "${CMAKE_SOURCE_DIR}/tests/w3c/standalone_http_server.js")
 
-        # The endpoint comes from the top-level SCE_W3C_HTTP_PORT/PATH, which
-        # read their defaults out of tests/w3c/basic_http_test_endpoint.h --
-        # the header the runners themselves include. One fact, so the address
-        # this binds is the address they publish.
+        # The path comes from the top-level SCE_W3C_HTTP_PATH, read out of
+        # tests/w3c/basic_http_test_endpoint.h -- the header the runners
+        # themselves include -- and the port the runners publish is the one
+        # this listener writes into the port file, so the address it binds is
+        # the address they publish.
         add_test(NAME w3c_c_http_server_setup
             COMMAND bash "${_http_fixture_sh}" start
                 "${SCE_TEST_NODE_EXECUTABLE}" "${_http_server_js}"
-                "${SCE_W3C_HTTP_PORT}" "${SCE_W3C_HTTP_PATH}" "${_http_fixture_pid}"
+                "${SCE_C_W3C_HTTP_FIXTURE_LISTEN_PORT}" "${SCE_W3C_HTTP_PATH}"
+                "${_http_fixture_pid}" "${SCE_C_W3C_HTTP_PORT_FILE}"
         )
         set_tests_properties(w3c_c_http_server_setup PROPERTIES
             FIXTURES_SETUP w3c_c_http_server
@@ -5113,7 +5134,7 @@ if(W3C_C_AOT_HTTP_TESTS)
         )
 
         add_test(NAME w3c_c_http_server_cleanup
-            COMMAND bash "${_http_fixture_sh}" stop "${_http_fixture_pid}"
+            COMMAND bash "${_http_fixture_sh}" stop "${_http_fixture_pid}" "${SCE_C_W3C_HTTP_PORT_FILE}"
         )
         set_tests_properties(w3c_c_http_server_cleanup PROPERTIES
             FIXTURES_CLEANUP w3c_c_http_server

@@ -174,6 +174,13 @@ on:
       # one reading of it both conformance routes register through.
       - 'tests/w3c/conformance/fixtures.json'
       - 'cmake/SCEW3CRegistry.cmake'
+      # The C11 ctest fixture's BasicHTTP listener and the script that hands
+      # its port to the runners, which
+      # `the_c11_http_fixture_hands_its_runners_the_port_it_bound` runs.
+      - 'tests/w3c/http_server_fixture.sh'
+      - 'tests/w3c/standalone_http_server.js'
+      - 'tests/w3c/http_endpoint.js'
+      - 'tests/w3c/basic_http_test_endpoint.h'
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'
@@ -321,6 +328,13 @@ on:
       # one reading of it both conformance routes register through.
       - 'tests/w3c/conformance/fixtures.json'
       - 'cmake/SCEW3CRegistry.cmake'
+      # The C11 ctest fixture's BasicHTTP listener and the script that hands
+      # its port to the runners, which
+      # `the_c11_http_fixture_hands_its_runners_the_port_it_bound` runs.
+      - 'tests/w3c/http_server_fixture.sh'
+      - 'tests/w3c/standalone_http_server.js'
+      - 'tests/w3c/http_endpoint.js'
+      - 'tests/w3c/basic_http_test_endpoint.h'
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'
@@ -570,9 +584,9 @@ jobs:
 
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
-    # W3C BasicHTTP fixture server on :8080 that test_201 and the 5xx series
-    # post to — which is why this job no longer starts one of its own; two
-    # would collide on the port.
+    # W3C BasicHTTP fixture server that test_201 and the 5xx series post to,
+    # on a port the kernel assigns, and exports SCE_W3C_HTTP_PORT for them —
+    # which is why this job no longer starts one of its own.
     #
     # `SCE_REQUIRE_TOOLS` promotes "tool not found, skipping" into a hard
     # failure. Without it a runner image that loses a toolchain keeps

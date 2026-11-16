@@ -3586,10 +3586,21 @@ mutation_check_needs() {
         [[ -n "$service" ]] || continue
         case "$service" in
         http-fixture)
-            if ! port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
-                || ! path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")"; then
+            # The endpoint has no default port: the listener's starter names it
+            # in SCE_W3C_HTTP_PORT, which is also what the round's runners read.
+            if ! path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")"; then
                 red "the casefile declares 'mutation_needs http-fixture' and the"
-                red "endpoint it would be checked at could not be read (above)."
+                red "endpoint path it would be checked at could not be read (above)."
+                failed=1
+                continue
+            fi
+            if ! port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")"; then
+                red "the casefile declares 'mutation_needs http-fixture' and no port"
+                red "says where its listener answers. Start one and export the port"
+                red "its [READY] port=<n> line names:"
+                red ""
+                red "  node tests/w3c/standalone_http_server.js 0 $path"
+                red "  export SCE_W3C_HTTP_PORT=<n>"
                 failed=1
                 continue
             fi
@@ -3603,8 +3614,7 @@ mutation_check_needs() {
                 red "  node tests/w3c/standalone_http_server.js $port $path"
                 red ""
                 red "The mutation-rounds gate starts it for the rounds that declare it;"
-                red "by hand, start it first and stop it afterwards — a live $port makes"
-                red "the C++ ctest suite report 13 of its cases Not Run."
+                red "by hand, start it first and stop it afterwards."
                 failed=1
             fi
             ;;

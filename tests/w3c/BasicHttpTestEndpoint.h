@@ -38,8 +38,9 @@ namespace W3C {
 /// use site passed the old constants as values and none in a constant
 /// expression, so nothing needed the `constexpr`.
 
-/// The port an out-of-process fixture listener binds (the WASM host's): the
-/// one `SCE_W3C_HTTP_PORT` names, or the default.
+/// The port an out-of-process fixture listener bound (the WASM host's): the one
+/// the port file `SCE_W3C_HTTP_PORT_FILE` names holds, or the one
+/// `SCE_W3C_HTTP_PORT` names. It has no default; a run told neither aborts.
 inline int basicHttpTestPort() {
     return sce_w3c_http_test_port();
 }

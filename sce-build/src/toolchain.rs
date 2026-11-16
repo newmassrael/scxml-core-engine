@@ -186,6 +186,10 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     ("python3", ToolSource::RunnerImage),
     ("cargo", ToolSource::RunnerImage),
     ("rustc", ToolSource::RunnerImage),
+    // Runs the W3C BasicHTTP fixture listener (`tests/w3c/standalone_http_server.js`)
+    // whose port hand-over the C11 ctest fixture is held to; the runner image
+    // ships it, and `bx.toml` lists it among what a build host needs.
+    ("node", ToolSource::RunnerImage),
     // Kotlin ships through SDKMAN on a workstation; the runner image
     // carries it, measured rather than assumed — `smoke_kotlin` ran and
     // passed in the lane, and that run emitted exactly one

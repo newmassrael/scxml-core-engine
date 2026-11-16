@@ -29,10 +29,11 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# A live fixture server makes 13 of these cases report Not Run, which is a
-# smaller suite reported as a passing one. The count comparison at the end
-# would catch it; this names the cause instead of the symptom.
-sce_gate_requires_free_http_port
+
+# No port need be free: the C11 BasicHTTP cases' fixture listener takes a port
+# the kernel assigns and hands it to them through a port file
+# (backends/c/tests/CMakeLists.txt), where it used to bind one fixed port and
+# report 13 of these cases Not Run when another listener held it.
 
 sce_main_build_dir
 BUILD_DIR="$SCE_MAIN_BUILD_DIR"

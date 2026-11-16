@@ -25,7 +25,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 sce_gate_requires_tool python3-config python3-dev || exit 0
 
-sce_gate_requires_free_http_port
+# No port need be free: the suite's BasicHTTP listener runs in its own process
+# and binds a port the kernel assigns (backends/python/bindings/tests/test_w3c.py).
 
 BUILD_DIR="${SCE_PYBIND_BUILD_DIR:-build_python}"
 

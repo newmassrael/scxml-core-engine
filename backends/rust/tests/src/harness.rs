@@ -125,7 +125,8 @@ pub fn registered_test_count() -> usize {
 }
 
 /// W3C SCXML C.2: Configure an engine for real HTTP tests against the shared
-/// W3C test server (`standalone_http_server.js` on localhost:8080/test).
+/// W3C test server (`standalone_http_server.js` on the port
+/// [`http_test_endpoint_port`] reads).
 ///
 /// The callback sends a real HTTP POST via `reqwest`, parses the JSON response,
 /// and returns `HttpSendResponse` so the engine injects the echoed event.
@@ -202,7 +203,7 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
     });
 }
 
-/// §scxml-C-2-3: the fixture endpoint's default, PINNED to
+/// §scxml-C-2-3: the fixture path, PINNED to
 /// `tests/w3c/basic_http_test_endpoint.h`.
 ///
 /// This file is not only compiled in this repository — `sce-build` embeds it
@@ -214,21 +215,46 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
 /// A shipped copy is therefore structurally forced, and the answer to a forced
 /// copy is not to let it drift: `scripts/gates/http-endpoint-ssot.sh` reads
 /// both this value and the owner's and REFUSES a tree where they disagree.
-/// One author, a mirror that cannot rot.
-const DEFAULT_ENDPOINT_PORT: u16 = 8080;
-/// The fixture path, pinned to the owner by the same gate.
+/// One author, a mirror that cannot rot. The port has no such copy: the
+/// endpoint has no default port.
 const DEFAULT_ENDPOINT_PATH: &str = "/test";
 
-/// §scxml-C-2-3: the port the fixture listener binds and this harness
-/// addresses. `SCE_W3C_HTTP_PORT` overrides the pinned default, which is how a
-/// second checkout runs the BasicHTTP suites while the first holds the port —
-/// the gates, CMake and CI all export it from the one owner.
+/// §scxml-C-2-3: the port the out-of-process fixture listener bound, which this
+/// harness addresses: the one the file `SCE_W3C_HTTP_PORT_FILE` names holds, or
+/// the one `SCE_W3C_HTTP_PORT` names, as `basic_http_test_endpoint.h` reads it.
+///
+/// There is no default. Whoever starts the listener (a gate, the `verify`
+/// action) starts it on port 0 and hands on the port its `[READY] port=<n>`
+/// line names; a port assumed here would be one another program on the host
+/// may hold, which made every run need that one port free.
 pub fn http_test_endpoint_port() -> u16 {
+    if let Ok(file) = std::env::var("SCE_W3C_HTTP_PORT_FILE") {
+        if !file.is_empty() {
+            let text = std::fs::read_to_string(&file).unwrap_or_else(|err| {
+                panic!(
+                    "SCE_W3C_HTTP_PORT_FILE names {file}, which cannot be read ({err}): the \
+                     out-of-process W3C BasicHTTP listener did not write the port it bound there"
+                )
+            });
+            return parse_endpoint_port(text.trim_end_matches('\n'), &file);
+        }
+    }
     match std::env::var("SCE_W3C_HTTP_PORT") {
-        Ok(raw) if !raw.is_empty() => raw
-            .parse()
-            .unwrap_or_else(|_| panic!("SCE_W3C_HTTP_PORT=\"{raw}\" is not a TCP port")),
-        _ => DEFAULT_ENDPOINT_PORT,
+        Ok(raw) if !raw.is_empty() => parse_endpoint_port(&raw, "SCE_W3C_HTTP_PORT"),
+        _ => panic!(
+            "neither SCE_W3C_HTTP_PORT_FILE nor SCE_W3C_HTTP_PORT says where the W3C BasicHTTP \
+             fixture listener answers. Start it with `node tests/w3c/standalone_http_server.js 0` \
+             and set SCE_W3C_HTTP_PORT to the port its `[READY] port=<n>` line names. It has no \
+             default port: one assumed is one another program on this host may hold."
+        ),
+    }
+}
+
+/// `raw` read as a TCP port, or a panic naming `source`, where it came from.
+fn parse_endpoint_port(raw: &str, source: &str) -> u16 {
+    match raw.parse::<u16>() {
+        Ok(port) if port != 0 => port,
+        _ => panic!("{source} holds \"{raw}\", which is not a TCP port"),
     }
 }
 
@@ -249,9 +275,8 @@ pub fn http_test_endpoint_path() -> &'static str {
 /// reason unrelated to what it tests.
 ///
 /// It is a function rather than the `const` it replaced because the endpoint is
-/// a property of the RUN, not of the source: it is read from
-/// `basic_http_test_endpoint.h`, the header every channel reads, and moved by
-/// `SCE_W3C_HTTP_PORT`.
+/// a property of the RUN, not of the source: its port is the one the listener
+/// of this run bound ([`http_test_endpoint_port`]).
 pub fn http_test_server_url() -> String {
     format!(
         "http://localhost:{}{}",
@@ -283,9 +308,10 @@ fn assert_http_test_server_reachable() {
             panic!(
                 "\nW3C BasicHTTP test server is not reachable at {url}.\n\
                  \n\
-                 Start it before running BasicHTTP-dependent tests:\n\
+                 Start it before running BasicHTTP-dependent tests, and point\n\
+                 SCE_W3C_HTTP_PORT at the port its `[READY] port=<n>` line names:\n\
                  \n\
-                   node tests/w3c/standalone_http_server.js {port} {path}\n\
+                   node tests/w3c/standalone_http_server.js 0 {path}\n\
                  \n\
                  Affected tests include: test_201, test_207, test_208,\n\
                  test_509, test_510, test_513, test_518, test_519, test_520,\n\
@@ -294,7 +320,6 @@ fn assert_http_test_server_reachable() {
                  Without the server these silently route to their\n\
                  `<transition event=\"*\"/>` fail branch.\n",
                 url = url,
-                port = http_test_endpoint_port(),
                 path = http_test_endpoint_path(),
             );
         }

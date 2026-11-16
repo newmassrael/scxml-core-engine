@@ -12,15 +12,16 @@
  * Usage:
  *   node standalone_http_server.js [port] [path]
  *
- * Both arguments are optional; omitting one takes the endpoint the harness
- * owns, from `basic_http_test_endpoint.h` via `http_endpoint.js`. The default
- * is NOT written here: this server binds the address the compiled runners
- * publish as their 'location', and a second author of that fact would let the
- * two drift — the machines would post somewhere this never claimed.
+ * Both arguments are optional. An omitted path is the one the harness owns,
+ * from `basic_http_test_endpoint.h` via `http_endpoint.js`; an omitted port is
+ * the one SCE_W3C_HTTP_PORT names, or 0. The fixture endpoint has no default
+ * port: one fixed for every run is one another program on the host may hold.
  *
  * Port 0 asks the kernel for a free port. The line `[READY] port=<n>` names
- * the port bound, and a caller that asked for 0 points the runners at it
- * through SCE_W3C_HTTP_PORT.
+ * the port bound, and the caller points the runners at it through
+ * SCE_W3C_HTTP_PORT, or through the port file SCE_W3C_HTTP_PORT_FILE names
+ * when their environment was fixed before this started (the header says
+ * which).
  *
  * `[READY]` is printed only once EVERY address `localhost` resolves to is
  * held by this process, and it is the only proof a caller has that the

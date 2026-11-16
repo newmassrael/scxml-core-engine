@@ -25,13 +25,12 @@
 # The W3C HTTP fixture server is started here rather than by the runner.
 # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
 # (test_201, test_509, test_513, test_518-520, test_532, test_534,
-# test_567) issue real HTTP POSTs to localhost:8080/test and panic on
-# connection-refused without it; w3c-tests.yml starts the same server
-# before its own `cargo test` step. Owning it here is what makes this gate
-# runnable on its own — under the previous arrangement the server was set
-# up by the hook, so running the suite by hand meant remembering to start
-# it, and remembering to stop it afterwards (a live 8080 makes the C++
-# ctest suite report 13 tests Not Run).
+# test_567) issue real HTTP POSTs to the port SCE_W3C_HTTP_PORT names, which
+# this gate exports once the server has bound one the kernel assigned, and
+# refuse to run without it. Owning it here is what makes this gate runnable
+# on its own — under the previous arrangement the server was set up by the
+# hook, so running the suite by hand meant remembering to start it, and
+# remembering to stop it afterwards.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

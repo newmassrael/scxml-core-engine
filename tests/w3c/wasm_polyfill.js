@@ -59,11 +59,13 @@ if (ENVIRONMENT_IS_NODE && !SCE_W3C_ON_A_PTHREAD) {
 
     let httpServerProcess = null;
 
-    // Start the fixture server and resolve when it reports `[READY]`.
+    // Start the fixture server and resolve with the port it reports on its
+    // `[READY] port=<n>` line.
     function startHttpServer() {
         const serverScript = path.join(SCE_W3C_HARNESS_DIR, 'standalone_http_server.js');
-        // §scxml-C-2-3: the endpoint the harness owns, read from the header
-        // the native runners include, not a number spelled here.
+        // §scxml-C-2-3: the path the harness owns, read from the header the
+        // native runners include, and the port SCE_W3C_HTTP_PORT names or 0 for
+        // one the kernel assigns: the endpoint has no default port.
         const endpoint = harnessRequire('./http_endpoint');
         const serverPort = endpoint.endpointPort();
         const serverPath = endpoint.endpointPath();
@@ -79,12 +81,21 @@ if (ENVIRONMENT_IS_NODE && !SCE_W3C_ON_A_PTHREAD) {
                 reject(new Error('the fixture server did not report ready within 10000ms'));
             }, 10000);
 
+            // Read line by line: a chunk may end inside the `[READY]` line.
+            let pending = '';
             httpServerProcess.stdout.on('data', (data) => {
                 const output = data.toString();
                 process.stdout.write(output);
-                if (output.includes('[READY]')) {
-                    clearTimeout(timeout);
-                    resolve();
+                pending += output;
+                const lines = pending.split('\n');
+                pending = lines.pop();
+                for (const line of lines) {
+                    const bound = endpoint.readyPort(line);
+                    if (bound !== null) {
+                        clearTimeout(timeout);
+                        resolve(bound);
+                        return;
+                    }
                 }
             });
             httpServerProcess.stderr.on('data', (data) => {
@@ -107,7 +118,12 @@ if (ENVIRONMENT_IS_NODE && !SCE_W3C_ON_A_PTHREAD) {
     Module.preRun.push(function() {
         if (needsHttpServer) {
             addRunDependency('w3c-fixture-server');
-            startHttpServer().then(() => {
+            startHttpServer().then((bound) => {
+                // The program reads the host's environment as its own
+                // (NODERAWFS), from main() on, so the port the server bound
+                // reaches basic_http_test_endpoint.h's out-of-process reader
+                // through the variable it reads.
+                process.env.SCE_W3C_HTTP_PORT = String(bound);
                 process.env.USE_EXTERNAL_HTTP_SERVER = '1';
                 removeRunDependency('w3c-fixture-server');
             }, (err) => {

@@ -570,8 +570,9 @@ run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -
 #
 # ctest runs first and with no SCE_W3C_HTTP_PORT of this action's: the C++ W3C
 # runner's in-process listener takes a kernel-assigned port of its own, and the
-# C11 suite's CMake fixture binds the port the tree was configured with. Both
-# statuses are OR'd so a red ctest cannot be hidden by a green cargo run.
+# C11 suite's CMake fixture does too and hands it to its runners through a port
+# file. Both statuses are OR'd so a red ctest cannot be hidden by a green cargo
+# run.
 [commands.verify]
 run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tests/w3c/standalone_http_server.js 0 >"$log" 2>&1 & srv=$!; port=; i=0; while [ -z "$port" ] && [ $i -lt 150 ] && kill -0 $srv 2>/dev/null; do sleep 0.2; port=$(sed -n "s/^\[READY\] port=\([0-9][0-9]*\)$/\1/p" "$log"); i=$((i+1)); done; if [ -z "$port" ]; then cat "$log" >&2; echo "verify: the W3C BasicHTTP echo server never reported [READY]; its log is above" >&2; kill $srv 2>/dev/null; rm -f "$log"; exit 1; fi; SCE_W3C_HTTP_PORT=$port cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; rm -f "$log"; exit $(( c | r ))'
 

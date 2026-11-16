@@ -1658,7 +1658,7 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 - `StaticExecutionEngine.raiseExternal()` detects HTTP target URLs
 - `HttpEventTarget` performs real HTTP POST operations
-- `HttpAotTest` base class: starts `W3CHttpTestServer` in process on localhost, at `/test`, on the port `SCE_W3C_HTTP_PORT` names or else one the kernel assigns, and hands the machine the location the server bound (`tests/w3c/basic_http_test_endpoint.h` says why; out-of-process listeners keep `SCE_W3C_HTTP_PORT` and its default)
+- `HttpAotTest` base class: starts `W3CHttpTestServer` in process on localhost, at `/test`, on the port `SCE_W3C_HTTP_PORT` names or else one the kernel assigns, and hands the machine the location the server bound (`tests/w3c/basic_http_test_endpoint.h` says why). The endpoint has no default port: an out-of-process listener (the Node server of the C11 ctest fixture, the gates, the `verify` action and the WASM host) binds port 0 unless told one, and the port its `[READY] port=<n>` line names reaches the runners through `SCE_W3C_HTTP_PORT`, or through the port file `SCE_W3C_HTTP_PORT_FILE` names when ctest fixed their environment first
 - Zero Duplication: Reuses Interpreter's `HttpEventTarget`, `W3CHttpTestServer`
 - Hybrid Strategy: Pure AOT structure + external HTTP server (not engine mixing)
 
@@ -1848,7 +1848,7 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 - **Template Parity**: ported from the Rust templates (state_machine / entry_exit_actions / process_transition / scriptengine_helpers / invoke_methods). Per-action emission lives in `tools/codegen/templates/python/actions/{assign,cancel,log,raise,script,send}.py.jinja2`; recursive `<if>` / `<foreach>` stay in `_actions.py.jinja2` so nested children can recurse through `emit` without a circular Jinja2 macro import
 - **Scripting**: Lua 5.4 via `lupa` (PyPI), same ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` / `to_lua_script`) every other Lua-family backend uses. DOM bridge (`getElementsByTagName` / `getAttribute`) uses `xml.etree.ElementTree` + a thin `_DomElement` wrapper in `lua_engine.py`, mirroring `backends/rust/lua::dom::XmlRef`
 - **State/Event**: `IntEnum` members named in UPPER_SNAKE_CASE; identifiers normalised via `to_python_const` filter
-- **HTTP**: `backends/python/tests/conftest.py` spawns an in-process `http.server.HTTPServer` on port 8080 mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane
+- **HTTP**: `backends/python/tests/conftest.py` spawns an in-process `http.server.HTTPServer`, on the port `SCE_W3C_HTTP_PORT` names or one the kernel assigns, mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane
 - **Mesh**: Permanently rejected at codegen via `reject_python_unsupported_features` per C++-first mesh policy (same as Go / Kotlin)
 - **Forge kinds**: Same admission as C++/Kotlin/Go — non-MCU kinds (Statechart / Transform / Lookup / Condition / Procedure / Aoi / Stream / BoundedCollection) ship; MCU-class kinds (Link / BufferPool / Worker) are rust+c11-only per `forge/codegen_matrix.rs::kind_class`
 

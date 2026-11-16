@@ -333,52 +333,55 @@ if(BUILD_TESTS)
 
     # §scxml-C-2-3: where the W3C BasicHTTP fixture listener answers.
     #
-    # The DEFAULT is read out of `tests/w3c/basic_http_test_endpoint.h` instead
-    # of being restated here, because that header is what the compiled runners
+    # The PATH is read out of `tests/w3c/basic_http_test_endpoint.h` instead of
+    # being restated here, because that header is what the compiled runners
     # include. Restating it would make CMake a second author of one fact, and
-    # the two would drift the first time either moved — the listener would bind
-    # one port while the machines published another, and every BasicHTTP
-    # fixture would fail for a reason unrelated to what it tests.
+    # the two would drift the first time either moved.
     #
-    # It is a cache variable because the listener is a MACHINE-GLOBAL resource:
-    # one process per host can hold a port, so two checkouts of this repository
-    # cannot both run the BasicHTTP suites while both compile the same number
-    # in. Configuring the second tree with -DSCE_W3C_HTTP_PORT=N is what lets
-    # them run at the same time; the value is exported to each runner through
-    # its test ENVIRONMENT, so the bind address and the published 'location'
-    # move together.
+    # The PORT has no default (the header says why). The one listener this tree
+    # starts for its tests, the C11 suite's Node fixture, binds the port
+    # SCE_W3C_HTTP_FIXTURE_PORT names, and when it names none (the default) one
+    # the kernel assigns, which the fixture writes into a port file its runners
+    # are pointed at (backends/c/tests/CMakeLists.txt). No run of this tree
+    # needs a fixed port free, so two checkouts, or another account's program on
+    # the host, cannot collide with it. The in-process listeners of the C++
+    # runners read SCE_W3C_HTTP_PORT from the run's environment, and bind one
+    # the kernel assigns without it.
+    #
+    # SCE_W3C_HTTP_FIXTURE_PORT replaces the cache variable SCE_W3C_HTTP_PORT,
+    # which held the header's old default: a tree configured before keeps that
+    # value in its cache, and a renamed variable is what keeps the fixed port
+    # from surviving there. The old entry is dropped, saying so.
+    if(DEFINED CACHE{SCE_W3C_HTTP_PORT})
+        message(STATUS
+            "SCE_W3C_HTTP_PORT (${SCE_W3C_HTTP_PORT}) is no longer a cache variable: "
+            "the C11 fixture listener takes a kernel-assigned port unless "
+            "-DSCE_W3C_HTTP_FIXTURE_PORT=N names one. Dropping the old entry.")
+        unset(SCE_W3C_HTTP_PORT CACHE)
+    endif()
     set(SCE_W3C_HTTP_ENDPOINT_HEADER
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/w3c/basic_http_test_endpoint.h")
-    file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_port_line
-        REGEX "^#define[ \t]+SCE_W3C_HTTP_DEFAULT_PORT[ \t]")
-    # The number AFTER the symbol, never the first digit run on the line. A
-    # bare `[0-9]+` matched the `3` in `SCE_W3C_HTTP_DEFAULT_PORT` and every
-    # tree configured itself onto port 3, where the fixture died with EACCES.
-    # It survived a probe that configured `-DSCE_W3C_HTTP_PORT=8080` and
-    # `=19080` explicitly, because passing the default is not exercising it.
-    string(REGEX REPLACE "^#define[ \t]+SCE_W3C_HTTP_DEFAULT_PORT[ \t]+([0-9]+).*$" "\\1"
-        _sce_w3c_http_default_port "${_sce_w3c_http_port_line}")
-    if(NOT _sce_w3c_http_default_port MATCHES "^[0-9]+$")
-        message(FATAL_ERROR
-            "could not read a port out of '${_sce_w3c_http_port_line}' in "
-            "${SCE_W3C_HTTP_ENDPOINT_HEADER}")
-    endif()
     file(STRINGS "${SCE_W3C_HTTP_ENDPOINT_HEADER}" _sce_w3c_http_path_line
         REGEX "^#define[ \t]+SCE_W3C_HTTP_TEST_PATH[ \t]")
     string(REGEX MATCH "\"[^\"]+\"" _sce_w3c_http_default_path "${_sce_w3c_http_path_line}")
     string(REPLACE "\"" "" _sce_w3c_http_default_path "${_sce_w3c_http_default_path}")
-    if(NOT _sce_w3c_http_default_port OR NOT _sce_w3c_http_default_path)
+    if(NOT _sce_w3c_http_default_path)
         message(FATAL_ERROR
             "${SCE_W3C_HTTP_ENDPOINT_HEADER} no longer declares "
-            "SCE_W3C_HTTP_DEFAULT_PORT and SCE_W3C_HTTP_TEST_PATH. That header "
-            "owns the BasicHTTP fixture endpoint for every channel; configuring "
-            "on a guessed port would bind one address and publish another.")
+            "SCE_W3C_HTTP_TEST_PATH. That header owns the BasicHTTP fixture "
+            "endpoint for every channel; configuring on a guessed path would "
+            "bind one address and publish another.")
     endif()
-    set(SCE_W3C_HTTP_PORT "${_sce_w3c_http_default_port}" CACHE STRING
-        "TCP port the W3C BasicHTTP fixture listener binds and the generated \
-machines publish as their 'location'. Defaults to the value in \
-tests/w3c/basic_http_test_endpoint.h; override so a second checkout can run \
-the BasicHTTP suites concurrently with the first.")
+    set(SCE_W3C_HTTP_FIXTURE_PORT "" CACHE STRING
+        "TCP port the C11 suite's W3C BasicHTTP fixture listener binds. Empty \
+(the default) takes one the kernel assigns and hands it to the runners through \
+a port file, so no run needs a fixed port free.")
+    if(NOT SCE_W3C_HTTP_FIXTURE_PORT STREQUAL ""
+       AND NOT SCE_W3C_HTTP_FIXTURE_PORT MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "SCE_W3C_HTTP_FIXTURE_PORT=\"${SCE_W3C_HTTP_FIXTURE_PORT}\" is not a TCP "
+            "port; leave it empty for one the kernel assigns.")
+    endif()
     set(SCE_W3C_HTTP_PATH "${_sce_w3c_http_default_path}" CACHE STRING
         "Path the W3C BasicHTTP fixture listener answers on. Read from \
 tests/w3c/basic_http_test_endpoint.h; the documents address it through the \

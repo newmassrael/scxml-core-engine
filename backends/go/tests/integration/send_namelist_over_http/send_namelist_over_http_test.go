@@ -27,8 +27,9 @@
 // Regeneration (after fixture or template edit):
 //   scripts/materialize.sh go-integration
 //
-// Needs the W3C harness server, like every BasicHTTP fixture here:
-//   node tests/w3c/standalone_http_server.js 8080 /test
+// Needs the W3C harness server, like every BasicHTTP fixture here, with
+// SCE_W3C_HTTP_PORT set to the port its `[READY] port=<n>` line names:
+//   node tests/w3c/standalone_http_server.js 0 /test
 
 package send_namelist_over_http
 

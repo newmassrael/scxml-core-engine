@@ -34,9 +34,8 @@ sce_gate_requires_tool emcmake emsdk || exit 0
 sce_gate_requires_tool node emsdk || exit 0
 
 # The registered set includes the W3C runner, whose Node host starts the
-# BasicHTTP fixture listener on the endpoint's port (w3c-wasm says why a
-# listener already there is refused).
-sce_gate_requires_free_http_port
+# BasicHTTP fixture listener on a port the kernel assigns and hands it to the
+# program (tests/w3c/wasm_polyfill.js), so no port need be free.
 
 # The configure asks the generator for its plans and refuses a stale one.
 sce_gate_codegen >/dev/null \

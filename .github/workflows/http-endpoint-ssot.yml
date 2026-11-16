@@ -3,10 +3,11 @@ name: BasicHTTP Endpoint SSOT
 # Where the W3C BasicHTTP fixture listener answers is owned by
 # tests/w3c/basic_http_test_endpoint.h — a C header so every channel can read
 # it: the C11 AOT runners include it, the C++ harness wraps it, CMake reads its
-# defaults, and the gates and CI go through scripts/lib/sce_http_endpoint.sh.
-# Three files that ship inside emitted standalone suites (the Rust and Go
-# harnesses, the Python conftest) carry a PINNED mirror instead, because they
-# have no repository above them where they land.
+# path, and the gates and CI go through scripts/lib/sce_http_endpoint.sh. It
+# declares no default port: every listener binds the port it is told or one the
+# kernel assigns. Three files that ship inside emitted standalone suites (the
+# Rust and Go harnesses, the Python conftest) carry a PINNED mirror of the path
+# instead, because they have no repository above them where they land.
 #
 # Why this needs its own lane rather than riding another one's coattails:
 # nothing else can catch the defect. A re-spelled port that happens to equal

@@ -30,10 +30,10 @@
  * while both compile the same number in. Reading it from the environment is
  * what lets a second tree be given a different one.
  *
- * A malformed value ABORTS rather than falling back to the default. A run that
- * quietly used 8080 after being told to use something else would bind the port
- * the other tree is using and report the collision as a test failure in
- * whichever tree lost -- the misattribution this harness exists to avoid.
+ * A malformed value ABORTS rather than falling back to a guess. A run that
+ * quietly used another port after being told one would bind the port the other
+ * tree is using and report the collision as a test failure in whichever tree
+ * lost -- the misattribution this harness exists to avoid.
  *
  * WHO NEEDS A PORT NAMED, AND WHO DOES NOT
  * ----------------------------------------
@@ -50,12 +50,25 @@
  * test fail to start. When the variable IS set, that port is bound exactly, as
  * before.
  *
- * A listener in ANOTHER PROCESS cannot hand a kernel-assigned port to the
- * machine: the Node server (standalone_http_server.js) that the C11 AOT
- * runners (sce_w3c_http_test_access_uri), the Rust and Go harnesses and the
- * WASM run post to, started by a ctest fixture, a gate, a CI job or the WASM
- * host. Its port must be agreed by both processes before either starts, so it
- * stays SCE_W3C_HTTP_PORT with its default (sce_w3c_http_test_port).
+ * A listener in ANOTHER PROCESS is the Node server (standalone_http_server.js)
+ * that the C11 AOT runners (sce_w3c_http_test_access_uri), the Rust and Go
+ * harnesses and the WASM run post to, started by a ctest fixture, a gate, the
+ * `verify` action or the WASM host. It has no default port either. Whoever
+ * starts it asks for port 0, unless SCE_W3C_HTTP_PORT names one; the server
+ * names the port it bound on its `[READY] port=<n>` line, and whoever started it
+ * hands <n> to the processes that post to it:
+ *   - through SCE_W3C_HTTP_PORT, when it starts them afterwards (a gate, the
+ *     `verify` action, the WASM host, which sets it in its own environment
+ *     before the program's main());
+ *   - through a file holding the port, named by SCE_W3C_HTTP_PORT_FILE, when
+ *     their environment was fixed before the server started: ctest fixes each
+ *     test's environment when the tree is configured, so the C11 fixture writes
+ *     the port it was told into that file (tests/w3c/http_server_fixture.sh).
+ * A consumer told neither ABORTS, naming both (sce_w3c_http_test_port): there
+ * is no port it could assume, since one it assumed is one another program on
+ * the host may hold, and a fixed default made every lane need that port free.
+ * The port file wins over SCE_W3C_HTTP_PORT, because it names the listener this
+ * run started, where the variable may be left over from the caller's shell.
  */
 
 #include <stdio.h>
@@ -64,9 +77,10 @@
 /* The one name a host, a gate, or a CI job sets to move the endpoint. */
 #define SCE_W3C_HTTP_PORT_ENV "SCE_W3C_HTTP_PORT"
 
-/* What the endpoint is when nothing says otherwise. Kept as the historical
- * value so a tree that sets nothing behaves exactly as it did. */
-#define SCE_W3C_HTTP_DEFAULT_PORT 8080
+/* The name of a file holding the port an out-of-process listener bound, for a
+ * consumer whose environment was fixed before that listener started. */
+#define SCE_W3C_HTTP_PORT_FILE_ENV "SCE_W3C_HTTP_PORT_FILE"
+
 #define SCE_W3C_HTTP_TEST_PATH "/test"
 
 /* The host every listener binds and every published location names. */
@@ -80,34 +94,81 @@
  * "http://localhost:" (17) + 5 port digits + "/test" (5) + 1. */
 #define SCE_W3C_HTTP_URI_MAX 28
 
-/* The port SCE_W3C_HTTP_PORT names, or `when_unset` when it names none. */
-static inline int sce_w3c_http_named_port(int when_unset) {
-    const char *raw = getenv(SCE_W3C_HTTP_PORT_ENV);
-    char *end;
-    long value;
+/* `raw` read as a TCP port, or an abort naming `source`, where it came from. */
+static inline int sce_w3c_http_parse_port(const char *raw, const char *source) {
+    char *end = NULL;
+    long value = strtol(raw, &end, 10);
 
-    if (raw == NULL || raw[0] == '\0') {
-        return when_unset;
-    }
-
-    end = NULL;
-    value = strtol(raw, &end, 10);
-    if (end == NULL || *end != '\0' || value < 1 || value > 65535) {
+    if (end == raw || end == NULL || *end != '\0' || value < 1 || value > 65535) {
         fprintf(stderr,
-                "%s=\"%s\" is not a TCP port. The W3C BasicHTTP fixture "
-                "endpoint is set by this variable and has no second opinion: "
-                "continuing on the default would bind a port this run was told "
-                "not to use.\n",
-                SCE_W3C_HTTP_PORT_ENV, raw);
+                "%s holds \"%s\", which is not a TCP port. The W3C BasicHTTP "
+                "fixture endpoint is set there and has no second opinion: "
+                "continuing on another port would post where no listener of "
+                "this run answers.\n",
+                source, raw);
         abort();
     }
     return (int)value;
 }
 
-/* The port an out-of-process fixture listener binds and the published location
- * names: both processes read it before either starts. */
+/* The port SCE_W3C_HTTP_PORT names, or `when_unset` when it names none. */
+static inline int sce_w3c_http_named_port(int when_unset) {
+    const char *raw = getenv(SCE_W3C_HTTP_PORT_ENV);
+
+    if (raw == NULL || raw[0] == '\0') {
+        return when_unset;
+    }
+    return sce_w3c_http_parse_port(raw, SCE_W3C_HTTP_PORT_ENV);
+}
+
+/* The port written in the file at `path`: digits, and at most one trailing
+ * newline. An unreadable or malformed file aborts: its listener said where it
+ * answers, and a consumer that cannot read it cannot know. */
+static inline int sce_w3c_http_port_in_file(const char *path) {
+    char text[16];
+    size_t length;
+    FILE *file = fopen(path, "r");
+
+    if (file == NULL) {
+        fprintf(stderr,
+                "%s names %s, which cannot be read: the out-of-process W3C "
+                "BasicHTTP listener did not write the port it bound there, so "
+                "it did not start for this run.\n",
+                SCE_W3C_HTTP_PORT_FILE_ENV, path);
+        abort();
+    }
+    length = fread(text, 1, sizeof text - 1, file);
+    fclose(file);
+    text[length] = '\0';
+    if (length > 0 && text[length - 1] == '\n') {
+        text[length - 1] = '\0';
+    }
+    return sce_w3c_http_parse_port(text, path);
+}
+
+/* The port an out-of-process fixture listener bound and the published location
+ * names: the one the port file holds, or the one SCE_W3C_HTTP_PORT names. A
+ * consumer told neither aborts: there is no default to assume. */
 static inline int sce_w3c_http_test_port(void) {
-    return sce_w3c_http_named_port(SCE_W3C_HTTP_DEFAULT_PORT);
+    const char *file = getenv(SCE_W3C_HTTP_PORT_FILE_ENV);
+    int named;
+
+    if (file != NULL && file[0] != '\0') {
+        return sce_w3c_http_port_in_file(file);
+    }
+    named = sce_w3c_http_named_port(0);
+    if (named == 0) {
+        fprintf(stderr,
+                "neither %s nor %s says where the W3C BasicHTTP fixture "
+                "listener answers. Start it with "
+                "`node tests/w3c/standalone_http_server.js 0` and set %s to the "
+                "port its `[READY] port=<n>` line names. It has no default "
+                "port: one assumed is one another program on this host may "
+                "hold.\n",
+                SCE_W3C_HTTP_PORT_FILE_ENV, SCE_W3C_HTTP_PORT_ENV, SCE_W3C_HTTP_PORT_ENV);
+        abort();
+    }
+    return named;
 }
 
 /* The port an in-process fixture listener binds: the one SCE_W3C_HTTP_PORT

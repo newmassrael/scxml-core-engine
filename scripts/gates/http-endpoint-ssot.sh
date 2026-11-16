@@ -8,8 +8,8 @@
 #
 # `tests/w3c/basic_http_test_endpoint.h` owns where the fixture listener
 # answers. It is a C header so every channel can read it: the C11 AOT runners
-# include it directly, the C++ harness wraps it, CMake reads its defaults, and
-# the gates and CI go through `scripts/lib/sce_http_endpoint.sh`.
+# include it directly, the C++ harness wraps it, CMake reads its path, and the
+# gates and CI go through `scripts/lib/sce_http_endpoint.sh`.
 #
 # That ownership is a property of the tree, not of one commit, and this is what
 # keeps it. Twelve C runners each carried "http://localhost:8080/test" and two
@@ -17,16 +17,23 @@
 # and the shape only became visible when a second checkout could not run the
 # BasicHTTP suites while the first held the port.
 #
-# WHAT THIS REFUSES: the endpoint's port written literally anywhere outside the
-# owner and this gate's own allowlist.
+# The endpoint has NO DEFAULT PORT any more (the owner says why): a listener
+# binds the port it is told or one the kernel assigns, and the port it bound is
+# handed to whoever posts to it. A fixed default, even one spelled once, made
+# every lane need that one port free on a host it shares with other programs.
+#
+# WHAT THIS REFUSES:
+#   - the owner declaring a default port again (SCE_W3C_HTTP_DEFAULT_PORT);
+#   - a path mirror that disagrees with the owner's path;
+#   - the port every fixture listener used to share, HISTORICAL_PORT below,
+#     written literally anywhere outside this gate's allowlist: a harness that
+#     spells it again depends on that port being free.
 #
 # WHAT IT DELIBERATELY ALLOWS, and why each is a different fact:
 #
 #   - `sce/include/events/HttpEventReceiver.h` -- the PRODUCT's default listen
 #     port. It is not the test fixture, and collapsing the two would make it
-#     impossible to say which listener a port belongs to. (That they are the
-#     same number today is itself worth changing, but that is a product
-#     decision and not this gate's business.)
+#     impossible to say which listener a port belongs to.
 #   - `sce-build/tests/fixtures/codegen_smoke/*.scxml` -- documents whose POINT
 #     is to carry a literal address through the generator.
 #   - `tests/w3c_template_parity/fixtures/**` -- likewise.
@@ -36,9 +43,10 @@
 #     reads comments reports the explanation of a rule as a violation of it.
 #
 # THE FLOOR: a scan that finds no violations is only good news if it looked at
-# something. This asserts a minimum number of files examined and that the owner
-# still declares the fact, so a renamed header or a broken glob fails loudly
-# instead of reporting a clean tree it never read.
+# something. This asserts that the search turned up a file known to spell the
+# number for a different reason, and that the owner still declares the path,
+# so a renamed header or a broken glob fails loudly instead of reporting a
+# clean tree it never read.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
@@ -46,52 +54,33 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
 OWNER="tests/w3c/basic_http_test_endpoint.h"
 READER="scripts/lib/sce_http_endpoint.sh"
 
-# ── The owner still owns it ────────────────────────────────────────
+# The port every fixture listener used to bind, kept here only to refuse it.
+HISTORICAL_PORT=8080
+
+# The file the floor below needs the search to find: the product's listener
+# default, a different fact (allowed below) spelled with the same number.
+FLOOR_WITNESS="sce/include/events/HttpEventReceiver.h"
+
+# ── The owner still owns it, and declares no port ──────────────────
 [[ -f "$OWNER" ]] \
     || sce_gate_fail "the endpoint owner is missing: $OWNER"
 
-PORT="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
-    || sce_gate_fail "$OWNER no longer declares a readable default port"
-sce_gate_step "endpoint owner declares port $PORT"
+if grep -qE '^#define[[:space:]]+SCE_W3C_HTTP_DEFAULT_PORT' "$OWNER"; then
+    sce_gate_fail "$OWNER declares SCE_W3C_HTTP_DEFAULT_PORT again. The fixture endpoint has no default port: a listener binds the port it is told or one the kernel assigns, and hands on the port it bound."
+fi
+sce_gate_step "endpoint owner declares no default port"
 
-# ── The mirrors that ship, pinned to the owner ─────────────────────
-# `sce-build` embeds these two files and writes them into the standalone
-# suites it emits, where no repository sits above them. They therefore CANNOT
-# read the owner — an earlier cut had the Rust one `include_str!` the header and
-# the emitted suite failed to compile. A copy is structurally forced here, so
-# the rule is not "may spell it" but "must spell the SAME thing": each declares
-# the default inline and this refuses a tree where any of them has drifted.
-# The Python conftest was a third until its listener, which runs in the process
-# of the machines it serves, took a port the kernel assigns: its path is pinned
-# below with the Kotlin harness's, and it spells no port.
-MIRRORS=(
-    "backends/rust/tests/src/harness.rs:DEFAULT_ENDPOINT_PORT"
-    "backends/go/tests/harness/harness.go:defaultEndpointPort"
-)
-
-for entry in "${MIRRORS[@]}"; do
-    file="${entry%%:*}"
-    symbol="${entry##*:}"
-    [[ -f "$file" ]] \
-        || sce_gate_fail "pinned endpoint mirror is missing: $file"
-    # The number after the `=`, never before it: an earlier cut stopped at the
-    # first `:` and read `const DEFAULT_ENDPOINT_PORT: u16 = 8080` as 16 — a
-    # type annotation mistaken for the value it annotates.
-    value="$(sed -n "s/.*${symbol}[^=]*=[^0-9]*\\([0-9]\\{1,\\}\\).*/\\1/p" "$file" | head -1)"
-    [[ -n "$value" ]] \
-        || sce_gate_fail "$file no longer declares $symbol. It ships inside emitted suites and cannot read $OWNER, so it must carry a pinned copy of the endpoint default."
-    [[ "$value" == "$PORT" ]] \
-        || sce_gate_fail "$file pins the endpoint to $value but $OWNER says $PORT. A shipped mirror that disagrees with the owner sends emitted suites at a listener nobody started."
-    sce_gate_step "mirror pinned: $file ($symbol = $value)"
-done
-
-# ── The path the in-process listeners answer on, pinned to the owner ──
-# The Kotlin harness binds an ephemeral port (parallel test classes would
-# collide on a fixed one), and so does the Python conftest unless
-# SCE_W3C_HTTP_PORT names one, so the port is not theirs to spell and is not
-# pinned above. The PATH is still spelled there, and nothing compared the
-# Kotlin spellings to the owner's: a path edited in the owner left a Kotlin
-# listener answering on the old one while the document asked for the new.
+# ── The path every harness answers on or posts to, pinned to the owner ──
+# The Kotlin harness and the Python conftest bind ports of their own (their
+# listeners run beside the machines they serve), and the Rust and Go harnesses
+# are told the port their out-of-process listener bound, so no harness spells a
+# port. The PATH is still spelled in each. The Rust and Go files are embedded by
+# `sce-build` into the standalone suites it emits, where no repository sits
+# above them, so they CANNOT read the owner (an earlier cut had the Rust one
+# `include_str!` the header and the emitted suite failed to compile); the rule
+# is not "may spell it" but "must spell the SAME thing". Nothing compared the
+# Kotlin spellings to the owner's either: a path edited in the owner left a
+# Kotlin listener answering on the old one while the document asked for the new.
 ENDPOINT_PATH="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
     || sce_gate_fail "$OWNER no longer declares a readable test path"
 PATH_MIRRORS=(
@@ -99,6 +88,8 @@ PATH_MIRRORS=(
     "backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CHttpTestBase.kt|W3CHttpTestServer(port = 0, path = \""
     "backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CHttpTestBase.kt|http://localhost:\$actualPort"
     "backends/python/tests/conftest.py|_HTTP_PATH = \""
+    "backends/rust/tests/src/harness.rs|const DEFAULT_ENDPOINT_PATH: &str = \""
+    "backends/go/tests/harness/harness.go|const defaultEndpointPath = \""
 )
 
 for entry in "${PATH_MIRRORS[@]}"; do
@@ -158,10 +149,6 @@ ALLOWED=(
     # HttpEventBridge request-shaping tests, on `/scxml` rather than the
     # fixture path -- a different listener entirely.
     "tests/events/HttpEventBridgeTest.cpp"
-    # The two shipped mirrors. Not an exemption: the loop above has already
-    # checked each against the owner and failed the gate if any had drifted.
-    "backends/rust/tests/src/harness.rs"
-    "backends/go/tests/harness/harness.go"
 )
 
 is_allowed() {
@@ -182,20 +169,22 @@ is_allowed() {
 # `git grep` names the handful of files that mention the number at all, and the
 # stripper then runs only on those, so the trigger can stay a catch-all: a
 # re-spelling anywhere is caught, cheaply.
+PORT="$HISTORICAL_PORT"
 mapfile -t CANDIDATES < <(git grep -lF "$PORT" -- \
     '*.c' '*.h' '*.cpp' '*.hpp' '*.rs' '*.go' '*.py' '*.kt' '*.js' \
     '*.sh' '*.yml' '*.yaml' '*.cmake' 'CMakeLists.txt' '**/CMakeLists.txt' 2>/dev/null || true)
 
-# THE FLOOR, and it is not a file count. The owner declares the port, so the
-# owner MUST be among the candidates; if it is not, the search did not run over
-# this tree and every "clean" verdict below would be vacuous. A count would only
-# have told us something was read -- this tells us the right thing was.
-owner_found=0
+# THE FLOOR, and it is not a file count. The product's listener default spells
+# the same number in code, so that file MUST be among the candidates; if it is
+# not, the search did not run over this tree and every "clean" verdict below
+# would be vacuous. A count would only have told us something was read -- this
+# tells us the right thing was.
+witness_found=0
 for path in "${CANDIDATES[@]}"; do
-    [[ "$path" == "$OWNER" ]] && owner_found=1
+    [[ "$path" == "$FLOOR_WITNESS" ]] && witness_found=1
 done
-((owner_found)) \
-    || sce_gate_fail "the candidate search did not turn up $OWNER, which declares the port — the scan did not read this tree, so a clean verdict would mean nothing"
+((witness_found)) \
+    || sce_gate_fail "the candidate search did not turn up $FLOOR_WITNESS, which spells $PORT as the product's listener default — the scan did not read this tree, so a clean verdict would mean nothing"
 
 examined=0
 violations=0
@@ -259,13 +248,13 @@ for path in "${CANDIDATES[@]}"; do
     # exactly one violation (W3CTestRunner.cpp, ~8k lines) and looked clean.
     # A scanner that under-reports on big files is worse than one that fails.
     if grep -qE "(^|[^0-9])${PORT}([^0-9]|$)" <<<"$stripped"; then
-        printf '  %s re-spells the fixture endpoint port %s\n' "$path" "$PORT" >&2
+        printf '  %s spells the old fixed fixture port %s\n' "$path" "$PORT" >&2
         violations=$((violations + 1))
     fi
 done
 
 if ((violations > 0)); then
-    sce_gate_fail "$violations file(s) spell the BasicHTTP fixture endpoint instead of reading it. Include $OWNER (C/C++), read SCE_W3C_HTTP_PORT from the test ENVIRONMENT, or source $READER (shell/CI). Add a genuinely different fact to this gate's ALLOWED list, with the reason."
+    sce_gate_fail "$violations file(s) spell the port the BasicHTTP fixture listener used to share. The endpoint has no default port: bind 0 and read the bound port, or read SCE_W3C_HTTP_PORT / SCE_W3C_HTTP_PORT_FILE as $OWNER does (C/C++), or source $READER (shell/CI). Add a genuinely different fact to this gate's ALLOWED list, with the reason."
 fi
 
-sce_gate_step "${#CANDIDATES[@]} candidate(s) named the port, $examined examined, none re-spell the endpoint"
+sce_gate_step "${#CANDIDATES[@]} candidate(s) named the old fixed port, $examined examined, none depend on it"

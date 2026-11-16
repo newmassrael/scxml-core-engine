@@ -82,7 +82,10 @@ class W3CHttpTestServer:
     """
 
     def __init__(self, port=None, path=None):
-        port = sce_http_endpoint.endpoint_port() if port is None else port
+        # In this process, beside the engines it serves, so it binds the port
+        # SCE_W3C_HTTP_PORT names or one the kernel assigns, and `self.port`
+        # is the port it bound once `start` has run.
+        port = sce_http_endpoint.in_process_port() if port is None else port
         path = sce_http_endpoint.endpoint_path() if path is None else path
         self.port = port
         self.path = path
@@ -149,6 +152,9 @@ class W3CHttpTestServer:
                 allow_reuse_address = True
 
             self._server = _ReuseServer(("localhost", self.port), _Handler)
+            # The port the machines publish is the one bound, which the kernel
+            # chose when this was told 0.
+            self.port = self._server.server_address[1]
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
             return True
@@ -339,11 +345,15 @@ def main():
     # Start HTTP server once for all HTTP tests (matches C++ pattern of per-test
     # server but reusing is safe since we swap the engine reference per test)
     http_server = None
+    # Why the BasicHTTP listener is missing, when it failed to start: each HTTP
+    # test is then reported as an ERROR naming it, rather than run against no
+    # listener and read as the engine's failure.
+    http_server_failure = ""
     if not skip_http:
         http_server = W3CHttpTestServer()
         if not http_server.start():
-            print(f"WARNING: Failed to start HTTP server on port {http_server.port}, "
-                  "HTTP tests will be skipped")
+            http_server_failure = f"the BasicHTTP listener could not bind port {http_server.port}"
+            print(f"ERROR: {http_server_failure}; every HTTP test is reported as an ERROR")
             http_server = None
 
     total = len(test_ids)
@@ -356,7 +366,10 @@ def main():
 
             # Use HTTP server for HTTP tests
             test_http_server = http_server if test_id in HTTP_TEST_IDS else None
-            result, elapsed, detail = run_test(test_id, test_http_server)
+            if test_id in HTTP_TEST_IDS and test_http_server is None:
+                result, elapsed, detail = "ERROR", 0.0, http_server_failure
+            else:
+                result, elapsed, detail = run_test(test_id, test_http_server)
 
             if result == "PASS":
                 passed += 1

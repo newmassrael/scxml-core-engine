@@ -184,18 +184,18 @@ sce_gate_codegen() {
 # is what keeps the settle window, the failure message and the cleanup from
 # being written three times and drifting.
 #
-# WHERE the listener answers is not decided here. It is read from
-# `tests/w3c/basic_http_test_endpoint.h` via `sce_http_endpoint_port`, the same
-# header the compiled runners include, so the address this binds and the
-# 'location' those runners publish cannot come apart. The gate also EXPORTS the
-# value, because the suites it starts the server for run runners that read it —
-# a gate that bound one port and let its children address another would fail
-# every fixture for a reason that has nothing to do with the backend.
+# WHERE the listener answers is not decided here. Its path is read from
+# `tests/w3c/basic_http_test_endpoint.h`, the header the compiled runners
+# include, and its port is the one the caller named in SCE_W3C_HTTP_PORT or
+# else one the kernel assigns: the endpoint has no default port. The gate
+# EXPORTS the port the server bound, because the suites it starts the server for
+# run runners that read it — a gate that bound one port and let its children
+# address another would fail every fixture for a reason that has nothing to do
+# with the backend.
 #
-# The C++ suite is the opposite case and must NOT have this: a live listener on
-# the endpoint makes its ctest run report 13 tests Not Run. That asymmetry is
-# the reason this is a call a gate makes rather than something the runner does
-# for everyone.
+# The C++ suite does not need this: its in-process listeners and its C11
+# fixture each take a port of their own. That is the reason this is a call a
+# gate makes rather than something the runner does for everyone.
 #
 # Answers into SCE_GATE_HTTP_FIXTURE_PID rather than onto stdout, because the
 # obvious `pid="$(_sce_gate_http_fixture_start)"` would put `sce_gate_fail`
@@ -315,14 +315,14 @@ sce_gate_http_fixture_server() {
 # ONE command needs it: start, run, stop, and answer with the command's own
 # status.
 #
-# The scoped form exists because holding the port is not free. `mutation-rounds`
-# runs several rounds in one invocation and only some of them want a listener on
-# the endpoint; the rest drive ctest, where the C11 BasicHTTP entries bring up
-# their own copy through the `w3c_c_http_server` CMake fixture (backends/c/
-# tests/CMakeLists.txt) and the C++ W3C runner binds the port itself. A server
-# left up across the whole gate would make those fail to bind — the same
-# 13-cases-Not-Run shape `sce_gate_requires_free_http_port` refuses for,
-# arrived at from the other direction.
+# The scoped form exists because a listener belongs to the rounds that asked for
+# it. `mutation-rounds` runs several rounds in one invocation and only some of
+# them want a listener on the endpoint; the rest drive ctest, where the C11
+# BasicHTTP entries bring up their own copy through the `w3c_c_http_server`
+# CMake fixture (backends/c/tests/CMakeLists.txt) and the C++ W3C runner binds a
+# port itself. Each takes a port of its own, but a round that did not ask for
+# this one must not find SCE_W3C_HTTP_PORT pointing at it: an in-process
+# listener told that port would bind it exactly and collide.
 #
 # The exit cleanup armed by the start covers the path this function's own stop
 # cannot: a gate interrupted mid-round (Ctrl-C, a cancelled CI job) never
@@ -711,27 +711,6 @@ sce_prune_ctest_temporaries() {
         sce_gate_step "pruned $pruned ctest log(s) left by interrupted runs"
     fi
     return 0
-}
-
-# Refuse to run when something already holds the fixture endpoint's port.
-#
-# The C++ conformance suite reports 13 of its cases Not Run when the fixture
-# server is live, which is a smaller suite reported as a passing one. The case
-# floor would catch the count, but not name the cause; this does.
-#
-# The port comes from the endpoint owner rather than being spelled here, so a
-# tree configured onto a different one checks the port it will actually use.
-# This is what lets a second checkout run this suite while the first holds the
-# default — the collision the old literal made unavoidable.
-sce_gate_requires_free_http_port() {
-    local port
-    # Sourced here for the reason its sibling above is.
-    source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
-    port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
-        || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint port"
-    if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":${port} "; then
-        sce_gate_fail "something is listening on localhost:${port}. The W3C HTTP fixture server makes this suite report 13 cases Not Run, so the run would be a smaller suite reported as a passing one. Stop it and retry, or point this tree at another port with SCE_W3C_HTTP_PORT."
-    fi
 }
 
 # Resolve a tool the gate needs, or decide honestly what its absence
