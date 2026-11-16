@@ -1,0 +1,59 @@
+# Mutation cases for "a Python machine spells each constructor of a composed
+# value" (docs/adr/0086, sections 4, 5.4, 15.5 and 7.1, the Python row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_python_machine_spells_each_composed_constructor.cases
+#
+# The Python spelling of the walks (`PythonComposed`) names to the runtime the
+# type of each part a payload holds: a list and a text under their own bounds at
+# every depth, a list that states a lower count held to it, and a record with
+# the defaults of the fields a later revision added; the same names check, in a
+# record's `__post_init__`, what a host makes; and a list a place holds is taken
+# whole as a list of its own. Each case takes one of those decisions away and
+# has to turn the module's tests red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::python
+mutation_targets sce-build/src/forge/composed_lowering/python.rs
+mutation_oracles sce-build/src/forge/composed_lowering/python.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list is read and checked past its bound: one element too many is kept
+# (sections 4.1 and 5.4).
+mutation_case "a Python list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/python.rs",
+     r'''        format!("{PYTHON_PAYLOAD}.ListOf({elem}, {max})")''',
+     r'''        format!("{PYTHON_PAYLOAD}.ListOf({elem}, {})", max + 1)''')
+PY
+
+# A list that states a lower count is read as though it stated none (section
+# 15.5).
+mutation_case "a Python list is read with no lower count" <<'PY'
+edit("sce-build/src/forge/composed_lowering/python.rs",
+     r'''        format!("{PYTHON_PAYLOAD}.ListOf({elem}, {max}, least={least})")''',
+     r'''        format!("{PYTHON_PAYLOAD}.ListOf({elem}, {max}, least={})", least.min(0))''')
+PY
+
+# A text is read with no bound, so a text past it is kept (section 4.4).
+mutation_case "a Python text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/python.rs",
+     r'''        format!("{PYTHON_PAYLOAD}.Text({max})")''',
+     r'''        format!("{PYTHON_PAYLOAD}.Text({})", max.saturating_add(u32::MAX))''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "a Python record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/python.rs",
+     r'''        let defaults = defaults.map_or_else(''',
+     r'''        let defaults = defaults.filter(|_| false).map_or_else(''')
+PY
+
+# A list taken whole into a variable is the place's own list, which the
+# variable is then written into in place.
+mutation_case "a Python copy of a list shares the place's list" <<'PY'
+edit("sce-build/src/forge/composed_lowering/python.rs",
+     r'''            format!("sce_algorithm.whole_copy({})", held.text)''',
+     r'''            held.text.clone()''')
+PY

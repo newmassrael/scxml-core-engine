@@ -1,0 +1,64 @@
+# Mutation cases for "a Swift machine spells each constructor of a composed
+# value" (docs/adr/0086, sections 4, 5.4, 15.5 and 7.1, the Swift row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_swift_machine_spells_each_composed_constructor.cases
+#
+# The Swift spelling of the walks (`SwiftComposed`) reads each list and text of
+# a payload by a closure under its own bound at every depth, a list that states
+# a lower count held to it, a record with the defaults of the fields a later
+# revision added, and holds a value a host hands a raise seam to every bound
+# before it is encoded. Each case takes one of those decisions away and has to
+# turn the module's tests red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::swift
+mutation_targets sce-build/src/forge/composed_lowering/swift.rs
+mutation_oracles sce-build/src/forge/composed_lowering/swift.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list is read past its bound: one element too many is kept (section 4.1).
+mutation_case "a Swift list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/swift.rs",
+     r'''            "{} try {SWIFT_READ_BINDING}.list({least}bound: {max}, {elem}) }}",
+            closure_head(&self.list_type(elem_ty, max))''',
+     r'''            "{} try {SWIFT_READ_BINDING}.list({least}bound: {}, {elem}) }}",
+            closure_head(&self.list_type(elem_ty, max)),
+            max + 1''')
+PY
+
+# A list that states a lower count is read as though it stated none (section
+# 15.5).
+mutation_case "a Swift list is read with no lower count" <<'PY'
+edit("sce-build/src/forge/composed_lowering/swift.rs",
+     r'''            format!("least: {least}, ")''',
+     r'''            format!("least: {}, ", least.min(0))''')
+PY
+
+# A text is read with no bound, so a text past it is kept (section 4.4).
+mutation_case "a Swift text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/swift.rs",
+     r'''            "{} try {SWIFT_READ_BINDING}.text(bound: {max}) }}",
+            closure_head("String")''',
+     r'''            "{} try {SWIFT_READ_BINDING}.text(bound: {}) }}",
+            closure_head("String"),
+            max.saturating_add(u32::MAX)''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "a Swift record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/swift.rs",
+     r'''            defaults.map_or_else(String::new, |json| format!("defaults: {}, ", literal(json)));''',
+     r'''            defaults.filter(|_| false).map_or_else(String::new, |json| format!("defaults: {}, ", literal(json)));''')
+PY
+
+# A raise seam lets a host's list one past its bound through (section 5.4).
+mutation_case "a Swift raise seam holds a list to one past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/swift.rs",
+     r'''                "try checkList({path}, {value}, {least}bound: {}, {each})",
+                max.max''',
+     r'''                "try checkList({path}, {value}, {least}bound: {}, {each})",
+                max.max + 1''')
+PY

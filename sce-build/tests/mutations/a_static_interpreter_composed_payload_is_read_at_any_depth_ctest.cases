@@ -1,0 +1,46 @@
+# Mutation cases for "the Interpreter reads a composed payload at any depth"
+# (docs/adr/0086, sections 4.2, 4.4 and 6), run on the lowered document.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_interpreter_composed_payload_is_read_at_any_depth_ctest.cases`.
+#
+# `static_datamodel_lowered` lowers `static_composed_payload` and
+# `static_composed_send` and runs them on the Interpreter: a full delivery read at
+# depths 1 to 3, and a list one past its bound at depth 2, a text past its bound at
+# depths 3 and 1, and a list a later revision added one past its bound, each refused
+# whole by the event's door, `error.execution` once and none of the content run. The
+# library's `payload` is also asked directly for a delivery that lacks the field a
+# later revision added, and for one past a list's bound. The mutants take one
+# decision away each:
+#
+#   the library reads a list one past the bound its descriptor names;
+#   the library refuses a field a later revision added as missing, its default
+#   unread;
+#   the descriptor the lowering spells names a list's bound one past its own.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names; the runner rebuilds `sce-codegen` itself for a mutated Rust source of
+# it. Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/composed_lowering/ecmascript.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml
+
+mutation_case "the library reads a list one past its bound" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      if (value.length > type.max) {",
+     "      if (value.length > type.max + 1) {")
+PY
+
+mutation_case "the library refuses a field a later revision added as missing" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "        } else if (type.defaults !== undefined && Object.prototype.hasOwnProperty.call(type.defaults, id)) {",
+     "        } else if (false && type.defaults !== undefined && Object.prototype.hasOwnProperty.call(type.defaults, id)) {")
+PY
+
+mutation_case "the Interpreter's descriptor names a list's bound one past its own" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''            format!("{{list: {elem}, max: {max}}}")''',
+     r'''            format!("{{list: {elem}, max: {}}}", max + 1)''')
+PY

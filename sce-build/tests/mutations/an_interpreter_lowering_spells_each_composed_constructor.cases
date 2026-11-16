@@ -1,0 +1,62 @@
+# Mutation cases for "the Interpreter's lowering spells each constructor of a
+# composed value" (docs/adr/0086, sections 4, 5.3, 15.5 and 7.1, the
+# Interpreter row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/an_interpreter_lowering_spells_each_composed_constructor.cases
+#
+# The Interpreter's spelling of the walks (`JsComposed`) is the descriptor the
+# library's `payload` reads an event's data by: each list and text under its own
+# bound at every depth, a list that states a lower count held to it, and a
+# record with the defaults of the fields a later revision added; a `<send>`
+# writes a 64-bit integer a composed value holds as the text of its digits.
+# Each case takes one of those decisions away and has to turn the module's
+# tests red on its own. What the lowered document does with the descriptor
+# when it runs is judged by
+# `a_static_interpreter_composed_payload_is_read_at_any_depth_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::ecmascript
+mutation_targets sce-build/src/forge/composed_lowering/ecmascript.rs
+mutation_oracles sce-build/src/forge/composed_lowering/ecmascript.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list's descriptor names a bound one past its own (section 4.1).
+mutation_case "an Interpreter list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''            format!("{{list: {elem}, max: {max}}}")''',
+     r'''            format!("{{list: {elem}, max: {}}}", max + 1)''')
+PY
+
+# A list that states a lower count is read as though it stated none (section
+# 15.5).
+mutation_case "an Interpreter list is read with no lower count" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''            format!("{{list: {elem}, max: {max}, min: {least}}}")''',
+     r'''            format!("{{list: {elem}, max: {max}, min: {}}}", least.min(0))''')
+PY
+
+# A text's descriptor names no bound a text could pass (section 4.4).
+mutation_case "an Interpreter text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''        format!("{{string: {max}}}")''',
+     r'''        format!("{{string: {}}}", max.saturating_add(u32::MAX))''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "an Interpreter record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''            .map(|json| format!(", defaults: {json}"))''',
+     r'''            .filter(|_| false)
+            .map(|json| format!(", defaults: {json}"))''')
+PY
+
+# A 64-bit integer a composed value holds is sent as a JSON number, which a
+# reader past 2^53 - 1 cannot read back exactly (section 5.3).
+mutation_case "an Interpreter send writes a 64-bit integer as a number" <<'PY'
+edit("sce-build/src/forge/composed_lowering/ecmascript.rs",
+     r'''            format!("String({})", held.text)''',
+     r'''            held.text.clone()''')
+PY

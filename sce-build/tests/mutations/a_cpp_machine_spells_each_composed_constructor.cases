@@ -1,0 +1,62 @@
+# Mutation cases for "a C++ machine spells each constructor of a composed value"
+# (docs/adr/0086, sections 4, 5.4, 7.1, the C++ row, and 7.4).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_cpp_machine_spells_each_composed_constructor.cases
+#
+# The C++ spelling of the walks (`CppComposed`) holds a list in the bounded type
+# of its own bound, reads each list and text of a payload by a lambda under its
+# own bound at every depth, a record with the defaults of the fields a later
+# revision added, and holds the lower count of a list a host hands a raise seam,
+# the one bound no C++ type holds, before it is encoded. Each case takes one of
+# those decisions away and has to turn the module's tests red on its own.
+#
+# The generated machine holds every bound twice, in the reader's bound and in
+# the type the reader fills (`EventPayloadValue::readList` reads at most the
+# smaller of the two), so a mutant of one alone is not observable where the
+# machine runs, and the cases are judged against the spelling's own tests.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::cpp
+mutation_targets sce-build/src/forge/composed_lowering/cpp.rs
+mutation_oracles sce-build/src/forge/composed_lowering/cpp.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list is held in a type one past its bound (section 7.4).
+mutation_case "a C++ list is held past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/cpp.rs",
+     r'''    format!("{CPP_FORGE}::OwnedList<{elem}, {max}>")''',
+     r'''    format!("{CPP_FORGE}::OwnedList<{elem}, {}>", max + 1)''')
+PY
+
+# A list is read past its bound (section 4.1).
+mutation_case "a C++ list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/cpp.rs",
+     r'''            format!("{CPP_READER} {{ return sceValue.readList({max}u, sceInto, {elem}); }}")''',
+     r'''            format!("{CPP_READER} {{ return sceValue.readList({}u, sceInto, {elem}); }}", max + 1)''')
+PY
+
+# A text is read with no bound (section 4.4).
+mutation_case "a C++ text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/cpp.rs",
+     r'''        format!("{CPP_READER} {{ return sceValue.readText({max}u, sceInto); }}")''',
+     r'''        format!("{CPP_READER} {{ return sceValue.readText({}u, sceInto); }}", max.saturating_add(u32::MAX))''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "a C++ record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/cpp.rs",
+     r'''        let defaults = defaults.map_or_else(''',
+     r'''        let defaults = defaults.filter(|_| false).map_or_else(''')
+PY
+
+# A raise seam lets a host's list short of its lower count through (sections
+# 5.4 and 15.6).
+mutation_case "a C++ raise seam holds no lower count" <<'PY'
+edit("sce-build/src/forge/composed_lowering/cpp.rs",
+     r'''                        "{bounds}::listWithin({path}, {value}, {least}u, {}u, {each})",''',
+     r'''                        "{bounds}::listWithin({path}, {value}, {}u, {}u, {each})",
+                        least.min(0),''')
+PY

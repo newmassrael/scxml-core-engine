@@ -1,0 +1,58 @@
+# Mutation cases for "a Kotlin machine spells each constructor of a composed
+# value" (docs/adr/0086, sections 4, 5.4, 15.5 and 7.1, the Kotlin row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_kotlin_machine_spells_each_composed_constructor.cases
+#
+# The Kotlin spelling of the walks (`KotlinComposed`) reads each list and text
+# of a payload under its own bound at every depth, a list that states a lower
+# count held to it, a record with the defaults of the fields a later revision
+# added, and checks in the `init` of a record every bound a host's value has to
+# keep where it is made. Each case takes one of those decisions away and has to
+# turn the module's tests red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::kotlin
+mutation_targets sce-build/src/forge/composed_lowering/kotlin.rs
+mutation_oracles sce-build/src/forge/composed_lowering/kotlin.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list is read past its bound: one element too many is kept (section 4.1).
+mutation_case "a Kotlin list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/kotlin.rs",
+     r'''            format!("{value}.list({max}) {{ {elem} }}")''',
+     r'''            format!("{value}.list({}) {{ {elem} }}", max + 1)''')
+PY
+
+# A list that states a lower count is read as though it stated none (section
+# 15.5).
+mutation_case "a Kotlin list is read with no lower count" <<'PY'
+edit("sce-build/src/forge/composed_lowering/kotlin.rs",
+     r'''            format!("{value}.listWithin({least}, {max}) {{ {elem} }}")''',
+     r'''            format!("{value}.listWithin({}, {max}) {{ {elem} }}", least.min(0))''')
+PY
+
+# A text is read with no bound, so a text past it is kept (section 4.4).
+mutation_case "a Kotlin text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/kotlin.rs",
+     r'''        format!("{value}.string({max})")''',
+     r'''        format!("{value}.string({})", max.saturating_add(u32::MAX))''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "a Kotlin record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/kotlin.rs",
+     r'''        let defaults = defaults.map_or_else(''',
+     r'''        let defaults = defaults.filter(|_| false).map_or_else(''')
+PY
+
+# A record made by a host holds a list one past its bound (section 5.4).
+mutation_case "a Kotlin record checks a list to one past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/kotlin.rs",
+     r'''                    "{KOTLIN_BOUNDS}.list({path}, {value}, {}) {{ {each} }}",
+                    max.max''',
+     r'''                    "{KOTLIN_BOUNDS}.list({path}, {value}, {}) {{ {each} }}",
+                    max.max + 1''')
+PY

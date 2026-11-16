@@ -1,0 +1,64 @@
+# Mutation cases for "a Go machine spells each constructor of a composed value"
+# (docs/adr/0086, sections 4, 5.4 and 7.1, the Go row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_go_machine_spells_each_composed_constructor.cases
+#
+# The Go spelling of the walks (`GoComposed`) reads each list and text of a
+# payload under its own bound at every depth, a record with the defaults of the
+# fields a later revision added, an enum name by the names the enum declares, a
+# value a host hands a raise seam held to every bound before it is encoded, and
+# copies a list a place holds into a slice of its own. Each case takes one of
+# those decisions away and has to turn the module's tests red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering::go
+mutation_targets sce-build/src/forge/composed_lowering/go.rs
+mutation_oracles sce-build/src/forge/composed_lowering/go.rs sce-build/src/forge/composed_lowering/test_support.rs
+
+# A list is read past its bound: one element too many is kept (section 4.1).
+mutation_case "a Go list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''            format!("sce.ReadList({value}, {max}, {each})")''',
+     r'''            format!("sce.ReadList({value}, {}, {each})", max + 1)''')
+PY
+
+# A text is read with no bound, so a text past it is kept (section 4.4).
+mutation_case "a Go text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''        format!("{value}.Text({max})")''',
+     r'''        format!("{value}.Text({})", max.saturating_add(u32::MAX))''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused:
+# the defaults of the field the later revision added are not handed on.
+mutation_case "a Go record reads no defaults of a later revision" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''            .map(|json| crate::filters::escape_go(json.to_string()))''',
+     r'''            .filter(|_| false)
+            .map(|json| crate::filters::escape_go(json.to_string()))''')
+PY
+
+# An enum name the enum does not declare is read as its zero value.
+mutation_case "a Go unknown variant name is not refused" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''return 0, {value}.UnknownVariant(sceName, \"{}\") }}()",''',
+     r'''return 0, nil }}() /* {value}.UnknownVariant(sceName, \"{}\") */",''')
+PY
+
+# A raise seam lets a host's list one past its bound through (section 5.4).
+mutation_case "a Go raise seam holds a list to one past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''                format!("sce.CheckList({path}, {value}, {}, {each})", max.max)''',
+     r'''                format!("sce.CheckList({path}, {value}, {}, {each})", max.max + 1)''')
+PY
+
+# A list taken whole into a variable shares the place's slice, which the
+# variable is appended to and emptied in place.
+mutation_case "a Go copy of a list shares the place's slice" <<'PY'
+edit("sce-build/src/forge/composed_lowering/go.rs",
+     r'''            format!("append({0}[:0:0], {0}...)", held.text)''',
+     r'''            held.text.clone()''')
+PY
