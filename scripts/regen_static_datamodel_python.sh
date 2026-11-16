@@ -215,16 +215,20 @@ TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc 
 # The configuration whose system port takes a record of every form of the canonical value
 # Python holds (docs/SCE_TTCN3_LANE.md §10.3, §10.5), so its unit's reader and writer of each
 # form are generated; test_a_record_reads_back_the_form_it_writes.py round-trips a value of
-# each and replays a trace of them. Python lowers no union, so it takes the configuration the
-# C++ tree takes (tests/CMakeLists.txt), whose order_taken stands in order_placed's place. Its
-# records (order_taken, form_extras; job_status is generated above), the record and the enum
-# they hold that nothing above generates (order_customer, shape_kind_open) and its test case
-# are a module each; its listener is a component, of which only the machine's module is kept,
-# as of the components above. The port type writes no file.
+# each and replays a trace of them. It takes the Rust tree's configuration, forms_configuration,
+# whose order_placed holds a union of a case with a record, one with nothing and one with a byte
+# string (order_placed, the union, its tag's enum and its cases' records TEST_PROFILE_IMPORTS
+# generates above), and the configuration the C++ and C11 trees take beside it,
+# unionless_forms_configuration, whose order_taken stands in order_placed's place. Their records
+# (order_taken, form_extras; job_status is generated above), the record and the enum they hold
+# that nothing above generates (order_customer, shape_kind_open) and their test cases are a
+# module each; each listener is a component, of which only the machine's module is kept, as of
+# the components above. The port types write no file.
 TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
 TRACE_FORMS=(order_taken form_extras unionless_forms_configuration replays_every_unionless_form)
+TRACE_FORMS+=(forms_configuration replays_every_form)
 TRACE_FORMS_IMPORTS=("$TEST_PROFILE_DIR/imports/order_customer.scxml" "sce-build/tests/fixtures/union/shape_kind_open.scxml")
-TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
+TRACE_FORMS_COMPONENTS=(unionless_forms_listener forms_listener)
 # The corpus's suite test_a_corpus_suite_replays_to_its_expected_logs.py replays from its traces
 # (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite, of what runtime_suite leaves out of every run,
 # its record, templates and tables a module each, its components' machines alone as above,

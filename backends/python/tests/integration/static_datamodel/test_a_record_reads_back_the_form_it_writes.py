@@ -11,15 +11,18 @@ count, an optional list and a list of lists). The modules are generated from
 ``sce-build/tests/fixtures/test_profile/trace_forms/`` beside this file (regen:
 ``scripts/regen_static_datamodel_python.sh``; the modules are not committed).
 
-The twin of ``tests/integration/ARecordReadsBackTheFormItWritesTest.cpp``, with
-the same values and the same refusals, and of
-``backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs`` but for
-the union the Rust configuration's order_placed holds, which Python does not
-lower: order_taken holds every other form order_placed does, and a byte string
-in the union's place. A value written by ``canonical_<record>`` and read back by
-``read_<record>`` is the value it was, through the canonical text; each
-malformed spelling of a form is refused, naming where it stands; and a trace of
-one record of each type replays to a log that holds each value as the trace
+The twin of ``tests/integration/ARecordReadsBackTheFormItWritesTest.cpp`` and of
+``backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs``, with
+the same values and the same refusals. The Rust configuration's order_placed,
+which holds a union of a case with a record, one with nothing and one with a
+byte string, is read and written by ``forms_configuration``, the Rust twin's,
+a value of each case built by the class of its case; order_taken holds every
+other form order_placed does, and a byte string in the union's place, read and
+written by ``unionless_forms_configuration``. A value written by
+``canonical_<record>`` and read back by ``read_<record>`` is the value it was,
+through the canonical text; each malformed spelling of a form is refused,
+naming where it stands; and a trace of one record of each type replays,
+through either configuration, to a log that holds each value as the trace
 does. What the generator writes for the configuration is held by
 ``a_configuration_reads_a_record_of_every_form`` in
 ``sce-build/tests/a_test_suite_is_generated_in_python.rs``.
@@ -42,15 +45,21 @@ sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 # declares `test_case`, which pytest would collect as a test of this module were
 # it imported by its own name.
 from integration.static_datamodel import (  # noqa: E402 -- path inserted above
+    card_payment,
     form_extras,
     job_status,
     order_customer,
     order_line,
+    order_payment,
+    order_placed,
     order_taken,
     paint_color,
+    replays_every_form,
     replays_every_unionless_form,
     shape_kind_open,
+    voucher_payment,
 )
+from integration.static_datamodel import forms_configuration as union_forms  # noqa: E402
 from integration.static_datamodel import unionless_forms_configuration as forms  # noqa: E402
 from sce_runtime.saved_json import parse_json, write_jcs  # noqa: E402
 from sce_runtime.testprofile import (  # noqa: E402
@@ -92,6 +101,31 @@ def order(voucher: bytes) -> Any:
 
 #: The vouchers the order is paid with: three octets, and none.
 VOUCHERS = [bytes([0x00, 0xAB, 0xFF]), b""]
+
+
+def placed(payment: Any) -> Any:
+    """An order placed and paid by ``payment``, with the lines, the note, the
+    priority and the customer of ``order``."""
+    return order_placed.OrderPlacedPayload(
+        order_id=4294967295,
+        lines=[line("A-1", 2, Color.GREEN), line('"q" é', 65535, Color.BLUE)],
+        note="ring twice",
+        priority=None,
+        customer=order_customer.OrderCustomerPayload(full_name="Ada", vip=True),
+        payment=payment,
+    )
+
+
+def payments() -> List[Any]:
+    """The three cases of the payment, each built by the class of its case: one
+    of a record, one of none, one of a byte string."""
+    return [
+        order_payment.OrderPaymentCard(value=card_payment.CardPaymentPayload(last4="4242", amount=1)),
+        order_payment.OrderPaymentCash(),
+        order_payment.OrderPaymentVoucher(
+            value=voucher_payment.VoucherPaymentPayload(voucher_code=bytes([0x00, 0xAB, 0xFF]))
+        ),
+    ]
 
 
 def statuses() -> List[Any]:
@@ -152,6 +186,26 @@ def test_a_value_of_each_form_reads_back_from_its_canonical_text() -> None:
     assert paid.lines[1].sku == '"q" é'
     assert paid.lines[1].color is Color.BLUE
     assert paid.priority is None
+
+
+def test_each_case_of_a_union_reads_back_in_its_case() -> None:
+    """docs/adr/0092, section 7: a value of each case of a union reads back from
+    the text its writer gives in the case it was written in, holding the record
+    it held."""
+    for payment in payments():
+        round_trip(placed(payment), union_forms.canonical_order_placed, union_forms.read_order_placed)
+        read = union_forms.read_order_placed(union_forms.canonical_order_placed(placed(payment)))
+        assert read == placed(payment)
+        assert type(read.payment) is type(payment), f"{payment} reads back in its case"
+    card, cash, voucher = (
+        union_forms.read_order_placed(union_forms.canonical_order_placed(placed(payment))).payment
+        for payment in payments()
+    )
+    assert isinstance(card, order_payment.OrderPaymentCard)
+    assert card.value.last4 == "4242" and card.value.amount == 1
+    assert isinstance(cash, order_payment.OrderPaymentCash)
+    assert isinstance(voucher, order_payment.OrderPaymentVoucher)
+    assert voucher.value.voucher_code == bytes([0x00, 0xAB, 0xFF])
 
 
 def refused(value: V, write: Callable[[V], Any], read: Callable[[Any], V], from_: str, to: str) -> str:
@@ -258,22 +312,78 @@ def test_a_malformed_spelling_of_each_form_is_refused_by_name() -> None:
         assert reason == expected
 
 
+def test_a_malformed_spelling_of_a_union_is_refused_by_name() -> None:
+    """docs/SCE_TTCN3_LANE.md §10.2, docs/adr/0092 section 7: a value of a union
+    is an object of one member naming one of its cases, the empty object for a
+    case that holds no record; any other spelling is refused, naming the union's
+    place, and a case's record is held to its type as any record is."""
+    card, cash, voucher = (placed(payment) for payment in payments())
+
+    def of_placed(value: Any, from_: str, to: str) -> str:
+        return refused(value, union_forms.canonical_order_placed, union_forms.read_order_placed, from_, to)
+
+    cases = [
+        (
+            of_placed(card, '{"card":', '{"cheque":'),
+            "order_placed.payment: 'cheque' names no case of its union",
+        ),
+        (
+            of_placed(card, '"last4":"4242"}}', '"last4":"4242"},"cash":{}}'),
+            "order_placed.payment: a value of a union is an object of one member, and this one has 2",
+        ),
+        (
+            of_placed(cash, '{"cash":{}}', '{"cash":{"x":"1"}}'),
+            "order_placed.payment.cash: a case that holds no record is the empty object",
+        ),
+        (
+            of_placed(voucher, '"voucher_code":"00ABFF"', '"voucher_code":"00abff"'),
+            "order_placed.payment.voucher_code: '00abff' is not octets in upper-case hex, two digits each",
+        ),
+        (
+            of_placed(voucher, '"voucher_code":"00ABFF"', '"voucher_code":"0011223344"'),
+            "order_placed.payment.voucher_code: a byte string of 5 octets is past the 4 its type holds",
+        ),
+    ]
+    for reason, expected in cases:
+        assert reason == expected
+
+
 def test_a_trace_of_every_form_replays_to_the_values_it_holds() -> None:
     """docs/SCE_TTCN3_LANE.md §10.5: a trace of one record of each type the
     system port takes, two at the start and one later, replays to the listener,
     which takes one a round and passes; the log holds each value as the trace
     does."""
-    trace = Trace(
-        suite="forms_suite",
-        test_case=replays_every_unionless_form.NAME,
-        inputs=[
+    replays_to_the_values_it_holds(
+        replays_every_unionless_form,
+        [
             TraceInput(0, "sut", "order_taken", forms.canonical_order_taken(order(VOUCHERS[0]))),
             TraceInput(0, "sut", "job_status", forms.canonical_job_status(statuses()[0])),
             TraceInput(250, "sut", "form_extras", forms.canonical_form_extras(extras()[0])),
         ],
     )
+
+
+def test_a_trace_of_every_form_with_a_union_replays_to_the_values_it_holds() -> None:
+    """docs/SCE_TTCN3_LANE.md §10.5: the Rust twin's trace, an order paid by card
+    in order_taken's place, replays to the listener of the port that takes a
+    union, and the log holds the union's case as the trace does."""
+    replays_to_the_values_it_holds(
+        replays_every_form,
+        [
+            TraceInput(0, "sut", "order_placed", union_forms.canonical_order_placed(placed(payments()[0]))),
+            TraceInput(0, "sut", "job_status", union_forms.canonical_job_status(statuses()[0])),
+            TraceInput(250, "sut", "form_extras", union_forms.canonical_form_extras(extras()[0])),
+        ],
+    )
+
+
+def replays_to_the_values_it_holds(case: Any, inputs: List[TraceInput]) -> None:
+    """The trace of ``inputs`` for the test case whose unit is ``case``, of
+    forms_suite, replayed: the listener takes one a round and passes at the last
+    input's instant, 250, and the log holds each value as the trace does."""
+    trace = Trace(suite="forms_suite", test_case=case.NAME, inputs=inputs)
     text = trace.canonical_text()
-    suite = Suite(name="forms_suite", executes=[Execute(replays_every_unionless_form.test_case())])
+    suite = Suite(name="forms_suite", executes=[Execute(case.test_case())])
     results = run_suite_with_traces(suite, features_of(), lambda _: Trace.parse(text))
     assert len(results) == 1
     assert results[0].result.verdict == Verdict.PASS, results[0].result.log
