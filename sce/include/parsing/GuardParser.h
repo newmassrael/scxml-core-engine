@@ -80,14 +80,6 @@ private:
     void parseDependencies(const std::shared_ptr<IXMLElement> &guardNode, std::shared_ptr<IGuardNode> guardObject);
 
     /**
-     * @brief Parse external implementation element (IXMLElement version)
-     * @param guardNode Guard node
-     * @param guardObject Guard object
-     */
-    void parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
-                                     std::shared_ptr<IGuardNode> guardObject);
-
-    /**
      * @brief Handle namespace matching
      * @param nodeName Node name
      * @param searchName Name to search for

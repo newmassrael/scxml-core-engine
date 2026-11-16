@@ -73,8 +73,12 @@ bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
     std::string nodeName = element->getName();
     SCE_LOG_DEBUG("ActionParser: isActionNode checking element: '{}'", nodeName);
 
-    // Custom action tags
-    if (matchNodeName(nodeName, "action") || matchNodeName(nodeName, "code:action")) {
+    // SCE's host operation, `<sce:action>` (§scxml-G-7), by its namespace.
+    // Until 2026-11-16 any element whose local name was `action` passed here,
+    // `<action>` and `<code:action>` of the interpreter's earlier vocabulary
+    // among them, recognised by prefix string, used by no document and read by
+    // no generated machine (docs/adr/0106, item #184).
+    if (ParsingCommon::isSceNamespace(element) && matchNodeName(nodeName, "action")) {
         return true;
     }
 
@@ -92,15 +96,6 @@ bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
     return isStandardAction;
 }
 
-bool SCE::ActionParser::isExternalActionNode(const std::shared_ptr<IXMLElement> &element) const {
-    if (!element) {
-        return false;
-    }
-
-    std::string nodeName = element->getName();
-    return matchNodeName(nodeName, "external-action") || matchNodeName(nodeName, "code:external-action");
-}
-
 bool SCE::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
@@ -114,25 +109,6 @@ bool SCE::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLEle
     return ParsingCommon::isScxmlNamespace(element) &&
            (matchNodeName(nodeName, "if") || matchNodeName(nodeName, "foreach") || matchNodeName(nodeName, "invoke") ||
             matchNodeName(nodeName, "finalize"));
-}
-
-void SCE::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
-                                                    std::shared_ptr<SCE::IActionNode> actionNode) {
-    if (!element || !actionNode) {
-        return;
-    }
-
-    SCE_LOG_DEBUG("Parsing external implementation for action: {}", actionNode->getId());
-
-    if (element->hasAttribute("class")) {
-        std::string className = element->getAttribute("class");
-        SCE_LOG_DEBUG("Class name: {}", className);
-    }
-
-    if (element->hasAttribute("factory")) {
-        std::string factory = element->getAttribute("factory");
-        SCE_LOG_DEBUG("Factory: {}", factory);
-    }
 }
 
 void SCE::ActionParser::parseSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element,
@@ -200,63 +176,11 @@ void SCE::ActionParser::appendExecutableContent(const std::shared_ptr<IXMLElemen
     } else {
         SCE_LOG_DEBUG("ActionParser: '{}' is NOT recognized as action node", element->getName());
     }
-    // Check external executable action node
-    if (isExternalActionNode(element)) {
-        auto action = parseExternalActionNode(element);
-        if (action) {
-            actions.push_back(action);
-        }
-    }
     // SCXML elements requiring special processing (if/elseif/else, foreach, etc.)
-    else if (isSpecialExecutableContent(element)) {
+    if (isSpecialExecutableContent(element)) {
         // Process special elements - recursively parse child elements
         parseSpecialExecutableContent(element, actions);
     }
-}
-
-std::shared_ptr<SCE::IActionNode>
-SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode) {
-    if (!externalActionNode) {
-        SCE_LOG_WARN("Null external action node");
-        return nullptr;
-    }
-
-    // Get action ID (name)
-    std::string id;
-    if (externalActionNode->hasAttribute("name")) {
-        id = externalActionNode->getAttribute("name");
-    } else if (externalActionNode->hasAttribute("id")) {
-        id = externalActionNode->getAttribute("id");
-    }
-
-    if (id.empty()) {
-        SCE_LOG_WARN("External action node missing required name attribute");
-        return nullptr;
-    }
-
-    SCE_LOG_DEBUG("Parsing external action: {}", id);
-
-    // External actions are handled as ScriptAction (extend when external action support is added)
-    auto action = std::make_shared<SCE::ScriptAction>("", id);
-
-    // Ignore delay time (not supported in current implementation)
-    if (externalActionNode->hasAttribute("delay")) {
-        SCE_LOG_DEBUG("ActionParser: Delay attribute value: {}", externalActionNode->getAttribute("delay"));
-    }
-
-    // Parse external implementation element
-    auto implNode = ParsingCommon::findFirstChildElement(externalActionNode, "code:external-implementation");
-    if (!implNode) {
-        // Try without namespace
-        implNode = ParsingCommon::findFirstChildElement(externalActionNode, "external-implementation");
-    }
-
-    if (implNode) {
-        parseExternalImplementation(implNode, action);
-    }
-
-    SCE_LOG_DEBUG("External action parsed successfully");
-    return action;
 }
 
 std::shared_ptr<SCE::IActionNode>

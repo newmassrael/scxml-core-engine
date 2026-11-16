@@ -67,30 +67,6 @@ public:
     virtual const std::vector<std::string> &getDependencies() const = 0;
 
     /**
-     * @brief Set external class
-     * @param className External implementation class name
-     */
-    virtual void setExternalClass(const std::string &className) = 0;
-
-    /**
-     * @brief Return external class name
-     * @return External implementation class name
-     */
-    virtual const std::string &getExternalClass() const = 0;
-
-    /**
-     * @brief Set external factory
-     * @param factoryName External factory name
-     */
-    virtual void setExternalFactory(const std::string &factoryName) = 0;
-
-    /**
-     * @brief Return external factory name
-     * @return External factory name
-     */
-    virtual const std::string &getExternalFactory() const = 0;
-
-    /**
      * @brief Set attribute
      * @param name Attribute name
      * @param value Attribute value

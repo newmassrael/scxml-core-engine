@@ -16,8 +16,8 @@
  * @brief Class responsible for parsing action elements
  *
  * This class provides functionality to parse action-related elements
- * in SCXML documents. It handles both regular actions (<code:action>)
- * and external execution actions (<code:external-action>).
+ * in SCXML documents: SCXML's executable content and SCE's host
+ * operation, `<sce:action>`.
  */
 
 namespace SCE {
@@ -50,13 +50,6 @@ public:
     std::shared_ptr<SCE::IActionNode> parseNativeAction(const std::shared_ptr<IXMLElement> &actionElement);
 
     /**
-     * @brief Parse external execution action node
-     * @param externalActionNode XML external execution action node
-     * @return Created action node
-     */
-    std::shared_ptr<SCE::IActionNode> parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode);
-
-    /**
      * @brief Parse actions within onentry/onexit elements
      * @param parentElement Parent element (onentry or onexit)
      * @return List of parsed actions
@@ -70,13 +63,6 @@ public:
      * @return Whether it is an action node
      */
     bool isActionNode(const std::shared_ptr<IXMLElement> &element) const;
-
-    /**
-     * @brief Check if element is an external execution action node
-     * @param element XML element
-     * @return Whether it is an external execution action node
-     */
-    bool isExternalActionNode(const std::shared_ptr<IXMLElement> &element) const;
 
     /**
      * @brief Set SCXML file base path for external script loading
@@ -109,14 +95,6 @@ public:
     bool isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
-    /**
-     * @brief Parse external implementation element (IXMLElement version)
-     * @param element XML element
-     * @param actionNode Action node
-     */
-    void parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
-                                     std::shared_ptr<SCE::IActionNode> actionNode);
-
     /**
      * @brief Parse special executable content (IXMLElement version)
      * @param element XML element

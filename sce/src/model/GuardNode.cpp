@@ -45,24 +45,6 @@ const std::vector<std::string> &SCE::GuardNode::getDependencies() const {
     return dependencies_;
 }
 
-void SCE::GuardNode::setExternalClass(const std::string &className) {
-    SCE_LOG_DEBUG("Setting external class for {}: {}", id_, className);
-    externalClass_ = className;
-}
-
-const std::string &SCE::GuardNode::getExternalClass() const {
-    return externalClass_;
-}
-
-void SCE::GuardNode::setExternalFactory(const std::string &factoryName) {
-    SCE_LOG_DEBUG("Setting external factory for {}: {}", id_, factoryName);
-    externalFactory_ = factoryName;
-}
-
-const std::string &SCE::GuardNode::getExternalFactory() const {
-    return externalFactory_;
-}
-
 void SCE::GuardNode::setAttribute(const std::string &name, const std::string &value) {
     attributes_[name] = value;
 }

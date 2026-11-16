@@ -341,10 +341,6 @@ void SCE::SCXMLModel::printModelStructure() const {
         for (const auto &dep : guard->getDependencies()) {
             SCE_LOG_INFO("      {}", dep);
         }
-
-        if (!guard->getExternalClass().empty()) {
-            SCE_LOG_INFO("    External Class: {}", guard->getExternalClass());
-        }
     }
 
     SCE_LOG_INFO("\nState Hierarchy:\n");

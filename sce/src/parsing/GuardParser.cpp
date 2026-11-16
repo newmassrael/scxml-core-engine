@@ -84,9 +84,6 @@ std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::sha
     // Parse dependencies
     parseDependencies(guardNode, guard);
 
-    // Parse external implementation
-    parseExternalImplementation(guardNode, guard);
-
     SCE_LOG_DEBUG("Guard parsed successfully");
     return guard;
 }
@@ -99,11 +96,11 @@ SCE::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &t
         return nullptr;
     }
 
-    // Find guard attribute considering namespace prefix
+    // The `code:guard` spelling of the interpreter's earlier vocabulary,
+    // recognised by prefix string, was removed on 2026-11-16
+    // (docs/adr/0106, item #184).
     std::string guardId;
-    if (transitionNode->hasAttribute("code:guard")) {
-        guardId = transitionNode->getAttribute("code:guard");
-    } else if (transitionNode->hasAttribute("guard")) {
+    if (transitionNode->hasAttribute("guard")) {
         guardId = transitionNode->getAttribute("guard");
     }
 
@@ -252,29 +249,6 @@ void SCE::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &gua
         if (!property.empty()) {
             guardObject->addDependency(property);
             SCE_LOG_DEBUG("Added dependency: {}", property);
-        }
-    }
-}
-
-void SCE::GuardParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
-                                                   std::shared_ptr<SCE::IGuardNode> guardObject) {
-    if (!guardNode || !guardObject) {
-        return;
-    }
-
-    auto implNode = SCE::ParsingCommon::findFirstChildElement(guardNode, "external-implementation");
-
-    if (implNode) {
-        if (implNode->hasAttribute("class")) {
-            std::string className = implNode->getAttribute("class");
-            guardObject->setExternalClass(className);
-            SCE_LOG_DEBUG("External class: {}", className);
-        }
-
-        if (implNode->hasAttribute("factory")) {
-            std::string factory = implNode->getAttribute("factory");
-            guardObject->setExternalFactory(factory);
-            SCE_LOG_DEBUG("External factory: {}", factory);
         }
     }
 }

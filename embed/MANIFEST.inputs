@@ -142,9 +142,9 @@ b234d4335cee46bf866361b2183e0b8068e6aac8 sce/include/events/ParentEventTarget.h
 1a3d4730bf1cd3b2d2d935e4ebed288f7fe6b259 sce/include/events/PlatformEventRaiserHelper.h
 cf35ceae077d36122be3aad077c36b62302406b7 sce/include/model/DataModelItem.h
 037aed94fd31120116bfe39afff04443a50de9d1 sce/include/model/DoneData.h
-345a7821fe274fc4bedaeff88b4a9f8d566fdca8 sce/include/model/GuardNode.h
+0946a327acc73cb6c983fa8a51786218443ba987 sce/include/model/GuardNode.h
 722a1cf4c7546f733e4827b437212cf26a6ceb81 sce/include/model/IDataModelItem.h
-ccbe1e9b6c59b0589e64bc808c179adb69972eaa sce/include/model/IGuardNode.h
+7abb97a6358aa224837bb40058b372e776c94986 sce/include/model/IGuardNode.h
 7b1e0836b53bfaa6b4878d95b0ada2ba581ae20d sce/include/model/IInvokeNode.h
 d6d8e5e68c83e37c600aa606c0e4298ed8977b10 sce/include/model/IStateNode.h
 0c394d66789c8f65086815928642447f1aa6b71a sce/include/model/ITransitionNode.h

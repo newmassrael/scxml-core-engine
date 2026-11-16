@@ -101,12 +101,9 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
         SCE_LOG_DEBUG("Using parent datamodel type: {}", context.getDatamodelType());
     }
 
-    // Process scope attribute
-    if (dataNode->hasAttribute("code:scope")) {
-        std::string scope = dataNode->getAttribute("code:scope");
-        dataItem->setScope(scope);
-        SCE_LOG_DEBUG("Scope: {}", scope);
-    } else if (dataNode->hasAttribute("scope")) {
+    // Process scope attribute. Its `code:scope` spelling, recognised by prefix
+    // string, was removed on 2026-11-16 (docs/adr/0106, item #184).
+    if (dataNode->hasAttribute("scope")) {
         std::string scope = dataNode->getAttribute("scope");
         dataItem->setScope(scope);
         SCE_LOG_DEBUG("Scope: {}", scope);

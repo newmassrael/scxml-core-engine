@@ -49,30 +49,6 @@ public:
      */
     virtual const std::vector<std::string> &getDependencies() const override;
 
-    /**
-     * @brief Set external class
-     * @param className External implementation class name
-     */
-    virtual void setExternalClass(const std::string &className) override;
-
-    /**
-     * @brief Return external class name
-     * @return External implementation class name
-     */
-    virtual const std::string &getExternalClass() const override;
-
-    /**
-     * @brief Set external factory
-     * @param factoryName External factory name
-     */
-    virtual void setExternalFactory(const std::string &factoryName) override;
-
-    /**
-     * @brief Return external factory name
-     * @return External factory name
-     */
-    virtual const std::string &getExternalFactory() const override;
-
     virtual void setAttribute(const std::string &name, const std::string &value) override;
     virtual const std::string &getAttribute(const std::string &name) const override;
     virtual const std::unordered_map<std::string, std::string> &getAttributes() const override;
@@ -88,8 +64,6 @@ private:
     std::string condition_;                                    // Condition expression
     std::string targetState_;                                  // Target state ID
     std::vector<std::string> dependencies_;                    // List of dependencies
-    std::string externalClass_;                                // External class
-    std::string externalFactory_;                              // External factory
     std::unordered_map<std::string, std::string> attributes_;  // Other attributes
     const std::string emptyString_;                            // For returning empty string
 };

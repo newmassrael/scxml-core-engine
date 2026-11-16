@@ -87,8 +87,15 @@ rather than that the name is not declared.
 Decided: remove `<code:action>`, `<code:external-action>`, `code:guard`, `code:scope` and
 `GuardParser::parseExternalImplementation` from the C++ interpreter's parser. They are recognised by prefix string,
 not by namespace; nothing in the tree uses them; no AOT backend has a counterpart, so keeping them is a partial
-feature and an engine parity breach; `<sce:action>` replaces them. Left to the engine owners: it changes public
-headers (`sce/include/parsing/ActionParser.h`, `GuardParser.h`), whose embed manifest is regenerated with them.
+feature and an engine parity breach; `<sce:action>` replaces them.
+
+Implemented (2026-11-16): `isActionNode` takes `<sce:action>` by its namespace and nothing else named `action`;
+`isExternalActionNode`, `parseExternalActionNode` and both `parseExternalImplementation`s are gone, with the guard
+node's external class and factory that only the latter set; `code:guard` and `code:scope` are no longer read. The
+one live effect was `<code:external-action name="op">`, which became a script action `op`; it is skipped now, as
+every element of another vocabulary is (`ForeignExecutableContentTest.TheEarlierCodeVocabularyIsNotReadAsActions`).
+The public headers (`parsing/ActionParser.h`, `parsing/GuardParser.h`, `model/IGuardNode.h`, `model/GuardNode.h`)
+land with the embed manifest emitted again.
 
 ### #178 — whitespace between comments in a body
 

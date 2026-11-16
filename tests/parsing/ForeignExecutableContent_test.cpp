@@ -97,3 +97,33 @@ TEST(ForeignExecutableContentTest, AForeignElseDoesNotSplitAnIf) {
     ASSERT_EQ(branches[0].actions.size(), 1u);
     EXPECT_EQ(raisedEvent(branches[0].actions[0]), "then");
 }
+
+// The interpreter's earlier `code:` vocabulary is another vocabulary like any
+// other: `<code:external-action>` was read by its prefix string as a script
+// action named by its `name`, which no generated machine did (docs/adr/0106,
+// item #184). It is skipped now, and so is `<code:action>`.
+TEST(ForeignExecutableContentTest, TheEarlierCodeVocabularyIsNotReadAsActions) {
+    constexpr const char *scxml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:code="urn:example:code"
+       version="1.0" datamodel="ecmascript" initial="a">
+  <state id="a">
+    <onentry>
+      <code:external-action name="op">
+        <code:external-implementation class="Op"/>
+      </code:external-action>
+      <code:action name="other"/>
+      <raise event="real"/>
+    </onentry>
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
+</scxml>
+)";
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(scxml);
+    ASSERT_NE(model, nullptr);
+
+    auto actions = entryActions(*model, "a");
+    ASSERT_EQ(actions.size(), 1u) << "the SCXML <raise> alone";
+    EXPECT_EQ(raisedEvent(actions[0]), "real");
+}
