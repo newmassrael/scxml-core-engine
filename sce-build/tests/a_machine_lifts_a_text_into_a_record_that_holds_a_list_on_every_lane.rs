@@ -218,3 +218,26 @@ fn a_c11_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
         "a record that holds a list is not read field by field:\n{code}"
     );
 }
+
+/// Pinned by the Interpreter's row (`ComposedLowering::ECMASCRIPT`,
+/// `sce-build/src/forge/event_schema_check.rs`) and `JsTarget::lift`'s
+/// `Lifted::Whole` arm (`sce-build/src/forge/static_js.rs`): the Interpreter lowers
+/// the machine, the lift handing the text to the library's `lift` with the reader of
+/// the record's whole type and writing the variable with the value it answers, the
+/// plain object a scenario compares; the Interpreter saves no state. The
+/// Interpreter's replay finds `scenarios/static_lift_list.json` by scanning its
+/// directory (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`).
+#[test]
+fn the_interpreter_holds_the_record_and_lifts_it_whole() {
+    let path = fixture();
+    let lowered =
+        sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
+            .unwrap_or_else(|e| panic!("the Interpreter lowers static_lift_list: {e:?}"));
+    holds(
+        &lowered,
+        &[
+            "SceStatic.lift(_event.data.text, ",
+            "if (sceLift.refusal === null) { answer = sceLift.value; why = null; }",
+        ],
+    );
+}

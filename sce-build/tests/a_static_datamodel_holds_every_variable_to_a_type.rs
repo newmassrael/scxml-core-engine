@@ -6121,16 +6121,9 @@ const INTERPRETER: &str = "interpreter";
 /// machine no engine lowers that does not name every engine here.
 /// Emptied once by step 5 of docs/adr/0055 and again by its step 9; the scenario of
 /// a union (docs/adr/0092, step 4) is replayed on every engine, and the scenario of a lift
-/// into a record that holds a list (docs/adr/0087, Landing order item 8) on each engine
-/// whose slice holds a variable of such a record, every other engine listed here.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] =
-    &[("static_lift_list", INTERPRETER, LIFT_LIST_NOT_LOWERED)];
-
-/// Why the scenario of a lift into a record that holds a list is not replayed on
-/// an engine yet: the engine holds no variable of such a record
-/// (`ComposedLowering::records`).
-const LIFT_LIST_NOT_LOWERED: &str = "a variable of a record that holds a list, which a lift \
-     writes whole, has no lowering on it yet (docs/adr/0087, Landing order item 8)";
+/// into a record that holds a list (docs/adr/0087, Landing order item 8) on every engine
+/// since the Interpreter's slice of that item, which emptied it a third time.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
 /// Where each backend's regen script commits a machine: the file that exists
 /// only if it did.

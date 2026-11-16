@@ -261,15 +261,18 @@ impl ComposedLowering {
     /// generated backend and so has no line of [`Self::of`]: it reads a composed
     /// payload at any depth, takes a list whole and sends a composed value, as
     /// its target spells the walks
-    /// ([`crate::forge::composed_lowering::JsComposed`]), and holds a union as
-    /// the wire's own object (docs/adr/0092, section 7, the Interpreter row).
-    /// Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
+    /// ([`crate::forge::composed_lowering::JsComposed`]), holds a union as the
+    /// wire's own object (docs/adr/0092, section 7, the Interpreter row), and
+    /// holds a variable of a record that holds a composition as the plain
+    /// object a lift reads whole by the same walk (`Lifted::Whole`), which no
+    /// saved state of the Interpreter keeps (docs/adr/0087, Landing order item
+    /// 8). Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: true,
         copies: true,
         unions: true,
-        records: false,
+        records: true,
         sends: true,
     };
 

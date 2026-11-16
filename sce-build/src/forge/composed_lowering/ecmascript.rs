@@ -457,10 +457,11 @@ mod tests {
     /// The Interpreter's row of the one table of what is lowered of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
     /// value sent (docs/adr/0086, sections 5 and 6), and a union held
-    /// (docs/adr/0092, section 7), named as its refusals are; no variable of a
-    /// record that holds a composition yet.
+    /// (docs/adr/0092, section 7), named as its refusals are, and a variable of
+    /// a record that holds a composition, lifted whole (docs/adr/0087, Landing
+    /// order item 8).
     #[test]
-    fn the_interpreter_row_lowers_every_composed_position_but_a_composed_record() {
+    fn the_interpreter_row_lowers_every_composed_position() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::ECMASCRIPT,
@@ -469,7 +470,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: true,
-                records: false,
+                records: true,
                 sends: true,
             }
         );
