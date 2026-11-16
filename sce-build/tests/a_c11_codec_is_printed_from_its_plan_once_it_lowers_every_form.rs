@@ -165,17 +165,115 @@ fn a_variable_length_integer_is_written_by_the_runtimes_writer() {
     );
 }
 
-/// A codec whose plan uses a form the C11 printer does not lower keeps the
-/// template's encode whole: a length the encode derives, a variant and a CBOR
-/// map each name their form, and none of them has an encode over a source.
+/// A length is derived from the bytes of the view it measures and is no member
+/// of the value: the decode reads it into a local and cuts the bytes by it. The
+/// byte string is presented as a view of a type of its own, made by one
+/// function that refuses a view outside the bound, and the value's encode
+/// holds the array to that bound before the first byte.
 ///
-/// Turns red where `c11_source::positional_forms` stops naming a derived
-/// element or a variant, or `unlowered_forms` a CBOR map, or where the template
+/// Turns red where `c11_source::encode_source` reads the length off the source
+/// rather than measuring the view, where the template's struct keeps a member
+/// the encode derives, where the decode reads a derived length off the struct,
+/// or where `BoundedView::declare` stops checking the bound.
+#[test]
+fn a_length_is_derived_from_the_view_it_measures_and_is_no_member_of_the_value() {
+    assert!(unlowered("codec_length_ref").is_empty());
+    let text = resource_header("codec_length_ref");
+    holds(
+        "codec_length_ref",
+        &text,
+        &[
+            "typedef struct {\n    const uint8_t *data;\n    size_t len;\n} \
+             codec_length_ref_payload_bytes_t;\n",
+            "static inline sce_forge_codec_status_t codec_length_ref_payload_bytes_make(\
+             codec_length_ref_payload_bytes_t *out, const uint8_t *data, size_t len) {\n    \
+             if (len > 32u) {\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n",
+            "    codec_length_ref_payload_bytes_t (*payload)(const void *ctx);\n",
+            "    view.data = self->payload;\n    view.len = self->payload_len;\n",
+            "    const codec_length_ref_payload_bytes_t _e_payload = src->payload(ctx);\n",
+            "    const uint8_t _d_len = (uint8_t)(_e_payload.len);\n",
+            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, _d_len));\n",
+            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, _e_payload.data, _e_payload.len));\n",
+            "    const uint8_t _d_len = raw[1];\n",
+            "size_t _n = (size_t)_d_len;",
+            "    if (!sce_forge_length_within_bound(self->payload_len, 32)) {\n        \
+             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n    \
+             return codec_length_ref_encode_source(codec_length_ref_value_source(), self, w);\n",
+        ],
+    );
+    holds_none(
+        "codec_length_ref",
+        &text,
+        &["    uint8_t len;\n", "out->len", "self->len", "src->len"],
+    );
+}
+
+/// A length its `sce:length-arith` takes off is derived less that, and the view
+/// of the bytes holds at least what it takes off, which its maker and the
+/// value's encode both check, so the number is never below zero.
+///
+/// Turns red where `c11_source::encode_source` drops the `Offset::Less`
+/// arithmetic, or where the maker or the value's encode stops checking the
+/// least the bound holds.
+#[test]
+fn a_length_less_its_arithmetic_is_derived_less_it() {
+    assert!(unlowered("codec_scout_zid_body").is_empty());
+    let text = resource_header("codec_scout_zid_body");
+    holds(
+        "codec_scout_zid_body",
+        &text,
+        &[
+            "    if (len < 1u || len > 16u) {\n",
+            "    const uint8_t _d_zid_len_m1 = (uint8_t)(_e_zid.len - 1u);\n",
+            "    if (self->zid_len < 1u || !sce_forge_length_within_bound(self->zid_len, 16)) {\n",
+            "(size_t)((int64_t)_d_zid_len_m1 + 1)",
+        ],
+    );
+    holds_none(
+        "codec_scout_zid_body",
+        &text,
+        &["    uint8_t zid_len_m1;\n", "self->zid_len_m1"],
+    );
+}
+
+/// A length whose field is named as the array's own length member leaves the
+/// value as any derived length does, and the array keeps a length member of
+/// its own, which the decode sets from the bytes it cut.
+///
+/// Turns red where `render_codec` keeps suppressing the array's length member
+/// for a sibling the encode derives.
+#[test]
+fn a_length_named_as_the_arrays_length_member_leaves_the_value_too() {
+    assert!(unlowered("codec_length_ref_uint16_be").is_empty());
+    let text = resource_header("codec_length_ref_uint16_be");
+    holds(
+        "codec_length_ref_uint16_be",
+        &text,
+        &[
+            "    uint8_t payload[1024];\n    size_t  payload_len;\n",
+            "    const uint16_t _d_payload_len = (uint16_t)(_e_payload.len);\n",
+            "        out->payload_len = _n;\n",
+        ],
+    );
+    holds_none(
+        "codec_length_ref_uint16_be",
+        &text,
+        &["    uint16_t payload_len;\n"],
+    );
+}
+
+/// A codec whose plan uses a form the C11 printer does not lower keeps the
+/// template's encode whole: a byte string of a streamed layout, a variant and
+/// a CBOR map each name their form, and none of them has an encode over a
+/// source.
+///
+/// Turns red where `c11_source::positional_forms` stops naming a streamed byte
+/// string or a variant, or `unlowered_forms` a CBOR map, or where the template
 /// prints the encode over a source for a codec it keeps.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_length_ref", "an element the encode derives"),
+        ("codec_zenoh_locator", "a byte string of a streamed layout"),
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
@@ -249,6 +347,10 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_flags_basic",
         "codec_subbyte",
         "codec_vle_zint_u64",
+        "codec_length_ref",
+        "codec_length_ref_uint16_be",
+        "codec_scout_zid_body",
+        "codec_tail",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
@@ -263,6 +365,7 @@ const DRIVER: &str = r#"
 #include <stdio.h>
 #include <string.h>
 
+#include "codec_length_ref.h"
 #include "codec_simple_frame.h"
 
 /* A record the codec does not know, holding the elements in its own types. */
@@ -288,6 +391,25 @@ static const codec_simple_frame_source_t reading_source = {
     reading_msg_id,
     reading_length,
     reading_payload,
+};
+
+/* A message of its own, its payload a view made once by the codec's maker. */
+struct message {
+    unsigned id;
+    codec_length_ref_payload_bytes_t payload;
+};
+
+static uint8_t message_msg_id(const void *ctx) {
+    return (uint8_t)((const struct message *)ctx)->id;
+}
+
+static codec_length_ref_payload_bytes_t message_payload(const void *ctx) {
+    return ((const struct message *)ctx)->payload;
+}
+
+static const codec_length_ref_source_t message_source = {
+    message_msg_id,
+    message_payload,
 };
 
 static int failures = 0;
@@ -328,6 +450,42 @@ int main(void) {
     CHECK(codec_simple_frame_encode_source(&reading_source, &r, &t) == SCE_FORGE_CODEC_BUFFER_OVERFLOW,
           "a writer with no room left is refused");
 
+    /* A byte string is a view its maker holds to the bound; the length is
+     * derived from the view, and the value holds none. */
+    static const uint8_t bytes[33] = {0xAA, 0xBB, 0xCC};
+    struct message msg;
+    msg.id = 0x09u;
+    CHECK(codec_length_ref_payload_bytes_make(&msg.payload, bytes, 33) == SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
+          "a view past the bound is refused");
+    CHECK(codec_length_ref_payload_bytes_make(&msg.payload, bytes, 3) == SCE_FORGE_CODEC_OK, "a view within it");
+    static const uint8_t with_length[] = {0x09, 0x03, 0xAA, 0xBB, 0xCC};
+    uint8_t by_message[CODEC_LENGTH_REF_MAX_BYTES];
+    sce_forge_writer_t mw = sce_forge_writer_init_buf(by_message, sizeof by_message);
+    CHECK(codec_length_ref_encode_source(&message_source, &msg, &mw) == SCE_FORGE_CODEC_OK, "the message encodes");
+    CHECK(mw.pos == sizeof with_length && memcmp(by_message, with_length, sizeof with_length) == 0,
+          "the message writes the length of its view");
+
+    static codec_length_ref_t lv;
+    memset(&lv, 0, sizeof lv);
+    lv.msg_id = 0x09u;
+    memcpy(lv.payload, bytes, 3);
+    lv.payload_len = 3;
+    uint8_t by_lvalue[CODEC_LENGTH_REF_MAX_BYTES];
+    size_t ln = 0;
+    CHECK(codec_length_ref_encode_to_buf(&lv, by_lvalue, sizeof by_lvalue, &ln) == SCE_FORGE_CODEC_OK &&
+              ln == sizeof with_length && memcmp(by_lvalue, with_length, ln) == 0,
+          "the value writes the length of its bytes");
+    static codec_length_ref_t back;
+    memset(&back, 0, sizeof back);
+    sce_forge_cursor_t c = sce_forge_cursor_init(with_length, sizeof with_length);
+    CHECK(codec_length_ref_decode(&c, &back) == SCE_FORGE_CODEC_OK && back.payload_len == 3 &&
+              memcmp(back.payload, bytes, 3) == 0,
+          "the decode cuts the bytes by the length it read");
+    lv.payload_len = sizeof lv.payload + 1;
+    CHECK(codec_length_ref_encode_to_buf(&lv, by_lvalue, sizeof by_lvalue, &ln) ==
+              SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE,
+          "a value past its array's bound is no value of the codec");
+
     return failures == 0 ? 0 : 1;
 }
 "#;
@@ -342,10 +500,12 @@ int main(void) {
 #[test]
 fn a_record_of_its_own_is_encoded_through_a_table_of_its_own() {
     let dir = tempdir().expect("tempdir");
-    for (file, text) in generated(&resources().join("codec_simple_frame.scxml"))
-        .expect("codec_simple_frame generates on C11")
-    {
-        std::fs::write(dir.path().join(file), text).expect("write a generated file");
+    for name in ["codec_simple_frame", "codec_length_ref"] {
+        for (file, text) in generated(&resources().join(format!("{name}.scxml")))
+            .unwrap_or_else(|e| panic!("{name} generates on C11: {e}"))
+        {
+            std::fs::write(dir.path().join(file), text).expect("write a generated file");
+        }
     }
     let driver = dir.path().join("driver.c");
     std::fs::write(&driver, DRIVER).expect("write the driver");

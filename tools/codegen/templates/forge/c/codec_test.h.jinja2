@@ -55,6 +55,9 @@ static inline int test_vector_{{ name }}(void) {
              * length sibling). */
             size_t _str_len = sizeof _str - 1;
             memcpy(actual.{{ f.name_snake }}, _str, _str_len);
+            /* The text's own length: a row of a codec printed from its plan
+             * states no length the encode derives (docs/adr/0081 §3). */
+            actual.{{ f.name_snake }}_len = _str_len;
         }
 {% else %}
         actual.{{ f.name_snake }} = {{ f.value_literal_c }};

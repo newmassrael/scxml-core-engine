@@ -18,6 +18,10 @@
    case-struct `_len` companion is suppressed — the sibling already
    owns that identifier (mirrors the codec product header's
    `c_emit_len_member` collision-avoidance). #}
+{# The fields the value holds: a codec printed from its plan holds no element
+   its encode derives (docs/adr/0081 §3), so the case neither sets one nor
+   reads one back, and a byte string's length is a member of its own. #}
+{% set held_fields = (f.fields | rejectattr('derived') | list) if f.printed else f.fields %}
 static void test_{{ f.name }}(void) {
 {% if not f.oracle_eligible %}
     /* Compile-only probe: oracle_eligible=false because the fixture's
@@ -37,8 +41,8 @@ static void test_{{ f.name }}(void) {
     (void)_codec_val;
 {% else %}
     typedef struct {
-{% for field in f.fields %}
-{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% for field in held_fields %}
+{% set sibling_owns_len = (held_fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% if field.type == "bytes" %}
         uint8_t input_{{ field.name | to_snake_case }}[256];
 {% if not sibling_owns_len %}
@@ -68,8 +72,8 @@ static void test_{{ f.name }}(void) {
     static const {{ f.name }}_case_t cases[] = {
 {% for c in f.cases %}
         {
-{% for field in f.fields %}
-{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% for field in held_fields %}
+{% set sibling_owns_len = (held_fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% if field.optional and c.decoded[field.name] is none %}
             .input_{{ field.name | to_snake_case }}_present = false,
 {% elif field.optional %}
@@ -101,8 +105,8 @@ static void test_{{ f.name }}(void) {
     for (size_t i = 0; i < n; ++i) {
         {# Static for the reason the compile-only probe above is. #}
         static {{ f.name }}_t val;
-{% for field in f.fields %}
-{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% for field in held_fields %}
+{% set sibling_owns_len = (held_fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% set fname = field.name | to_snake_case %}
 {% if field.optional %}
         {# An entry that may be absent is the struct `sce/forge/optional.h` declares
@@ -164,8 +168,8 @@ static void test_{{ f.name }}(void) {
                 i, sce_forge_cursor_remaining(&cursor));
             ++g_failures;
         }
-{% for field in f.fields %}
-{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% for field in held_fields %}
+{% set sibling_owns_len = (held_fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% set fname = field.name | to_snake_case %}
 {# Where the decoded value is held: the member itself, or the `value` of the
    struct an entry that may be absent is held in. #}

@@ -2413,7 +2413,7 @@ pub fn generate_cpp_with_imports_and_externs(
     // un-closured backend.
     if let ForgeDocument::Codec(m) = doc {
         if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Cpp)?
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Cpp, &[])?
         {
             files.push(sidecar);
         }
@@ -10972,6 +10972,25 @@ pub(crate) fn c11_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
     c11_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
 }
 
+/// The fields of `m` a C11 value printed from its plan holds no member of: the
+/// numbers its encode derives (docs/adr/0081 §3). Empty for a codec that keeps
+/// the template's encode, whose value holds every field.
+fn c11_derived_fields(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+    if c11_source::unlowered(&plan).is_some() {
+        return Vec::new();
+    }
+    match plan {
+        crate::forge::encode_plan::CodecPlan::Positional(p) => m
+            .fields
+            .iter()
+            .filter(|f| c11_source::derived_field(&p, &f.id))
+            .map(|f| f.id.clone())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
@@ -13921,17 +13940,28 @@ fn render_codec(
     // printer lowers is printed from its plan: the table of a source, the
     // value's table and the encode over any source stand before the value's
     // encode, which is the encode over the value's table. Any other keeps the
-    // template's encode whole (§6), so no codec has two.
+    // template's encode whole (§6), so no codec has two. The plan is kept
+    // beside the text, as the members of the value and the locals of the
+    // decode are read off it.
     let c11_printed = if matches!(lang, crate::generator::Language::C11) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
         match (c11_source::unlowered(&plan), plan) {
-            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => Some(
-                c11_source::render(&p, &l, &filters::to_snake_case(m.name.clone())),
-            ),
+            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
+                let printed = c11_source::render(&p, &l, &filters::to_snake_case(m.name.clone()));
+                Some((p, printed))
+            }
             _ => None,
         }
     } else {
         None
+    };
+    // docs/adr/0081 §3: the decode of a C11 value printed from its plan reads
+    // each number the encode derives into a local, as the value holds no
+    // member of it, and reads a length off that local.
+    let c11_derived = |id: &str| {
+        c11_printed
+            .as_ref()
+            .is_some_and(|(plan, _)| c11_source::derived_field(plan, id))
     };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
@@ -14087,13 +14117,21 @@ fn render_codec(
             // C11 surfaces a duplicate-member compile error that
             // byte-only golden comparison cannot detect (per
             // feedback_byte_goldens_not_compile.md).
+            // A sibling the encode derives is no member of a value printed from
+            // its plan (docs/adr/0081 §3), so the array's length is a member
+            // of its own there.
             let sibling_owns_len = m.fields.iter().any(|other| {
-                !std::ptr::eq(other, f) && other.id == format!("{}_len", f.id)
+                !std::ptr::eq(other, f)
+                    && other.id == format!("{}_len", f.id)
+                    && !c11_derived(&other.id)
             });
             obj.insert(
                 "c_emit_len_member".into(),
                 serde_json::Value::Bool(!sibling_owns_len),
             );
+            // A number a C11 encode printed from its plan derives: no member of
+            // the value, and a local of the decode.
+            obj.insert("c_derived".into(), c11_derived(&f.id).into());
             obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
             obj.insert(
                 "is_tlv_chain".into(),
@@ -14818,7 +14856,14 @@ fn render_codec(
                             Language::Swift => no_swift_emitter("render_codec"),
                         };
                         let guard = if matches!(lang, Language::C11) {
-                            c11_positional_bound_guard(f, &m.fields, indent)
+                            // A length the encode derives is read off the
+                            // decode's local of it.
+                            let derived_length = f
+                                .length_field
+                                .as_deref()
+                                .filter(|lf| dotted_length_field(lf).is_none() && c11_derived(lf))
+                                .map(|lf| c11_source::derived_local(&l, lf));
+                            c11_positional_bound_guard(f, &m.fields, indent, derived_length)
                         } else {
                             positional_bound_guard(f, &m.fields, lang, frame_len, indent)
                         };
@@ -14871,6 +14916,14 @@ fn render_codec(
                             // (`<carrier>.<flag>`) emits the shifted +
                             // masked extract from the carrier byte.
                             let arith = f.length_arith.unwrap_or(0);
+                            // The decode reads the length off the member that
+                            // holds it, or off its own local where the encode
+                            // derives it (docs/adr/0081 §3).
+                            let decode_len = if c11_derived(lf) {
+                                c11_source::derived_local(&l, lf)
+                            } else {
+                                format!("out->{}", l.codec_field_id(lf))
+                            };
                             let (base_decode, base_encode) =
                                 if let Some((c, fl)) = dotted_length_field(lf) {
                                     let (shift, mask) = dotted_length_resolve(c, fl, &m.fields);
@@ -14885,7 +14938,7 @@ fn render_codec(
                                     )
                                 } else {
                                     (
-                                        format!("(size_t)out->{}", l.codec_field_id(lf)),
+                                        format!("(size_t){decode_len}"),
                                         format!("self->{}", l.codec_field_id(lf)),
                                     )
                                 };
@@ -14899,13 +14952,13 @@ fn render_codec(
                                 if dotted_length_field(lf).is_some() {
                                     format!("(size_t)((int64_t){base_decode} + {arith})")
                                 } else {
-                                    format!("(size_t)((int64_t)out->{} + {arith})", l.codec_field_id(lf))
+                                    format!("(size_t)((int64_t){decode_len} + {arith})")
                                 }
                             } else {
                                 if dotted_length_field(lf).is_some() {
                                     format!("(size_t)((int64_t){base_decode} - {})", -arith)
                                 } else {
-                                    format!("(size_t)((int64_t)out->{} - {})", l.codec_field_id(lf), -arith)
+                                    format!("(size_t)((int64_t){decode_len} - {})", -arith)
                                 }
                             };
                             obj.insert("length_n_expr".into(), n_expr.into());
@@ -15453,10 +15506,13 @@ fn render_codec(
             }),
         );
     }
-    if let Some(printed) = &c11_printed {
+    if let Some((_, printed)) = &c11_printed {
         ctx.insert(
             "c11_source".into(),
-            serde_json::json!({ "before_encode": printed }),
+            serde_json::json!({
+                "before_encode": printed.before_encode,
+                "encode_body": printed.encode_body,
+            }),
         );
     }
     // The fields each form holds and the fields the wire reads: on Rust a group
@@ -24049,15 +24105,22 @@ fn c11_body_call(over: bool, call: &str, indent: &str) -> String {
 /// [`positional_bound_guard`] for C11, whose positional decode reads a
 /// `length-ref` field's length off the member of the struct it decodes into,
 /// in the member's own type, and a `tail`'s as `_n`, the bytes past its offset.
-fn c11_positional_bound_guard(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
+fn c11_positional_bound_guard(
+    field: &CodecField,
+    fields: &[CodecField],
+    indent: &str,
+    derived_length: Option<String>,
+) -> String {
     use crate::generator::Language;
     use length_guard::{carried_held, Guard, Held};
     let Some(guard) = Guard::of(field, fields) else {
         return String::new();
     };
     let (value, held) = match (&field.bit_size, field.length_field.as_deref()) {
+        // The decode's local of a length the encode derives (docs/adr/0081
+        // §3), of the field's own type, or the member that holds it.
         (BitSize::LengthRef, Some(name)) => (
-            carried_length(name, fields, false, Language::C11),
+            derived_length.unwrap_or_else(|| carried_length(name, fields, false, Language::C11)),
             carried_held(name, fields, Language::C11),
         ),
         _ => ("_n".to_string(), Held::HostInt),
@@ -28381,7 +28444,7 @@ pub fn generate_kotlin_with_imports(
     }
     if let ForgeDocument::Codec(m) = doc {
         if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin)?
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin, &[])?
         {
             files.push(sidecar);
         }
@@ -28621,7 +28684,7 @@ pub fn generate_rust_with_imports_and_externs(
     }
     if let ForgeDocument::Codec(m) = doc {
         if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Rust)?
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Rust, &[])?
         {
             files.push(sidecar);
         }
@@ -33090,7 +33153,7 @@ pub fn generate_go_with_imports(
     }
     if let ForgeDocument::Codec(m) = doc {
         if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Go)?
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Go, &[])?
         {
             files.push(sidecar);
         }
@@ -33379,7 +33442,7 @@ pub fn generate_python_with_imports(
     }
     if let ForgeDocument::Codec(m) = doc {
         if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Python)?
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Python, &[])?
         {
             files.push(sidecar);
         }
@@ -34645,9 +34708,14 @@ pub fn generate_c11_with_imports_and_externs(
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) =
-            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::C11)?
-        {
+        // A C11 value printed from its plan holds no number its encode
+        // derives (docs/adr/0081 §3).
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::C11,
+            &c11_derived_fields(m, imports),
+        )? {
             files.push(sidecar);
         }
     }
@@ -48030,10 +48098,15 @@ fn render_algorithm_test_vector_sidecar(
 // `UnsupportedFeature` message naming the feature that closures
 // will lift, so authors get a clear repair hint rather than a
 // silent skip.
+//
+// `derived` names the fields the value of `lang` holds no member of, the
+// numbers an encode printed from its plan derives (docs/adr/0081 §3): a row
+// states them, and the sidecar neither sets them nor reads them back.
 fn render_codec_test_vector_sidecar(
     env: &minijinja::Environment,
     m: &CodecModel,
     lang: crate::generator::Language,
+    derived: &[String],
 ) -> Result<Option<(String, String)>, ForgeError> {
     use crate::forge::error::GenerateError;
     use crate::forge::model::{DecodedValue, SceType};
@@ -48135,7 +48208,10 @@ fn render_codec_test_vector_sidecar(
         // `CodecField` so the value type is known at lowering time.
         // Trunk fields are bool / Bytes / String / unsigned int / signed int.
         let mut field_rows: Vec<serde_json::Value> = Vec::with_capacity(decoded_fields.len());
-        for df in decoded_fields {
+        for df in decoded_fields
+            .iter()
+            .filter(|df| !derived.contains(&df.name))
+        {
             let codec_field = m.fields.iter().find(|f| f.id == df.name).ok_or_else(|| {
                 ForgeError::from(GenerateError::unsupported(format!(
                     "codec '{name}': <sce:test-vector> at L{line}: field '{f}' missing from \

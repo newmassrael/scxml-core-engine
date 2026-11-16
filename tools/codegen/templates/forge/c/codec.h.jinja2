@@ -10,7 +10,9 @@
     that type, so the frame does not decode. The statement carries its
     own indentation because the three call sites below share it. #}
 {% macro decode_field(field) %}
-{% if field.is_enum and field.enum_is_open %}
+{% if field.c_derived %}
+    const {{ field.c_type }} _d_{{ field.id }} = {{ field.decode_expr }};
+{%- elif field.is_enum and field.enum_is_open %}
     out->{{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
 {%- elif field.is_enum %}
     if (!{{ field.enum_from_underlying }}({{ field.decode_expr }}, &out->{{ field.id }})) {
@@ -138,7 +140,9 @@ typedef struct {
      * wire (encoder writes 0 bytes regardless of its value). */
     char _reserved;
 {% else %}
-{% for field in fields %}
+{# A number the encode derives is no member of a value printed from its plan
+   (docs/adr/0081 §3): the decode reads it into a local. #}
+{% for field in fields if not field.c_derived %}
 {% if field.c_gated_optional %}
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
     {{ field.c_type }} {{ field.id }};
@@ -443,8 +447,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ params_after_first_arg }}) {
 {% if c11_source %}
-    return {{ c_struct_snake }}_encode_source({{ c_struct_snake }}_value_source(), self, w);
-{% else %}
+{{ c11_source.encode_body }}{% else %}
 {% if has_parent_flags %}
     /* RFC §synth-5-B: see decode — same parameter, same suppress. */
     (void)parent_flags;
