@@ -15,7 +15,7 @@
 //! name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
+    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -81,13 +81,46 @@ pub(crate) fn source_case(
                  states none"
             ));
         }
-        let literal =
-            member_literal(&element.value, json, held).map_err(|e| format!("`{id}`: {e}"))?;
-        statements.push(format!("{VALUE}.{member} = {literal};"));
-        checks.push((
-            id.clone(),
-            format!("{DECODED}.{member} == {VALUE}.{member}"),
-        ));
+        match &element.value {
+            // The bytes into the array that holds them and their count beside
+            // it, the length member the C11 struct names `{member}_len`; a
+            // text is held as the bytes of its UTF-8, as the decode holds it.
+            Value::Bytes(_) | Value::Text(_) => {
+                let bytes = match &element.value {
+                    Value::Text(_) => json
+                        .as_str()
+                        .ok_or_else(|| format!("`{id}`: text is a JSON string"))?
+                        .as_bytes()
+                        .to_vec(),
+                    _ => byte_values(json).map_err(|e| format!("`{id}`: {e}"))?,
+                };
+                if !bytes.is_empty() {
+                    let listed: Vec<String> = bytes.iter().map(|b| format!("0x{b:02X}")).collect();
+                    statements.push(format!(
+                        "memcpy({VALUE}.{member}, (const uint8_t[]){{{}}}, {});",
+                        listed.join(", "),
+                        bytes.len()
+                    ));
+                }
+                statements.push(format!("{VALUE}.{member}_len = {};", bytes.len()));
+                checks.push((
+                    id.clone(),
+                    format!(
+                        "{DECODED}.{member}_len == {VALUE}.{member}_len && \
+                         memcmp({DECODED}.{member}, {VALUE}.{member}, {VALUE}.{member}_len) == 0"
+                    ),
+                ));
+            }
+            _ => {
+                let literal = member_literal(&element.value, json, held)
+                    .map_err(|e| format!("`{id}`: {e}"))?;
+                statements.push(format!("{VALUE}.{member} = {literal};"));
+                checks.push((
+                    id.clone(),
+                    format!("{DECODED}.{member} == {VALUE}.{member}"),
+                ));
+            }
+        }
     }
     Ok(SourceCase { statements, checks })
 }
@@ -119,9 +152,12 @@ fn member_literal(
             ))
         }
         Value::Scalar(_) => Err("a float or a bool is not spelled as a C11 literal yet".into()),
-        Value::Bytes(_) | Value::Text(_) | Value::Body { .. } | Value::List { .. } => Err(
-            "a byte string, a text, a body or a list is not spelled as a C11 literal yet: \
-             the C11 printer prints no codec that holds one"
+        Value::Bytes(_) | Value::Text(_) => {
+            unreachable!("a byte string or a text is set by statements of its own")
+        }
+        Value::Body { .. } | Value::List { .. } => Err(
+            "a body or a list is not spelled as a C11 literal yet: the C11 printer prints no \
+             codec that holds one"
                 .into(),
         ),
     }
