@@ -1426,10 +1426,22 @@ template, a component and a configuration that reach a union are generated on al
    the index of the variant `sce_test_from_canonical_union_case` answers, the case's record into its member of
    `as` and the tag set last. The reader writes into storage it zeroed first, so the value it leaves is the one
    the constructor of its case builds.
-4. **A receive branch's content that reads a message holding a union is still refused on C11 by name**: C11's
-   composed receive converts no union and no enum of a composition (`ComposedSpelling::unit_union` and
-   `unit_enum` answer none), since C has no expression that binds the record of a case. The corpus needs none of
-   it: no tester of `orders_suite` or `nested_suite` reads `_event.data`.
+4. **A receive branch's content that reads a message holding a union is made on C11 by functions of the
+   machine** (landed 2026-11-16; the refusal by name this item first recorded is gone). C has no expression that
+   binds the record of a case and no closure to make an element by, so the walk of a received message
+   (`composed_lowering::fields_from_unit`) makes a union, a list whose element names a record, an enum or a
+   union, and a value of one that may be absent by a function of the machine, named by the machine's type and
+   the unit's (`<machine type>_from_<unit type>`), declared once under the guard of its name and drained with
+   the readers through `ComposedSpelling::take_functions` into the machine's definitions before the statement
+   that takes the branch calls it. A union's function is the one an adapter maps a union across a call by
+   (`composed_lowering::c11_union_crossing`), one arm per case, here binding a pointer to the unit's record of
+   its case. A record is a compound literal of the machine's struct, and an enum is assigned as it is where
+   the machine holds it in its document's own type, which a C11 machine always does (`StaticTarget::enum_type`);
+   one held in another type crosses by the declared name of its variant through a function too. The walk hands
+   the backend the unit's side of the part (`UnitPart`: its type, scope and whether it is a field of one entry
+   of its record), which C11 names the unit's type by through `schema_unit_type::unit_type`, the walk the
+   unit's header is written by. What stays refused by name is a list of byte strings and a list or an optional
+   value that holds a list and names no record, enum or union, whose unit's struct is not the machine's.
 
 ## Consequences
 

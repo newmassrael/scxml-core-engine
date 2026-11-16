@@ -2152,9 +2152,17 @@ one set of bytes.
    unit (`ComposedSpelling::unit_field`, `unit_enum`, `unit_union`, `record_of`, `unit_whole`): Go, Kotlin,
    Swift, Python and C++ hold every such part, Go copying a list into a slice of its own and Python into a
    list of its own, C++ making a byte string of one entry into the `OwnedBytes` of its bound. C11, whose unit
-   holds a composition in structs of its own, converts a number, a text, an optional one of them, a byte
-   string and a list of numbers, and refuses by name a message that holds any other part, an enum, a
-   record or a union inside it among them, rather than make half of it. Kotlin's runtime library of §12.2
+   holds a composition in structs of its own and which has no closure, converts a number, a text, an
+   optional one of them, a byte string and a list of numbers or texts where it reads them; makes a record
+   inside the message a compound literal of the machine's struct and assigns an enum as it is, its type
+   the document's own (`StaticTarget::enum_type`); and makes a union, a list of records, enums or unions
+   and a value of one that may be absent by a function of the machine named by the machine's type and
+   the unit's (`<machine type>_from_<unit type>`), declared before the statement that takes the branch
+   (`ComposedSpelling::take_functions`), a union's one arm per case binding a pointer to the unit's record
+   of its case (`composed_lowering::c11_union_crossing`, the function an adapter maps a union across a call
+   by). It refuses by name a message that holds a list of byte strings, or a list of lists or an optional
+   list that names no record, enum or union, whose unit's struct is not the machine's, rather than make
+   half of it. Kotlin's runtime library of §12.2
    (`com.sce.runtime.test`) is the Rust one ported type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
