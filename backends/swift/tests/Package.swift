@@ -62,7 +62,7 @@ let w3cTargets: [Target] =
 // (the trees `tools/codegen/trees/swift-statecharts.toml` and `swift-static-datamodel.toml` declare);
 // what drives them is written by hand beside them. The second is the machines of
 // `datamodel="sce-static"` (docs/SCE_ACCEPTED_SUBSET.md §2.15), which the shared
-// replay scenarios drive. `EcmaScriptMachines` (`scripts/regen_swift_ecmascript.sh`) holds the
+// replay scenarios drive. `EcmaScriptMachines` (`tools/codegen/trees/swift-ecmascript.toml`) holds the
 // machines of `datamodel="ecmascript"`, whose expressions are lowered to Lua and run by the
 // `SceLua` engine; it is a target of its own so that a machine that needs no engine does not
 // link Lua. `W3cMachines` and its tests are written, and not committed, by

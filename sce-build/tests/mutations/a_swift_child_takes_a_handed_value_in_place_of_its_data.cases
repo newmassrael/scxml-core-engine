@@ -27,7 +27,7 @@ mutation_oracles backends/swift/tests/Tests/EcmaScriptMachinesTests/AChildTakesA
 # template into them.
 mutation_targets tools/codegen/templates/swift/script_engine.swift.jinja2 tools/codegen/templates/swift/entry_exit_actions.swift.jinja2
 mutation_targets_glob 'backends/swift/tests/Sources/EcmaScriptMachines/*_sm.swift'
-mutation_regen scripts/regen_swift_ecmascript.sh
+mutation_regen scripts/materialize.sh swift-ecmascript
 
 # ── The <data>'s own value is evaluated, then the handed one replaces it ──
 #
