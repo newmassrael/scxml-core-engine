@@ -830,6 +830,88 @@ impl ComposedSpelling for GoComposed<'_> {
         held.text.clone()
     }
 
+    // A record's unit names its fields by their exported Go names
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `bool`, a text, a byte string, and a list or an optional value
+    // of them, in the Go types the machine holds them in (`string`, `[]byte`,
+    // `[]T`, `optional.Of[T]`), so the walk copies each whole.
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Go
+            )
+        ))
+    }
+    // A list is copied into a slice of its own, as `copy_whole` copies one the
+    // machine may append to; every other such value (a number, a truth value,
+    // a text, a byte string, an optional one of them) is a Go value or one the
+    // machine never writes into, and the run hands the message to this
+    // component alone, so it is held as it is read.
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
+        match ty {
+            ValueType::List { .. } => self.copy_whole(held, false),
+            _ => held.text.clone(),
+        }
+    }
+    // An enum's value is read by `DeclaredName()` and a union's by `Kind()` and
+    // `Proven<Case>()`, so no unit's type is named, and Go refuses the import
+    // of a package the file does not name.
+    fn unit_values_name_their_units(&self) -> bool {
+        false
+    }
+    // The unit's value answers its declared name, which the machine's enum
+    // reads its own variant by, as a payload channel lifts an enum it is
+    // handed (`StaticTarget::take_branch`, a record of entries).
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        Some(crate::forge::static_lowering::go_enum_by_declared_name(
+            &machine.ty,
+            document,
+            &held.text,
+        ))
+    }
+    // A `switch` over the declared name of the unit's tag, as a union crosses a
+    // call from an algorithm (`go_union_crossing`), a case that holds a record
+    // binding it through the unit's `Proven<Case>()`; Go holds a `switch` to
+    // no case, so a value in none panics after it rather than make the zero
+    // struct. A function literal, so the value stands where an expression does.
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        let ty = self.union_type(document);
+        let cases: String = arms
+            .iter()
+            .map(|arm| {
+                let variant = crate::filters::escape_go(arm.variant.clone());
+                if arm.holds_record {
+                    format!(
+                        "case \"{variant}\": {GO_ELEMENT_BINDING} := ({}).{}(); return {}; ",
+                        held.text,
+                        go_case_read(&arm.variant),
+                        arm.value
+                    )
+                } else {
+                    format!("case \"{variant}\": return {}; ", arm.value)
+                }
+            })
+            .collect();
+        Some(format!(
+            "func() {ty} {{ switch ({}).{GO_UNION_KIND}().DeclaredName().Proven() {{ {cases}}}; \
+             panic(\"a value of {} is in no case of its tag\") }}()",
+            held.text,
+            crate::filters::escape_go(document.to_string())
+        ))
+    }
+    // The struct's literal, each field named by its id as the declaration
+    // names it ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}: {value}"))
+            .collect();
+        Some(format!("{ty}{{{}}}", members.join(", ")))
+    }
+
     // The record's saved form, an object of its fields keyed by their ids in
     // the schema's order, each written and read as its type says
     // ([`go_saved_writer`], [`go_saved_reader`]): the names a record of entries'
@@ -1891,6 +1973,74 @@ mod tests {
                  return W }()"
                     .to_string()
             )
+        );
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, each field read by its
+    /// exported Go name. A list of records is copied element by element into
+    /// the machine's records, an enum by its declared name into the machine's
+    /// variant, a list copied into a slice of its own, and every other value,
+    /// which the unit and the machine hold in one Go type, held as it is read.
+    #[test]
+    fn a_go_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &GO,
+            &Held::reference("sceValue"),
+        )
+        .expect("every field is made");
+        let ids: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["items", "grid", "late"]);
+        let items = &fields[0].1;
+        for needle in [
+            "range sceValue.Items",
+            "MItemRecord{id: sceElement.Id, level: func() MLevelEnum { sceName, _ := \
+             sceElement.Level.DeclaredName().Get(); sceHeld, sceErr := \
+             MLevelEnumFromSaved(sceName, \"level\")",
+            "due: sceElement.Due, blob: append(sceElement.Blob[:0:0], sceElement.Blob...), \
+             tags: append(sceElement.Tags[:0:0], sceElement.Tags...)}",
+        ] {
+            assert!(items.contains(needle), "{needle} in {items}");
+        }
+        assert_eq!(fields[1].1, "append(sceValue.Grid[:0:0], sceValue.Grid...)");
+        assert_eq!(fields[2].1, "append(sceValue.Late[:0:0], sceValue.Late...)");
+        assert!(!GO.unit_values_name_their_units());
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a `switch` over the declared
+    /// name of the unit's tag, a case that holds a record binding it through
+    /// the unit's proven read, each case the machine's constructor of the same
+    /// variant; a value in no case panics.
+    #[test]
+    fn a_go_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &GO,
+            &Held::place("sceValue.Shape"),
+        )
+        .expect("the union is made");
+        assert_eq!(
+            made,
+            "func() MShapeUnion { switch (sceValue.Shape).Kind().DeclaredName().Proven() { \
+             case \"dot\": return MShapeUnionDot(); \
+             case \"circle\": sceElement := (sceValue.Shape).ProvenCircle(); return \
+             MShapeUnionCircle(MRadiusRecord{radius: sceElement.Radius}); \
+             case \"disc\": sceElement := (sceValue.Shape).ProvenDisc(); return \
+             MShapeUnionDisc(MRadiusRecord{radius: sceElement.Radius}); }; \
+             panic(\"a value of shape is in no case of its tag\") }()"
         );
     }
 }

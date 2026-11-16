@@ -540,6 +540,34 @@ fn a_message_with_a_text_field_its_content_reads_is_copied_on_go() {
     }
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list, a
+/// text that may be absent, numbers that may be absent) binds it in the
+/// machine's payload struct, each member made from the value the record's unit
+/// holds: the list copied into a slice of its own, every other value, which
+/// the unit and the machine hold in one Go type, as it is read. The content
+/// reads the member as it reads any composed payload.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_go() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let read = at(
+        &code,
+        "sceValue, sceTaken := scetestprofile.ValueAs[sce_every_matcher.Value](\
+         p.sceTestContext.Receive(\"sut\"))",
+    );
+    let bound = at(
+        &code,
+        "JobTesterJobStatusPayload{elapsed_ms: sceValue.ElapsedMs, note: sceValue.Note, codes: \
+         append(sceValue.Codes[:0:0], sceValue.Codes...), tag: sceValue.Tag, retry: \
+         sceValue.Retry, count: sceValue.Count}",
+    );
+    assert!(read < bound, "{code}");
+    assert!(
+        code.contains("p.sceTestContext.StopTimer(\"deadline\")"),
+        "{code}"
+    );
+}
+
 /// Writes each `(file, text)` into `dir`.
 fn write_all(dir: &Path, documents: &[(&str, String)]) {
     for (file, text) in documents {

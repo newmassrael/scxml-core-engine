@@ -11302,6 +11302,34 @@ pub struct GoTarget<'a> {
 }
 
 impl GoTarget<'_> {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statement taking the receive branch
+    /// on `port` with `template`, which removes the head of the port, binds its
+    /// value as the template's unit holds it to [`GO_RECEIVED_VALUE`], and
+    /// holds the machine's payload struct of `copies`, each a member of it by
+    /// its Go name with its value, in the policy's field the content reads
+    /// `_event.data` through. One statement, a block of its own, so its locals
+    /// stand beside none of the content's.
+    fn received_record(
+        &self,
+        machine: &str,
+        port: &str,
+        template: &TemplateRef,
+        copies: &[(String, String)],
+    ) -> String {
+        let record = self.record_value(
+            &crate::forge::generator::go_payload_struct(machine, &template.event),
+            copies,
+        );
+        format!(
+            "{{ {GO_RECEIVED_VALUE}, sceTaken := {GO_TEST_RUNTIME}.ValueAs[{}]({GO_TEST_CONTEXT}.\
+             Receive({})); if !sceTaken {{ panic(\"a receive branch takes the message its guard \
+             matched\") }}; {} = {record} }}",
+            go_test_template(&template.unit, "Value"),
+            go_text(port),
+            self.payload_accessor(&template.event)
+        )
+    }
+
     /// `parts` as the statements of one block, the empty ones left out — what
     /// runs on a failure may be nothing, when the document declares no
     /// `error.execution` to raise.
@@ -11350,6 +11378,12 @@ impl GoTarget<'_> {
 /// every member the policy declares beside a variable's `v<PascalCase>` field is.
 const GO_TEST_CONTEXT: &str = "p.sceTestContext";
 
+/// The name the statement taking a receive branch of a test component's Go
+/// machine binds the value of the message to, a value of the record its unit
+/// declares (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const GO_RECEIVED_VALUE: &str = "sceValue";
+
 /// The name a Go machine binds the profile's runtime package
 /// ([`crate::std_imports::GO_TEST_RUNTIME_PATH`]) to: under the generator's own
 /// prefix, as the forge runtime's `scealgorithm` is, so no local an author names
@@ -11380,7 +11414,7 @@ fn go_test_template(unit: &str, name: &str) -> String {
 /// of, which the refusal names. The unit's value answers its declared name
 /// (`DeclaredName`, `forge/go/enum.go.jinja2`), so neither the enum unit's
 /// package nor a list of its variants is named here.
-fn go_enum_by_declared_name(ty: &str, what: &str, value: &str) -> String {
+pub(crate) fn go_enum_by_declared_name(ty: &str, what: &str, value: &str) -> String {
     format!(
         "func() {ty} {{ sceName, _ := {value}.DeclaredName().Get(); \
          sceHeld, sceErr := {ty}FromSaved(sceName, {}); \
@@ -12790,7 +12824,7 @@ impl StaticTarget for GoTarget<'_> {
                     .iter()
                     .map(|f| {
                         let read = format!(
-                            "sceValue.{}",
+                            "{GO_RECEIVED_VALUE}.{}",
                             crate::forge::generator::event_schema_field_ident(&f.id, Language::Go)
                         );
                         let held = match f.sce_type.present_type() {
@@ -12813,22 +12847,27 @@ impl StaticTarget for GoTarget<'_> {
                         Some((self.record_field(&f.id), held))
                     })
                     .collect::<Option<Vec<(String, String)>>>()?;
-                let record = self.record_value(
-                    &crate::forge::generator::go_payload_struct(machine, &template.event),
-                    &copies,
-                );
-                format!(
-                    "{{ sceValue, sceTaken := {GO_TEST_RUNTIME}.ValueAs[{}]({GO_TEST_CONTEXT}.\
-                     Receive({})); if !sceTaken {{ panic(\"a receive branch takes the message \
-                     its guard matched\") }}; {} = {record} }}",
-                    go_test_template(&template.unit, "Value"),
-                    go_text(port),
-                    self.payload_accessor(&template.event)
-                )
+                self.received_record(machine, port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the payload
+            // struct made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from the value bound to
+            // [`GO_RECEIVED_VALUE`].
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => {
+                let copies: Vec<(String, String)> = members
+                    .iter()
+                    .map(|(id, value)| (self.record_field(id), value.clone()))
+                    .collect();
+                self.received_record(machine, port, template, &copies)
+            }
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{GO_TEST_CONTEXT}.Receive({})", go_text(port))
@@ -12840,6 +12879,10 @@ impl StaticTarget for GoTarget<'_> {
                 format!("{GO_TEST_CONTEXT}.DoneTaken({})", go_text(ptc))
             }
         })
+    }
+    // The value `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(GO_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`, an
     // `int64`: one past it has no value there. A verdict with no reason is set
@@ -19487,6 +19530,9 @@ fn received_composed(
         &*spelling,
         &composed::Held::reference(binding),
     )?;
+    if !spelling.unit_values_name_their_units() {
+        return Ok(members);
+    }
     let mut reached = composed::Reached::default();
     composed::held_records(&place.ty, None, &names.records, &mut reached)?;
     let mut imports = rewrites.received_imports.borrow_mut();

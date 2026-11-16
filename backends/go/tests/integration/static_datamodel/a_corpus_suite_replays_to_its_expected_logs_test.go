@@ -12,10 +12,7 @@
 // The expected logs are the files every backend is held to, the canonical logs
 // a reviewed run of the Rust runner wrote. Each test is the twin of the Rust
 // case of the same name in
-// backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs. job_suite
-// is not replayed here: its tester's receive branch reads a message whose record
-// holds a list, of which the Go machine makes no value (docs/SCE_TEST_PROFILE.md
-// §12.6), so its tester is refused where it is generated.
+// backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
 
 package static_datamodel
 
@@ -31,6 +28,7 @@ import (
 	"github.com/newmassrael/sce-go-runtime/testprofile"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/boundary_suite"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_suite"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/nested_suite"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/orders_suite"
 )
@@ -141,6 +139,20 @@ func TestTheCorpusReplaysToItsExpectedLogs_TheBoundarySuiteReplaysToItsExpectedL
 		world:     "",
 		verdicts: "exchanges_signed_numbers pass\nanswers_another_job fail\nsets_no_verdict none\n" +
 			"never_ends error\nsends_to_a_removed_ptc error\ntakes_before_its_exits pass\n",
+	})
+}
+
+// docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of `every_matcher`
+// accepts, at 1 ms, which the tester's branch reads as a composed message; the
+// helper is told and passes, and the tester settles for the duration its start
+// gives and passes at 501 ms.
+func TestTheCorpusReplaysToItsExpectedLogs_TheJobSuiteReplaysToItsExpectedLogs(t *testing.T) {
+	corpusReplays(t, corpusReplayed{
+		suite:     "job_suite",
+		tables:    job_suite.Suite(),
+		parameter: job_suite.ModuleParameter,
+		world:     "job-timeout,job-retry",
+		verdicts:  "completes_in_time pass\n",
 	})
 }
 

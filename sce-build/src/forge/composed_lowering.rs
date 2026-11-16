@@ -533,6 +533,23 @@ pub trait ComposedSpelling {
     fn unit_field(&self, _held: &Held, _field: &str) -> Option<String> {
         None
     }
+    /// The machine's value of `held`, a value of `ty` that names no record,
+    /// enum or union, which a record's unit and the machine hold in one type
+    /// ([`fields_from_unit`]): [`Self::copy_whole`] of it, the default. A
+    /// backend whose [`Self::copy_whole`] holds a narrower contract than every
+    /// such type (Go's copies only a list) spells each here.
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
+        self.copy_whole(held, plain(ty))
+    }
+    /// Whether [`Self::unit_enum`] and [`Self::unit_union`] name the type the
+    /// enum's or the union's own unit declares, so the machine's unit imports
+    /// that unit where a received message holds one: true, the default. A
+    /// backend that reads a unit's value through its methods alone (Go) names
+    /// no such type, and a language that refuses an unused import (Go) imports
+    /// none.
+    fn unit_values_name_their_units(&self) -> bool {
+        true
+    }
     /// The machine's value of `held`, a byte string of at most `max` bytes that
     /// a record's unit holds as one entry of the record (the field itself, or
     /// the present value of a field that may be absent), which the unit spells
@@ -1713,7 +1730,7 @@ fn from_unit(
         | ValueType::Text { .. }
         | ValueType::Bytes { .. }
         | ValueType::Optional { .. }
-        | ValueType::List { .. } => Ok(spelling.copy_whole(held, plain(ty))),
+        | ValueType::List { .. } => Ok(spelling.unit_whole(held, ty)),
     }
 }
 

@@ -242,10 +242,10 @@ TRACE_FORMS_COMPONENTS=(forms_listener)
 # out of every run, its record and templates each a package as above, its components'
 # machines alone as above, and its tables, beside the runtime's records, templates and
 # asking_configuration, which it reuses; and orders_suite and nested_suite, whose records,
-# union and templates TEST_PROFILE_IMPORTS generates above. job_suite is not replayed on Go:
-# its tester's receive branch reads a message whose record holds a list, which the Go
-# machine makes no value of (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the
-# same documents (scripts/regen_static_datamodel_rust.sh).
+# union and templates TEST_PROFILE_IMPORTS generates above; and job_suite, whose records and
+# templates TEST_PROFILE generates above, with the job's completion of the kind examples its
+# port sends, a package of its own. The Rust tree generates the same documents
+# (scripts/regen_static_datamodel_rust.sh).
 BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
 BOUNDARY_RECORDS=(signed_reading signed_reading_sent signed_reading_within)
 BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
@@ -258,6 +258,9 @@ TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
 TTCN3_EXPORT_COMPONENTS=(orders_tester nested_tester)
 TTCN3_EXPORT_TABLES=(orders_configuration orders_case orders_suite)
 TTCN3_EXPORT_TABLES+=(nested_configuration nested_case nested_suite)
+JOB_SUITE_COMPONENTS=(job_tester helper)
+JOB_SUITE_TABLES=(tester_and_helper completes_in_time job_suite)
+JOB_COMPLETED="sce-build/kind-examples/event-schema.scxml"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -325,6 +328,13 @@ done
 for document in "${TTCN3_EXPORT_TABLES[@]}"; do
     "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$document.scxml" -l go -o "$TMP/table_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
+for component in "${JOB_SUITE_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$component.scxml" -l go -o "$TMP/component_$component/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${JOB_SUITE_TABLES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l go -o "$TMP/table_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+"$CODEGEN" generate "$JOB_COMPLETED" -l go -o "$TMP/runtime_job_completed/" --go-module-prefix "$GO_MODULE_PREFIX"
 
 mkdir -p "$GENERATED_DIR"
 # Every package below is generated, and the tests beside them are not: clearing
@@ -376,7 +386,7 @@ for document in "${UNIONS[@]}"; do
         PACKAGES+=("$package")
     done
 done
-for document in "${TEST_PROFILE_RUNTIME[@]}" "${BOUNDARY_RECORDS[@]}"; do
+for document in "${TEST_PROFILE_RUNTIME[@]}" "${BOUNDARY_RECORDS[@]}" job_completed; do
     for generated in "$TMP/runtime_$document"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
@@ -384,7 +394,8 @@ for document in "${TEST_PROFILE_RUNTIME[@]}" "${BOUNDARY_RECORDS[@]}"; do
         PACKAGES+=("$package")
     done
 done
-for document in "${TEST_TABLES[@]}" "${BOUNDARY_TABLES[@]}" "${TTCN3_EXPORT_TABLES[@]}"; do
+for document in "${TEST_TABLES[@]}" "${BOUNDARY_TABLES[@]}" "${TTCN3_EXPORT_TABLES[@]}" \
+    "${JOB_SUITE_TABLES[@]}"; do
     for generated in "$TMP/table_$document"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
@@ -404,7 +415,7 @@ done
 # named by its document, which the test's factory of machines and each configuration's
 # table above import (`<module path>/<snake of the machine's name>`).
 for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" \
-    "${TTCN3_EXPORT_COMPONENTS[@]}"; do
+    "${TTCN3_EXPORT_COMPONENTS[@]}" "${JOB_SUITE_COMPONENTS[@]}"; do
     mkdir -p "$GENERATED_DIR/$component"
     cp "$TMP/component_$component"/*_sm.go "$GENERATED_DIR/$component/"
     MACHINES+=("$component")
