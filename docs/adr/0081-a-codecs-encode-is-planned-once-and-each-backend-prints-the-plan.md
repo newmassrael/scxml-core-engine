@@ -1950,6 +1950,22 @@ old encode, the old encode and its templates are removed in the same landing.
    apart say, a length a group or the value states where its content is absent (`Absent::Group`,
    `Presence::Stated`), and a gate of a flag input or of a chain's membership, each an encode that can refuse or
    reads what this printer does not yet hold, stay unlowered and name their form.
+
+   *The fifth C11 landing, 2026-11-16:* bodies of codecs the C11 backend prints (`ImportContext::c11_printed`, read
+   as the import generates on C11), handed no flag input, always there or gated, and the encoded length of one. A
+   printed header declares `{codec}_source_ref_t`, `{ table, ctx }`, the pair a source is passed as, and its
+   optional value; a parent's source presents a body as that pair, and the value's reader points it at the body the
+   struct holds, by the body's own value table. The parent's encode writes the body by the body's own
+   `{codec}_encode_source` over the pair: the body is read where it is held, with no copy and no RAM but the two
+   pointers. The checks a value's encode makes before the first byte, an array within its view's bound and a text
+   UTF-8, are a function of their own, `{codec}_check_value`, which a parent's check calls for each body it holds:
+   the encode over a source reads a body's arrays through its views, so a body is held to its bounds before its
+   parent writes a byte, as the body's own encode holds it. The encoded length of a body is counted by the body's
+   encode over a counting sink, `sce_forge_writer_init_counting()` (`sce/forge/codec.h`): a writer with no buffer
+   that stores nothing and counts every byte, so the length costs no stack buffer of the body's most, which the MCU
+   budgets of docs/adr/0057 could not hold for a body of 64 KiB. The counting sink adds one test of the buffer to the
+   runtime's two storing writes and changes nothing a writer over a buffer does. A body whose encode can refuse, a
+   length of one in a flag, and a body of a codec the C11 backend does not print stay unlowered and name their form.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
