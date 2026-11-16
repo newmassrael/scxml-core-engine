@@ -1965,7 +1965,10 @@ GATES: dict[str, dict] = {
                   # suites from, their traces and their expected logs, which
                   # ATestSuiteRunsEndToEndTest and
                   # ACorpusSuiteReplaysToItsExpectedLogsTest read at run time.
-                  "sce-build/tests/fixtures/test_profile/**"],
+                  "sce-build/tests/fixtures/test_profile/**",
+                  # The documents of the corpus's orders_suite and
+                  # nested_suite, which the build generates.
+                  "sce-build/tests/fixtures/ttcn3_export/**"],
         "deps": ["codegen-build"],
         "ci_only": "110s building and running the whole C++ ctest tree. "
                    "cpp-suite.yml runs it. Its `extra` list is wide on "

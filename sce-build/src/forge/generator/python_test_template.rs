@@ -489,7 +489,7 @@ impl CanonicalForm for PythonReading {
 
     /// The case's binding stands for its record, the case's value
     /// [`Self::union`] binds it to.
-    fn case_record(&self, bound: PythonReadAt, _record: &str) -> PythonReadAt {
+    fn case_record(&self, bound: PythonReadAt, _variant: &str, _record: &str) -> PythonReadAt {
         bound
     }
 

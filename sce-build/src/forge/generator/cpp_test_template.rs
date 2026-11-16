@@ -30,12 +30,23 @@
 //! ([`super::test_template_walk::canonical_form`]): the unit of a test
 //! configuration reads the values of a recorded input trace with it
 //! (docs/SCE_TTCN3_LANE.md §10.5).
+//!
+//! C++'s test profile matches a union
+//! ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]) through the
+//! struct its unit declares (docs/adr/0092, section 7, the C++ row): a case is
+//! told apart by `std::holds_alternative` on the alternative of its case, its
+//! record read through the case's proven read, a value built from the
+//! alternative of its case, and its form written by a visitor of one arm per
+//! case and read back a case at a time.
 
 use super::test_template_walk::{
     integer_literal, CanonicalCase, CanonicalForm, CanonicalSpelling, Held, Position,
     TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
+use crate::forge::composed_lowering::{
+    cpp_case_ident, cpp_case_read, CPP_CASE_VALUE, CPP_UNION_CASES, CPP_UNREACHED,
+};
 use crate::forge::schema_unit_type::{unit_type, C11Declarations};
 use crate::forge::value_type::{Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
@@ -57,11 +68,9 @@ const CANONICAL_HEADER: &str = "test/Canonical.h";
 /// The namespace of the writers [`CANONICAL_HEADER`] declares.
 const CANONICAL: &str = "::SCE::Test::Canonical";
 
-/// The unit of the test template `m`, whose imports are `imports`. Refused by
-/// name where the template's type or a parameter's reaches a union at any
-/// depth: C++ generates a union's unit, and its test profile matches no union
-/// yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`,
-/// [`crate::forge::value_type::union_unlowered`]).
+/// The unit of the test template `m`, whose imports are `imports`, a union its
+/// type or a parameter's reaches named by the struct its own unit declares
+/// ([`cpp_union_type`]).
 pub(super) fn render_test_template_cpp(
     env: &minijinja::Environment,
     m: &TestTemplateModel,
@@ -98,7 +107,7 @@ pub(super) fn render_test_template_cpp(
         })
         .collect::<Result<_, ForgeError>>()?;
     let root = walk.root(&scope);
-    let match_expr = spelling.join(&walk, &walk.matches(&m.matcher, &root)?)?;
+    let match_expr = spelling.join(&walk.matches(&m.matcher, &root)?);
     let value_expr = if walk.specific() {
         Some(walk.value(&m.matcher, &root)?)
     } else {
@@ -118,8 +127,10 @@ pub(super) fn render_test_template_cpp(
     ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
     ctx.insert("log_type".into(), serde_json::json!(log_type));
     ctx.insert("canonical_header".into(), CANONICAL_HEADER.into());
-    // The record, enum and referenced templates' units, each as the import
-    // names it ([`forge_import_identity`]); a union was refused above.
+    // The record, enum, union and referenced templates' units, each as the
+    // import names it ([`forge_import_identity`]). A union's unit includes the
+    // `<variant>` and `<cstdlib>` its alternatives are tested, visited and
+    // read by.
     let type_includes: Vec<String> = imports.iter().map(|i| i.include_stmt.clone()).collect();
     ctx.insert("type_includes".into(), serde_json::json!(type_includes));
     // The runtime's length of a text is included where a matcher counts one,
@@ -146,6 +157,19 @@ fn cpp_parameter(id: &str) -> String {
     format!("param_{id}")
 }
 
+/// The struct the unit of the union `union` declares, named from the global
+/// namespace ([`union_unit_type`]), whatever namespace the unit that names it
+/// is written in.
+fn cpp_union_type(union: &ScopedUnion) -> String {
+    format!("::{}", union_unit_type(&union.name, Language::Cpp))
+}
+
+/// The alternative of the case `variant` of the union `union`: the struct of
+/// the case nested in the union's struct, which its `cases` holds.
+fn cpp_alternative(union: &ScopedUnion, variant: &str) -> String {
+    format!("{}::{}", cpp_union_type(union), cpp_case_ident(variant))
+}
+
 /// A value the canonical writer reads, in C++.
 pub(super) struct CppCanonicalAt {
     /// What names the value: `value`, a lambda's parameter, or a field of
@@ -163,9 +187,9 @@ pub(super) struct CppCanonicalAt {
 /// declared name and number are read by the free functions its unit declares
 /// beside it (`declared_name`, `to_underlying`), found by argument-dependent
 /// lookup through the enum's own namespace, whatever document declares it.
-/// C++'s test profile matches no union yet, so the walk's refusal of one
-/// stands. The unit of a test configuration writes its records' forms with it too, beside their
-/// readers ([`CppReading`]).
+/// A union is written by `std::visit` over its `cases`, with a visitor of one
+/// arm per case. The unit of a test configuration writes its records' forms
+/// with it too, beside their readers ([`CppReading`]).
 pub(super) struct CppCanonical;
 
 impl CanonicalSpelling for CppCanonical {
@@ -197,6 +221,15 @@ impl CanonicalSpelling for CppCanonical {
             depth: at.depth + 1,
         };
         (name, value)
+    }
+
+    /// The arm of the visitor binds the alternative of its case, which holds
+    /// the case's record as its `value`.
+    fn case_record(&self, bound: CppCanonicalAt) -> CppCanonicalAt {
+        CppCanonicalAt {
+            base: format!("{}.{CPP_CASE_VALUE}", bound.base),
+            depth: bound.depth,
+        }
     }
 
     fn boolean(&self, at: &CppCanonicalAt) -> String {
@@ -260,6 +293,43 @@ impl CanonicalSpelling for CppCanonical {
             .map(|(id, value)| format!("{{\"{}\", {value}}}", filters::escape_cpp(id)))
             .collect();
         format!("{CANONICAL}::record({{{}}})", fields.join(", "))
+    }
+
+    /// `std::visit` over the union's `cases`, with a visitor declared where it
+    /// is written: one `operator()` per case, each taking the alternative of
+    /// its case and writing the runtime's `unionCase` of its variant, with the
+    /// form of the record the case holds, or none. A visitor of one overload
+    /// per alternative, rather than a generic lambda, is checked by the
+    /// compiler to take each case, as a machine's union is crossed
+    /// (`static_lowering::cpp_union_crossing`). Its arms read nothing of the
+    /// function they are written in, which a member of a local struct cannot.
+    fn union(
+        &self,
+        at: &CppCanonicalAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let arms: String = cases
+            .into_iter()
+            .map(|(variant, case)| {
+                let alternative = cpp_alternative(union, &variant);
+                let (binding, record) = match case {
+                    Some((binding, written)) => (binding, written),
+                    None => (String::new(), "::std::nullopt".to_string()),
+                };
+                format!(
+                    "{JSON_VALUE} operator()(const {alternative} &{binding}) const {{ return \
+                     {CANONICAL}::unionCase({}, {record}); }} ",
+                    cpp_literal(&variant)
+                )
+            })
+            .collect();
+        let visitor = format!("CanonicalCases{}", at.depth);
+        Ok(format!(
+            "[&]() -> {JSON_VALUE} {{ struct {visitor} {{ {arms}}}; return ::std::visit({visitor}{{}}, \
+             ({}).{CPP_UNION_CASES}); }}()",
+            at.base
+        ))
     }
 }
 
@@ -336,8 +406,9 @@ impl CppReadingAt {
 /// integer, a text, a byte string and a list are read into the type the place
 /// they stand in holds, which the reader names as the schema unit declares it
 /// (`decltype` of the field, `value_type` of an optional or a list), since a
-/// C++ function infers no type from where its result goes. C++'s test profile
-/// matches no union yet, so the walk's refusal of one stands.
+/// C++ function infers no type from where its result goes. A union is read by
+/// the runtime's `unionCase` and built a case at a time, its case's record
+/// read into the `value` the alternative of the case holds.
 ///
 /// No reference a read binds can outlive a temporary argument of the call
 /// that made it (GCC's `-Wdangling-reference`): a record's object is bound as
@@ -420,8 +491,18 @@ impl CanonicalForm for CppReading {
         (name, value)
     }
 
-    fn case_record(&self, bound: CppReadingAt, _record: &str) -> CppReadingAt {
-        bound
+    /// The case's value the union's reader binds, read into the record the
+    /// alternative of the case holds as its `value`, named through the union's
+    /// type as the place declares it.
+    fn case_record(&self, bound: CppReadingAt, variant: &str, _record: &str) -> CppReadingAt {
+        CppReadingAt {
+            cpp: format!(
+                "decltype({}::{}::{CPP_CASE_VALUE})",
+                bound.cpp,
+                cpp_case_ident(variant)
+            ),
+            ..bound
+        }
     }
 
     /// The element the loop over the list binds, read into the list's
@@ -594,13 +675,50 @@ impl CanonicalForm for CppReading {
         }
     }
 
+    /// A lambda that binds the runtime's `unionCase`, which holds the value to
+    /// an object of one member naming a case the union declares and answers
+    /// its variant and the case's value, then builds the union's struct from
+    /// the alternative of the case its variant names: from the record read
+    /// from the case's value, or, for a case that holds none, once
+    /// `noRecord` has read the empty object it is. `unionCase` refused every
+    /// other variant, so the lambda's end is never reached
+    /// ([`CPP_UNREACHED`]).
     fn union(
         &self,
-        _at: &CppReadingAt,
+        at: &CppReadingAt,
         union: &ScopedUnion,
-        _cases: Vec<CanonicalCase>,
+        cases: Vec<CanonicalCase>,
     ) -> Result<String, String> {
-        Err(crate::forge::value_type::union_unlowered(&union.name))
+        let union_type = cpp_union_type(union);
+        let read = format!("union_{}", at.depth);
+        let variants: Vec<String> = cases.iter().map(|(name, _)| cpp_literal(name)).collect();
+        let arms: String = cases
+            .into_iter()
+            .map(|(variant, held)| {
+                let body = match held {
+                    Some((binding, written)) => format!(
+                        "const {JSON_VALUE} &{binding} = {read}.value(); return {};",
+                        algorithm_union_case(Language::Cpp, &union_type, &variant, Some(&written))
+                    ),
+                    None => format!(
+                        "{FROM_CANONICAL}::noRecord({read}.value(), {}); return {};",
+                        cpp_literal(&format!("{}.{variant}", at.what)),
+                        algorithm_union_case(Language::Cpp, &union_type, &variant, None)
+                    ),
+                };
+                format!(
+                    "if ({read}.variant() == {}) {{ {body} }} ",
+                    cpp_literal(&variant)
+                )
+            })
+            .collect();
+        Ok(format!(
+            "[&]() -> {union_type} {{ const {FROM_CANONICAL}::CanonicalCase {read} = \
+             {FROM_CANONICAL}::unionCase({}, {{{}}}, {}); {arms}{CPP_UNREACHED} }}()",
+            at.json,
+            variants.join(", "),
+            cpp_literal(&at.what)
+        ))
     }
 }
 
@@ -653,42 +771,46 @@ struct CppSpelling {
 
 impl CppSpelling {
     /// `held` as one C++ expression, every operand of a join in parentheses.
-    fn join(
-        &self,
-        walk: &TemplateWalk<'_, Self>,
-        held: &Held<'_, CppAt>,
-    ) -> Result<String, ForgeError> {
+    fn join(&self, held: &Held<'_, CppAt>) -> String {
         let joined = |parts: &[Held<'_, CppAt>]| {
-            parts
-                .iter()
-                .map(|part| self.join(walk, part))
-                .collect::<Result<Vec<_>, _>>()
+            parts.iter().map(|part| self.join(part)).collect::<Vec<_>>()
         };
-        Ok(match held {
+        match held {
             Held::True => "true".to_string(),
             Held::Compare { at, op, rhs } => format!("({} {} {rhs})", at.at.expr, op.symbol()),
             Held::Count { at, op, n } => format!("({} {} {n}u)", self.count(at), op.symbol()),
             Held::Call(call) => call.clone(),
             Held::Absent(at) => format!("!{}.has_value()", at.at.expr),
-            Held::Present { at, then, .. } => all(vec![
-                format!("{}.has_value()", at.at.expr),
-                self.join(walk, then)?,
-            ]),
-            Held::AbsentOr { at, then, .. } => format!(
-                "(!{}.has_value() || {})",
-                at.at.expr,
-                self.join(walk, then)?
-            ),
-            Held::All(parts) => all(joined(parts.as_slice())?),
-            Held::Any(parts) => any(joined(parts.as_slice())?),
-            Held::Not(part) => format!("!{}", self.join(walk, part)?),
-            Held::Case { at, .. } => {
-                return Err(walk.refused(format!(
-                    "a <sce:union-match> stands where a value of {} is matched",
-                    at.ty
-                )))
+            Held::Present { at, then, .. } => {
+                all(vec![format!("{}.has_value()", at.at.expr), self.join(then)])
             }
-        })
+            Held::AbsentOr { at, then, .. } => {
+                format!("(!{}.has_value() || {})", at.at.expr, self.join(then))
+            }
+            Held::All(parts) => all(joined(parts.as_slice())),
+            Held::Any(parts) => any(joined(parts.as_slice())),
+            Held::Not(part) => format!("!{}", self.join(part)),
+            // The union holds the alternative of the case, and, where the
+            // case's matcher reads its record, the record holds its test: `&&`
+            // reads the record, through the case's proven read
+            // ([`TemplateSpelling::case`]), only where the alternative is held.
+            Held::Case {
+                at,
+                union,
+                variant,
+                record,
+            } => {
+                let holds = format!(
+                    "::std::holds_alternative<{}>({}.{CPP_UNION_CASES})",
+                    cpp_alternative(union, variant),
+                    at.at.expr
+                );
+                match record {
+                    None => holds,
+                    Some((_, then)) => all(vec![holds, self.join(then)]),
+                }
+            }
+        }
     }
 
     /// `built`, an expression that builds through the forge runtime's
@@ -748,6 +870,20 @@ impl TemplateSpelling for CppSpelling {
             expr: format!("{}.{member}", at.expr),
             cpp: format!("decltype({payload}::{member})"),
         }
+    }
+
+    /// The record of the case, through the proven read the union's struct
+    /// declares for it, which the test of the alternative
+    /// ([`CppSpelling::join`]) proved before `&&` reads it; held as the
+    /// alternative of the case holds it.
+    fn case(&self, at: &CppAt, union: &ScopedUnion, variant: &str) -> Result<CppAt, String> {
+        Ok(CppAt {
+            expr: format!("{}.{}()", at.expr, cpp_case_read(variant)),
+            cpp: format!(
+                "decltype({}::{CPP_CASE_VALUE})",
+                cpp_alternative(union, variant)
+            ),
+        })
     }
 
     fn parameter(
@@ -880,5 +1016,23 @@ impl TemplateSpelling for CppSpelling {
                 elements.join(", ")
             ))
         }
+    }
+
+    /// The union's struct, built from the alternative of the case, holding
+    /// its record or nothing: the only way the unit builds a value
+    /// ([`algorithm_union_case`]).
+    fn case_value(
+        &self,
+        _at: &Position<'_, CppAt>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        Ok(algorithm_union_case(
+            Language::Cpp,
+            &cpp_union_type(union),
+            variant,
+            record.as_deref(),
+        ))
     }
 }

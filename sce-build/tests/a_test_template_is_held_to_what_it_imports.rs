@@ -132,7 +132,7 @@ fn a_template_that_keeps_every_rule_of_its_imports_is_accepted() {
 /// backend generates a template (`codegen_matrix::TEST_TEMPLATE_BACKENDS`), so
 /// the generation that refuses the accepted one is a backend's that lowers no
 /// union in its test profile (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`),
-/// C++ here, refusing the union the
+/// C11 here, refusing the union the
 /// template reaches by name, which only the generation does.
 #[test]
 fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one() {
@@ -142,10 +142,10 @@ fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one
             .all(|language| TEST_TEMPLATE_BACKENDS.contains(language)),
         "a backend generates no template: the test's refusal is no longer the only one"
     );
-    let refusing = Language::Cpp;
+    let refusing = Language::C11;
     assert!(
         !TEST_PROFILE_UNION_BACKENDS.contains(&refusing),
-        "C++ matches a union in a template: name a backend that still refuses one"
+        "C11 matches a union in a template: name a backend that still refuses one"
     );
     match sce_build::compile_forge_file(
         &imports_dir().join("order_placed_match.scxml"),

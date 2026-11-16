@@ -12,9 +12,6 @@
 // a reviewed run of the Rust runner wrote. Each test is the twin of the Rust
 // case of the same name in
 // backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
-// orders_suite and nested_suite are not replayed here: their mapped record holds
-// a union, which C++'s test profile matches no value of
-// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS).
 
 #include <gtest/gtest.h>
 
@@ -26,6 +23,8 @@
 #include "boundary_suite.h"
 #include "integration/RuntimeSuiteExpectedLogs.h"
 #include "job_suite.h"
+#include "nested_suite.h"
+#include "orders_suite.h"
 #include "test/Runner.h"
 #include "test/Suite.h"
 
@@ -121,6 +120,23 @@ TEST(TheCorpus, TheBoundarySuiteReplaysToItsExpectedLogs) {
 TEST(TheCorpus, TheJobSuiteReplaysToItsExpectedLogs) {
     replays(Replayed{"job_suite", SCE::Generated::JobSuite::suite(), &SCE::Generated::JobSuite::moduleParameter,
                      "job-timeout,job-retry", "completes_in_time pass\n"});
+}
+
+/// docs/SCE_TEST_PROFILE.md §9.5: an order of two lines, a customer and a card,
+/// which `order_placed_match` accepts over its union, its list of records and
+/// its template references, at 1 ms.
+TEST(TheCorpus, TheOrdersSuiteReplaysToItsExpectedLogs) {
+    replays(Replayed{"orders_suite", SCE::Generated::OrdersSuite::suite(),
+                     &SCE::Generated::OrdersSuite::moduleParameter, "", "orders_case pass\n"});
+}
+
+/// docs/SCE_TEST_PROFILE.md §4.5 (P5), §4.7 (P7): an order at 100 ms, which the
+/// atomic state's own targetless branch takes before its ancestor's, and one at
+/// 500 ms, which the ancestor's internal branch takes, restarting the running
+/// timer; the inner timer then runs out twice and the tester passes at 1250 ms.
+TEST(TheCorpus, TheNestedSuiteReplaysToItsExpectedLogs) {
+    replays(Replayed{"nested_suite", SCE::Generated::NestedSuite::suite(),
+                     &SCE::Generated::NestedSuite::moduleParameter, "", "nested_case pass\n"});
 }
 
 }  // namespace

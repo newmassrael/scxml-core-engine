@@ -544,7 +544,7 @@ impl<'s> CanonicalForm for GoReading<'s> {
     /// `record:<record>` of the union's own scope, which names the type of
     /// each of its fields; it stands where the union does, as a refusal names
     /// it.
-    fn case_record(&self, bound: GoReadingAt<'s>, record: &str) -> GoReadingAt<'s> {
+    fn case_record(&self, bound: GoReadingAt<'s>, _variant: &str, record: &str) -> GoReadingAt<'s> {
         let scope: &'s TypeScope = bound.scope;
         let union_scope: Option<&'s TypeScope> = match &bound.ty {
             TypeOf::Union { alias } => scope.unions.get(alias).map(|union| &union.scope),

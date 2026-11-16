@@ -819,19 +819,28 @@ sce_add_algorithm(
 # ATestTemplateMatchesItsValuesTest's: the test profile's templates
 # (docs/SCE_TEST_PROFILE.md §11.4), each a document of its own kind whose
 # header declares its `match` and, for a specific one, its `value`, generated
-# beside the records, the enum and the templates their headers include.
+# beside the records, the enum and the templates their headers include. The two
+# over a union (shape_is_circle, order_placed_match) are generated beside the
+# unions their headers name, the tags' enums and the cases' records.
 foreach(_TEST_PROFILE_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of
-                               report_within)
+                               report_within shape_is_circle)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/${_TEST_PROFILE_DOCUMENT}.scxml
     )
 endforeach()
 foreach(_TEST_PROFILE_DOCUMENT paint_color order_line quantity_two quantity_at_most order_line_exact
-                               order_line_bounded card_payment card_within voucher_payment voucher_is)
+                               order_line_bounded card_payment card_within voucher_payment voucher_is
+                               payment_kind order_payment order_placed order_placed_match)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/imports/${_TEST_PROFILE_DOCUMENT}.scxml
+    )
+endforeach()
+foreach(_UNION_DOCUMENT shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/union/${_UNION_DOCUMENT}.scxml
     )
 endforeach()
 # ATestComponentRunsThroughItsDoorsTest's: test components (docs/SCE_TEST_PROFILE.md
@@ -869,8 +878,9 @@ endforeach()
 # C++ holds, so its header's reader and writer of each form are compiled, beside the
 # records it takes (order_taken, job_status above, form_extras), the record and the
 # enums they hold, its listener's machine and its test case. The port type writes no
-# file. The Rust twin's configuration takes order_placed, whose union C++ does not
-# lower, in order_taken's place.
+# file. The Rust twin's configuration takes order_placed in order_taken's place; C++
+# reads and writes order_placed's union through orders_configuration below, whose
+# traces the corpus's orders_suite replays.
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/imports/order_customer.scxml
@@ -898,11 +908,10 @@ endforeach()
 # ACorpusSuiteReplaysToItsExpectedLogsTest's (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite,
 # of what runtime_suite leaves out of every run, its record and templates, its components'
 # machines and its tables, beside the runtime's records, templates and asking_configuration
-# above, which it reuses. orders_suite and nested_suite are not generated here: their mapped
-# record holds a union, which C++'s test profile matches no value of
-# (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is: its records and templates are
-# generated above, and its components, its tables and the job's completion of the kind
-# examples its port sends below.
+# above, which it reuses. job_suite: its records and templates are generated above, and its
+# components, its tables and the job's completion of the kind examples its port sends below.
+# orders_suite and nested_suite: the records, the union and the templates their components
+# match are generated above, and their components' machines and their tables below.
 foreach(_BOUNDARY_DOCUMENT signed_reading signed_reading_sent signed_reading_within)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
@@ -938,6 +947,19 @@ foreach(_JOB_DOCUMENT tester_and_helper completes_in_time job_suite)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/${_JOB_DOCUMENT}.scxml
+    )
+endforeach()
+foreach(_TTCN3_EXPORT_COMPONENT orders_tester nested_tester)
+    sce_add_state_machine(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/ttcn3_export/${_TTCN3_EXPORT_COMPONENT}.scxml
+    )
+endforeach()
+foreach(_TTCN3_EXPORT_DOCUMENT orders_configuration orders_case orders_suite
+                               nested_configuration nested_case nested_suite)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/ttcn3_export/${_TTCN3_EXPORT_DOCUMENT}.scxml
     )
 endforeach()
 

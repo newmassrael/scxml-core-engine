@@ -23,6 +23,7 @@
 #include "order_line_bounded.h"
 #include "order_line_exact.h"
 #include "report_within.h"
+#include "shape_is_circle.h"
 #include "voucher_is.h"
 
 namespace {
@@ -269,6 +270,18 @@ TEST(ATestTemplate, AByteStringLiteralIsItsOctets) {
     auto other = voucher;
     other.voucher_code[3] = 0xa1;
     EXPECT_FALSE(VoucherIs::match(other));
+}
+
+// docs/adr/0092, section 7: a union-match holds the case it names, whatever the
+// record the case holds where its matcher takes any, and no other case.
+TEST(ATestTemplate, AUnionMatchHoldsTheCaseItNamesAndNoOther) {
+    namespace ShapeIsCircle = SCE::Generated::ShapeIsCircle;
+    using Shape = SCE::Generated::UnionShapeMinimal::UnionShapeMinimal;
+    Shape::Circle circle;
+    circle.value.radius = 3;
+    EXPECT_TRUE(ShapeIsCircle::match(Shape{circle}));
+    EXPECT_FALSE(ShapeIsCircle::match(Shape{Shape::Dot{}}));
+    EXPECT_FALSE(ShapeIsCircle::match(Shape{Shape::Rect{}}));
 }
 
 }  // namespace

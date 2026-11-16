@@ -195,8 +195,8 @@ fn a_configuration_reads_the_inputs_of_its_system_ports() {
 /// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
 /// record of every form C++ holds generates a reader and a writer of each,
 /// which `tests/integration/ARecordReadsBackTheFormItWritesTest.cpp` compiles
-/// and round-trips; the one whose record holds a union, which C++ does not
-/// lower, is refused by name.
+/// and round-trips; the one whose record holds a union reads and writes the
+/// union a case at a time.
 #[test]
 fn a_configuration_reads_a_record_of_every_form_it_holds() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -241,12 +241,38 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
         "no record a C++ configuration reads holds a union:\n{readers}"
     );
 
+    // docs/adr/0092: the configuration whose record holds a union reads and
+    // writes it too, by the runtime's `unionCase`, a case at a time, each
+    // case's record read into the `value` the alternative of its case holds.
     let union = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
-    let Err(err) = generate(&union) else {
-        panic!("a configuration whose record holds a union generated on C++");
-    };
-    assert!(format!("{err:?}").contains("union"), "{err:?}");
+    let files = generate(&union)
+        .unwrap_or_else(|e| panic!("the configuration with a union generates on C++: {e:?}"));
+    let with_union = &files[0].1;
+    let payment = "::SCE::Generated::OrderPayment::OrderPayment";
+    for needle in [
+        format!(
+            "[&]() -> {payment} {{ const ::SCE::Test::FromCanonical::CanonicalCase union_0 = \
+             ::SCE::Test::FromCanonical::unionCase(::SCE::Test::FromCanonical::field(record_0, \
+             \"payment\", \"order_placed.payment\"), {{\"card\", \"cash\", \"voucher\"}}, \
+             \"order_placed.payment\"); if (union_0.variant() == \"card\") {{ const \
+             ::SCE::Saved::JsonValue &case_0 = union_0.value(); return {payment}{{{payment}::Card{{"
+        ),
+        "decltype(decltype(::SCE::Generated::OrderPlaced::OrderPlacedPayload::payment)::Card::value)"
+            .to_string(),
+        format!(
+            "if (union_0.variant() == \"cash\") {{ \
+             ::SCE::Test::FromCanonical::noRecord(union_0.value(), \
+             \"order_placed.payment.cash\"); return {payment}{{{payment}::Cash{{}}}}; }} "
+        ),
+        "::std::abort(); }()".to_string(),
+        format!(
+            "struct CanonicalCases0 {{ ::SCE::Saved::JsonValue operator()(const {payment}::Card \
+             &case_0) const {{ return ::SCE::Test::Canonical::unionCase(\"card\", "
+        ),
+    ] {
+        assert!(with_union.contains(&needle), "`{needle}` in\n{with_union}");
+    }
 }
 
 /// §11.7: a test case is its name and its configuration's tables, reached

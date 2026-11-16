@@ -6,9 +6,8 @@
 //! `match` that takes the template's formal parameters in order, and, for a
 //! specific template alone, a `value`; each matching mechanism is spelled over
 //! the record types the event schema's unit declares. A template whose type
-//! reaches a union is refused on C++, whose test profile matches no union yet
-//! though it generates the union's unit, and
-//! every backend that generates no template refuses one by name.
+//! reaches a union matches it through the struct the union's unit declares,
+//! and every backend that generates no template refuses one by name.
 //!
 //! What the generated headers do when they run is held by
 //! `tests/integration/ATestTemplateMatchesItsValuesTest.cpp`, which compiles
@@ -20,7 +19,6 @@ use sce_build::forge::codegen_matrix::TEST_TEMPLATE_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
 use sce_build::forge::test_profile::NOT_GENERATED_YET;
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -312,26 +310,47 @@ fn unsupported(name: &str, language: Language, err: Located<ForgeError>) -> Stri
     }
 }
 
-/// A template whose type reaches a union, in itself or below a field, is
-/// refused on C++ by the union's own refusal: C++ generates the union's unit,
-/// and its test profile matches no union yet
-/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
+/// docs/adr/0092, section 7: a template whose type reaches a union, in itself
+/// or below a field, is generated on C++, whose test profile matches a union
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a case is told apart by
+/// `std::holds_alternative` on the alternative of its case in the struct the
+/// union's unit declares, its record read through the case's proven read only
+/// where `&&` has proved the alternative, and a value's form written by a
+/// visitor of one arm per case, a case that holds no record written with none.
 #[test]
-fn a_template_that_reaches_a_union_is_refused_on_cpp() {
-    for (path, alias) in [
-        (profile_dir().join("shape_is_circle.scxml"), "Shape"),
-        (imports_dir().join("order_placed_match.scxml"), "Payment"),
+fn a_template_that_reaches_a_union_is_generated_on_cpp() {
+    let circle = header_of(&profile_dir(), "shape_is_circle");
+    let shape = "::SCE::Generated::UnionShapeMinimal::UnionShapeMinimal";
+    assert!(
+        circle.contains("using Value = SCE::Generated::UnionShapeMinimal::UnionShapeMinimal;"),
+        "{circle}"
+    );
+    // The circle's record is matched at any radius, so the alternative alone
+    // is tested.
+    let holds = format!("return ::std::holds_alternative<{shape}::Circle>(value.cases);");
+    assert!(circle.contains(&holds), "`{holds}` is not in:\n{circle}");
+
+    let order = header_of(&imports_dir(), "order_placed_match");
+    let payment = "::SCE::Generated::OrderPayment::OrderPayment";
+    let c = CANONICAL;
+    for needle in [
+        format!("(::std::holds_alternative<{payment}::Card>(value.payment.cases) && ("),
+        "value.payment.provenCard().last4".to_string(),
+        "value.payment.provenCard().amount".to_string(),
+        format!("::std::holds_alternative<{payment}::Cash>(value.payment.cases)"),
+        format!(
+            "{{\"payment\", [&]() -> ::SCE::Saved::JsonValue {{ struct CanonicalCases0 {{ \
+             ::SCE::Saved::JsonValue operator()(const {payment}::Card &case_0) const {{ return \
+             {c}::unionCase(\"card\", {c}::record({{{{\"last4\", {c}::text(case_0.value.last4)}}, \
+             {{\"amount\", {c}::integer(case_0.value.amount)}}}})); }} "
+        ),
+        format!(
+            "::SCE::Saved::JsonValue operator()(const {payment}::Cash &) const {{ return \
+             {c}::unionCase(\"cash\", ::std::nullopt); }} "
+        ),
+        "}; return ::std::visit(CanonicalCases0{}, (value.payment).cases); }()}".to_string(),
     ] {
-        let name = path.file_stem().and_then(|s| s.to_str()).expect("a stem");
-        let Err(err) = sce_build::compile_forge_file(&path, Language::Cpp, &[], &options()) else {
-            panic!("{name} generated on C++");
-        };
-        let detail = unsupported(name, Language::Cpp, err);
-        assert!(
-            detail.starts_with(&format!("test-template '{name}': `union:{alias}`: ")),
-            "{detail}"
-        );
-        assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
+        assert!(order.contains(&needle), "`{needle}` is not in:\n{order}");
     }
 }
 

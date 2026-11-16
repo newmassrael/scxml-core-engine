@@ -7,9 +7,8 @@
 //! match, the statement taking it before its content, the statements of the
 //! profile and a send as calls on the component's runtime context, a PTC
 //! through the host invoker door; and beside the machine the component the
-//! profile's runtime drives. A component whose template reaches a union is
-//! refused on C++, and every backend that has not landed a component refuses
-//! one by name.
+//! profile's runtime drives, a component whose template reaches a union among
+//! them.
 //!
 //! What the generated components do when they run is held by
 //! `tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp`, which
@@ -18,9 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
+use sce_build::forge::error::{ForgeError, Located};
 use sce_build::generator::Language;
 
 /// The directory of the components the runtime's end-to-end test runs.
@@ -73,24 +70,6 @@ fn at(haystack: &str, needle: &str) -> usize {
     haystack
         .find(needle)
         .unwrap_or_else(|| panic!("the generated code holds `{needle}`"))
-}
-
-/// The detail of a `generate/unsupported-feature` refusal.
-fn unsupported(name: &str, language: Language, err: Located<ForgeError>) -> String {
-    assert!(
-        matches!(
-            err.error.to_diagnostics()[0].code,
-            DiagnosticCode::GenerateUnsupportedFeature
-        ),
-        "{name} on {language:?}: {err:?}"
-    );
-    match err.error {
-        ForgeError::Generate(boxed) => match *boxed {
-            GenerateError::UnsupportedFeature { detail, .. } => detail,
-            other => panic!("{name} on {language:?}: {other:?}"),
-        },
-        other => panic!("{name} on {language:?}: {other:?}"),
-    }
 }
 
 /// §12.3: each component is its machine's header and body, and beside the
@@ -364,10 +343,11 @@ fn a_component_names_its_session_after_itself() {
 }
 
 /// docs/adr/0092, section 7: a component whose template reaches a union is
-/// refused on C++, which generates no unit of that template, by the union's
-/// own refusal.
+/// generated on C++, whose test profile matches a union
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): its branch matches through
+/// the template's unit, as one over a record of entries does.
 #[test]
-fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
+fn a_component_whose_template_reaches_a_union_is_generated_on_cpp() {
     let dir = tempfile::tempdir().expect("a directory");
     let imports = imports_dir();
     let port = format!(
@@ -403,12 +383,17 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
     std::fs::write(dir.path().join("order_port.scxml"), port).expect("the port type is written");
     let path = dir.path().join("order_watcher.scxml");
     std::fs::write(&path, component).expect("the component is written");
-    let Err(err) = generate(&path, Language::Cpp) else {
-        panic!("a component whose template reaches a union generated on C++");
-    };
-    let detail = unsupported("order_watcher", Language::Cpp, err);
-    assert!(detail.contains("`union:Payment`: "), "{detail}");
-    assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
+    let code = generate(&path, Language::Cpp)
+        .unwrap_or_else(|e| panic!("order_watcher generates on C++: {e:?}"))
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains("::SCE::Generated::OrderPlacedMatch::match(sceMessage, "),
+        "{code}"
+    );
+    assert!(code.contains("#include \"order_placed_match.h\""), "{code}");
 }
 
 /// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads

@@ -19,7 +19,10 @@
 // - a record is an object of its fields by their declared ids, an absent
 //   field omitted, no field it does not declare;
 // - a list is an array of its elements within its bounds, an absent element
-//   of a list of `optional<T>` `null`.
+//   of a list of `optional<T>` `null`;
+// - a value of a union is an object of one member, named by its case's
+//   variant, whose value is the case's record, or the empty object for a case
+//   that holds none.
 //
 // A value that does not belong to its type is refused with TraceRefusal,
 // naming where it stands (`what`) and why, never converted. Which form a value
@@ -28,9 +31,8 @@
 // generated reader of a record (`read<Record>` in the unit of a test
 // configuration) calls these by the walk its canonical writer is spelled by
 // (`forge::generator::test_template_walk::canonical_form`), and names the type
-// each value is read into. C++'s test profile matches no union yet
-// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so no form of one is read
-// here. The Rust sibling is `sce_rust_runtime::test::from_canonical`, whose
+// each value is read into. The Rust sibling is
+// `sce_rust_runtime::test::from_canonical`, whose
 // refusals these are, word for word. An object that names a member twice,
 // which the Rust reader refuses, is not one a SCE::Saved::JsonObject can hold.
 
@@ -471,6 +473,59 @@ template <typename List> List list(std::vector<typename List::value_type> items,
 /// otherwise.
 inline const Value *nullable(const Value &value) {
     return value.isNull() ? nullptr : &value;
+}
+
+/// A value of a union unionCase() has held to its cases: a view of the one
+/// member of the object the value read is, its name the variant of the case and
+/// its value the case's, held by value for the reason a CanonicalRecord is.
+class CanonicalCase {
+public:
+    CanonicalCase(std::string_view variant, const Value &value) : variant_(variant), value_(&value) {}
+
+    /// The variant of the case, a name its union declares.
+    std::string_view variant() const {
+        return variant_;
+    }
+
+    /// The case's value: its record, or the empty object for a case that holds
+    /// none.
+    const Value &value() const {
+        return *value_;
+    }
+
+private:
+    std::string_view variant_;
+    const Value *value_;
+};
+
+/// A value of a union whose cases are @p variants: an object of one member,
+/// named by one of them. Returns the view of the member, the variant of its
+/// case and the case's value. A variant no case declares is refused here, so a
+/// reader that chooses by the variant read has a branch for each declared one
+/// and needs none for another. Only @p value is taken by reference, for the
+/// reason a CanonicalRecord gives.
+inline CanonicalCase unionCase(const Value &value, std::initializer_list<std::string_view> variants,
+                               std::string_view what) {
+    if (!value.isObject()) {
+        throw detail::notA(value, std::string(what), "a value of a union, which is an object of one member");
+    }
+    const SCE::Saved::JsonObject &members = value.asObject();
+    if (members.size() != 1) {
+        throw detail::refused(std::string(what), "a value of a union is an object of one member, and this one has " +
+                                                     std::to_string(members.size()));
+    }
+    const std::string &variant = members.keys().front();
+    if (std::find(variants.begin(), variants.end(), std::string_view(variant)) == variants.end()) {
+        throw detail::refused(std::string(what), "'" + variant + "' names no case of its union");
+    }
+    return CanonicalCase(variant, members.valueAt(0));
+}
+
+/// The value of a case of a union that holds no record: the empty object.
+inline void noRecord(const Value &value, std::string_view what) {
+    if (!value.isObject() || value.asObject().size() != 0) {
+        throw detail::refused(std::string(what), "a case that holds no record is the empty object");
+    }
 }
 
 }  // namespace SCE::Test::FromCanonical

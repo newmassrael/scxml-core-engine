@@ -338,4 +338,36 @@ TEST(TheCanonicalReaders, ReadAListWithinItsBounds) {
     EXPECT_NE(reason([] { (void)FromCanonical::list<One>({1, 2}, "l"); }).find("past the 1"), std::string::npos);
 }
 
+/// A value of a union is one member named by its case, written and read back;
+/// a case that holds no record is the empty object, and a variant no case
+/// declares, an object of another count of members and a record where none is
+/// held are refused by name.
+TEST(TheCanonicalReaders, ReadAUnionAsOneMemberNamedByItsCase) {
+    const JsonValue card = Canonical::unionCase("card", Canonical::record({{"amount", Canonical::integer(5u)}}));
+    EXPECT_EQ(writeCanonical(card), "{\"card\":{\"amount\":\"5\"}}");
+    // The case is a view of `card`, held by value, so it holds no reference to
+    // the variants or the place it was handed.
+    const FromCanonical::CanonicalCase read = FromCanonical::unionCase(card, {"card", "cash"}, "p");
+    EXPECT_EQ(read.variant(), "card");
+    const FromCanonical::CanonicalRecord object = FromCanonical::record(read.value(), {"amount"}, "p");
+    EXPECT_EQ(FromCanonical::integer<std::uint32_t>(FromCanonical::field(object, "amount", "p.amount"), "p.amount"),
+              5u);
+
+    const JsonValue cash = Canonical::unionCase("cash", std::nullopt);
+    EXPECT_EQ(writeCanonical(cash), "{\"cash\":{}}");
+    const FromCanonical::CanonicalCase empty = FromCanonical::unionCase(cash, {"card", "cash"}, "p");
+    EXPECT_EQ(empty.variant(), "cash");
+    FromCanonical::noRecord(empty.value(), "p.cash");
+    EXPECT_EQ(reason([&] { FromCanonical::noRecord(read.value(), "p.card"); }),
+              "p.card: a case that holds no record is the empty object");
+
+    EXPECT_EQ(reason([] { (void)FromCanonical::unionCase(parseJson("{\"cheque\":{}}"), {"card", "cash"}, "p"); }),
+              "p: 'cheque' names no case of its union");
+    EXPECT_EQ(
+        reason([] { (void)FromCanonical::unionCase(parseJson("{\"card\":{},\"cash\":{}}"), {"card", "cash"}, "p"); }),
+        "p: a value of a union is an object of one member, and this one has 2");
+    EXPECT_EQ(reason([] { (void)FromCanonical::unionCase(textOf("card"), {"card", "cash"}, "p"); }),
+              "p: a text is not a value of a union, which is an object of one member");
+}
+
 }  // namespace

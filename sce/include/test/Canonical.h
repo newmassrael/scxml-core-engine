@@ -18,14 +18,16 @@
 // - a record is an object of its fields by their declared ids, a field that is
 //   absent omitted, as TTCN-3's `omit` leaves it out;
 // - a list is an array of its elements in order, an element of `optional<T>`
-//   that is absent `null`, the one value no other form takes.
+//   that is absent `null`, the one value no other form takes;
+// - a value of a union is an object of one member, named by its case's
+//   variant, whose value is the case's record, or the empty object for a case
+//   that holds none.
 //
 // The generated unit of a test template over a record spells its `canonical`
 // with these, by the types its document declares
 // (`forge/cpp/test_template.h.jinja2`): a C++ type alone does not say which
 // form a value takes, since a byte string and a list of `uint8` are one C++
-// type. C++ lowers no union, so no form of one is written here. The Rust
-// sibling is `sce_rust_runtime::test::canonical`.
+// type. The Rust sibling is `sce_rust_runtime::test::canonical`.
 
 #pragma once
 
@@ -151,6 +153,15 @@ template <typename Held, typename Write> Value optionalElement(const std::option
         return Value(nullptr);
     }
     return write(*held);
+}
+
+/// A value of a union: one member, named by the @p variant of its case, holding
+/// the case's @p caseRecord, or the empty object for a case that holds none.
+inline Value unionCase(std::string_view variant, std::optional<Value> caseRecord) {
+    SCE::Saved::JsonObject members;
+    members.set(std::string(variant),
+                caseRecord.has_value() ? std::move(*caseRecord) : Value(SCE::Saved::JsonObject{}));
+    return Value(std::move(members));
 }
 
 }  // namespace SCE::Test::Canonical

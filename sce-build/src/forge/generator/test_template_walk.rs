@@ -1396,11 +1396,13 @@ pub(crate) trait CanonicalForm {
     /// to, numbered by how many bindings `at` stands inside after `prefix`,
     /// and the value it binds.
     fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
-    /// The place that holds a union case's record, `record:<record>` in the
-    /// union's scope, once the walk has bound the case as `bound`
-    /// ([`Self::bound`] with the prefix `case`): what a direction that names
-    /// the type of each value it reads reads the case's fields by.
-    fn case_record(&self, bound: Self::At, record: &str) -> Self::At;
+    /// The place that holds the record of the union's case `variant`,
+    /// `record:<record>` in the union's scope, once the walk has bound the
+    /// case as `bound` ([`Self::bound`] with the prefix `case`): what a
+    /// direction that names the type of each value it reads reads the case's
+    /// fields by, and what a direction that holds each case in a place of its
+    /// own, named by the case, reads or writes the record through.
+    fn case_record(&self, bound: Self::At, variant: &str, record: &str) -> Self::At;
     /// The place that holds an element of the list at `list`, once the walk
     /// has bound it as `bound` ([`Self::bound`] with the prefix `item`).
     fn list_element(&self, list: &Self::At, bound: Self::At) -> Self::At;
@@ -1465,7 +1467,7 @@ impl<S: CanonicalSpelling> CanonicalForm for Writing<'_, S> {
     fn bound(&self, at: &S::At, prefix: &str) -> (String, S::At) {
         self.0.bound(at, prefix)
     }
-    fn case_record(&self, bound: S::At, _record: &str) -> S::At {
+    fn case_record(&self, bound: S::At, _variant: &str, _record: &str) -> S::At {
         self.0.case_record(bound)
     }
     fn list_element(&self, list: &S::At, bound: S::At) -> S::At {
@@ -1601,7 +1603,7 @@ pub(crate) fn canonical_form<S: CanonicalForm>(
                     let held = match &case.record {
                         Some(record) => {
                             let (binding, bound) = spelling.bound(at, "case");
-                            let held = spelling.case_record(bound, record);
+                            let held = spelling.case_record(bound, &case.variant.name, record);
                             let written = canonical_form(
                                 spelling,
                                 &TypeOf::Record {
@@ -1929,8 +1931,8 @@ mod tests {
             let name = format!("{prefix}_of_{at}");
             (name.clone(), name)
         }
-        fn case_record(&self, bound: String, record: &str) -> String {
-            format!("{bound}:{record}")
+        fn case_record(&self, bound: String, variant: &str, record: &str) -> String {
+            format!("{bound}:{variant}:{record}")
         }
         fn list_element(&self, _list: &String, bound: String) -> String {
             bound
@@ -2071,10 +2073,12 @@ mod tests {
         );
     }
 
-    /// The walk hands a direction the alias of each case's record where it
-    /// binds the case, the record it then reads in the union's own scope: what
-    /// a direction that names the type of each value it reads reads the case's
-    /// fields by. A case that holds no record is its variant alone.
+    /// The walk hands a direction the variant of each case and the alias of
+    /// its record where it binds the case, the record it then reads in the
+    /// union's own scope: what a direction that names the type of each value it
+    /// reads reads the case's fields by, and what one that holds each case in a
+    /// place of its own reads the record through. A case that holds no record
+    /// is its variant alone.
     #[test]
     fn the_walk_tells_a_direction_the_record_of_each_case() {
         let card = ScopedRecord {
@@ -2108,8 +2112,8 @@ mod tests {
         assert_eq!(
             canonical_form(&Typed, &ty, &Typed.root(), &scope),
             Ok(concat!(
-                "order_payment@value[card(case_of_value: card_payment@case_of_value:Card{",
-                "amount=uint32(case_of_value:Card.amount)})|cash]"
+                "order_payment@value[card(case_of_value: card_payment@case_of_value:card:Card{",
+                "amount=uint32(case_of_value:card:Card.amount)})|cash]"
             )
             .to_string())
         );

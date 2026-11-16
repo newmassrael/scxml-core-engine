@@ -531,7 +531,7 @@ impl CanonicalForm for Unspelled {
     fn bound(&self, _at: &(), _prefix: &str) -> (String, ()) {
         (String::new(), ())
     }
-    fn case_record(&self, _bound: (), _record: &str) -> Self::At {}
+    fn case_record(&self, _bound: (), _variant: &str, _record: &str) -> Self::At {}
     fn list_element(&self, _list: &(), _bound: ()) -> Self::At {}
     fn optional_value(&self, _field: &(), _bound: ()) -> Self::At {}
     fn boolean(&self, _at: &()) -> String {
