@@ -580,6 +580,13 @@ def test_an_events_typed_payload_is_read_in_a_guard_and_in_content() -> None:
     replay("static_payload")
 
 
+# A composed payload is read at depths 1 to 3, and a delivery outside its type at
+# any depth is refused whole, before any transition is selected, error.execution
+# raised once (docs/adr/0086, sections 4.2, 6 and 14.2).
+def test_a_composed_payload_is_read_at_any_depth_and_refused_whole_outside_its_type() -> None:
+    replay("static_composed_payload")
+
+
 # An event's payload carries an enum field, the variant's declared name: a guard
 # compares it to a variant and an assignment stores it in a variable of the enum.
 def test_an_events_payload_carries_an_enum_field() -> None:

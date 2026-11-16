@@ -36,6 +36,7 @@ import com.sce.integration.static_datamodel.static_child_host_hybrid.RecordingSt
 import com.sce.integration.static_datamodel.static_child_host_hybrid.RecordingStaticHostedSecondActions
 import com.sce.integration.static_datamodel.static_child_host_hybrid.StaticChildHostHybridStateMachine
 import com.sce.integration.static_datamodel.static_child_mesh.StaticChildMeshStateMachine
+import com.sce.integration.static_datamodel.static_composed_payload.StaticComposedPayloadStateMachine
 import com.sce.integration.static_datamodel.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_datamodel.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_datamodel.static_donedata_content.StaticDonedataContentStateMachine
@@ -1706,6 +1707,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_payload_bytes"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A composed payload is read at depths 1 to 3, and a delivery outside its type at
+    // any depth is refused whole, before any transition is selected, error.execution
+    // raised once (docs/adr/0086, sections 4.2, 6 and 14.2).
+    @Test
+    fun staticComposedPayloadReadsAPayloadAtAnyDepthAndRefusesOneOutsideItsTypeWhole() {
+        val sm = StaticComposedPayloadStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_composed_payload"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

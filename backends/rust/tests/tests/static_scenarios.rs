@@ -38,6 +38,9 @@ use sce_rust_tests::integration::static_datamodel::static_bytes_wire_sm::{
 use sce_rust_tests::integration::static_datamodel::static_cancel_expr_sm::{
     StaticCancelExprPersist, StaticCancelExprPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_composed_payload_sm::{
+    StaticComposedPayloadPersist, StaticComposedPayloadPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
     StaticCounterPersist, StaticCounterPolicy,
 };
@@ -552,6 +555,20 @@ fn static_payload_bytes_reads_the_bytes_an_event_carries_within_their_bounds() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json"
+        ),
+    );
+}
+
+// A composed payload is read at depths 1 to 3, and a delivery outside its type at any
+// depth is refused whole, before any transition is selected, error.execution raised
+// once (docs/adr/0086, sections 4.2, 6 and 14.2).
+#[test]
+fn static_composed_payload_reads_a_payload_at_any_depth_and_refuses_one_outside_its_type() {
+    replay(
+        Engine::new(StaticComposedPayloadPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_composed_payload.json"
         ),
     );
 }

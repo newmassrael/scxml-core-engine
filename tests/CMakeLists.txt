@@ -640,12 +640,14 @@ sce_add_static_scenario_suite(
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which
 # candidate starts; the pending schema revision a saved state is restored into; and
-# the composed payload read at any depth and the composed value sent by its name
-# (docs/adr/0086), whose host injects and reads back through the machine's own seams.
+# the composed value sent by its name (docs/adr/0086), whose host injects and reads
+# back through the machine's own seams. The composed payload read at any depth is a
+# scenario's machine (scenarios/static_composed_payload.json), which the suite above
+# generates, and AComposedPayloadIsReadAtAnyDepthTest drives the same machine.
 # The tree a host posts a child's ending to from inside the parent's macrostep is
 # generated for integration_tests, whose inbox driver posts to it.
 foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending
-                            static_composed_payload static_composed_send)
+                            static_composed_send)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml

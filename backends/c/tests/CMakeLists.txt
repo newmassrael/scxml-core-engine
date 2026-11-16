@@ -3216,6 +3216,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_string_SOURCES}
         ${INTEGRATION_C_TEST_static_record_bytes_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_bytes_SOURCES}
+        ${INTEGRATION_C_TEST_static_composed_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_bytes_wire_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_index_SOURCES}

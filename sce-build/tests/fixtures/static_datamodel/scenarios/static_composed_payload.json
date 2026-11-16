@@ -1,0 +1,106 @@
+{
+  "machine": "static_composed_payload",
+  "about": "A statechart reads a composed payload at depths 1 to 3 (docs/adr/0086, sections 6 and 14.2): `item_count` is the length of the payload's `items`, `tag_count` and `word_count` add each item's `tags` by its length and by a loop over it, `id_sum` adds each item's `id` read through its index, `cell_sum` adds every cell of the list of lists `grid`, `cell` is `grid[1][0]` where `grid` holds two lists and the second holds a cell, `first_tags` is the length of the first item's `tags`, `first_maybe` the first element of `maybe`, which may be absent, and `late` is the payload's `late` taken whole into a list of a larger bound. A delivery outside its type at any depth is refused whole where it is read, before any transition is selected: none of the content runs, nothing of it is kept, and error.execution raised once is counted by `refusals`. A key a record does not declare is stepped over, and a delivery of the schema's first revision reads `late` as the empty list the second revision added it with. A 64-bit field is written as the text of its digits, every value of it here within 2^53 - 1, which every engine's data model holds. Expected values are derived from the documents, not observed from a backend.",
+  "steps": [
+    { "note": "starting values",
+      "expect": { "state": "idle", "variables": { "item_count": 0, "tag_count": 0, "word_count": 0, "id_sum": 0, "cell_sum": 0, "cell": 0, "first_tags": 0, "first_maybe": null, "late": [], "refusals": 0 } } },
+
+    { "note": "every list empty: nothing is walked and no index is read",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [] },
+      "expect": { "state": "idle", "variables": { "item_count": 0, "tag_count": 0, "word_count": 0, "id_sum": 0, "cell_sum": 0, "cell": 0, "first_tags": 0, "first_maybe": null, "late": [], "refusals": 0 } } },
+
+    { "note": "every list full at every depth and every text at its bound: three items of four tags of eight bytes, a full grid, a full late",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 1, "amount": "9007199254740991", "label": "abcdefgh", "level": "high", "due": null, "blob": "wxyz", "tags": ["tagword0", "tagword1", "tagword2", "tagword3"] },
+          { "id": 2, "amount": "9007199254740991", "label": "abcdefgh", "level": "low", "due": null, "blob": "wxyz", "tags": ["tagword0", "tagword1", "tagword2", "tagword3"] },
+          { "id": 3, "amount": "9007199254740991", "label": "abcdefgh", "level": "critical", "due": null, "blob": "wxyz", "tags": ["tagword0", "tagword1", "tagword2", "tagword3"] } ],
+        "grid": [[1, 2], [3, 4]], "levels": ["low", "critical"], "maybe": [7, null], "spare": [1, 2], "note": "abcd", "late": [5, 6] },
+      "expect": { "variables": { "item_count": 3, "tag_count": 12, "word_count": 12, "id_sum": 6, "cell_sum": 10, "cell": 3, "first_tags": 4, "first_maybe": 7, "late": [5, 6], "refusals": 0 } } },
+
+    { "note": "the second item's `tags` holds five, one past its four at depth 2: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 1, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 2, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": ["a", "b", "c", "d", "e"] } ],
+        "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "tag_count": 12, "word_count": 12, "id_sum": 6, "cell_sum": 10, "cell": 3, "first_tags": 4, "first_maybe": 7, "late": [5, 6], "refusals": 1 } } },
+
+    { "note": "`items` holds four, one past its three at depth 1: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 1, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 2, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 3, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 4, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] } ],
+        "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "late": [5, 6], "refusals": 2 } } },
+
+    { "note": "`grid/1` holds three cells, one past its two: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [[1, 2], [3, 4, 5]], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "cell_sum": 10, "cell": 3, "late": [5, 6], "refusals": 3 } } },
+
+    { "note": "`items/2/tags/0` is nine bytes, one past its eight at depth 3: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 1, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 2, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+          { "id": 3, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": ["tagword09"] } ],
+        "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "id_sum": 6, "late": [5, 6], "refusals": 4 } } },
+
+    { "note": "an element lacks `amount`, a field of the item's first revision: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 1, "label": "a", "level": "high", "due": null, "blob": "", "tags": [] } ],
+        "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "id_sum": 6, "late": [5, 6], "refusals": 5 } } },
+
+    { "note": "`levels` names a variant the enum does not declare: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": ["low", "extreme"], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "late": [5, 6], "refusals": 6 } } },
+
+    { "note": "`items` given as an object, not a list: refused whole",
+      "event": "batch.sent",
+      "data": { "items": { "id": 1, "amount": "1", "label": "a", "level": "high", "due": null, "blob": "", "tags": [] },
+        "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "late": [5, 6], "refusals": 7 } } },
+
+    { "note": "the top-level `note` is five bytes, one past its four: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": [], "maybe": [], "spare": null, "note": "abcde", "late": [9] },
+      "expect": { "variables": { "item_count": 3, "late": [5, 6], "refusals": 8 } } },
+
+    { "note": "`late`, the list the second revision added, holds three, one past its two: refused whole",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": [], "maybe": [], "spare": null, "note": "", "late": [1, 2, 3] },
+      "expect": { "variables": { "item_count": 3, "tag_count": 12, "word_count": 12, "id_sum": 6, "cell_sum": 10, "cell": 3, "first_tags": 4, "first_maybe": 7, "late": [5, 6], "refusals": 9 } } },
+
+    { "note": "an absent first element of `maybe` is read as absent, and an item's `due` present: one item of one tag, a grid of one list, `late` emptied",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 4, "amount": "9007199254740991", "label": "solo", "level": "low", "due": "12", "blob": "", "tags": ["one"] } ],
+        "grid": [[9]], "levels": ["high"], "maybe": [null, 3], "spare": null, "note": "ab", "late": [] },
+      "expect": { "variables": { "item_count": 1, "tag_count": 13, "word_count": 13, "id_sum": 10, "cell_sum": 19, "cell": 3, "first_tags": 1, "first_maybe": null, "late": [], "refusals": 9 } } },
+
+    { "note": "a key the item's record does not declare is stepped over; `grid[1][0]` is read again",
+      "event": "batch.sent",
+      "data": { "items": [
+          { "id": 5, "amount": "0", "label": "", "level": "high", "due": null, "blob": "ab", "tags": [], "colour": "red" } ],
+        "grid": [[1, 1], [2]], "levels": [], "maybe": [], "spare": [1], "note": "", "late": [7] },
+      "expect": { "variables": { "item_count": 1, "tag_count": 13, "word_count": 13, "id_sum": 15, "cell_sum": 23, "cell": 2, "first_tags": 0, "first_maybe": null, "late": [7], "refusals": 9 } } },
+
+    { "note": "a delivery of the first revision, without `late`, reads it as the empty list",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": [], "maybe": [], "spare": [3], "note": "x" },
+      "expect": { "variables": { "item_count": 0, "tag_count": 13, "word_count": 13, "id_sum": 15, "cell_sum": 23, "cell": 2, "first_tags": 0, "first_maybe": null, "late": [], "refusals": 9 } } },
+
+    { "note": "the order of a list is kept: `[6, 5]` stays `[6, 5]`, and `maybe[0]` is the first written",
+      "event": "batch.sent",
+      "data": { "items": [], "grid": [], "levels": ["critical", "low"], "maybe": [9, 1], "spare": null, "note": "", "late": [6, 5] },
+      "expect": { "state": "idle", "variables": { "item_count": 0, "tag_count": 13, "word_count": 13, "id_sum": 15, "cell_sum": 23, "cell": 2, "first_tags": 0, "first_maybe": 9, "late": [6, 5], "refusals": 9 } } }
+  ]
+}

@@ -46,6 +46,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host_hybrid"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_mesh"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_composed_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
@@ -1408,6 +1409,26 @@ func TestThePayloadOfAnEventCarriesBytesHeldWithinTheirBounds(t *testing.T) {
 		"matches": func() any { return policy.Matches() },
 		"misses":  func() any { return policy.Misses() },
 		"errors":  func() any { return policy.Errors() },
+	}))
+}
+
+// A composed payload is read at depths 1 to 3, and a delivery outside its type at any
+// depth is refused whole, before any transition is selected, error.execution raised
+// once (docs/adr/0086, sections 4.2, 6 and 14.2).
+func TestAComposedPayloadIsReadAtAnyDepthAndRefusedWholeOutsideItsType(t *testing.T) {
+	policy := static_composed_payload.NewStaticComposedPayloadPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_composed_payload", drive[static_composed_payload.StaticComposedPayloadState, static_composed_payload.StaticComposedPayloadEvent](&policy, map[string]func() any{
+		"item_count":  func() any { return policy.ItemCount() },
+		"tag_count":   func() any { return policy.TagCount() },
+		"word_count":  func() any { return policy.WordCount() },
+		"id_sum":      func() any { return policy.IdSum() },
+		"cell_sum":    func() any { return policy.CellSum() },
+		"cell":        func() any { return policy.Cell() },
+		"first_tags":  func() any { return policy.FirstTags() },
+		"first_maybe": func() any { return optionalJSON(policy.FirstMaybe()) },
+		"late":        func() any { return policy.Late() },
+		"refusals":    func() any { return policy.Refusals() },
 	}))
 }
 

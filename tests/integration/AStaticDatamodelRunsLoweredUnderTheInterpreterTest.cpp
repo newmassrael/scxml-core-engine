@@ -838,6 +838,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // revision are read with the default a delivery that lacks them takes.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_schema_revision"), replayed.end())
         << "static_schema_revision was not replayed: a schema's default has no lowering for the Interpreter";
+    // ... and a composed payload read at any depth, judged whole at the event's door
+    // (docs/adr/0086, sections 4.2, 6 and 14.2).
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_composed_payload"), replayed.end())
+        << "static_composed_payload was not replayed: a composed payload has no lowering for the Interpreter";
     // ... and the machine that states a duty and a notice, replayed with a recorder
     // that simulates (docs/adr/0038): were it not accepted by name, `start()` would
     // refuse the document and the replay would fail before its first step.

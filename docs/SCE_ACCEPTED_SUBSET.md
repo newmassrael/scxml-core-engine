@@ -5713,6 +5713,14 @@ this list):
   run them on the Interpreter.
 <!-- composed-lowering-harnesses: end -->
 
+Beside those harnesses, `scenarios/static_composed_payload.json` holds the machine of
+`static_composed_payload` to one answer on every engine, replayed by the drivers every
+scenario of that directory is replayed by (docs/adr/0086, section 14.2): the empty
+lists, every list full at every depth, one past each bound at each depth refused whole,
+a missing field, an undeclared variant, a list given as an object, an absent element, a
+key a record does not declare stepped over, a delivery of the schema's first revision,
+and the order of a list kept.
+
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
 `generate`), as `generate/unsupported-feature`, naming the field, the type and

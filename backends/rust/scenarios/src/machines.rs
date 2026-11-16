@@ -209,6 +209,7 @@ scenarios! {
     "static_child_host" => static_child_host_sm::{StaticChildHostPolicy, StaticChildHostPersist} & static_child_host;
     "static_child_host_hybrid" => static_child_host_hybrid_sm::{StaticChildHostHybridPolicy, StaticChildHostHybridPersist} & static_child_host_hybrid;
     "static_child_mesh" => static_child_mesh_sm::{StaticChildMeshPolicy, StaticChildMeshPersist};
+    "static_composed_payload" => static_composed_payload_sm::{StaticComposedPayloadPolicy, StaticComposedPayloadPersist};
     "static_counter" => static_counter_sm::{StaticCounterPolicy, StaticCounterPersist};
     "static_counter_bound" => static_counter_sm::{StaticCounterPolicy, StaticCounterPersist};
     "static_donedata" => static_donedata_sm::{StaticDonedataPolicy, StaticDonedataPersist};

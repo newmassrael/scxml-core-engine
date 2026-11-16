@@ -1237,9 +1237,25 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 6. **Mutation casefiles** under `sce-build/tests/mutations`: each lift's count comparison, the inner text bound, the
    "fits" comparison of bounds, the slot computation, and the CBOR key order and head length.
 
-*As landed (amended 2026-11-16).* Each lane runs section 6 in a harness of its own over `static_composed_payload`
-and `static_composed_send`, the list docs/SCE_ACCEPTED_SUBSET.md keeps beside "Which backend lowers a composed
-value", in place of the scenario of item 2. The walk and Rust's spelling are held by
+*As landed (amended 2026-11-16).* The scenario of item 2 is `scenarios/static_composed_payload.json`, over the
+machine `static_composed_payload` in place of `static_list_payload`: the latter's `kept` is a list of records that
+hold a list, a place no lowering holds (section 7.3; docs/adr/0087 holds such a record only as
+`optional<record:R>`), so its machine is refused on every lane and a scenario of it would replay nowhere. The
+replay types a composed payload by walking its schema's type in the statechart's scope (`MachineFacts::of`,
+`sce-build/src/scenario_replay.rs`), as it types a schema of entries by `Holds::of_schema`, and every driver
+delivers a step's data as its JSON text, so the scenario is replayed on the seven lanes and the Interpreter by the
+drivers item 2 names (C++ by the suite the build makes from the directory). It holds the empty lists, every list
+full at every depth with every text at its bound, one past each bound at each depth (`items`, `items/1/tags`,
+`grid/1`, `items/2/tags/0`, the top-level `note` and `late`), an element without `amount`, a variant `levels`
+does not declare, `items` given as an object, `null` read in `maybe/0` and a present `due`, a key a record does
+not declare stepped over, a delivery of the first revision without `late`, and the order of a list kept. Three
+cases of item 2 are not stated, each for a reason of the format or of a lane: a `null` where the type is not
+optional, which the format itself refuses (`null-not-optional`), left to each runtime's reader tests (item 3); an
+`amount` past 2^53, which the Interpreter's data model refuses where a generated machine reads it (docs/SCE_ACCEPTED_SUBSET.md,
+"It runs once lowered"), so no one answer holds on every lane; and the round trip of a sent text, which
+`static_composed_payload` does not send and each lane's own test of `static_composed_send` holds. Each lane
+also runs section 6 in a harness of its own over `static_composed_payload` and `static_composed_send`, the list
+docs/SCE_ACCEPTED_SUBSET.md keeps beside "Which backend lowers a composed value". The walk and Rust's spelling are held by
 `a_composed_value_is_walked_once_per_constructor.cases`, C11's by `a_c11_machine_reads_and_sends_a_composed_value.cases`,
 and every other lane's spelling by a casefile of its own (`a_<lane>_machine_spells_each_composed_constructor.cases`
 for Go, Kotlin, Python, Swift and C++, `an_interpreter_lowering_spells_each_composed_constructor.cases`), each case
@@ -1247,9 +1263,7 @@ taking away one list bound, one text bound, one lower count, one revision's defa
 door is held where it runs (`a_static_interpreter_composed_payload_is_read_at_any_depth_ctest.cases`). A C++ machine
 holds each bound twice, in the reader's bound and in the bounded type the reader fills, which reads at most the
 smaller (section 7.4), so a mutant of either alone does not change what the machine does, and the C++ casefile judges
-the spelling's own tests. The scenario of item 2 is not written yet: the replay types a payload by its schema of
-entries (`Holds::of_schema`, `sce-build/src/scenario_replay.rs`), which a schema that holds a composed value has
-none of, and the scenario waits for the checker and the seven drivers to carry a composed payload.
+the spelling's own tests.
 
 ### 15. A list states its lower count (amended 2026-11-06, answer H)
 

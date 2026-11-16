@@ -1175,6 +1175,25 @@ private func payloadBytes() -> Machine {
     )
 }
 
+private func composedPayload() -> Machine {
+    let policy = StaticComposedPayloadPolicy()
+    return drive(
+        policy,
+        variables: [
+            "item_count": { integer(policy.itemCount) },
+            "tag_count": { integer(policy.tagCount) },
+            "word_count": { integer(policy.wordCount) },
+            "id_sum": { integer(policy.idSum) },
+            "cell_sum": { integer(policy.cellSum) },
+            "cell": { integer(policy.cell) },
+            "first_tags": { integer(policy.firstTags) },
+            "first_maybe": { optionalInteger(policy.firstMaybe) },
+            "late": { integers(policy.late) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func recordBytes() -> Machine {
     let policy = StaticRecordBytesPolicy()
     return drive(
@@ -1361,6 +1380,13 @@ private func recordBytes() -> Machine {
 // A payload's byte-string field is read at its bound and compared as the variable's is.
 @Test func aPayloadsByteStringFieldIsHeldToItsBound() {
     replay("static_payload_bytes", payloadBytes())
+}
+
+// A composed payload is read at depths 1 to 3, and a delivery outside its type at any
+// depth is refused whole, before any transition is selected, error.execution raised
+// once (docs/adr/0086, sections 4.2, 6 and 14.2).
+@Test func aComposedPayloadIsReadAtAnyDepthAndRefusedWholeOutsideItsType() {
+    replay("static_composed_payload", composedPayload())
 }
 
 // A record holds a byte string, which a list copies with the record.

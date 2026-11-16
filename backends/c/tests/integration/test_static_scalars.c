@@ -157,6 +157,7 @@
 #include "static_child_host_hybrid_sm.h"
 #include "static_child_host_sm.h"
 #include "static_child_mesh_sm.h"
+#include "static_composed_payload_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -2020,6 +2021,56 @@ static const variable_t optional_widened_variables[] = {
 STATIC_OPTIONAL_SCENARIO(static_optional_widened, optional_widened_states, optional_widened_variables, NULL, no_records,
                          NULL, static_optional_widened_presence)
 
+// static_composed_payload: a composed payload read at depths 1 to 3 (docs/adr/0086,
+// sections 6 and 14.2) into counters, a cell, an element that may be absent and a list
+// taken whole, and a delivery outside its type at any depth refused whole where it is
+// read, none of the content run and error.execution counted once.
+VARIABLE_READER(static_composed_payload, item_count)
+VARIABLE_READER(static_composed_payload, tag_count)
+VARIABLE_READER(static_composed_payload, word_count)
+VARIABLE_READER(static_composed_payload, id_sum)
+VARIABLE_READER(static_composed_payload, cell_sum)
+VARIABLE_READER(static_composed_payload, cell)
+VARIABLE_READER(static_composed_payload, first_tags)
+VARIABLE_READER(static_composed_payload, refusals)
+LIST_READER(static_composed_payload, late, sce_forge_uint8_view_t)
+
+// The present value of `first_maybe`, read only where the presence reader has said it
+// is there.
+static int64_t static_composed_payload_read_first_maybe(const void *sm) {
+    return static_composed_payload_get_first_maybe((const static_composed_payload_t *)sm).value;
+}
+
+// Whether the optional value a step names is present: 1, 0, or -1 for a place that
+// holds no optional value. The machine holds no record, so a field names none.
+static int static_composed_payload_presence(void *sm, const char *name, size_t index, const char *field) {
+    (void)index;
+    if (field != NULL) {
+        return -1;
+    }
+    if (strcmp(name, "first_maybe") == 0) {
+        return static_composed_payload_get_first_maybe((const static_composed_payload_t *)sm).present ? 1 : 0;
+    }
+    return -1;
+}
+
+static const name_value_t composed_payload_states[] = {
+    {"idle", STATIC_COMPOSED_PAYLOAD_STATE_IDLE},
+};
+static const variable_t composed_payload_variables[] = {
+    {"item_count", static_composed_payload_read_item_count}, {"tag_count", static_composed_payload_read_tag_count},
+    {"word_count", static_composed_payload_read_word_count}, {"id_sum", static_composed_payload_read_id_sum},
+    {"cell_sum", static_composed_payload_read_cell_sum},     {"cell", static_composed_payload_read_cell},
+    {"first_tags", static_composed_payload_read_first_tags}, {"first_maybe", static_composed_payload_read_first_maybe},
+    {"refusals", static_composed_payload_read_refusals},
+};
+static const list_variable_t composed_payload_lists[] = {{"late", static_composed_payload_read_list_late},
+                                                         {NULL, NULL}};
+STATIC_SCENARIO_CORE(static_composed_payload, composed_payload_states, composed_payload_variables, NULL,
+                     composed_payload_lists, no_records, NULL, NULL, NULL, NULL,
+                     REQUIRE_STARTED(static_composed_payload_init(&sm), PASTED_START_OK), NULL, NULL, NULL, NULL, NULL,
+                     static_composed_payload_presence)
+
 // static_schema_revision: a delivery written against an earlier revision of a
 // schema that grew lacks the fields a later revision added, and takes their
 // defaults; a delivery that lacks a field of the first revision is refused, and a
@@ -3561,6 +3612,7 @@ int main(void) {
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 36);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
+    bad |= static_composed_payload_scenario("static_composed_payload", 16);
     bad |= static_bytes_wire_scenario("static_bytes_wire", 8);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
