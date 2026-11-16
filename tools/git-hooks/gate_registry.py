@@ -50,6 +50,7 @@ import ast
 import importlib.util
 import json
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
@@ -61,6 +62,10 @@ from pathlib import Path
 # is the trigger. `extra` adds locally-known triggers for what the
 # workflow's filter cannot express, and `local` is for gates CI has no
 # counterpart for. `deps` names gates whose output this one executes.
+# `builds` names what the gate builds that other gates build alike (the main
+# CMake tree, the generator); what each of those reads is derived once, in
+# `BUILT_INPUTS`, and joins the trigger of every gate that names it (see
+# "What a build reads" below GATES).
 #
 # `cost_s` is wall-clock seconds, MEASURED by `scripts/gate --measure --all`
 # on a warm tree, not estimated. Warm is the right basis: a push happens on
@@ -643,7 +648,10 @@ GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
     "codegen-build": {
-        "local": ["sce-build/**", "Cargo.toml", "Cargo.lock"],
+        # What a cargo build of the generator reads, derived (see "What a
+        # build reads"): the workspace manifests, `sce-build` and its path
+        # dependencies, the generator witness and its compiled-in files.
+        "builds": ["sce-codegen"],
         "no_ci_reason": "not a check — it produces the binary other gates "
                         "run. CI builds it per workflow that needs it "
                         "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
@@ -870,6 +878,9 @@ GATES: dict[str, dict] = {
     # a round builds whatever it needs itself.
     "mutation-rounds": {
         "workflows": ["mutation-rounds.yml"],
+        # Its ctest casefiles run in the main tree, which it configures
+        # (scripts/prepare_ctest_tree.sh) where none is.
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "the workflow is unfiltered so CI starts it on every push; "
                    "what actually decides a round is the casefiles' own "
@@ -1970,6 +1981,7 @@ GATES: dict[str, dict] = {
     # the lane kept its own inline spelling, and it is `w3c-rust` now.
     "w3c-cpp": {
         "workflows": ["w3c-tests.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "the lane declares no `paths:` filter, which is a statement "
                    "about a runner paid by the minute, not about what the "
@@ -2056,6 +2068,9 @@ GATES: dict[str, dict] = {
     },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
+        # The page's engine is the main tree built with emscripten, and the
+        # codegen WASM is `sce-build-wasm` built by wasm-pack.
+        "builds": ["main-tree", "codegen-wasm"],
         "runner_workflow": True,
         "ci_only": "77s measured 2026-08-22 (declared 42) building three "
                    "WASM artifacts. deploy-visualizer.yml runs it, and this "
@@ -2128,6 +2143,7 @@ GATES: dict[str, dict] = {
     # workflow, since none configures the main tree.
     "cpp-suite": {
         "workflows": ["cpp-suite.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "the lane declares no `paths:` ALLOW filter, for the same "
                    "reason `w3c-cpp`'s does not: that is a statement about a "
@@ -2197,6 +2213,7 @@ GATES: dict[str, dict] = {
     # `scripts/gate cpp-interface-standard` on such a host and date it here.
     "cpp-interface-standard": {
         "workflows": ["cpp-interface-standard.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         # What the gate compiles or reads to decide what to compile: the
         # engine and its headers, the C++ runtime and the C backend it
@@ -2253,6 +2270,7 @@ GATES: dict[str, dict] = {
     # host and date it here.
     "install-consumer": {
         "workflows": ["install-consumer.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         # What the gate builds, installs or runs: the CMake that defines and
         # installs the targets and the package config, the engine and its
@@ -2333,6 +2351,7 @@ GATES: dict[str, dict] = {
     # option's own CMakeLists.
     "ecma262-lowered-cpp": {
         "workflows": ["ecma262-lowered-cpp.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
         # The scratch tree is thrown away on every run, so there is no warm
@@ -2425,6 +2444,7 @@ GATES: dict[str, dict] = {
     },
     "w3c-c11": {
         "workflows": ["w3c-tests.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm's real "
                    "inputs are the C backend, the C templates, the "
@@ -2702,6 +2722,9 @@ GATES: dict[str, dict] = {
     # extension and runs all 202 fixtures through it in 47s.
     "w3c-python-bindings": {
         "workflows": ["w3c-tests.yml"],
+        # The extension links the engine, so it configures and builds the
+        # main tree (tests and examples off).
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the pybind11 wrapper sources.",
@@ -2739,6 +2762,7 @@ GATES: dict[str, dict] = {
     # still not a timing of the script.
     "w3c-wasm": {
         "workflows": ["w3c-tests.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "what the native runner reads, plus the CMake that "
@@ -2788,6 +2812,7 @@ GATES: dict[str, dict] = {
     # green run reads the whole.
     "cpp-suite-wasm": {
         "workflows": ["cpp-suite.yml"],
+        "builds": ["main-tree"],
         "runner_workflow": True,
         "narrows": "the same catch-all reading as `cpp-suite`, whose "
                    "WebAssembly half this is: it builds the whole emscripten "
@@ -3298,6 +3323,172 @@ def _read_enrolled(repo_root: Path, configs: str):
     return list(dict.fromkeys(globs))
 
 
+# ── What a build reads: `builds` ──────────────────────────────────
+#
+# Eleven gates configure and build the main CMake tree, and every one of them
+# compiles what the tree compiles whatever else it does: the engine, its
+# runtimes, the submodules, and, since the ECMAScript frontend is linked into
+# `sce_scripting` (sce/CMakeLists.txt, `sce_link_ecmascript_frontend`), the
+# `sce-build` crate through cargo. Each gate used to write its own share of
+# that into `extra`, and the shares had drifted: none named the root
+# `Cargo.toml` or `Cargo.lock`, `w3c-python-bindings` and `visualizer-wasm`
+# named no `sce/` at all (2026-11-16), so an edit to what they compile neither
+# selected them nor moved the key of a unit kept for them.
+#
+# So what a shared build reads is written once, here, and a gate names it in
+# `builds`; `gate_triggers` adds it to the gate's trigger, which is also the
+# unit's input set (`unit_inputs`). The cargo half is DERIVED, from the files
+# cargo and the crate itself declare, so a new path dependency, a new member
+# or a new compiled-in file joins every such gate on the commit that adds it:
+#   * the workspace: the root `Cargo.toml`, `Cargo.lock`, and every member's
+#     manifest (`**/Cargo.toml`), which cargo reads to load the workspace;
+#   * each crate the build compiles: the crate named and its path
+#     dependencies (`[dependencies]`, `[build-dependencies]` and their target
+#     forms, never `[dev-dependencies]`), each as `<dir>/**`;
+#   * what `sce-build`'s build script reads: the generator witness (its
+#     WITNESS_FILES, WITNESS_TREES and RUN_TIME_TREE, in
+#     sce-build/src/generator_witness.rs, which the script digests and embeds);
+#   * every `include_str!` / `include_bytes!` target a compiled crate's
+#     sources name outside those directories.
+# `MAIN_TREE_CONFIGURE` is the CMake half: what the root CMakeLists.txt
+# configures for every tree. A subdirectory a gate turns on with an option of
+# its own (`tests/`, the examples, the Python bindings) stays in its `extra`.
+#
+# `every-tree-builder-names-what-it-builds` in the self-test finds the gates
+# whose script configures the root tree and refuses one that does not name
+# `main-tree`, and `ci-only-coverage` holds a filtered workflow's `paths:` to
+# what its gate builds.
+MAIN_TREE_CONFIGURE = (
+    "CMakeLists.txt", "cmake/**", "sce/**", "third_party/**",
+    "backends/cpp/forge-runtime/**", "backends/c/runtime/**",
+    "tools/txml_converter/**",
+)
+# Each shared build: the CMake globs it configures, and the crates cargo
+# builds for it.
+BUILT_INPUTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "sce-codegen": ((), ("sce-build",)),
+    "main-tree": (MAIN_TREE_CONFIGURE, ("sce-build",)),
+    "codegen-wasm": ((), ("sce-build-wasm",)),
+}
+# The file whose constants name what `sce-build`'s build script reads.
+GENERATOR_WITNESS = "sce-build/src/generator_witness.rs"
+
+_CARGO_DEP_TABLE = re.compile(
+    r"^\[(?:target\.[^\]]+\.)?(?:dependencies|build-dependencies)"
+    r"(?:\.[A-Za-z0-9_-]+)?\]\s*$")
+_CARGO_PATH_VALUE = re.compile(r'\bpath\s*=\s*"([^"]+)"')
+_RUST_INCLUDE = re.compile(r'include_(?:str|bytes)!\(\s*"([^"]+)"\s*\)')
+
+
+def cargo_path_deps(repo_root: Path, crate: str) -> list[str]:
+    """The directories of the path dependencies `crate/Cargo.toml` builds.
+
+    Read by its lines, as the registry reads every TOML file (see
+    `fleet_platforms`): a table header opens a dependency table or closes
+    one, and a `path = "..."` inside one names a directory relative to the
+    crate. `[dev-dependencies]` is not a dependency table here: a build of
+    the crate compiles none of it.
+    """
+    try:
+        text = (repo_root / crate / "Cargo.toml").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    found: list[str] = []
+    in_deps = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_deps = bool(_CARGO_DEP_TABLE.match(stripped))
+            continue
+        if in_deps and not stripped.startswith("#"):
+            found.extend(posixpath.normpath(f"{crate}/{rel}")
+                         for rel in _CARGO_PATH_VALUE.findall(stripped))
+    return found
+
+
+def generator_witness_globs(repo_root: Path) -> list[str]:
+    """What `sce-build`'s build script reads: the generator witness.
+
+    `WITNESS_FILES` as paths, `WITNESS_TREES` and `RUN_TIME_TREE` as trees,
+    read out of GENERATOR_WITNESS, the one place they are written.
+    """
+    try:
+        text = (repo_root / GENERATOR_WITNESS).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    globs: list[str] = []
+    for name, tree in (("WITNESS_FILES", False), ("WITNESS_TREES", True)):
+        found = re.search(r"pub const " + name + r": &\[&str\] = &\[(.*?)\];",
+                          text, re.S)
+        if found:
+            globs.extend(f"{v}/**" if tree else v
+                         for v in re.findall(r'"([^"]+)"', found.group(1)))
+    found = re.search(r'pub const RUN_TIME_TREE: &str = "([^"]+)";', text)
+    if found:
+        globs.append(f"{found.group(1)}/**")
+    return globs
+
+
+def cargo_build_globs(repo_root: Path, crates) -> list[str]:
+    """What a cargo build of `crates` in this workspace reads, as globs.
+
+    See "What a build reads". Exact paths a directory glob already covers
+    are left out, so each file is named once.
+    """
+    closure: list[str] = []
+    pending = list(crates)
+    while pending:
+        crate = pending.pop()
+        if crate in closure:
+            continue
+        closure.append(crate)
+        pending.extend(cargo_path_deps(repo_root, crate))
+    globs = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml"]
+    globs.extend(f"{crate}/**" for crate in sorted(closure))
+    named: list[str] = []
+    if "sce-build" in closure:
+        named.extend(generator_witness_globs(repo_root))
+    for crate in sorted(closure):
+        for src in tracked_paths(repo_root, f"{crate}/src", f"{crate}/build.rs"):
+            if not src.endswith(".rs"):
+                continue
+            try:
+                text = (repo_root / src).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for rel in _RUST_INCLUDE.findall(text):
+                target = (repo_root / src).parent.joinpath(rel).resolve()
+                try:
+                    named.append(target.relative_to(repo_root.resolve()).as_posix())
+                except ValueError:
+                    continue
+    trees = [g for g in globs + named if "*" in g]
+    covered = [glob_to_regex(g) for g in trees]
+    out = list(globs)
+    for g in named:
+        if "*" in g or not any(p.match(g) for p in covered):
+            out.append(g)
+    return list(dict.fromkeys(out))
+
+
+_BUILT_CACHE: dict[tuple[str, str], list[str]] = {}
+
+
+def built_inputs(repo_root: Path, name: str) -> list[str]:
+    """The globs a gate that `builds` `name` reads for it (`BUILT_INPUTS`)."""
+    key = (str(repo_root.resolve()), name)
+    if key not in _BUILT_CACHE:
+        configure, crates = BUILT_INPUTS[name]
+        joined = list(dict.fromkeys(
+            list(configure) + (cargo_build_globs(repo_root, crates)
+                               if crates else [])))
+        # An exact path a tree of the other half already covers is named once.
+        trees = [glob_to_regex(g) for g in joined if "*" in g]
+        _BUILT_CACHE[key] = [g for g in joined
+                             if "*" in g or not any(p.match(g) for p in trees)]
+    return list(_BUILT_CACHE[key])
+
+
 def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
     """Each gate's trigger globs, derived from its workflow and its own lists.
 
@@ -3328,6 +3519,8 @@ def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
                 continue
             globs.extend(wf_globs)
         globs.extend(spec.get("extra", []))
+        for built in spec.get("builds", []):
+            globs.extend(built_inputs(repo_root, built))
         if spec.get("enrolled_by"):
             # What the ledgers enrol, read from their configs on every call:
             # a tree enrolled tomorrow selects the gate on the same commit.
@@ -5579,7 +5772,11 @@ def self_test(repo_root: Path) -> int:
             pairs_seen += 1
             continue
         wf_pats = [glob_to_regex(g) for g in wf_globs]
-        for own in (spec.get("local") or []) + (spec.get("extra") or []):
+        # What the gate builds (`builds`) is its trigger as much as `extra`
+        # is, so a filtered workflow is held to the derived list too.
+        built = [g for b in spec.get("builds") or []
+                 for g in built_inputs(repo_root, b)]
+        for own in (spec.get("local") or []) + (spec.get("extra") or []) + built:
             pairs_seen += 1
             for path in tracked_matching(repo_root, own):
                 if not any(p.match(path) for p in wf_pats):
@@ -5812,7 +6009,8 @@ def self_test(repo_root: Path) -> int:
         # requirement is replaced, not waived: for a hook-run gate the
         # trigger is what makes it run, and for this one the lane is, so each
         # is held to the thing that actually runs it.
-        if not (spec.get("local") or spec.get("extra") or spec.get("ci_only")):
+        if not (spec.get("local") or spec.get("extra") or spec.get("builds")
+                or spec.get("ci_only")):
             failures.append(
                 f"narrows: {slug} narrows its workflow's catch-all away and "
                 f"declares no local/extra trigger — the gate can never be "
@@ -6525,6 +6723,75 @@ def self_test(repo_root: Path) -> int:
                 failures.append(
                     f"verdict: {slug} declares the input {pattern!r}, which is "
                     f"not a pattern under the repository root")
+
+    # every-tree-builder-names-what-it-builds. A gate whose script configures
+    # the root CMake tree compiles the engine and, through it, the generator
+    # crate; its trigger has to hold what that reads, and `builds` is where it
+    # gets it. Derived from the scripts, so a new gate that builds the tree
+    # and names nothing fails here, the state `w3c-python-bindings` and
+    # `visualizer-wasm` were in until 2026-11-16.
+    #
+    # A gate off the fleet (`platform`, "Where a gate can run") is not asked:
+    # no push and no landing selects it and no unit keys it, so what its
+    # trigger holds decides neither. Its workflow's own filter is what starts
+    # it, and that is the lane's choice (`windows-msvc` names the submodules
+    # its MSVC build compiles, not every tree the Linux build reads).
+    cases += 1
+    configures_root = re.compile(
+        r"sce_main_build_dir|prepare_ctest_tree\.sh|sce_gate_configure_wasm"
+        r"|cmake\s+-S\s+(?:\"\$SCE_REPO_ROOT\"|\.)\s|^\s*(?:if\s+!\s+)?cmake\s+-B\b",
+        re.M)
+    fleet_now = fleet_platforms(repo_root)
+    tree_builders = 0
+    for slug, spec in sorted(GATES.items()):
+        for built in spec.get("builds") or []:
+            if built not in BUILT_INPUTS:
+                failures.append(
+                    f"builds: {slug} builds {built!r}, which BUILT_INPUTS does "
+                    f"not declare")
+        script = gate_script(repo_root, slug)
+        if not script.is_file() or not configures_root.search(script_code(script)):
+            continue
+        tree_builders += 1
+        if spec.get("platform") is not None and spec["platform"] not in fleet_now:
+            continue
+        if "main-tree" not in (spec.get("builds") or []):
+            failures.append(
+                f"builds: scripts/gates/{slug}.sh configures the root CMake "
+                f"tree and {slug} does not name `main-tree` in `builds`, so "
+                f"what the tree compiles neither selects it nor keys its unit")
+    if tree_builders < 8:
+        failures.append(
+            f"builds: {tree_builders} gate script(s) were found configuring the "
+            f"root tree, and eleven did when this case was written; the "
+            f"pattern no longer reads them")
+
+    # the-cargo-half-is-derived. What a build of the generator crate reads is
+    # read off the manifests and the witness, never written: the workspace
+    # files, the crate and each path dependency it builds, and every tree the
+    # build script digests. A parse that stopped reading any of them fails
+    # here rather than narrowing every key built on it.
+    cases += 1
+    main_tree = built_inputs(repo_root, "main-tree")
+    expected = ["Cargo.toml", "Cargo.lock", "**/Cargo.toml", "sce-build/**"]
+    expected += [f"{d}/**" for d in cargo_path_deps(repo_root, "sce-build")]
+    witness = generator_witness_globs(repo_root)
+    if not cargo_path_deps(repo_root, "sce-build"):
+        failures.append(
+            "builds: no path dependency was read from sce-build/Cargo.toml, "
+            "and it builds the Rust runtime; the manifest reader reads nothing")
+    if not any(g.endswith("/**") for g in witness) or \
+            not any("*" not in g for g in witness):
+        failures.append(
+            f"builds: the generator witness ({GENERATOR_WITNESS}) gave "
+            f"{witness}; its WITNESS_FILES, WITNESS_TREES and RUN_TIME_TREE "
+            f"are no longer read")
+    covered = [glob_to_regex(g) for g in main_tree if "*" in g]
+    for want in expected + list(MAIN_TREE_CONFIGURE) + witness:
+        if want not in main_tree and not any(p.match(want) for p in covered):
+            failures.append(
+                f"builds: `main-tree` does not hold {want!r}, which a build "
+                f"of the tree reads")
 
     # A measured peak names a gate that exists, so the note beside it cannot
     # outlive the gate it was read off.
