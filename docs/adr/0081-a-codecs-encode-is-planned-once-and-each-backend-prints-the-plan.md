@@ -1306,6 +1306,25 @@ old encode, the old encode and its templates are removed in the same landing.
    one form at a time, with a protocol for the interface (the presented elements as read-only properties), an
    abstract type with one failable initializer for each refinement Swift's types cannot carry, a case printer for
    its harness, and the template's encode removed with its last codec.
+   *The Swift printer, first landings, 2026-11-16:* `swift_codec::source` prints a codec whose plan holds numbers
+   (an integer, a flag set presented whole, an enum through its carrier) laid out by byte or written in turn,
+   each always there or decided by a gate; byte strings and texts; a length the encode derives into a field of its
+   own or into the bits of a flag; a presence flag; a flag input the value does not say; and a gate the encode
+   cannot derive, held as a check before the first byte. Every other form keeps the template's encode whole and
+   `source::unlowered` names it (§6). Three decisions are recorded here. First, every Swift decode, printed or
+   not, reads each field into a local named by the field and makes the value of the locals once the frame is read:
+   a printed value holds no element the encode derives (§3), so the decode cannot build the value field by field,
+   and one decode shape for every codec is the textbook one, as the C++ printer's is. Second, the refinement R1 is
+   a type of the runtime, `BoundedBytes<B>` and `BoundedText<B>` over a bound type `B: SceByteBound` the codec
+   declares for each field (`{Codec}.{Field}Bound`), whose failable initializer is the one door and whose
+   `init(decoding:)` throws `lengthOutOfRange`; a text is counted in its UTF-8 bytes. The bound is part of the
+   field's type, so a value made for one field is no value of another, as Rust's `Bounded` and C++'s class
+   template make it. Third, a printed encode writes every byte into a frame of its own and hands the sink the frame
+   in one write, so a refusal anywhere leaves the sink untouched and the encoded length of a held body (the next
+   form) is measured by encoding the body into its own bytes once before the length is written, which is the
+   counting of ADR 0058 §3 without a second pass. The harness folds `sources` and `refused`
+   of every printed codec, the refusal named by the runtime's case (`EncodeFailure::symbol`), and its `cases`
+   fragment makes a printed value without a derived element, each byte string through its bound's door.
 
 ## Consequences
 
