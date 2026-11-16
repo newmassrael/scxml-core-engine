@@ -15,7 +15,8 @@
 //! name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
+    byte_values, case_inputs, case_tag, entry_rows, enum_variant, integer_value, source_members,
+    HeldCodecs,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -75,9 +76,10 @@ pub(crate) fn source_case(
 
 /// Into `case`, the statements that set each element of `source`, a value of
 /// the codec `plan` held at the member path `at` of the case's value (`""`
-/// for the value itself, `"body."` or `"body.value."` for a body it holds),
-/// and the check of each, by its id after `id_at`. A body is set member by
-/// member in turn, as the struct holds it.
+/// for the value itself, `"body."` or `"body.value."` for a body it holds,
+/// `"list[0]."` or `"list.value.data[0]."` for an entry of a list it holds),
+/// and the check of each, by its id after `id_at`. A body and each entry of a
+/// list are set member by member in turn, as the struct holds them.
 fn members(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
@@ -184,6 +186,40 @@ fn members(
                 statements.extend(body.statements);
                 checks.extend(body.checks);
             }
+            // Each entry into the array that holds them, member by member as
+            // its codec's own case sets them, and their count beside it, the
+            // length member the C11 struct names `{member}_len`, or the value
+            // of the optional one a gate decides. A list held to a law is
+            // stated with its start, which no C11 list holds yet.
+            Value::List { codec, law, .. } => {
+                if !law.is_none() {
+                    return Err(format!(
+                        "`{id}`: a list held to a law is not stated as a C11 value yet: the \
+                         C11 printer prints no codec that holds one"
+                    ));
+                }
+                let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
+                let mut entries = SourceCase {
+                    statements: Vec::new(),
+                    checks: Vec::new(),
+                };
+                for (i, row) in rows.iter().enumerate() {
+                    let inner_at = format!("{data}[{i}].");
+                    let inner_id = format!("{id}[{i}].");
+                    held.read(codec, &mut |entry_plan, _path, held| {
+                        members(entry_plan, row, &inner_at, &inner_id, held, &mut entries)
+                            .map(|()| String::new())
+                    })
+                    .map_err(|e| format!("`{id}`: {e}"))?;
+                }
+                statements.push(format!("{VALUE}.{len} = {};", rows.len()));
+                checks.push((
+                    id.clone(),
+                    check(format!("{DECODED}.{len} == {VALUE}.{len}")),
+                ));
+                statements.extend(entries.statements);
+                checks.extend(entries.checks);
+            }
             _ => {
                 let literal = member_literal(&element.value, json, held)
                     .map_err(|e| format!("`{id}`: {e}"))?;
@@ -229,11 +265,7 @@ fn member_literal(
             unreachable!("a byte string or a text is set by statements of its own")
         }
         Value::Body { .. } => unreachable!("a body is set member by member"),
-        Value::List { .. } => Err(
-            "a list is not spelled as a C11 literal yet: the C11 printer prints no codec that \
-             holds one"
-                .into(),
-        ),
+        Value::List { .. } => unreachable!("a list is set entry by entry"),
     }
 }
 
