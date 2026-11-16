@@ -1,0 +1,134 @@
+name: Generated Diff
+
+# What a change does to the generated code (ADR 0097, section 6).
+#
+# A tree that is a build output is not in version control, so a change to a
+# template, to the emit code or to a document changes generated code no diff
+# of the change shows. This lane materializes every declared tree at the
+# change's base and at its head and publishes the difference: one patch per
+# tree, with paths relative to the repository, as the `generated-diff`
+# artifact, and the files changed and lines added and removed per tree, with
+# the first lines of each patch, as the run's summary.
+#
+# It renders; it reaches no verdict about the change. It fails only when the
+# head cannot materialize a tree it declares, which the reviewer must see
+# rather than read as "no difference". `scripts/generated_diff.sh` renders the
+# same diff on a workstation.
+#
+# The summary is the run's and not a comment on the change: a comment needs
+# write access to the change, which a run for a fork is not given, and the
+# summary is shown beside the change's checks either way.
+
+on:
+  # No `paths:` filter: what the generated code is depends on the generator
+  # under `sce-build/`, the templates, `stdlib`, the manifests and every
+  # document a tree reads, very nearly the repository, which is the reason
+  # `regen-reproduces.yml` gives for carrying none.
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diff:
+    name: generated diff of the change
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    # `actions: read` lists this workflow's earlier runs to find the last one
+    # that published; `contents: read` is what checkout needs.
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+    # Full history: the base is a commit the lane checks out a worktree of.
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    # libxml2 backs the default `xsd` feature the generator builds with, and
+    # clang-format-19 is the formatter the generator runs on the C++ trees and
+    # refuses without (docs/SCE_CODEGEN_DETERMINISM.md section 9).
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
+
+    # The release rust-toolchain.toml pins, which lists rustfmt: the Rust
+    # trees are formatted with it.
+    - name: Install Rust Toolchain
+      uses: ./.github/actions/install-rust
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-generated-diff-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-generated-diff-${{ hashFiles('rust-toolchain.toml') }}-
+
+    # A pull request carries its base, and the head checked out is the merge
+    # of the change onto it. A push starts where the last run that PUBLISHED
+    # on this branch ended, not at the push's own `before`: the group above
+    # keeps one run waiting, and a newer push replaces it, so a diff taken from
+    # `before` would leave the replaced run's commits in no published diff.
+    # A run that failed, was cancelled or is still running published nothing
+    # and is passed over. The listing is not caught: a failed `gh api` fails
+    # the step rather than fall back in silence.
+    #
+    # A new branch's `before` is all zeroes and a force-push can name a commit
+    # this clone does not have; both leave no base, and the lane says so
+    # instead of rendering a whole tree as added.
+    - name: Resolve the base
+      id: base
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        base=""
+        case "${{ github.event_name }}" in
+          push)
+            base=$(gh api "repos/${{ github.repository }}/actions/workflows/generated-diff.yml/runs?branch=${{ github.ref_name }}&event=push&status=completed&per_page=100" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success") | .head_sha][0] // empty')
+            [ -n "$base" ] || base='${{ github.event.before }}'
+            ;;
+          pull_request) base='${{ github.event.pull_request.base.sha }}' ;;
+        esac
+        if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
+           && git cat-file -e "$base^{commit}" 2>/dev/null; then
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+        else
+          echo "No base commit resolves for this run, so there is no diff to render." >> "$GITHUB_STEP_SUMMARY"
+          echo "base=" >> "$GITHUB_OUTPUT"
+        fi
+
+    # Into the runner's temporary directory, not the checkout: an untracked
+    # directory in the checkout would make the head a side that needs a
+    # worktree and a second build of the generator.
+    - name: Render the generated diff
+      if: steps.base.outputs.base != ''
+      run: scripts/generated_diff.sh --out "${{ runner.temp }}/generated-diff" "${{ steps.base.outputs.base }}" "${{ github.sha }}"
+
+    - name: Publish the summary
+      if: always() && steps.base.outputs.base != ''
+      run: |
+        if [ -f "${{ runner.temp }}/generated-diff/summary.md" ]; then
+          cat "${{ runner.temp }}/generated-diff/summary.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload the patches
+      if: always() && steps.base.outputs.base != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: generated-diff
+        path: ${{ runner.temp }}/generated-diff/
+        if-no-files-found: ignore

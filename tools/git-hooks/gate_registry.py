@@ -1077,6 +1077,12 @@ GATES: dict[str, dict] = {
             "docs/spec/*/.atomic/workspace.atomic.json",
             "docs/sce-ledger/*/mnemosyne.toml",
             "docs/sce-ledger/*/.atomic/workspace.atomic.json",
+            # The generated diff's renderer and the locator it resolves the
+            # generator through, which
+            # `a_change_shows_what_it_does_to_the_generated_code` copies into
+            # a repository of its own and runs.
+            "scripts/generated_diff.sh",
+            "scripts/lib/sce_codegen.sh",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
@@ -2631,6 +2637,10 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
     # `rustdoc-links` had and the reason these claims are now checked.
     "fmt-check.yml": "commit-hook: cargo fmt --all -- --check",
     "clang-format-check.yml": "commit-hook: scripts/check_clang_format.sh",
+    # A publication, not a verification: it renders what a change does to the
+    # generated code (ADR 0097, section 6) and judges nothing a push could
+    # reproduce. The same diff is one `scripts/generated_diff.sh` away.
+    "generated-diff.yml": "publication: scripts/generated_diff.sh renders it",
 }
 
 
