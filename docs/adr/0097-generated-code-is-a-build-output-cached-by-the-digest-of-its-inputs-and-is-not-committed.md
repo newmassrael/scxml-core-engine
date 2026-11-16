@@ -837,15 +837,65 @@ Item 8's first half is done (items 9 and 10: `sce_build::cli`, `sce_build::actio
     generation reads is known only by running it (`scripts/gates/mutation-rounds.sh`). Wider
     than the file, never narrower.
 
-Still owed, in order: the release pipeline (section 7, landing 6) and, with the fleet cache, the
-`generated-deterministic` gate of section 5. What SCE provides for the fleet cache, which is bx's
-(RFC 0049 section 4.11): the REAPI client `sce_build::action::store` already speaks (an
-`ActionResult` per action key, SHA-256 digests), to be pointed at the site's instance in place of
-`LocalStore` by a `ContentStore` of the remote kind, and the action keys `materialize` computes,
-which the gate compares across machines and against a fleet entry of the same key. The pipeline's
-SCE side is a `generated-provenance.json` per tree (the action keys, their input digests and the
-digest of the output tree) written by `materialize`, which a release job packages beside the
-materialized tree; neither is written yet.
+16. **Provenance is a record of the actions, written where the tree is** (2026-11-17, section 7).
+    `materialize` reports each action it was made by (`materialize::ActionRecord`: a generation by
+    its arguments or a format pass by its tool and directory, the action key, the REAPI Merkle root
+    of what it read and of what it wrote) and the digest of every file a generation read.
+    `sce_build::action::provenance` turns that into `generated-provenance.json`
+    (`sce.generated-provenance/1`): the generator as a key names it (source digest, compiler,
+    operating system, features, profile), and per tree its actions, its inputs, the files it
+    holds and `output_tree`, the Merkle root of the files as written, taken from the disk after
+    the format passes. Every digest is written `<sha256 hex>/<size>` and every root is a REAPI
+    `Directory` digest, so a server computes the same values. One file holds the trees of one
+    package, and is refused a tree of another generator: a package made by two is the release
+    of no one commit. `sce-codegen materialize --provenance <file>` records a tree in a file
+    beside the trees recorded before; a build script writes the file of its trees whole into
+    `OUT_DIR/sce-trees`. Two generations that read one file with different bytes refuse the
+    materialization (`MaterializeError::InputMoved`), since its provenance could name only one.
+17. **A release is declared, and made from the commit it releases** (landing 6). The packages
+    are `tools/codegen/release.toml` (a package is a directory and the trees whose every root
+    lies under it, each tree in one package), read by `scripts/release.py` and nothing else.
+    A tag `v<major>.<minor>.<patch>` that names a commit of `main` and the workspace's version
+    starts `release.yml`, which builds the generator of that commit and runs the script: a
+    worktree of the commit, each package's trees materialized into it with their provenance, a
+    reproducible archive per package (sorted entries, no owner, dated at the commit, gzip
+    undated), and the release commit, a child of the released commit that adds every package's
+    directory, written with the pipeline's identity and dated at the commit so a second run of
+    one release writes the same commit, tagged `release/v<version>` and `<dir>/v<version>` for
+    each Go module whose path is this repository's (none today: the Go modules are named under
+    paths of their own). The lane pushes those tags and publishes the archives and
+    `release.json` as the tag's release; the release commit is never merged back. SwiftPM
+    resolves a package by URL only from a repository whose root holds `Package.swift`, so a
+    Swift consumer takes the release commit as a submodule and names the package by path, as
+    it names a commit today; a Swift package registry (answer 4) is what would change that.
+    `docs/SCE_CODEC_CONSUMER_MIGRATION.md` says this to the Mesh consumers before landing 7.
+    The Cargo and Maven publications of section 7 are not made by this lane: `sce-rust-mesh`
+    is `publish = false` and depends by path on crates no registry holds, so its publication
+    is the publication of that whole chain, and each needs a registry account the repository
+    does not have.
+18. **The fleet's client is SCE's and optional; the comparison is the gate** (section 5). With
+    the `remote-cache` feature, `action::store::RemoteStore` is a `ContentStore` over a site's
+    REAPI instance (`SCE_FLEET_CACHE`, `SCE_FLEET_INSTANCE`): `FindMissingBlobs`, the batch
+    reads and writes, `ByteStream` for a blob above 3 MiB, `GetActionResult` and
+    `UpdateActionResult`, through `tonic::client::Grpc` with the method paths of the protos and
+    the messages of `action::reapi`, so no protoc and no generated stubs. A default build links
+    no network crate. It is opened read only, and a write to it is refused before it reaches
+    the server: a workstation reads the fleet, and only the site's build machines and the
+    integrator write (answer 3). `action::determinism::compare` holds one result against the
+    fleet's result for the same key (the files, their bytes and modes, the exit code), and
+    `sce-codegen fleet-compare <tree>... --generator <path>` runs every action of the trees
+    from an empty cache with the generator as keys name it (default features and `cli`; the
+    comparer carries `remote-cache` besides, which no key names) and exits 1 on an entry that
+    differs. `scripts/gates/generated-deterministic.sh` is that command over every declared
+    tree, registered with no workflow (no hosted runner reaches a site) and skipped, saying so,
+    until `SCE_FLEET_CACHE` names an instance.
+
+Still owed: the fleet cache itself, which is bx's (RFC 0049 section 4.11); with it, the
+`generated-deterministic` gate runs where a site is reachable, `regen-reproduces` retires
+(landing 8), and `materialize` can read through the fleet behind its local store. The Mesh
+libraries (landing 7) follow the release pipeline. The publication of the Rust crates and the
+Kotlin module to a registry, and of a prebuilt `sce-codegen` per platform (Consequences), waits on
+an owner's registry accounts and on publishing the Rust runtime chain the Mesh crate depends on.
 
 ## References
 
