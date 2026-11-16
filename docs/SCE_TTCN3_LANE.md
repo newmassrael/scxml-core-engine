@@ -409,10 +409,13 @@ On C++ the same is in place: `sce/include/test/` (`Trace.h`, `FromCanonical.h`, 
 `Runner.h`) in the runtime, `CppReading` beside `CppCanonical`, and the C++ twins of the Rust tests
 (`tests/test_runtime/TraceTest.cpp`, `RunnerTest.cpp`, and `ATestSuiteRunsEndToEndTest.cpp`,
 `ARecordReadsBackTheFormItWritesTest.cpp` and `ARunnerProgramWritesTheLogOfEachTraceTest.cpp` under
-`tests/integration/`), in the words of the Rust reader. Its configuration of every form,
-`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place; C++ reads and writes
-`order_placed`'s union through `orders_configuration`, whose traces the corpus's `orders_suite` replays (§12.1), and
-its readers of a union through `FromCanonical::unionCase` (`TraceTest.cpp`).
+`tests/integration/`), in the words of the Rust reader. Its configuration of every form is the one Rust and Kotlin
+read, `trace_forms/forms_configuration.scxml`, whose `order_placed` holds a union, a value of each of its cases (one
+with a record, one with nothing, one with a byte string) written, read back in its case and replayed, and each
+malformed spelling of a union refused by name; beside it, `trace_forms/unionless_forms_configuration.scxml`, which
+takes `order_taken` in `order_placed`'s place, reads and replays the forms a union does not hold. The corpus's
+`orders_suite` replays `order_placed` through `orders_configuration` too (§12.1), and its readers of a union go
+through `FromCanonical::unionCase` (`TraceTest.cpp`).
 
 On Go the same is in place: the readers of each form beside the writers in the package `testprofile/canonical`
 (`from_canonical.go`, each answering an error in the words of the Rust reader), `ParseTrace`, `TraceAdapter`,
@@ -447,9 +450,10 @@ On Python the same is in place: `sce_runtime.testprofile` (`from_canonical`, `tr
 `backends/python/tests/integration/static_datamodel/`), in the words of the Rust reader; a reader raises a
 `TraceRefusal`. A trace is read by the runtime's own JSON reader, which keeps a number's text and refuses `NaN`,
 `Infinity` and a member named twice, where Python's `json` would read them, and a trace file is read as its bytes, so
-a `\r\n` is not read as the line feed a file may end in. Its configuration of every form is C++'s,
-`trace_forms/unionless_forms_configuration.scxml`, and it reads `order_placed`'s union through `orders_configuration`
-as C++ does. The program keeps `sys.stdout` for the contract's lines and hands
+a `\r\n` is not read as the line feed a file may end in. Its configurations of every form are C++'s,
+`trace_forms/forms_configuration.scxml`, whose `order_placed` holds a value of each case of its union, each built by
+the class of its case and read back in it, and `trace_forms/unionless_forms_configuration.scxml` beside it. The
+program keeps `sys.stdout` for the contract's lines and hands
 it to the standard error while the cases run, where a generated statechart's `<log>` prints.
 
 On C11 the same is in place: `sce/test/input_trace.h` (the trace, its canonical text and its player),
@@ -462,8 +466,9 @@ runtime, `C11Reading` beside `C11Canonical`, and the C11 twins of the C++ tests
 reader the saved state is read with (`sce/saved_json.h`), every refusal is a sentence in a `sce_saved_error_t`, and
 every table is bounded, a trace past a bound refused by name. The runner makes its log directory through
 `sce_directory_make` (`sce/directory.h`), whose POSIX implementation is in the runtime's platform tier. It reads the
-same configuration of every form as C++, and `order_placed`'s union through `orders_configuration` as C++ does, its
-readers of a union `sce_test_from_canonical_union_case` and `sce_test_from_canonical_no_record`.
+same configurations of every form as C++, a value of each case of `order_placed`'s union built by the constructor of
+its case (`order_payment_case_card`, `_cash`, `_voucher`) and read back in it, its readers of a union
+`sce_test_from_canonical_union_case` and `sce_test_from_canonical_no_record`.
 
 The trace replay and the runner program are in place on all seven backends, Rust, Kotlin, C++, Go, Swift, Python and
 C11, each over the same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
