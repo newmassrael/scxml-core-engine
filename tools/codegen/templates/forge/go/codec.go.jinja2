@@ -90,9 +90,12 @@ type {{ struct_name }}Variant struct {
 {{ go_source.before }}
 
 {% endif %}
+{# A value printed from its plan holds no element its encode derives
+   (`field.derived`, docs/adr/0081 §3): its decode reads such an element to
+   cut the bytes it measures and makes the value without it. #}
 // {{ struct_name }} represents the codec frame layout.
 type {{ struct_name }} struct {
-{% for field in fields %}
+{% for field in fields if not field.derived %}
 	{{ field.member }} {{ field.go_type }}
 {% endfor %}
 {% if has_variant %}
@@ -239,9 +242,12 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	{{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{% if go_source and go_source.decoded %}
+{{ go_source.decoded }}
+{% endif %}
 	return &{{ struct_name }}{
-{% for field in fields %}
-		{{ field.member }}: {{ field.id }},
+{% for field in fields if not field.derived %}
+		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
 	}, nil
 {% elif has_variable_fields %}
@@ -258,9 +264,12 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
+{% if go_source and go_source.decoded %}
+{{ go_source.decoded }}
+{% endif %}
 	value := &{{ struct_name }}{
-{% for field in fields %}
-		{{ field.member }}: {{ field.id }},
+{% for field in fields if not field.derived %}
+		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
 	}
 	if err := cursor.Advance(frameLen); err != nil {
@@ -275,9 +284,12 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
+{% if go_source and go_source.decoded %}
+{{ go_source.decoded }}
+{% endif %}
 	value := &{{ struct_name }}{
-{% for field in fields %}
-		{{ field.member }}: {{ field.id }},
+{% for field in fields if not field.derived %}
+		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
 	}
 	if err := cursor.Advance({{ min_bytes }}); err != nil {

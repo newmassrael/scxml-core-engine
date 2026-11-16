@@ -15248,6 +15248,19 @@ fn render_codec(
                     obj.insert("kt_made".into(), held.made.clone().into());
                 }
             }
+            // docs/adr/0081 §3: a Go value printed from its plan holds no
+            // element the encode derives, and holds each byte string and text
+            // in the runtime's bounded type of its bound, which its decode
+            // makes in a local of its own before the value's literal.
+            if let Some((plan, printed)) = &go_printed {
+                obj.insert("derived".into(), go_source::derived_field(plan, &f.id).into());
+                if let Some(held) = printed.held.get(&f.id) {
+                    obj.insert(type_key.into(), held.clone().into());
+                }
+                if let Some(local) = printed.made.get(&f.id) {
+                    obj.insert("made".into(), local.clone().into());
+                }
+            }
             Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -15335,6 +15348,7 @@ fn render_codec(
             serde_json::json!({
                 "before": printed.before,
                 "after": printed.after,
+                "decoded": printed.decoded,
             }),
         );
     }
@@ -35440,7 +35454,7 @@ fn stateful_import_field_renames(
         if !imp.is_stateful {
             continue;
         }
-        for (qualified_key, _) in &imp.member_field_types {
+        for (qualified_key, field_type) in &imp.member_field_types {
             // qualified_key is already `"alias.field"` (see lib.rs enrichment).
             // Extract the bare field name for per-language case conversion.
             let field = match qualified_key.split_once('.') {
@@ -35474,11 +35488,16 @@ fn stateful_import_field_renames(
                     format!("self.{}.{}", imp.member_name, snake_field)
                 }
                 // A codec the Go printer prints presents each element through
-                // its method (docs/adr/0081 step 4); an assign to one is a
-                // rebuild ([`rebuilt_element_assign`]), not this read.
+                // its method (docs/adr/0081 step 4), a byte string or a text
+                // as its bounded value, read as the slice or the string it
+                // holds; an assign to one is a rebuild
+                // ([`rebuilt_element_assign`]), not this read.
                 generator::Language::Go if imp.go_printed => {
                     let pascal_field = filters::to_pascal_case(field.to_string());
-                    format!("{go_receiver}.{}.{}()", imp.member_name, pascal_field)
+                    go_source::element_read(
+                        &format!("{go_receiver}.{}.{}()", imp.member_name, pascal_field),
+                        field_type,
+                    )
                 }
                 generator::Language::Go => {
                     let pascal_field = filters::to_pascal_case(field.to_string());
@@ -46250,12 +46269,16 @@ fn render_algorithm(
     // its plan is presented through the element's accessor (docs/adr/0081
     // step 4), so the item's field is read as a call. The set of printed
     // elements is of the backend this compile is for, and empty on any other.
+    // A Go element presents a byte string or a text as its bounded value, read
+    // as the slice or the string it holds ([`go_source::element_read`]).
     if matches!(lang, Language::Cpp | Language::Go) {
         for (path, item, field) in &types.member_accessors {
-            record_renames.push((
-                path.clone(),
-                format!("{}.{}()", l.local_id(item), l.codec_field_id(field)),
-            ));
+            let call = format!("{}.{}()", l.local_id(item), l.codec_field_id(field));
+            let read = match types.members.iter().find(|(p, _)| p == path) {
+                Some((_, ty)) if matches!(lang, Language::Go) => go_source::element_read(&call, ty),
+                _ => call,
+            };
+            record_renames.push((path.clone(), read));
         }
     }
     // One the Kotlin backend prints holds a byte string or a text in the value

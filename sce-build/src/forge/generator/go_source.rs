@@ -12,13 +12,25 @@
 //! and derives every other element of the frame from them, as the plan says,
 //! never from the value (docs/adr/0058 §1).
 //!
+//! A byte string or a text is presented as the runtime's `codec.Bytes` or
+//! `codec.Text` of a bound type the codec names for the element,
+//! `{Codec}{Element}Bound`: the abstract type of §2 for Go, a struct with an
+//! unexported field made only by `codec.MakeBytes` or `codec.MakeText`, which
+//! check the bound where the value is made, so the encode over it refuses
+//! nothing the bound decides.
+//!
 //! The printer reads the model only through the plan and lowers its forms one
 //! landing at a time (§6): [`unlowered`] names the first form a codec's plan
 //! uses that it does not print, and such a codec keeps the template's encode
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::encode_plan::{CodecPlan, Element, EncodePlan, Guard, Presence, Value, Write};
+use crate::forge::codec_roles::ElementId;
+use crate::forge::encode_plan::{
+    Absent, CodecPlan, Derive, Element, EncodePlan, Guard, Measured, Narrow, Number, NumberInto,
+    Offset, Presence, Value, Write,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The first form of `plan` the Go printer does not print, as the clause that
 /// names it, or `None` where it prints the codec whole.
@@ -29,11 +41,15 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
 /// Every form of `plan` the Go printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
-/// It prints a positional codec whose elements are integers, flag sets and
-/// enums, each always there, written whole, in bytes it shares with other
-/// fields, or as a variable-length integer of 16, 32 or 64 bits; which derives
-/// no element and whose encode refuses nothing. A CBOR map and a content-line
-/// component keep their own templates' encodes.
+/// It prints a positional codec whose elements are integers, flag sets,
+/// enums, byte strings and texts, each always there, the integers written
+/// whole, in bytes they share with other fields, or as a variable-length
+/// integer of 16, 32 or 64 bits, and the byte strings and texts written to the
+/// end of the frame or by a length; whose every derived element is the length
+/// of one byte string or text, held in a field of its own that the length
+/// fits, its `sce:length-arith` never taking it below zero; and whose encode
+/// refuses nothing. A CBOR map and a content-line component keep their own
+/// templates' encodes.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan),
@@ -58,8 +74,14 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             Value::Scalar(t) if t.int_bit_width().is_some() => {}
             Value::Scalar(SceType::Enum(_)) => {}
             Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
-            Value::Bytes(_) => forms.push(format!("field '{id}': a byte string")),
-            Value::Text(_) => forms.push(format!("field '{id}': a text")),
+            // Written whole, to the end of the frame or by its length.
+            Value::Bytes(_) | Value::Text(_) => {
+                if !matches!(element.field.bit_size, BitSize::Tail | BitSize::LengthRef) {
+                    forms.push(format!(
+                        "field '{id}': a byte string or a text of a fixed size"
+                    ));
+                }
+            }
             Value::Body { codec } => forms.push(format!("field '{id}': a body of `{codec}`")),
             Value::List { codec, .. } => {
                 forms.push(format!("field '{id}': a list of `{codec}`"));
@@ -77,31 +99,31 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
         forms.push("a group of fields a gate decides together".to_string());
     }
     for derived in &plan.derivations {
-        forms.push(format!(
-            "element '{}': an element the encode derives",
-            derived.element
-        ));
+        match (&derived.element, &derived.by) {
+            (ElementId::Field(_), Derive::Number(number)) => {
+                forms.extend(number_form(&derived.element, number));
+            }
+            (element, _) => forms.push(format!(
+                "element '{element}': an element the encode derives other than a length"
+            )),
+        }
     }
     if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
         forms.push("an encode that can refuse a value".to_string());
     }
+    let numbers = derived_numbers(plan);
     for write in &plan.program {
         match write {
-            Write::Whole(field) => forms.extend(unread_form(plan, field)),
+            Write::Whole(field) | Write::Tail { field, .. } => {
+                forms.extend(unread_form(plan, &numbers, field));
+            }
             Write::Byte { pieces, .. } => {
                 for (field, _) in pieces {
-                    forms.extend(unread_form(plan, field));
+                    forms.extend(unread_form(plan, &numbers, field));
                 }
             }
-            Write::Tail { field, .. } => {
-                forms.extend(unread_form(plan, field));
-                forms.push(format!(
-                    "field '{}': a field written to the end of its frame",
-                    field.id
-                ));
-            }
             Write::Streamed { field, guard, list } => {
-                forms.extend(unread_form(plan, field));
+                forms.extend(unread_form(plan, &numbers, field));
                 if *guard != Guard::Always {
                     forms.push(format!(
                         "field '{}': a field written where it is there",
@@ -125,18 +147,15 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
                     }
                     BitSize::Vle {
                         width_bits: 16 | 32 | 64,
-                    } => {}
+                    }
+                    | BitSize::Tail
+                    | BitSize::LengthRef => {}
                     BitSize::Vle { width_bits } => forms.push(format!(
                         "field '{}': a variable-length integer of {width_bits} bits",
                         field.id
                     )),
-                    // A byte string, a text, a body or a list, which the
-                    // elements above name.
-                    BitSize::Tail
-                    | BitSize::LengthRef
-                    | BitSize::Embed
-                    | BitSize::Repeat { .. }
-                    | BitSize::TlvChain { .. } => {}
+                    // A body or a list, which the elements above name.
+                    BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {}
                 }
             }
             // The variant above names it.
@@ -147,12 +166,84 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
     forms
 }
 
+/// What of the derived number of `element` the printer does not print: it
+/// prints the length of one byte string or text always there, its
+/// `sce:length-arith` never taking the number below zero, into a field the
+/// number fits that holds nothing else.
+fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
+    let mut forms = Vec::new();
+    match number.measures.as_slice() {
+        [one] => {
+            match &one.of {
+                Measured::Bytes {
+                    offset: Offset::Less { held: false, .. },
+                    ..
+                } => forms.push(format!(
+                    "element '{element}': a length its arithmetic may take below zero"
+                )),
+                Measured::Bytes { .. } => {}
+                Measured::Entries { .. } => {
+                    forms.push(format!("element '{element}': a count of a list"));
+                }
+                Measured::Encoded { .. } => {
+                    forms.push(format!("element '{element}': the encoded length of a body"));
+                }
+                Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
+                    forms.push(format!("element '{element}': a flag a held codec says"));
+                }
+            }
+            if one.gated {
+                forms.push(format!(
+                    "element '{element}': a length of content a gate decides"
+                ));
+            }
+        }
+        _ => forms.push(format!(
+            "element '{element}': a number that measures other than one element"
+        )),
+    }
+    match &number.into {
+        NumberInto::Field { narrow, absent, .. } => {
+            if *narrow == Narrow::Checked {
+                forms.push(format!(
+                    "element '{element}': a length that may not fit its field"
+                ));
+            }
+            if *absent != Absent::Never {
+                forms.push(format!(
+                    "element '{element}': a length the value states where its content is absent"
+                ));
+            }
+        }
+        NumberInto::Flag => forms.push(format!(
+            "element '{element}': a length held in a flag of a carrier"
+        )),
+    }
+    forms
+}
+
+/// The fields of `plan` whose value the encode derives as a number.
+fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
+    plan.derivations
+        .iter()
+        .filter(|derived| matches!(derived.by, Derive::Number(_)))
+        .filter_map(|derived| match &derived.element {
+            ElementId::Field(id) => Some(id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Whether the printer cannot read `field` as a write reads it: the value
-/// does not present it alone.
-fn unread_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
-    element_of(plan, &field.id).is_none().then(|| {
+/// presents it alone, or the encode derives it as a number.
+fn unread_form(
+    plan: &EncodePlan<'_>,
+    numbers: &BTreeSet<String>,
+    field: &CodecField,
+) -> Option<String> {
+    (element_of(plan, &field.id).is_none() && !numbers.contains(&field.id)).then(|| {
         format!(
-            "field '{}': a field the value does not present alone",
+            "field '{}': a field the value neither presents nor the encode derives as a number",
             field.id
         )
     })
@@ -161,6 +252,12 @@ fn unread_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
 /// The element of `plan` the value presents as `id`, if it presents one.
 fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<'m>> {
     plan.elements.iter().find(|e| e.field.id == id)
+}
+
+/// Whether the Go value of `plan`, a plan [`unlowered`] answers `None` for,
+/// holds no field `id`: the encode derives it (docs/adr/0081 §3).
+pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
+    derived_numbers(plan).contains(id)
 }
 
 /// The unexported field a Go value printed from its plan holds the element
@@ -177,39 +274,130 @@ pub(super) fn member(id: &str) -> String {
     }
 }
 
+/// What a read of an element a printed Go codec presents as `call` (a call of
+/// its method) is as a Go value of the element's type `ty`: a byte string's
+/// bytes and a text's string, which the runtime's `codec.Bytes` and
+/// `codec.Text` hold, and any other element as the method returns it. A reader
+/// of a printed codec's element in an expression, a procedure, a validator or
+/// an algorithm reads it through this, so it is spelled in one place.
+pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Bytes => format!("{call}.Bytes()"),
+        SceType::String => format!("{call}.String()"),
+        _ => call.to_string(),
+    }
+}
+
+/// The type a codec `struct_name` names for the bound of its byte string or
+/// text `id`.
+fn bound_type(struct_name: &str, id: &str) -> String {
+    format!(
+        "{struct_name}{}Bound",
+        filters::to_pascal_case(id.to_string())
+    )
+}
+
 /// The Go text the printer gives a codec's file.
 pub(super) struct GoSource {
-    /// Before the value's struct: the interface a source of the codec
-    /// satisfies.
+    /// Before the value's struct: the bound type of each byte string and text,
+    /// and the interface a source of the codec satisfies.
     pub(super) before: String,
     /// After the value's struct: its constructor, the method that presents
     /// each element, and the encode over any source, `EncodeSource`.
     pub(super) after: String,
+    /// For each byte string and text the value presents, by field id, the Go
+    /// type its field is declared as: `codec.Bytes` or `codec.Text` of its
+    /// bound.
+    pub(super) held: BTreeMap<String, String>,
+    /// For each byte string and text, by field id, the local the decode makes
+    /// the bounded value of it in, which the value's literal holds.
+    pub(super) made: BTreeMap<String, String>,
+    /// The statements the decode runs before the value's literal: each byte
+    /// string and text it read made into its bounded value, refused as the
+    /// runtime refuses it; empty where the value presents none.
+    pub(super) decoded: String,
 }
 
 /// The Go text of the codec `plan`, whose value's struct is `struct_name`; the
 /// plan is one [`unlowered`] answers `None` for.
 pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> GoSource {
+    let mut before = String::new();
+    let mut held = BTreeMap::new();
+    let mut made = BTreeMap::new();
+    let mut decoded = String::new();
     // Each element: its method, its field, and the Go type it is presented as.
-    let elements: Vec<(String, String, String)> = plan
-        .elements
-        .iter()
-        .map(|element| {
-            (
-                l.codec_field_id(&element.field.id),
-                member(&element.field.id),
+    let mut elements: Vec<(String, String, String)> = Vec::new();
+    for element in &plan.elements {
+        let id = &element.field.id;
+        let method = l.codec_field_id(id);
+        let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
+            elements.push((
+                method,
+                member(id),
                 l.type_name(&element.field.sce_type).into_owned(),
-            )
-        })
-        .collect();
+            ));
+            continue;
+        };
+        let text = matches!(element.value, Value::Text(_));
+        let (kind, unit) = if text {
+            ("Text", "UTF-8 bytes")
+        } else {
+            ("Bytes", "bytes")
+        };
+        let bound_name = bound_type(struct_name, id);
+        let (held_as, most) = match bound.most {
+            Some(most) => (
+                format!("{} to {most} {unit}", bound.least),
+                most.to_string(),
+            ),
+            None => (
+                format!(
+                    "{} or more {unit}, the protocol stating no most",
+                    bound.least
+                ),
+                "codec.Unbounded".to_string(),
+            ),
+        };
+        before.push_str(&format!(
+            "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
+             // (docs/adr/0077 §3). A {kind} of it is made only within it.\n\
+             type {bound_name} struct{{}}\n\
+             \n\
+             // Least is the fewest {unit} the element holds.\n\
+             func ({bound_name}) Least() int {{ return {least} }}\n\
+             \n\
+             // Most is the most {unit} the element holds.\n\
+             func ({bound_name}) Most() int {{ return {most} }}\n\n",
+            least = bound.least
+        ));
+        let ty = format!("codec.{kind}[{bound_name}]");
+        // The decode read the element as a slice or a string; the bounded
+        // value is made of it, a slice made a string for a text, and refused
+        // as the runtime refuses it.
+        let local = format!("_b{method}");
+        let from = if text {
+            format!("string({method})")
+        } else {
+            method.clone()
+        };
+        decoded.push_str(&format!(
+            "\t{local}, err := codec.Make{kind}[{bound_name}]({from})\n\
+             \tif err != nil {{\n\
+             \t\treturn nil, err\n\
+             \t}}\n"
+        ));
+        made.insert(id.clone(), local);
+        held.insert(id.clone(), ty.clone());
+        elements.push((method, member(id), ty));
+    }
 
-    let mut before = format!(
+    before.push_str(&format!(
         "// {struct_name}Source is what the encode of {struct_name} reads: one method\n\
          // for each element a value presents (docs/adr/0081 §2). {struct_name} is one,\n\
          // and so is any value with these methods. The encode derives every other\n\
          // element of the frame.\n\
          type {struct_name}Source interface {{\n"
-    );
+    ));
     for (method, _, ty) in &elements {
         before.push_str(&format!("\t{method}() {ty}\n"));
     }
@@ -245,7 +433,13 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> G
     after.push('\n');
     after.push_str(&encode_source(plan, l, struct_name));
 
-    GoSource { before, after }
+    GoSource {
+        before,
+        after,
+        held,
+        made,
+        decoded: decoded.trim_end_matches('\n').to_string(),
+    }
 }
 
 /// One write of `bytes`, the byte expressions of a write, into the sink.
@@ -256,20 +450,81 @@ fn write_bytes(bytes: &[String]) -> String {
     )
 }
 
+/// One write of the slice `slice` into the sink.
+fn write_slice(slice: &str) -> String {
+    format!("\tif err := w.WriteBytes({slice}); err != nil {{\n\t\treturn err\n\t}}\n")
+}
+
 /// The encode of `struct_name` over any source of it, a function of the
 /// codec's package, which is the codec's namespace as a C++ codec's namespace
-/// is: the writes in wire order, each element read off the source by its
-/// method. A function of the package and not a method of the value, so a
-/// source need not be a value of the codec.
+/// is: each derived number made from what it measures, then the writes in
+/// wire order, each element read off the source by its method. A function of
+/// the package and not a method of the value, so a source need not be a value
+/// of the codec.
 fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+    let numbers = derived_numbers(plan);
+    let derives = if numbers.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " It derives {} from\n// what each measures, and never reads it off the source.",
+            numbers.iter().cloned().collect::<Vec<_>>().join(", ")
+        )
+    };
     let mut out = format!(
         "// EncodeSource writes any source of {struct_name} into w, each element read\n\
          // off src and written where the codec's encode plan lays it out\n\
-         // (docs/adr/0081). It refuses no value: it returns only the error of w,\n\
-         // codec.ErrBufferOverflow from a bounded sink that has no room left.\n\
+         // (docs/adr/0081).{derives} It refuses no value: it returns only the\n\
+         // error of w, codec.ErrBufferOverflow from a bounded sink that has no room\n\
+         // left.\n\
          func EncodeSource(src {struct_name}Source, w codec.SceSink) error {{\n"
     );
-    let read = |f: &CodecField| -> String { format!("src.{}()", l.codec_field_id(&f.id)) };
+    let source = |id: &str| format!("src.{}()", l.codec_field_id(id));
+    // Each derived number, as a value of its field's type: the bytes the
+    // bounded value holds, less or more its arithmetic.
+    for derived in &plan.derivations {
+        let (ElementId::Field(id), Derive::Number(number)) = (&derived.element, &derived.by) else {
+            unreachable!("`unlowered` prints a derived length only");
+        };
+        let ([measure], NumberInto::Field { field, .. }) =
+            (number.measures.as_slice(), &number.into)
+        else {
+            unreachable!("`unlowered` prints a length of one element into a field");
+        };
+        let Measured::Bytes {
+            field: content,
+            offset,
+        } = &measure.of
+        else {
+            unreachable!("`unlowered` prints the length of a byte string or a text only");
+        };
+        let arith = match offset {
+            Offset::None => String::new(),
+            Offset::More { by } => format!(" + {by}"),
+            Offset::Less { by, .. } => format!(" - {by}"),
+        };
+        out.push_str(&format!(
+            "\t_d{} := {}({}.Len(){arith})\n",
+            l.codec_field_id(id),
+            l.type_name(&field.sce_type),
+            source(&content.id)
+        ));
+    }
+    let read = |f: &CodecField| -> String {
+        if numbers.contains(&f.id) {
+            format!("_d{}", l.codec_field_id(&f.id))
+        } else {
+            source(&f.id)
+        }
+    };
+    // A byte string's bytes or a text's, as the slice the sink writes.
+    let slice = |f: &CodecField| -> String {
+        if f.sce_type == SceType::String {
+            format!("[]byte({}.String())", read(f))
+        } else {
+            format!("{}.Bytes()", read(f))
+        }
+    };
     let endian = plan.model.default_endian;
     for write in &plan.program {
         match write {
@@ -283,6 +538,20 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
             }
             Write::Byte { pieces, .. } => {
                 out.push_str(&write_bytes(&[encode_byte_read_by(pieces, l, &read)]));
+            }
+            Write::Tail { field, pad } => {
+                // A field the layout aligns follows zeros up to its offset.
+                if *pad {
+                    out.push_str(&format!(
+                        "\tfor w.Position() < {} {{\n\
+                         \t\tif err := w.WriteBytes([]byte{{0}}); err != nil {{\n\
+                         \t\t\treturn err\n\
+                         \t\t}}\n\
+                         \t}}\n",
+                        field.byte_offset
+                    ));
+                }
+                out.push_str(&write_slice(&slice(field)));
             }
             Write::Streamed { field, .. } => match &field.bit_size {
                 BitSize::Fixed { .. } => {
@@ -299,9 +568,9 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                     out.push_str(&vle_encode_block(&value, *width_bits, l.lang));
                     out.push('\n');
                 }
-                _ => unreachable!("`unlowered` prints a fixed field or a VLE only"),
+                BitSize::Tail | BitSize::LengthRef => out.push_str(&write_slice(&slice(field))),
+                _ => unreachable!("`unlowered` prints no body or list"),
             },
-            Write::Tail { .. } => unreachable!("`unlowered` prints no field written to its end"),
             Write::Variant => unreachable!("`unlowered` prints no variant"),
         }
     }

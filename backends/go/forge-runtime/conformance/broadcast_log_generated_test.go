@@ -279,26 +279,36 @@ func TestBroadcastLogAnElementLargerThanItsBoundIsRefusedByTheCodecAndNotTruncat
 
 	// 1 + 20 = 21 bytes and 1 + 9 = 10 bytes into a log whose entries hold at
 	// most 9: the nearest above the bound is refused as the far above is. The
-	// codec refuses the payload before its first byte, with the error a decode
-	// of that frame gives (docs/adr/0077 §3).
+	// record is printed from its plan (docs/adr/0081 step 4), so its payload is
+	// a codec.Bytes of its bound, refused where it is made, with the error a
+	// decode of that frame gives (docs/adr/0077 §3); no such record reaches the
+	// log, which publishes nothing.
 	for _, size := range []int{20, 9} {
 		tooLong := bytes.Repeat([]byte{0xAA}, size)
-		_, err := blogbounded.Publish(publisher, &blogrecord.BroadcastLogConformanceRecord{Tag: 1, Payload: tooLong})
-		if !errors.Is(err, codec.ErrLengthOutOfRange) {
+		if _, err := codec.MakeBytes[blogrecord.BroadcastLogConformanceRecordPayloadBound](tooLong); !errors.Is(err, codec.ErrLengthOutOfRange) {
 			t.Fatalf("a payload of %d bytes past its declared bound: error %v, want codec.ErrLengthOutOfRange", size, err)
 		}
-		if log.Head() != 0 {
-			t.Fatalf("a refused element publishes nothing, the head is %d", log.Head())
-		}
+	}
+	if log.Head() != 0 {
+		t.Fatalf("nothing was published, the head is %d", log.Head())
 	}
 
 	// Exactly the bound, and under it: the length word keeps what was written.
 	full := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	short := []byte{7, 7, 7}
-	if seq, err := blogbounded.Publish(publisher, &blogrecord.BroadcastLogConformanceRecord{Tag: 0x5A, Payload: full}); err != nil || seq != 0 {
+	record := func(tag uint8, payload []byte) *blogrecord.BroadcastLogConformanceRecord {
+		t.Helper()
+		held, err := codec.MakeBytes[blogrecord.BroadcastLogConformanceRecordPayloadBound](payload)
+		if err != nil {
+			t.Fatalf("a payload of %d bytes within its bound: %v", len(payload), err)
+		}
+		made := blogrecord.MakeBroadcastLogConformanceRecord(tag, held)
+		return &made
+	}
+	if seq, err := blogbounded.Publish(publisher, record(0x5A, full)); err != nil || seq != 0 {
 		t.Fatalf("a payload of exactly the bound: sequence number %d, error %v, want 0, nil", seq, err)
 	}
-	if seq, err := blogbounded.Publish(publisher, &blogrecord.BroadcastLogConformanceRecord{Tag: 0x5B, Payload: short}); err != nil || seq != 1 {
+	if seq, err := blogbounded.Publish(publisher, record(0x5B, short)); err != nil || seq != 1 {
 		t.Fatalf("a payload under the bound: sequence number %d, error %v, want 1, nil", seq, err)
 	}
 
@@ -334,10 +344,10 @@ func TestBroadcastLogAnElementLargerThanItsBoundIsRefusedByTheCodecAndNotTruncat
 	if err != nil || answer.Kind != broadcastlog.ReadItem || secondRecord == nil {
 		t.Fatalf("second typed read: %+v, %v, %v", answer, secondRecord, err)
 	}
-	if firstRecord.Tag != 0x5A || !bytes.Equal(firstRecord.Payload, full) {
+	if firstRecord.Tag() != 0x5A || !bytes.Equal(firstRecord.Payload().Bytes(), full) {
 		t.Fatalf("the first record is %+v, want tag 0x5A and payload %v, still, after the second was read", firstRecord, full)
 	}
-	if secondRecord.Tag != 0x5B || !bytes.Equal(secondRecord.Payload, short) {
+	if secondRecord.Tag() != 0x5B || !bytes.Equal(secondRecord.Payload().Bytes(), short) {
 		t.Fatalf("the second record is %+v, want tag 0x5B and payload %v", secondRecord, short)
 	}
 	if answer, element, err := blogbounded.Read(log, &reader); err != nil || answer.Kind != broadcastlog.ReadEmpty || element != nil {

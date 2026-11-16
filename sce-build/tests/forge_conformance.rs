@@ -18384,7 +18384,11 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
 // hold the bound, so such a value cannot be made and its encode refuses
 // nothing (docs/adr/0081 step 4). A printed Python codec holds them as
 // `BoundedBytes` and `BoundedTuple`, which refuse the value where it is made
-// with the same error, and derives the length and the count it writes. Rust cannot be handed such a value either
+// with the same error, and derives the length and the count it writes. A Go
+// codec printed from its plan presents a byte string as `codec.Bytes` of its
+// bound, which `codec.MakeBytes` makes only within it, so it refuses there and
+// the encode does not; its list is still the template's, refused at the
+// encode. Rust cannot be handed such a value either
 // (its types hold the bounds), and C11 is held by `codec_encode_bound_test.c`.
 // `codec_length_ref` holds at most 32 bytes and `codec_repeat_basic` at most
 // 32 two-byte entries.
@@ -18436,21 +18440,19 @@ import (
 )
 
 func TestAValuePastItsBoundIsRefusedBeforeItsFirstByte(t *testing.T) {{
-	var out []byte
-	long := lengthref.CodecLengthRef{{MsgId: 1, Len: 33, Payload: make([]byte, 33)}}
-	if err := long.Encode(codec.NewBytesSink(&out)); !errors.Is(err, codec.ErrLengthOutOfRange) {{
+	// The byte string is printed from its plan (docs/adr/0081 step 4): it is
+	// held to its bound as a type, made only within it, and its length is
+	// derived.
+	if _, err := codec.MakeBytes[lengthref.CodecLengthRefPayloadBound](make([]byte, 33)); !errors.Is(err, codec.ErrLengthOutOfRange) {{
 		t.Fatalf("33 bytes past a bound of 32: error %v, want codec.ErrLengthOutOfRange", err)
 	}}
-	if len(out) != 0 {{
-		t.Fatalf("a refusal writes nothing, wrote %v", out)
+	payload, err := codec.MakeBytes[lengthref.CodecLengthRefPayloadBound](make([]byte, 32))
+	if err != nil {{
+		t.Fatalf("32 bytes at the bound are made: %v", err)
 	}}
-	if _, err := long.EncodeToBytes(); !errors.Is(err, codec.ErrLengthOutOfRange) {{
-		t.Fatalf("the facade answers the refusal, got %v", err)
-	}}
-	at := lengthref.CodecLengthRef{{MsgId: 1, Len: 32, Payload: make([]byte, 32)}}
-	got, err := at.EncodeToBytes()
-	if err != nil || !bytes.Equal(got, append([]byte{{1, 32}}, make([]byte, 32)...)) {{
-		t.Fatalf("32 bytes at the bound: %v %v", got, err)
+	at := lengthref.MakeCodecLengthRef(1, payload)
+	if got := at.EncodeToBytes(); !bytes.Equal(got, append([]byte{{1, 32}}, make([]byte, 32)...)) {{
+		t.Fatalf("32 bytes at the bound encode, their length derived: %v", got)
 	}}
 	many := repeat.CodecRepeatBasic{{NumFrags: 33, Frags: make([]elem.CodecRepeatElem, 33)}}
 	if _, err := many.EncodeToBytes(); !errors.Is(err, codec.ErrTooManyElements) {{

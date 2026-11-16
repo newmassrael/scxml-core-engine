@@ -155,10 +155,12 @@ fn cpp_field_match_projects_string_field_to_span() {
 #[test]
 fn go_field_match_projects_string_field_to_byte_slice() {
     let code = compile_field_match_for(Language::Go);
-    // Go exports struct fields in PascalCase (`codec_field_id` SSOT), so the
-    // element-field read binds against `entry.Pattern`, not `entry.pattern`.
+    // Go names an element by its PascalCase method (`codec_field_id` SSOT).
+    // `keyexpr_entry` is printed from its plan (docs/adr/0081 step 4), so the
+    // element presents `pattern` through its method, as the runtime's
+    // `codec.Text` of its bound, read as the string it holds.
     assert!(
-        code.contains("[]byte(entry.Pattern)"),
+        code.contains("[]byte(entry.Pattern().String())"),
         "Go string-field projection missing; got:\n{code}"
     );
 }
@@ -202,7 +204,7 @@ fn field_match_projects_on_all_six_backends() {
             Language::Rust => "entry.pattern.as_bytes()",
             Language::C11 => "(const uint8_t *)entry.pattern, entry.pattern_len",
             Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern().data())",
-            Language::Go => "[]byte(entry.Pattern)",
+            Language::Go => "[]byte(entry.Pattern().String())",
             Language::Python => "entry.pattern.encode(\"utf-8\")",
             Language::Kotlin => "entry.pattern.text.toByteArray(Charsets.UTF_8)",
         };

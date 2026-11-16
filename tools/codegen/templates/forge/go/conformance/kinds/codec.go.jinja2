@@ -43,9 +43,20 @@
 		   held to them. #}
 		if !c.DecodeOnly {
 {% if f.printed %}
+			{# A byte string or a text is the runtime's bounded value of the bound
+			   type the codec names for it, made first; a case outside its bound
+			   is written wrong (docs/adr/0081 step 4). #}
+{% for field in f.fields if not field.derived and field.type in ["bytes", "string"] %}
+{% set fp = field.name | to_pascal_case %}
+			held{{ fp }}, err := codec.Make{{ "Text" if field.type == "string" else "Bytes" }}[{{ f.name }}.{{ f.name | to_pascal_case }}{{ fp }}Bound](d.{{ fp }})
+			if err != nil {
+				t.Errorf("{{ f.name }} case %d: the {{ field.name }} of the case is outside its bound: %v", i, err)
+				continue
+			}
+{% endfor %}
 			{# Made by its constructor, its elements in declaration order, which
 			   is the order the catalog lists them in (docs/adr/0081 step 4). #}
-			value := {{ f.name }}.Make{{ f.name | to_pascal_case }}({% for field in f.fields if not field.derived %}d.{{ field.name | to_pascal_case }}{% if not loop.last %}, {% endif %}{% endfor %})
+			value := {{ f.name }}.Make{{ f.name | to_pascal_case }}({% for field in f.fields if not field.derived %}{% if field.type in ["bytes", "string"] %}held{% else %}d.{% endif %}{{ field.name | to_pascal_case }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% else %}
 			value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
 {% for field in f.fields %}
@@ -101,7 +112,9 @@
    constructor nor read back (docs/adr/0081 §3). #}
 {% for field in f.fields if not (f.printed and field.derived) %}
 {% set fp = field.name | to_pascal_case %}
-{% set got = "roundTripped." ~ fp ~ ("()" if f.printed else "") %}
+{# A printed byte string or text is read as the slice or the string its
+   bounded value holds. #}
+{% set got = "roundTripped." ~ fp ~ ("()" if f.printed else "") ~ (".Bytes()" if f.printed and field.type == "bytes" else (".String()" if f.printed and field.type == "string" else "")) %}
 {% if field.optional %}
 		{# Present on both sides with one value, or absent on both: the optional
 		   type's own equality, which compares a byte string as its bytes. #}

@@ -2582,3 +2582,28 @@ variable-length integer, which derive no element and whose encode refuses nothin
   through its methods too, and a procedure that assigns one of its elements makes the value again by
   `Make{Codec}`. A value compares with `==` as before.
 
+## A printed Go codec holds a byte string or a text to its bound, and derives its length (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Go tree is regenerated after it. It moves the positional codecs
+that also hold byte strings and texts, each always there and written to the end of the frame or by a length, whose
+every derived element is the length of one of them, held in a field of its own that the length fits (the codecs
+`sce_build::go_codec_printed_file` answers `Some(true)` for: `keyexpr_entry`, `codec_length_ref`, `codec_tail` and
+the record of a broadcast log among them). Every other Go codec is unchanged.
+
+- A byte string is a `codec.Bytes[B]` and a text a `codec.Text[B]` (`backends/go/forge-runtime/codec/bounded.go`),
+  where `B` is the bound type the codec's package names for the element, `{Codec}{Element}Bound`. Make one with
+  `codec.MakeBytes[pkg.FramePayloadBound](b)` or `codec.MakeText[pkg.FrameNameBound](s)`, which return the value
+  and an error: `codec.ErrLengthOutOfRange` for bytes outside the bound, and for a text `codec.ErrInvalidUTF8`
+  where it is not well-formed UTF-8. Hand the value to `Make{Codec}`. Read the bytes with `.Bytes()` and the
+  string with `.String()`: `frame.Payload` is `frame.Payload().Bytes()`. The zero value of either holds the fewest
+  bytes its bound admits, zeros or NULs.
+- The encode no longer refuses a value past its bound, since no such value can be made: a test that held
+  `EncodeToBytes` to `codec.ErrLengthOutOfRange` holds `codec.MakeBytes` to it instead, and a codec whose plan
+  refuses nothing else has `EncodeToBytes() []byte`.
+- A length that counts one byte string or text is no element: the value has no field, method or constructor
+  parameter for it, and the encode derives it from the bytes. `&pkg.Frame{MsgId: 1, Len: 2, Payload: p}` is
+  `pkg.MakeFrame(1, payload)` where `payload` is the bounded value of `p`. A read of the length is a read of the
+  bytes: `frame.Len` is `frame.Payload().Len()`.
+- An algorithm that this generator writes over a collection of such elements reads a text element as its string,
+  `[]byte(entry.Pattern().String())` where it read `[]byte(entry.Pattern)`.
+

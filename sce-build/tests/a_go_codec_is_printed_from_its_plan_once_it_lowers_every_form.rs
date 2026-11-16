@@ -149,6 +149,81 @@ fn a_flag_of_a_printed_codec_reads_the_carrier_its_value_holds() {
     holds_none("codec_flags_basic", &text, &["s.Header"]);
 }
 
+/// A byte string is presented as the runtime's `codec.Bytes` of a bound type
+/// the codec names, made only within it, and the length that counts it is no
+/// element: the encode derives it from the bytes, and the decode reads it to
+/// cut them and makes the bounded value before the value's literal.
+///
+/// Turns red where `go_source::render` stops naming the bound type or
+/// presenting the element as its `codec.Bytes`, where `encode_source` reads
+/// the length off the source instead of deriving it, where `derived_field`
+/// stops naming the length (the struct and the constructor would hold it), or
+/// where the template's decode literal holds the slice it read rather than
+/// the bounded value (`field.made`).
+#[test]
+fn a_byte_string_is_held_to_its_bound_and_its_length_is_derived() {
+    assert!(unlowered("codec_length_ref").is_empty());
+    let text = resource_go("codec_length_ref");
+    holds(
+        "codec_length_ref",
+        &text,
+        &[
+            "type CodecLengthRefPayloadBound struct{}\n",
+            "func (CodecLengthRefPayloadBound) Least() int { return 0 }\n",
+            "func (CodecLengthRefPayloadBound) Most() int { return 32 }\n",
+            "type CodecLengthRefSource interface {\n\tMsgId() uint8\n\tPayload() codec.Bytes[CodecLengthRefPayloadBound]\n}",
+            "type CodecLengthRef struct {\n\tmsgId uint8\n\tpayload codec.Bytes[CodecLengthRefPayloadBound]\n}",
+            "func MakeCodecLengthRef(msgId uint8, payload codec.Bytes[CodecLengthRefPayloadBound]) CodecLengthRef {\n",
+            "\t_dLen := uint8(src.Payload().Len())\n",
+            "\tif err := w.WriteBytes([]byte{byte(_dLen)}); err != nil {\n",
+            "\tif err := w.WriteBytes(src.Payload().Bytes()); err != nil {\n",
+            "\t_bPayload, err := codec.MakeBytes[CodecLengthRefPayloadBound](Payload)\n",
+            "\t\tpayload: _bPayload,\n",
+        ],
+    );
+    // The length is no field, no method and no parameter of the value.
+    holds_none(
+        "codec_length_ref",
+        &text,
+        &[
+            "\tlen uint8\n",
+            "Len() uint8",
+            "len uint8,",
+            "\t\tlen: Len,",
+            "src.Len()",
+        ],
+    );
+}
+
+/// A text is presented as the runtime's `codec.Text` of its bound, which
+/// holds well-formed UTF-8 alone; the length is derived from its UTF-8 bytes,
+/// and an algorithm over a collection of it reads the string the text holds.
+///
+/// Turns red where `go_source::render` presents a text as `codec.Bytes` or as
+/// a bare `string`, where the encode writes the text other than as its bytes,
+/// or where `go_source::element_read` stops reading a text as its string.
+#[test]
+fn a_text_is_held_to_its_bound_and_read_as_its_string() {
+    assert!(unlowered("keyexpr_entry").is_empty());
+    let text = resource_go("keyexpr_entry");
+    holds(
+        "keyexpr_entry",
+        &text,
+        &[
+            "func (KeyexprEntryPatternBound) Most() int { return 32 }\n",
+            "\tPattern() codec.Text[KeyexprEntryPatternBound]\n",
+            "\t_dPatternLen := uint8(src.Pattern().Len())\n",
+            "\tif err := w.WriteBytes([]byte(src.Pattern().String())); err != nil {\n",
+            "\t_bPattern, err := codec.MakeText[KeyexprEntryPatternBound](string(Pattern))\n",
+        ],
+    );
+    holds_none(
+        "keyexpr_entry",
+        &text,
+        &["PatternLen() uint8", "\tpatternLen uint8\n"],
+    );
+}
+
 /// A chain reads the identifier of an entry the Go backend prints through the
 /// entry's method, as the entry holds it in an unexported field.
 ///
@@ -204,13 +279,13 @@ fn a_procedure_makes_a_printed_codec_again_and_a_validator_reads_it_by_method() 
 /// encode whole: its fields stay exported, and it has no source, constructor
 /// or encode over a source.
 ///
-/// Turns red where `go_source::positional_forms` stops naming a derived
+/// Turns red where `go_source::positional_forms` stops naming a gated
 /// element, a variant or a CBOR map, or where `render_codec` prints a codec
 /// it names a form of.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_length_ref", "an element the encode derives"),
+        ("codec_present_if_basic", "an element a gate decides"),
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
@@ -288,6 +363,10 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_simple_frame",
         "codec_flags_basic",
         "codec_chain_has_tagged_entry",
+        "codec_length_ref",
+        "codec_tail",
+        "keyexpr_entry",
+        "broadcast_log_conformance_record",
         "queue_conformance_event",
         "broadcast_log_conformance_event",
     ] {

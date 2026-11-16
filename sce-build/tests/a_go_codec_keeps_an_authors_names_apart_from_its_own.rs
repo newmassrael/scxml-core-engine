@@ -129,8 +129,11 @@ const SHAPES: &[Shape] = &[
     <sce:field id="NAME" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="n" sce:max-size="16"/>"#,
         frames: &[&[2, 0xAA, 0xBB]],
-        field_index: 1,
-        check: "bytes.Equal(f.Bytes(), []byte{0xAA, 0xBB})",
+        // Printed from its plan (docs/adr/0081 step 4): the length is derived
+        // and no field of the value, and the bytes are a `codec.Bytes`, whose
+        // one field holds them.
+        field_index: 0,
+        check: "bytes.Equal(f.Field(0).Bytes(), []byte{0xAA, 0xBB})",
     },
     Shape {
         id: "length_named",
@@ -141,8 +144,11 @@ const SHAPES: &[Shape] = &[
     <sce:field id="data" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="NAME" sce:max-size="16"/>"#,
         frames: &[&[2, 0xAA, 0xBB]],
+        // Printed from its plan (docs/adr/0081 step 4): the author's length is
+        // derived and no field of the value, which holds the bytes it counts
+        // alone; the name binds the decode's local and the encode's derived one.
         field_index: 0,
-        check: "f.Uint() == 2",
+        check: "bytes.Equal(f.Field(0).Bytes(), []byte{0xAA, 0xBB})",
     },
     Shape {
         id: "string_named",
@@ -153,8 +159,9 @@ const SHAPES: &[Shape] = &[
     <sce:field id="NAME" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="n" sce:max-size="16"/>"#,
         frames: &[&[2, 0x68, 0x69]],
-        field_index: 1,
-        check: "f.String() == \"hi\"",
+        // A `codec.Text`, whose one field holds the string; its length derived.
+        field_index: 0,
+        check: "f.Field(0).String() == \"hi\"",
     },
     Shape {
         id: "flags_gate",
@@ -180,7 +187,8 @@ const SHAPES: &[Shape] = &[
                sce:max-size="16"/>"#,
         frames: &[&[1, 2, 3]],
         field_index: 1,
-        check: "bytes.Equal(f.Bytes(), []byte{2, 3})",
+        // A `codec.Bytes`, whose one field holds the bytes.
+        check: "bytes.Equal(f.Field(0).Bytes(), []byte{2, 3})",
     },
     Shape {
         id: "repeat_count",
