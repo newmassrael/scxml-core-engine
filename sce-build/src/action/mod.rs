@@ -21,11 +21,14 @@
 //!   compared with a committed copy.
 //! - [`provenance`]: what a materialized tree was made from,
 //!   `generated-provenance.json`, the record a package carries.
+//! - [`determinism`]: an action's result held against another machine's
+//!   result for the same key.
 //! - `build_script` (with the `cli` feature): the trees of a package written
 //!   into its `OUT_DIR` by its build script, which runs as their generator.
 
 #[cfg(feature = "cli")]
 pub mod build_script;
+pub mod determinism;
 pub mod generation;
 pub mod identity;
 pub mod input_root;

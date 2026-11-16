@@ -8,7 +8,9 @@
 //! [`ContentStore`] is the interface both the local store and the fleet's
 //! REAPI cache answer, so a caller does not know which one holds an entry.
 //! [`LocalStore`] is the local one: a directory of the user's cache, shared by
-//! every checkout and worktree of the machine.
+//! every checkout and worktree of the machine. `RemoteStore`, with the
+//! `remote-cache` feature, is the fleet's: a REAPI client of a site's
+//! instance, read only on a workstation.
 
 use std::fs;
 use std::io::{self, Write};
@@ -18,6 +20,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use prost::Message;
 
 use super::reapi::{ActionResult, Digest};
+
+#[cfg(feature = "remote-cache")]
+mod remote;
+#[cfg(feature = "remote-cache")]
+pub use remote::{RemoteStore, ENDPOINT_VARIABLE, INSTANCE_VARIABLE};
 
 /// What an action cache and its content store answer.
 pub trait ContentStore {
