@@ -708,7 +708,7 @@ listed in DD §13.2.
 - The trace player and the generated value conversions of every backend, and each backend's runner (§10.5).
 - Tests: per backend, a trace of `runtime_suite` replays to the verdicts its test cases expect, and `check-trace`
   refuses each case of §10.2.
-- Files: `schemas/`, the command in `sce-build/src/bin/sce_codegen.rs`, `SCE_WIRE_CONTRACTS.md`,
+- Files: `schemas/`, the command in `sce-build/src/cli/mod.rs`, `SCE_WIRE_CONTRACTS.md`,
   `docs/SCE_TEST_PROFILE.md`, the seven test runtimes and their generators, and the generated test trees those
   generators write.
 - In place, so S1 is complete: the surface (§10.4), the shared walk of both directions and all seven backends

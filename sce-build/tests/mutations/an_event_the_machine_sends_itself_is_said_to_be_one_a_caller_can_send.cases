@@ -19,7 +19,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test a_design_that_is_accepted_says_what_it_leaves_open
-mutation_targets sce-build/src/open_matters.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/open_matters.rs sce-build/src/cli/mod.rs
 
 # ⚠ There is no case for the send's OWN target. The first draft of this list
 # tested `sends_to_internal_queue(action)` beside the name-based exclusion below,
@@ -72,8 +72,8 @@ PY
 # The single `check` route stops feeding the list, so a design checked alone says
 # nothing while the same design in a set does.
 mutation_case "the check route never reads it" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     r'''            report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
+edit("sce-build/src/cli/mod.rs",
+     r'''            report.self_delivered = crate::open_matters::self_delivered_events(&model);
             // The owner's expectation, judged on the model as parsed and''',
      r'''            // The owner's expectation, judged on the model as parsed and''')
 PY
@@ -81,8 +81,8 @@ PY
 # The `generate` route stops feeding it: the manifest of the run that writes the
 # code is silent about what a caller can do to that code.
 mutation_case "the generate route never reads it" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     r'''    report.self_delivered = sce_build::open_matters::self_delivered_events(&model);
+edit("sce-build/src/cli/mod.rs",
+     r'''    report.self_delivered = crate::open_matters::self_delivered_events(&model);
     // The owner's expectation, judged where `check` judges it — on the model''',
      r'''    // The owner's expectation, judged where `check` judges it — on the model''')
 PY
@@ -90,7 +90,7 @@ PY
 # A set does not union its members: one member's timer is lost in the verdict
 # the set gets as one.
 mutation_case "a set never unions its members" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      r'''        for event in facts.self_delivered {''',
      r'''        for event in facts.self_delivered.into_iter().take(0) {''')
 PY

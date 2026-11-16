@@ -40,14 +40,14 @@ mutation_tests -p sce-build --features cli --test exit_status_contract
 # off for a round that reports INCONCLUSIVE. The measurement is per file:
 # mutate it, rebuild, and compare `sce-codegen`'s hash.
 mutation_targets sce-build/tests/exit_status_contract.rs \
-                 sce-build/src/bin/sce_codegen.rs
+                 sce-build/src/cli/mod.rs
 mutation_runtime_targets sce-build/src/cli_error.rs \
                          sce-build/src/forge/diagnostic.rs \
                          sce-build/src/mesh/error.rs \
                          SCE_ERROR_CONTRACT.md
 
 mutation_case "the argument parser's failure leaves through its own exit" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """            let _ = ERROR_FORMAT.set(peek_error_format(std::env::args()));""",
      """            err.exit();
             #[allow(unreachable_code)]
@@ -61,7 +61,7 @@ edit("sce-build/src/cli_error.rs",
 PY
 
 mutation_case "a query miss stops carrying a record" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """    let Some(entry) = map.symbols.get(symbol) else {
         cli_exit(CliError::QueryNoMatch {
             tool: "addr2sce",
@@ -76,13 +76,13 @@ edit("sce-build/src/bin/sce_codegen.rs",
 PY
 
 mutation_case "a flag stops requiring the companion it cannot work without" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      '        #[arg(long, requires = "elf", value_parser = parse_pc_address)]',
      "        #[arg(long, value_parser = parse_pc_address)]")
 PY
 
 mutation_case "--version is routed like a failure" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion",
      "                ErrorKind::DisplayHelp")
 PY
@@ -120,7 +120,7 @@ PY
 # tail never reaches a write that could fail.
 
 mutation_case "list-fixtures prints through the panicking macro again" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """            for n in names {
                 outln!("{n}");
             }""",
@@ -135,7 +135,7 @@ PY
 # only the behaviour under study.
 
 mutation_case "a failed stdout write is swallowed into a clean exit" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      """        cli_exit(CliError::WriteOutput {
             path: STDOUT_LABEL.to_string(),
             source,
@@ -144,7 +144,7 @@ edit("sce-build/src/bin/sce_codegen.rs",
 PY
 
 mutation_case "output that ends without a newline is never flushed" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    let result = emit(&mut handle).and_then(|()| handle.flush());",
      "    let result = emit(&mut handle).and_then(|()| Write::flush(&mut std::io::sink()));")
 PY
@@ -171,10 +171,10 @@ edit("sce-build/src/forge/diagnostic.rs",
 PY
 
 mutation_case "a dependency cycle leaves under the CLI boundary" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     """    let manifest = sce_build::build_forge_manifest(dir_path)
+edit("sce-build/src/cli/mod.rs",
+     """    let manifest = crate::build_forge_manifest(dir_path)
         .unwrap_or_else(|e| current_error_format().emit_and_exit(&e, "Forge codegen error: "));""",
-     """    let manifest = sce_build::build_forge_manifest(dir_path).unwrap_or_else(|e| {
+     """    let manifest = crate::build_forge_manifest(dir_path).unwrap_or_else(|e| {
         cli_exit(CliError::ScxmlGenerate {
             stage: "manifest",
             detail: e.error.to_string(),

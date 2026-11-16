@@ -27,7 +27,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test an_acceptance_pins_the_examples_and_the_rules_it_applied --test an_acceptance_record_lapses_when_what_was_accepted_moves --test cli_acceptance_record_wire
-mutation_targets sce-build/src/acceptance_record.rs sce-build/src/unresolved_check.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/unresolved_check.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/tests/an_acceptance_pins_the_examples_and_the_rules_it_applied.rs sce-build/tests/an_acceptance_record_lapses_when_what_was_accepted_moves.rs sce-build/tests/cli_acceptance_record_wire.rs
 
 # ── Which rules the design applied ──────────────────────────────────
@@ -97,13 +97,13 @@ edit("sce-build/src/acceptance_record.rs",
 PY
 
 mutation_case "the command line pins the set under another role" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        .chain(scenarios.map(|s| (SourceRole::Examples, PathBuf::from(s))))",
      "        .chain(scenarios.map(|s| (SourceRole::Decisions, PathBuf::from(s))))")
 PY
 
 mutation_case "accept does not read the set through its own door" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    check_scenario_set(sources);",
      "    let _ = sources;")
 PY

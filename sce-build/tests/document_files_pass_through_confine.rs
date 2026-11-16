@@ -162,7 +162,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     ),
     // The command-line program: what it is given to read, what it writes, and where it is run.
     (
-        "src/bin/sce_codegen.rs",
+        "src/cli/mod.rs",
         Why::Operator,
         &[
             ("load_deploy_config", 1),
@@ -195,7 +195,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         ],
     ),
     (
-        "src/bin/sce_codegen.rs",
+        "src/cli/mod.rs",
         Why::Output,
         &[
             ("try_emit_generated", 1),
@@ -213,14 +213,14 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         ],
     ),
     (
-        "src/bin/sce_codegen.rs",
+        "src/cli/mod.rs",
         Why::Installation,
         // `depfile_entry` asks whether the running program is still on disk, to
         // name it as a prerequisite of what it wrote.
         &[("depfile_entry", 1)],
     ),
     (
-        "src/bin/sce_codegen.rs",
+        "src/cli/mod.rs",
         Why::Repository,
         &[
             ("find_project_root", 3),
@@ -566,7 +566,7 @@ fn every_source_of_the_generator_is_read_and_the_ones_that_read_documents_are_am
         "src/filters.rs",
         "src/forge/import_source.rs",
         "src/forge/static_js.rs",
-        "src/bin/sce_codegen.rs",
+        "src/cli/mod.rs",
         THE_RULE,
     ] {
         assert!(

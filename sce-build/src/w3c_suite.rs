@@ -22,7 +22,7 @@
 //
 // This module makes the suite's own name an input and carries the
 // harness sources that travel with it. The build manifests are
-// rendered next to the test-file emitters in `sce_codegen.rs`, which
+// rendered next to the test-file emitters in `cli/mod.rs`, which
 // is where the sibling per-backend emission already lives.
 
 use std::fmt;

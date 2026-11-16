@@ -15,7 +15,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test scenario_set_command
-mutation_targets sce-build/src/scenario_set.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/scenario_set.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/src/scenario_set.rs sce-build/tests/scenario_set_command.rs
 
 # ── A scenario that asserts nothing is let through ──────────────────
@@ -117,13 +117,13 @@ PY
 # ── The command reports something other than what was found ─────────
 
 mutation_case "the summary says usable whatever was found" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "        \"usable\": problems.is_empty(),",
      "        \"usable\": true,")
 PY
 
 mutation_case "one missing quote marks every scenario as missing its quote" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "                p.code == \"quote-not-found\" && p.scenario.as_deref() == Some(scenario.id.as_str())",
      "                p.code == \"quote-not-found\"")
 PY

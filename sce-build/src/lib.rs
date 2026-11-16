@@ -52,6 +52,12 @@ pub mod authoring_profile;
 /// backend's tests, so `sce-codegen check-broadcast-history` judges the
 /// history of every backend.
 pub mod broadcast_history;
+/// The `sce-codegen` command line and its commands, so that any program
+/// linking this library can serve as the generator (ADR 0097). Only with the
+/// `cli` feature, which brings the argument parser, and never in the WASM
+/// build, which has no process to run it in.
+#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+pub mod cli;
 pub mod cli_error;
 pub mod cli_language;
 /// Text placed inside a comment in generated source — the one encoding

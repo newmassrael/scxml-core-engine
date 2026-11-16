@@ -23,11 +23,11 @@
 # the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test an_acceptance_pins_the_words_behind_the_manifest
-mutation_targets sce-build/src/acceptance_record.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/tests/an_acceptance_pins_the_words_behind_the_manifest.rs
 
 mutation_case "the command line drops the sidecar before the record is written" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "    let record = match sidecar {\n        Some(sidecar) => record\n            .with_words(",
      "    let record = match sidecar.filter(|_| false) {\n        Some(sidecar) => record\n            .with_words(")
 PY

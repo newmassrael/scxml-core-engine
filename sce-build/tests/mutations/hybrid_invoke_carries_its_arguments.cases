@@ -22,7 +22,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_hybrid_invoke_carries_its_arguments)$'
-mutation_targets sce-build/src/bin/sce_codegen.rs tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_targets sce-build/src/cli/mod.rs tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
 mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp backends/c/tests/integration/test_a_hybrid_invoke_carries_its_arguments.c
 
 # ── The build looks for a candidate only beside a staged copy ──────
@@ -41,7 +41,7 @@ mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp b
 # answers what it would write.
 
 mutation_case "candidates are not looked for under the input root" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
+edit("sce-build/src/cli/mod.rs",
      "            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect())",
      "            .with_candidate_roots(if output_mode().holds_in_memory() { input_root_override.map(PathBuf::from).into_iter().collect() } else { Vec::new() })")
 PY

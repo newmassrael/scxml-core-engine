@@ -26,7 +26,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib --test a_played_example_closes_the_requirement_it_names
-mutation_targets sce-build/src/scenario_closure.rs sce-build/src/requirement_manifest.rs sce-build/src/bin/sce_codegen.rs
+mutation_targets sce-build/src/scenario_closure.rs sce-build/src/requirement_manifest.rs sce-build/src/cli/mod.rs
 mutation_oracles sce-build/src/scenario_closure.rs sce-build/tests/a_played_example_closes_the_requirement_it_names.rs
 
 # ── What closes a requirement ───────────────────────────────────────
@@ -84,13 +84,13 @@ edit("sce-build/src/requirement_manifest.rs",
 PY
 
 mutation_case "one document is not held against the examples" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.",
-     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.")
+edit("sce-build/src/cli/mod.rs",
+     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.",
+     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `requirements` over the documents of one design, together.")
 PY
 
 mutation_case "several documents read as one design are not held against the examples" <<'PY'
-edit("sce-build/src/bin/sce_codegen.rs",
-     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.",
-     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| sce_build::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.")
+edit("sce-build/src/cli/mod.rs",
+     "    if let Some(examples) = scenarios {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.",
+     "    if let Some(examples) = scenarios.filter(|_| false) {\n        hold_scenarios(&mut classification, &loaded, examples);\n    }\n    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));\n}\n\n/// `scenarios` — read a scenario set and report it.")
 PY

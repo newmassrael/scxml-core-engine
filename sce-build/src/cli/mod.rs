@@ -1,0 +1,16400 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+//
+
+//! The `sce-codegen` command line: its arguments, and every command it runs.
+//!
+//! The commands are the library's, so that any program linking it can be the
+//! generator an action names (ADR 0097, section 2 and its 2026-11-16
+//! amendment): the `sce-codegen` binary is [`main`] and nothing else, and a
+//! build script that materializes a tree can run its own executable as the
+//! generator. One implementation of each command, whichever program carries
+//! it.
+//!
+//! Subcommands, among others:
+//!   generate       — one SCXML document to code
+//!   generate-w3c   — the W3C conformance suite of one language
+//!   read-metadata  — the description of a W3C test's metadata
+
+use clap::{Parser, Subcommand, ValueEnum};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock, PoisonError};
+
+use crate::analyzer;
+use crate::cli_error::CliError;
+use crate::cli_language::LanguageRoute;
+use crate::filters;
+use crate::forge::diagnostic::{Diagnostic, ToDiagnostics};
+use crate::forge::error::{ForgeError, Located, RelatedRole};
+use crate::manifest::{
+    ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
+};
+
+use crate::generator::{with_trailing_newline, RuntimeRequirement};
+use crate::w3c_suite::{SuiteIdentity, SuiteIdentityError};
+
+/// Where a conformance suite of the caller's own is rooted, and which
+/// SCE checkout it depends on.
+///
+/// Present only when `--output-dir` names a root outside this
+/// repository. The repository's own trees sit inside a Cargo
+/// workspace / Gradle build / Go module that is hand-authored and
+/// already correct; emitting the standalone shape over them would
+/// replace working build files with ones that describe a package
+/// standing alone, which this repository's is not.
+struct StandaloneSuite {
+    /// Directory the emitted package is rooted at — the one holding
+    /// its build manifest (`<output-root>/backends/rust/tests`, ...).
+    package_root: PathBuf,
+    /// SCE checkout the emitted manifest points at for the runtime
+    /// packages the suite depends on. Resolved from the same ladder
+    /// that finds the registry, so it is a function of the run's
+    /// inputs and never of where the output happened to land.
+    sce_root: PathBuf,
+}
+
+/// Everything the emitted suite needs to know about itself, resolved
+/// once per run and handed to whichever backend the run selected.
+struct SuitePackaging {
+    /// What the suite calls itself. `None` for the backends whose
+    /// emitted code names no suite — see
+    /// [`crate::w3c_suite::SuiteIdentity::for_language`].
+    identity: Option<SuiteIdentity>,
+    /// `Some` when the run writes a suite of the caller's own.
+    standalone: Option<StandaloneSuite>,
+}
+
+impl SuitePackaging {
+    /// The identity, for the three backends that always have one.
+    ///
+    /// Panics rather than defaulting: reaching here without an identity
+    /// would mean a backend whose generated code names the suite was
+    /// constructed for a language that
+    /// [`SuiteIdentity::for_language`] refuses, and emitting some
+    /// fallback name would put an unbuildable reference into every
+    /// generated test instead of failing the run.
+    fn identity(&self) -> &SuiteIdentity {
+        self.identity
+            .as_ref()
+            .expect("this backend's generated code names the suite, so the run resolved one")
+    }
+
+    /// The standalone roots for a backend rooted at `relative` beneath
+    /// the output root — `None` for an in-repo regeneration.
+    fn standalone_at(&self, relative: &str) -> Option<StandaloneSuite> {
+        self.standalone.as_ref().map(|s| StandaloneSuite {
+            package_root: s.package_root.join(relative),
+            sce_root: s.sce_root.clone(),
+        })
+    }
+}
+
+// ── Generated output: written, or asserted unchanged ─────────────────
+
+/// What a generation command does with the files it produces.
+///
+/// `Write` is the ordinary run. `AssertUnchanged` is `--assert-unchanged`: the
+/// run does everything it otherwise would — produces every file, reads back
+/// what it produced, removes what it no longer produces — against a
+/// [`PendingTree`] instead of the disk, and [`finish_generated_output`] then
+/// fails it naming every file whose bytes on disk are not the ones the run
+/// would have left there.
+///
+/// That comparison is the §synth-6.2.6 drift check done on content. It is the
+/// one check that sees a hand edit, a changed template and a changed generator
+/// alike: each of them changes bytes, and none of them has to change a hash a
+/// header carries.
+///
+/// `Plan` is `--plan`: the same run against the same [`PendingTree`], and
+/// [`finish_generated_output`] then prints the path of every file the run
+/// produced instead of comparing any of them. It is the generator's answer to
+/// "which files would this write" — the question a build system has to be able
+/// to ask before it has run the generator, since a command whose outputs it
+/// does not know has a dependency graph it cannot check. The answer comes from
+/// the generation itself, never from a list kept beside it: a list of a
+/// document's synthesized children fell behind the documents it described, six
+/// times over, before this existed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputMode {
+    Write,
+    AssertUnchanged,
+    Plan,
+}
+
+impl OutputMode {
+    /// Whether a run in this mode produces its files in the [`PendingTree`]
+    /// and touches the disk not at all.
+    const fn holds_in_memory(self) -> bool {
+        !matches!(self, Self::Write)
+    }
+}
+
+/// Installed once by `main`, like [`ERROR_FORMAT`].
+static OUTPUT_MODE: OnceLock<OutputMode> = OnceLock::new();
+
+fn output_mode() -> OutputMode {
+    OUTPUT_MODE.get().copied().unwrap_or(OutputMode::Write)
+}
+
+/// Installed once by `main`, beside [`OUTPUT_MODE`]: whether a `--plan` run
+/// also plans the generation of each child document it writes
+/// (`--plan-children`, [`plan_child_generations`]).
+static PLAN_CHILDREN: OnceLock<bool> = OnceLock::new();
+
+fn plans_children() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_CHILDREN.get().copied().unwrap_or(false)
+}
+
+/// Installed once by `main`, beside [`PLAN_CHILDREN`]: whether a `--plan` run
+/// also states what the machines of each planned generation need linked
+/// (`--plan-requires`, [`finish_generated_output`]).
+static PLAN_REQUIRES: OnceLock<bool> = OnceLock::new();
+
+fn plans_requirements() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_REQUIRES.get().copied().unwrap_or(false)
+}
+
+/// Installed once by `main`, beside [`PLAN_CHILDREN`]: whether a `--plan` run
+/// also states the machine name of each planned generation that writes a
+/// statechart's machine (`--plan-machines`, [`finish_generated_output`]).
+static PLAN_MACHINES: OnceLock<bool> = OnceLock::new();
+
+fn plans_machines() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_MACHINES.get().copied().unwrap_or(false)
+}
+
+/// Installed once by `main`: where a run writes the list of the files it
+/// read (`--reads`, [`write_reads`]). A plan and a generation write the same
+/// list, since a plan is the generation run in memory.
+static READS: OnceLock<PathBuf> = OnceLock::new();
+
+/// The file a run was asked to write what it read into, or `None` when it
+/// was not asked.
+fn reads_file() -> Option<&'static Path> {
+    READS.get().map(PathBuf::as_path)
+}
+
+/// The tools outside this program a run used to shape its output (the C++
+/// formatter), by name, for `--reads` to list as `!<name>`: what a tool makes
+/// of the bytes is a function of its version, which a reader keying the run
+/// resolves as this program does (`crate::formatter::resolve_clang_format`).
+static TOOLS_USED: std::sync::Mutex<BTreeSet<&'static str>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Files a run read beside the ones its depfile entries record (a
+/// `--format-style` file), for `--reads`.
+static ALSO_READ: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+fn record_tool_used(tool: &'static str) {
+    TOOLS_USED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(tool);
+}
+
+fn record_also_read(path: &Path) {
+    ALSO_READ
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(path.to_path_buf());
+}
+
+/// Whether a run records what it read ([`GenerateReport::depfile`]): a run
+/// asked for a depfile (`--write-deps`), and a run asked for its reads
+/// (`--reads`), which are the prerequisites that depfile would name.
+fn records_reads(depfile_path: Option<&str>) -> bool {
+    depfile_path.is_some() || reads_file().is_some()
+}
+
+/// The tree an `--assert-unchanged` run would have left behind, held in
+/// memory instead of written: every path the run touched, mapped to the bytes
+/// it would finally hold, or to `None` where the run would have removed it.
+///
+/// A record of which writes differed from disk is not enough, for two reasons
+/// with one cause — a run reads back what it wrote. The Rust suite writes a
+/// test's `mod.rs`, then reads it back to append each child module. Read from
+/// disk, that read sees the previous run's file, which already names the
+/// children, so nothing is appended; and judged write by write, the first,
+/// child-less write differs from disk. Either way a tree the same generation
+/// wrote fails. So reads go through [`read_generated`], and each path is judged
+/// once, on its final bytes, by [`finish_generated_output`].
+#[derive(Default)]
+struct PendingTree {
+    /// Paths in the order the run first touched them, which is the order the
+    /// report names them in.
+    order: Vec<PathBuf>,
+    content: BTreeMap<PathBuf, Option<Vec<u8>>>,
+    /// In a `--plan-children` run, the generation of each child document the
+    /// run wrote, in the order they were planned ([`plan_child_generations`]).
+    generations: Vec<PlannedGeneration>,
+    /// In a `--plan` run, what the run's own machines need linked
+    /// ([`GenerateReport::runtime_requires`]), handed over where a run that
+    /// writes would print its manifest ([`emit_generate_manifest`]).
+    requires: BTreeSet<RuntimeRequirement>,
+    /// In a `--plan` run, the machine name of the statechart whose machine
+    /// the run writes ([`GenerateReport::machine`]), handed over beside
+    /// [`Self::requires`].
+    machine: Option<String>,
+}
+
+/// One generation a `--plan-children` run planned beside the run's own: the
+/// child document it reads, the arguments it is run with beside the ones
+/// every generation of the build is given ([`ChildGeneration::arguments`]),
+/// every file it would produce that no generation before it does, what its
+/// machines need linked, and the name of the machine it writes.
+struct PlannedGeneration {
+    document: PathBuf,
+    arguments: Vec<String>,
+    files: Vec<PathBuf>,
+    requires: BTreeSet<RuntimeRequirement>,
+    machine: Option<String>,
+}
+
+impl PendingTree {
+    const fn new() -> Self {
+        Self {
+            order: Vec::new(),
+            content: BTreeMap::new(),
+            generations: Vec::new(),
+            requires: BTreeSet::new(),
+            machine: None,
+        }
+    }
+
+    /// The files this tree holds, in the order the run first produced them:
+    /// every path it touched but the ones it removed.
+    fn produced(&self) -> impl Iterator<Item = &PathBuf> {
+        self.order
+            .iter()
+            .filter(|path| self.content.get(*path).is_some_and(Option::is_some))
+    }
+
+    fn set(&mut self, path: PathBuf, bytes: Option<Vec<u8>>) {
+        if self.content.insert(path.clone(), bytes).is_none() {
+            self.order.push(path);
+        }
+    }
+}
+
+static PENDING_TREE: Mutex<PendingTree> = Mutex::new(PendingTree::new());
+
+fn pending_tree() -> std::sync::MutexGuard<'static, PendingTree> {
+    PENDING_TREE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The spelling a path is held under in the [`PendingTree`].
+///
+/// Lexical, since a file the run has not written yet cannot be canonicalized:
+/// `out/./mod.rs` and `out/mod.rs` are one entry. A run names its files by
+/// joining onto the directories it was given, so that is the variation there
+/// is to absorb.
+fn tree_key(path: &Path) -> PathBuf {
+    path.components().collect()
+}
+
+/// What a `Write` run does with a file whose bytes are already on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WritePolicy {
+    /// Leave it alone, so its mtime keeps saying when its bytes last changed.
+    /// The committed trees are regenerated this way.
+    IfChanged,
+    /// Write it anyway. A build system that ran the command judges it by its
+    /// outputs being newer than its inputs, and an output left untouched
+    /// would have the command run again on every build.
+    Always,
+}
+
+/// Produce one generated file: write it, or in an `--assert-unchanged` run
+/// hold it in the [`PendingTree`].
+///
+/// A file that cannot be written ends the run. [`try_emit_generated`] is the
+/// form for the callers that treat that as a warning.
+fn emit_generated(path: &Path, content: &[u8], policy: WritePolicy) {
+    try_emit_generated(path, content, policy).unwrap_or_else(|e| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source: e,
+        })
+    })
+}
+
+/// [`emit_generated`], handing a failed write back to the caller.
+fn try_emit_generated(path: &Path, content: &[u8], policy: WritePolicy) -> std::io::Result<()> {
+    match output_mode() {
+        OutputMode::AssertUnchanged | OutputMode::Plan => {
+            pending_tree().set(tree_key(path), Some(content.to_vec()));
+            // A document the run writes is one it may read back as a document
+            // (a deploy reads the in-line child it places on a partition of its
+            // own from where this run wrote it), and a run that holds its
+            // output in memory reads it from there, as a run that writes reads
+            // the disk. Without it the plan of a parent with such a deploy
+            // asked the disk for the child's document, which is on no disk
+            // before the parent's generation has run.
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "scxml")
+            {
+                if let Ok(text) = std::str::from_utf8(content) {
+                    crate::confine::hold(path, text.to_string());
+                }
+            }
+        }
+        OutputMode::Write => {
+            let unchanged = fs::read(path).is_ok_and(|on_disk| on_disk == content);
+            if !unchanged || policy == WritePolicy::Always {
+                fs::create_dir_all(containing_dir(path)).ok();
+                fs::write(path, content)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Remove a generated file, or a directory of them, that the run no longer
+/// produces. Returns whether anything was removed from disk.
+///
+/// An `--assert-unchanged` run removes nothing and returns `false`: it marks
+/// every file the removal would take as gone from the [`PendingTree`], and
+/// [`finish_generated_output`] reports each one still on disk. Such a file is
+/// a difference like any other — the tree a regeneration leaves does not hold
+/// it.
+fn remove_generated(path: &Path) -> bool {
+    match output_mode() {
+        OutputMode::Write => {
+            if path.is_dir() {
+                fs::remove_dir_all(path).is_ok()
+            } else {
+                fs::remove_file(path).is_ok()
+            }
+        }
+        OutputMode::AssertUnchanged | OutputMode::Plan => {
+            let doomed = if path.is_dir() {
+                RunTree.files_under(path)
+            } else {
+                BTreeSet::from([tree_key(path)])
+            };
+            let mut tree = pending_tree();
+            for file in doomed {
+                tree.set(file, None);
+            }
+            false
+        }
+    }
+}
+
+/// Read back a file this run generated: in an `--assert-unchanged` run, what
+/// the run has produced there so far, falling back to the disk for a path it
+/// has not touched; in a `Write` run, the disk, which it has written.
+fn read_generated(path: &Path) -> Option<String> {
+    if output_mode().holds_in_memory() {
+        if let Some(held) = pending_tree().content.get(&tree_key(path)) {
+            return held.clone().and_then(|bytes| String::from_utf8(bytes).ok());
+        }
+    }
+    fs::read_to_string(path).ok()
+}
+
+/// The generated tree as a check inside this run reads it: the disk, with an
+/// `--assert-unchanged` run's [`PendingTree`] laid over it.
+struct RunTree;
+
+impl drift::GeneratedTree for RunTree {
+    fn files_under(&self, dir: &Path) -> BTreeSet<PathBuf> {
+        let mut files: BTreeSet<PathBuf> = drift::OnDisk
+            .files_under(dir)
+            .into_iter()
+            .map(|path| tree_key(&path))
+            .collect();
+        if output_mode().holds_in_memory() {
+            let dir = tree_key(dir);
+            for (path, held) in &pending_tree().content {
+                if !path.starts_with(&dir) {
+                    continue;
+                }
+                if held.is_some() {
+                    files.insert(path.clone());
+                } else {
+                    files.remove(path);
+                }
+            }
+        }
+        files
+    }
+
+    fn read_to_string(&self, path: &Path) -> Option<String> {
+        read_generated(path)
+    }
+}
+
+/// Make the directory a generation run writes into. An `--assert-unchanged`
+/// run writes nothing, directories included: a missing directory is reported
+/// through the files it should have held.
+fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
+    match output_mode() {
+        OutputMode::AssertUnchanged | OutputMode::Plan => Ok(()),
+        OutputMode::Write => fs::create_dir_all(dir),
+    }
+}
+
+/// End an `--assert-unchanged` run: judge every path in the [`PendingTree`]
+/// against the disk and fail the run naming each one that differs — bytes
+/// that differ, a file that is absent, a file the run would have removed. A
+/// `Write` run, and one where nothing differed, pass through.
+///
+/// End a `--plan` run: print, one per line and in the order the run first
+/// produced them, every file it would have left behind. A file the run removed
+/// is not in the answer — it is not among the files the run produces — and
+/// nothing is judged against the disk, so the run cannot fail for what is or is
+/// not there. A `--plan-children` run then prints the generation of each child
+/// document the run wrote: first its arguments, as `<child document>\t\t<argument>`
+/// with each further argument after another tab, then one line per file it
+/// would produce, as `<child document>\t<file>`. A file is never named by an
+/// empty path, so the empty field tells the two apart, and a line with no tab
+/// is always the run's own. A `--plan-machines` run then states the machine
+/// name of the run's statechart and of each planned generation's, in the same
+/// order, as `\tmachine\t<generation>\t<name>`, with an empty `<generation>`
+/// for the run's own, and none for a run that writes no statechart's machine.
+/// A `--plan-requires` run then states what the
+/// machines of each generation need linked, the run's first and then each
+/// planned generation's in the order they were planned, one line per
+/// requirement, as `\trequires\t<generation>\t<requirement>`, with an empty
+/// `<generation>` for the run's own: a line that begins with a tab names no
+/// file, since no file is named by an empty path.
+fn finish_generated_output() {
+    match output_mode() {
+        OutputMode::Write => return,
+        OutputMode::Plan => {
+            let tree = std::mem::take(&mut *pending_tree());
+            for path in tree.produced() {
+                out_line(&path.display().to_string());
+            }
+            for generation in &tree.generations {
+                let document = generation.document.display();
+                out_line(&format!(
+                    "{document}\t\t{}",
+                    generation.arguments.join("\t")
+                ));
+                for file in &generation.files {
+                    out_line(&format!("{document}\t{}", file.display()));
+                }
+            }
+            if plans_machines() {
+                let stated = std::iter::once((String::new(), tree.machine.as_deref()))
+                    .chain(tree.generations.iter().map(|generation| {
+                        (
+                            generation.document.display().to_string(),
+                            generation.machine.as_deref(),
+                        )
+                    }))
+                    .filter_map(|(generation, machine)| machine.map(|name| (generation, name)));
+                for (generation, machine) in stated {
+                    out_line(&format!("\tmachine\t{generation}\t{machine}"));
+                }
+            }
+            if plans_requirements() {
+                let stated = std::iter::once((String::new(), &tree.requires)).chain(
+                    tree.generations.iter().map(|generation| {
+                        (
+                            generation.document.display().to_string(),
+                            &generation.requires,
+                        )
+                    }),
+                );
+                for (generation, requires) in stated {
+                    for requirement in requires {
+                        out_line(&format!(
+                            "\trequires\t{generation}\t{}",
+                            requirement.wire_name()
+                        ));
+                    }
+                }
+            }
+            return;
+        }
+        OutputMode::AssertUnchanged => {}
+    }
+    let tree = std::mem::take(&mut *pending_tree());
+    let mut paths = Vec::new();
+    let (mut missing, mut stale) = (0, 0);
+    for path in &tree.order {
+        let on_disk = fs::read(path).ok();
+        let differs = match &tree.content[path] {
+            Some(bytes) => on_disk.as_deref() != Some(bytes.as_slice()),
+            None => on_disk.is_some(),
+        };
+        if !differs {
+            continue;
+        }
+        match (&tree.content[path], &on_disk) {
+            (Some(_), None) => missing += 1,
+            (None, Some(_)) => stale += 1,
+            _ => {}
+        }
+        paths.push(path.display().to_string());
+    }
+    if paths.is_empty() {
+        return;
+    }
+    cli_exit(CliError::GeneratedOutputChanged {
+        paths,
+        missing,
+        stale,
+    });
+}
+
+/// Write a `Diagnostic` as a single NDJSON record to stderr.
+///
+/// The wire contract is *one JSON object per line*. If the diagnostic
+/// itself fails to serialize — only possible under an OOM-class
+/// failure given our schema has no floats or non-UTF-8 bytes — fall
+/// back to `Diagnostic::meta_failure`, which still flows through
+/// serde. Hand-built JSON literals are forbidden: they bypass the
+/// schema and drift silently when the struct changes.
+fn emit_ndjson(diag: &Diagnostic) {
+    match serde_json::to_string(diag) {
+        Ok(line) => eprintln!("{line}"),
+        Err(e) => {
+            let meta = Diagnostic::meta_failure(format!("diagnostic serialization failed: {e}"));
+            // Second serde pass on a schema-identical value. If this
+            // also fails the process is terminally wedged; emit the
+            // pre-serialized fallback record so downstream parsers at
+            // least advance past the line. It lives on `Diagnostic`
+            // because the tests there hold it to the schema — a
+            // literal spelled here would be the one record no
+            // validator ever sees.
+            let line = serde_json::to_string(&meta)
+                .unwrap_or_else(|_| Diagnostic::TERMINAL_FALLBACK_NDJSON.to_string());
+            eprintln!("{line}");
+        }
+    }
+}
+
+/// Emit one NDJSON record per W3C batch forge failure, JSON mode only.
+///
+/// Batch mode does not terminate on the first failure — the summary at
+/// the end of `generate_w3c_unified` is the contract — so failure sites
+/// must emit non-terminally. Human mode keeps its existing final
+/// summary line; only the machine-readable channel gains per-failure
+/// records, matching the forge / mesh `--error-format=json` behaviour.
+///
+/// Takes `Located<ForgeError>` so the full diagnostic shape (`code` /
+/// `stage` / `fix` / `location`) survives to NDJSON. Both call sites —
+/// parser failures (location populated by the parser, with roxmltree
+/// row/col when available) and codegen failures (wrapped at the call
+/// site with scxml path as the file label) — share this one helper.
+/// Pass-state detection is a batch post-condition, not a compiler
+/// error, so it emits `CliError::ScxmlGenerate` inline at its single
+/// site rather than reusing this helper.
+fn emit_batch_failure_ndjson(err: &crate::forge::error::Located<ForgeError>) {
+    if !matches!(current_error_format(), ErrorFormat::Json) {
+        return;
+    }
+    for diag in err.to_diagnostics() {
+        emit_ndjson(&diag);
+    }
+}
+use crate::forge::drift;
+use crate::forge::drift::GeneratedTree;
+use crate::generator::Language;
+use crate::model::SCXMLModel;
+use crate::parser::SCXMLParser;
+
+/// Spec §synth-6.2.6 drift-header context bundled where the documents a set
+/// of files is generated from are known, and threaded to every file-emitting
+/// helper: the header those files carry — the `source-hash` of the input
+/// closure of their documents and the `source:` lines naming them (ADR
+/// 0094) — and the files that closure read.
+///
+/// One context per document a run generates from (its machine, the in-line
+/// children it carries, its units), or per set for the files of a set; never
+/// one for a whole run of unrelated documents, whose files would then name
+/// each other's inputs. `sce-codegen verify` recomputes each file's closure
+/// from its `source:` lines.
+#[derive(Debug, Clone)]
+struct DriftContext {
+    header: drift::DriftHeader,
+    /// The files the closure behind `header.source_hash` read, carried so
+    /// `depfile_entry` can declare them.
+    ///
+    /// Kept on the context rather than re-collected at the depfile call
+    /// site because the two would then be separate reads, free to disagree
+    /// about what the header describes. A depfile that names a different
+    /// set than the hash covers is worse than one that names none: it
+    /// reports the artefact as watched.
+    sources: Vec<PathBuf>,
+}
+
+/// Routes a §synth-6.2.6 hash-walk failure onto the diagnostic that names
+/// its repair.
+///
+/// The two failures repair differently and so must not share a code. An I/O
+/// error points at the filesystem — permissions, a vanished path. The
+/// descent ceiling points at the *layout* of the input: a directory link
+/// naming a sibling multiplies the paths beneath it, and the fix is where
+/// `--input-root` points, not what mode the files carry. Both used to
+/// collapse onto `cli/read-input`, which sent a repair consumer hunting
+/// permissions for a tree whose only problem was aliasing.
+fn drift_hash_failure(walked: &Path, err: drift::DriftHashError) -> CliError {
+    match err {
+        drift::DriftHashError::WalkLimitExceeded { root, limit } => {
+            CliError::SourceHashWalkUnbounded {
+                root: root.display().to_string(),
+                limit,
+            }
+        }
+        other => CliError::ReadInput {
+            path: format!("{}: source-hash compute failed: {other}", walked.display()),
+            source: std::io::Error::other("drift compute"),
+        },
+    }
+}
+
+impl DriftContext {
+    /// The context of the files generated from `documents`: the closure of
+    /// those documents ([`drift::InputClosure::of`]). A document that cannot
+    /// be read is refused rather than left out of its own closure: a header
+    /// that does not describe the document is worse than a refusal.
+    fn of_documents(documents: &[&Path], options: drift::ClosureOptions<'_>) -> Self {
+        let first = documents.first().copied().unwrap_or(Path::new("."));
+        let closure = drift::InputClosure::of(documents, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(first, e)));
+        Self::of_closure(&closure)
+    }
+
+    /// The context of files generated from every document under `root`,
+    /// the set form ([`drift::InputClosure::of_directory`]). A directory
+    /// that holds no document is refused: its digest (the empty-input
+    /// sha256) would read on the wire exactly like a real one.
+    fn of_directory(root: &Path, options: drift::ClosureOptions<'_>) -> Self {
+        let closure = drift::InputClosure::of_directory(root, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(root, e)));
+        if !closure.holds_a_document() {
+            cli_exit(CliError::SourceHashInputUncovered {
+                input: root.display().to_string(),
+                root: root.display().to_string(),
+                hashed: 0,
+            });
+        }
+        Self::of_closure(&closure)
+    }
+
+    fn of_closure(closure: &drift::InputClosure) -> Self {
+        Self {
+            header: drift::DriftHeader::of(closure),
+            sources: closure.contributing_paths(),
+        }
+    }
+}
+
+/// File extension predicate matching `cmd_verify`'s
+/// `collect_generated_files` set. Header injection is skipped for
+/// every other extension so `.scxml` stubs, CMake `.d` depfiles, and
+/// `.inl` C++ partials stay byte-stable.
+fn is_drift_eligible_path(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("rs")
+            | Some("cpp")
+            | Some("h")
+            | Some("kt")
+            | Some("go")
+            | Some("py")
+            | Some("c")
+            | Some("swift")
+            | Some("ttcn"),
+    )
+}
+
+/// Returns `content` with the §synth-6.2.6 header prepended (or refreshed
+/// if already present) when `path`'s extension is in the drift-
+/// eligible set; otherwise echoes the input.
+fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String {
+    if is_drift_eligible_path(path) {
+        let prefix = drift::comment_prefix_for_path(path);
+        drift::prepend_or_replace_header(content, &ctx.header, prefix)
+    } else {
+        content.to_string()
+    }
+}
+
+/// Emit a generated file with its §synth-6.2.6 header, prepended for
+/// source-extension files (`.rs / .cpp / .h / .kt / .go / .py / .c`);
+/// non-source files are emitted verbatim.
+///
+/// Written even when its bytes are already on disk ([`WritePolicy::Always`]):
+/// these are the outputs of a build system's generation step, which it judges
+/// by their being newer than their inputs.
+fn write_drift_aware<P: AsRef<Path>>(path: P, content: &str, ctx: &DriftContext) {
+    let path_ref = path.as_ref();
+    let headered = apply_drift_header(content, path_ref, ctx);
+    let final_content = with_trailing_newline(&headered);
+    emit_generated(path_ref, final_content.as_bytes(), WritePolicy::Always);
+}
+
+/// Drift-aware analogue of [`write_if_changed`]. Compares against
+/// the headered bytes so a regen with identical hashes is a no-op
+/// (preserves the mtime contract `write_if_changed` exists for).
+fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) {
+    let final_content = apply_drift_header(content, path, ctx);
+    write_if_changed(path, &final_content);
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-O — emit the per-machine sourcemap
+/// JSON alongside the generated SM source. The output is
+/// byte-identical across the 6 backends because:
+///
+///   - the symbol table is built from the SCXML model alone (no
+///     backend-specific data),
+///   - the hash comes from the same `DriftContext` the §synth-6.2.6
+///     header consumes (delegation guarantee, not duplication), and
+///   - JSON key ordering rides BTreeMap so iteration is deterministic.
+///
+/// `sce_sourcemap.json` deliberately does NOT get the §synth-6.2.6 header
+/// because (a) JSON does not have a `//` comment syntax, and (b) the
+/// file's `source_hash` field IS the drift-detectable provenance.
+/// `sce-codegen verify` skips JSON in `is_drift_eligible_path`, so
+/// the file stays a plain JSON document.
+/// Accumulated symbol table for one invocation's output directory.
+///
+/// There is one `sce_sourcemap.json` per directory but an invocation
+/// can emit several machines into it — a parent plus every
+/// inline-`<content>` synth-invoke child. Each machine's symbols are
+/// added here and the file is written once at the end.
+///
+/// Writing per machine, which is what this replaced, made the sidecar
+/// describe only whichever machine happened to be emitted last: a
+/// `generate` on a document with a synth-invoke child produced two
+/// `_sm.*` artifacts and a sourcemap covering only the child, so every
+/// parent symbol was unresolvable through `addr2sce` even though the
+/// manifest listed the parent's artifact.
+type SymbolAccumulator = BTreeMap<String, crate::forge::symbol_mangling::SymbolEntry>;
+
+/// Add `model`'s symbols to `acc`.
+fn collect_sourcemap_symbols(model: &SCXMLModel, acc: &mut SymbolAccumulator) {
+    use crate::forge::symbol_mangling;
+
+    let symbols = match symbol_mangling::build_symbol_table(model, &[]) {
+        Ok(table) => table,
+        Err(_collision) => {
+            // Collision detection fires `traceability/state-id-
+            // collision` at the validate phase; reaching codegen
+            // means the model passed the walker, so this branch is
+            // unreachable in production. Defensive skip rather than
+            // panic so a future surprise stays observable as an
+            // empty sourcemap rather than a binary crash.
+            return;
+        }
+    };
+    acc.extend(symbols);
+}
+
+/// Write the accumulated sourcemap for `target_dir`.
+///
+/// A no-op on an empty accumulator so a run that emitted no statechart
+/// symbols (forge-only output, a rejected document) leaves no sidecar
+/// rather than an empty one.
+fn flush_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, drift_ctx: &DriftContext) {
+    write_sourcemap(acc, target_dir, drift_ctx.header.source_hex());
+}
+
+/// The symbols one `generate` of one document emitted into one directory,
+/// with the `source-hash` its files carry: held on the run's report and
+/// written by [`write_sourcemaps`], so a directory several documents of one
+/// run write machines into gets one sidecar naming every machine, rather than
+/// the last one's.
+struct SourcemapShare {
+    directory: PathBuf,
+    symbols: SymbolAccumulator,
+    source_hash: String,
+}
+
+/// Every machine's symbols one directory's sidecar names, and the hashes
+/// they were generated under.
+type DirectorySidecar = (SymbolAccumulator, BTreeSet<String>);
+
+/// Write one sidecar per directory the shares name, with every machine of
+/// that directory in it (`sourcemap::source_hash_of_machines` for its hash).
+fn write_sourcemaps(shares: Vec<SourcemapShare>) {
+    let mut by_directory: BTreeMap<PathBuf, DirectorySidecar> = BTreeMap::new();
+    for share in shares {
+        let (symbols, hashes) = by_directory.entry(tree_key(&share.directory)).or_default();
+        symbols.extend(share.symbols);
+        hashes.insert(share.source_hash);
+    }
+    for (directory, (symbols, hashes)) in &by_directory {
+        write_sourcemap(
+            symbols,
+            directory,
+            crate::forge::sourcemap::source_hash_of_machines(hashes),
+        );
+    }
+}
+
+/// Write `acc` as the sidecar of `target_dir`, under `source_hash`.
+///
+/// A no-op on an empty accumulator so a run that emitted no statechart
+/// symbols (forge-only output, a rejected document) leaves no sidecar
+/// rather than an empty one.
+fn write_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, source_hash: String) {
+    use crate::forge::sourcemap;
+
+    if acc.is_empty() {
+        return;
+    }
+    let map = sourcemap::build(acc, source_hash);
+    let json = match sourcemap::to_json(&map) {
+        Ok(s) => s,
+        Err(_e) => return,
+    };
+    let path = target_dir.join("sce_sourcemap.json");
+    // Plain JSON write — bypass `write_if_changed_drift_aware` so the
+    // file does not receive the `// SCE-GENERATED` comment header
+    // (JSON has no line-comment syntax and the `source_hash` field
+    // already provides drift detection).
+    write_if_changed(&path, &json);
+}
+
+/// How diagnostics are rendered to stderr.
+///
+/// `Human` is the default: prose, each refusal led by the place it stands
+/// when it stands at one (`file:line:col: `). `Json` is the machine-readable
+/// contract consumed by upstream consumers (LangGraph triage, IDE LSP
+/// bridges, CI bots). In JSON mode each
+/// diagnostic is a single NDJSON line on stderr; stdout continues to
+/// carry artifact paths and progress text so build systems that parse
+/// stdout are unaffected.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ErrorFormat {
+    Human,
+    Json,
+}
+
+/// Process-wide error format, installed once in `main` and read by
+/// every termination path. Using a `OnceLock` (instead of threading
+/// `error_format` through every helper signature) keeps call-sites
+/// one line and guarantees that no subcommand can forget to apply
+/// the flag. Read-only after install — defensible for a one-shot
+/// CLI binary.
+static ERROR_FORMAT: OnceLock<ErrorFormat> = OnceLock::new();
+
+/// Resolve the active error format. If `main` neglected to install
+/// one (e.g. a helper ran before `Cli::parse`), fall back to human
+/// so failures are still observable.
+fn current_error_format() -> ErrorFormat {
+    ERROR_FORMAT.get().copied().unwrap_or(ErrorFormat::Human)
+}
+
+/// The references through which a `generate --with-imports` run reached the
+/// document it is generating now, the document named on the command line
+/// first (`crate::import_closure::Unit::reached_from`); empty outside such
+/// a run and while it generates a document the caller named.
+///
+/// Process-wide, like [`ERROR_FORMAT`], because every refusal leaves through
+/// the emitters on [`ErrorFormat`] from wherever in the generation it is
+/// raised, and every one of them has to carry the chain: threading it through
+/// every helper signature that can end the run is the alternative, and one
+/// helper that forgot it would refuse a document three imports down in a file
+/// the caller never named, with nothing saying why it was read.
+static REACHED_FROM: Mutex<Vec<crate::forge::error::RelatedSite>> = Mutex::new(Vec::new());
+
+/// Install the chain every refusal from here on carries.
+fn set_reached_from(sites: Vec<crate::forge::error::RelatedSite>) {
+    *REACHED_FROM.lock().unwrap_or_else(PoisonError::into_inner) = sites;
+}
+
+/// The chain every refusal carries now.
+fn reached_from() -> Vec<crate::forge::error::RelatedSite> {
+    REACHED_FROM
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// Where a refusal written in `human` form stands, as a compiler writes it
+/// ahead of its message (`file:line:col: `), read off the one record the
+/// `json` form writes for it: a refusal raised at a `<param>` of a document
+/// with thirty sends otherwise leaves its reader to search for it by hand.
+///
+/// Empty for a refusal of no place (a command-line argument, whose record
+/// carries no `location`) and for one that writes several records (an XSD
+/// validation that found several violations), which is no one place.
+fn human_location<E: ToDiagnostics>(err: &E) -> String {
+    match err.to_diagnostics().as_slice() {
+        [Diagnostic {
+            location: Some(at), ..
+        }] if !at.file.is_empty() => format!("{at}: "),
+        _ => String::new(),
+    }
+}
+
+/// Write the route under a refusal already written in `human` form, one
+/// `reached from` line per reference, the outermost first: the chain of the
+/// run, then the references the refusal carries itself — the `<invoke>` of a
+/// statechart whose parse read the child the refusal was raised in.
+fn report_reached_from_human<E: ToDiagnostics>(err: &E) {
+    let carried = err
+        .to_diagnostics()
+        .into_iter()
+        .next()
+        .map(|diag| diag.related)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|site| site.role == RelatedRole::ReachedFrom)
+        .map(|site| (site.location.file, site.location.line));
+    let chain = reached_from()
+        .into_iter()
+        .map(|site| (site.location.file, site.location.line));
+    for (file, line) in chain.chain(carried) {
+        match line {
+            Some(line) => eprintln!("  reached from {file}:{line}"),
+            None => eprintln!("  reached from {file}"),
+        }
+    }
+}
+
+/// Emit one NDJSON record per diagnostic of `err`, each carrying the chain as
+/// its `reached-from` related sites (SCE_ERROR_CONTRACT §2.4). The chain is
+/// the outer part of the route, so it goes ahead of the `reached-from` sites
+/// the record carries itself, and the route reads outermost first.
+fn emit_ndjson_with_reached_from<E: ToDiagnostics>(err: &E) {
+    let chain = reached_from();
+    for mut diag in err.to_diagnostics() {
+        let first_step = diag
+            .related
+            .iter()
+            .position(|site| site.role == RelatedRole::ReachedFrom)
+            .unwrap_or(diag.related.len());
+        let carried = diag.related.split_off(first_step);
+        diag.related
+            .extend(chain.iter().map(crate::forge::diagnostic::Related::from));
+        diag.related.extend(carried);
+        emit_ndjson(&diag);
+    }
+}
+
+/// The text of the document `path` names, read as `generate` reads its
+/// input: an `sce:std/...` name from the standard library this generator
+/// embeds, the name a consumer imports it by being the name it generates it
+/// by, and any other path from disk. Every command that reads a document a
+/// caller named before handing it to its pipeline reads it here, so one that
+/// `generate` takes is one each of them takes.
+fn read_named_document(path: &str) -> std::io::Result<String> {
+    if crate::forge::stdlib::names_standard(Path::new(path)) {
+        return crate::forge::stdlib::lookup(Path::new(path))
+            .map(str::to_string)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no such document in the SCE standard library built into this sce-codegen",
+                )
+            });
+    }
+    // Through the one place every document is opened (`crate::confine`),
+    // as the parse that follows opens it: a document a caller holds in memory
+    // is read from there (`--plan-children` plans a child no generation has
+    // written to disk yet), and one outside a confined folder is not read.
+    crate::confine::read_to_string(Path::new(path))
+}
+
+/// Globally-resolved `--workspace-root` override. Mirrors
+/// [`ERROR_FORMAT`]: installed once at the top of `main` so every
+/// site that needs the SCE workspace location (`verify-generator`)
+/// can consult one source of truth without each call having to thread
+/// the flag through its signature. Unset when the user neither passed `--workspace-root`
+/// nor `SCE_WORKSPACE_ROOT` — in which case the resolution falls
+/// through to `CARGO_MANIFEST_DIR`'s parent and cwd-walk per
+/// [`locate_workspace_root`].
+static WORKSPACE_ROOT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Root the `// From:` provenance path is expressed relative to, when the
+/// invocation has one. Claimed by `--source-root` in `main` if given,
+/// otherwise by [`find_project_root`] for the in-repo batch commands.
+/// Single-document `generate` / `orchestrate` runs leave it unset and emit
+/// the path as the caller named it — see
+/// [`crate::header_source_path`] for why neither shape consults the
+/// process working directory.
+static SOURCE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Root the generated trees were written under, when `--output-dir`
+/// named one.
+///
+/// A second provenance root, not a replacement. Most inputs live under
+/// [`SOURCE_ROOT`], but a hybrid child's SCXML is *synthesised into the
+/// output tree* and read back from there, so under a foreign output root
+/// it has no relative spelling beneath the project root — provenance
+/// would fall back to the absolute path and the emitted bytes would then
+/// carry the directory they were written to.
+static OUTPUT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Read the installed provenance root, if any.
+fn current_source_root() -> Option<PathBuf> {
+    SOURCE_ROOT.get().cloned()
+}
+
+/// Whether `path` resolves to somewhere beneath `root`.
+///
+/// Canonicalising both sides through `crate::confine::canonicalize`
+/// matches what `header_source_path` does when it computes the relative
+/// spelling, so this predicate and that computation cannot disagree about
+/// containment.
+fn path_is_under(path: &Path, root: &Path) -> bool {
+    match (
+        crate::confine::canonicalize(path),
+        crate::confine::canonicalize(root),
+    ) {
+        (Ok(p), Ok(r)) => p.starts_with(&r),
+        _ => false,
+    }
+}
+
+/// Read the installed override, if any. Callers pair this with
+/// [`locate_workspace_root`] to honour the global flag without
+/// having to plumb it through their signatures.
+fn current_workspace_root_override() -> Option<PathBuf> {
+    WORKSPACE_ROOT_OVERRIDE.get().cloned()
+}
+
+impl ErrorFormat {
+    /// Emit any [`ToDiagnostics`] error and terminate with its exit
+    /// code. Generic over the error family so ForgeError, MeshError,
+    /// and CLI-level errors all funnel through the same code path —
+    /// a subcommand cannot accidentally render JSON on stdout or
+    /// swallow an exit code without failing compilation.
+    fn emit_and_exit<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) -> ! {
+        self.report(err, human_prefix);
+        std::process::exit(err.exit_code());
+    }
+
+    /// Emit a diagnostic and keep going.
+    ///
+    /// Every other emitter on this type terminates, which is why a
+    /// verdict that must *not* stop the build had nowhere to go. The
+    /// spec obliges an unevaluable `cond` to reach the runtime as
+    /// `error.execution` rather than be refused at generation time — the
+    /// clause and its citation live on `filters::to_lua_guard` — so the
+    /// document stays generatable and the record accompanies a successful
+    /// run instead of replacing one.
+    ///
+    /// No severity field is invented for this. `SCE_ERROR_CONTRACT.md`
+    /// §1 already splits the streams — stdout carries the manifest,
+    /// stderr the diagnostics — and §10.2 makes the exit code the thing
+    /// that says whether stdout is valid, so a consumer separates a
+    /// reported refusal (records, exit `0`, manifest on stdout) from a
+    /// fatal one (records, non-zero exit, empty stdout) with what the
+    /// contract already gives it.
+    ///
+    /// Every record, fatal or not, carries the references a
+    /// `generate --with-imports` run reached its document through
+    /// ([`REACHED_FROM`]); outside such a run there are none, and the record
+    /// is the one it always was.
+    ///
+    /// A refusal written in `human` form leads with the place its record's
+    /// `location` names ([`human_location`]), so the two forms of one refusal
+    /// name the same place.
+    fn report<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) {
+        match self {
+            ErrorFormat::Human => {
+                eprintln!("{}{human_prefix}{err}", human_location(err));
+                report_reached_from_human(err);
+            }
+            ErrorFormat::Json => {
+                // One NDJSON line per diagnostic. Most errors produce
+                // exactly one; XSD validation can produce many.
+                emit_ndjson_with_reached_from(err);
+            }
+        }
+    }
+
+    /// Convenience shim for the most common case: a forge-pipeline
+    /// error reported with the legacy "Forge codegen error: " banner.
+    ///
+    /// The library returns `Located<ForgeError>` directly — location
+    /// is part of the error contract at the library boundary, not a
+    /// CLI-local convention — so this wrapper just adds the banner
+    /// and delegates. XSD errors special-case their own per-violation
+    /// line data inside `expand_xsd_diagnostics`.
+    fn emit_forge_and_exit(self, err: &crate::forge::error::Located<ForgeError>) -> ! {
+        self.emit_and_exit(err, "Forge codegen error: ")
+    }
+
+    /// Emit every record of a producer that found several, then exit with
+    /// the first one's code; return when there are none.
+    ///
+    /// The first decides the status because it is the one the library's
+    /// single-error entry point rejects on, so the CLI and the library
+    /// cannot disagree about why a document was refused — only about how
+    /// much else the CLI also said.
+    fn emit_all_and_exit<E: ToDiagnostics + std::fmt::Display>(
+        self,
+        errs: &[E],
+        human_prefix: &str,
+    ) {
+        let Some((first, _)) = errs.split_first() else {
+            return;
+        };
+        for err in errs {
+            self.report(err, human_prefix);
+        }
+        std::process::exit(first.exit_code());
+    }
+}
+
+/// Emit a CLI-level error under the currently-installed format and
+/// exit. One-liner call-site for every raw-exit replacement.
+fn cli_exit(err: CliError) -> ! {
+    current_error_format().emit_and_exit(&err, "")
+}
+
+/// Read a `--language` value for `route`: a name no backend answers to is
+/// `UnknownLanguage`, and a backend that exists but that the route does not
+/// serve — one that emits nothing yet, for a route that writes files — is
+/// `UnsupportedLanguage`, which names the route's menu and why the backend is
+/// not on it.
+///
+/// Both outcomes are the route's own table speaking ([`LanguageRoute::serves`]),
+/// so the menu a refusal prints and the set a run accepts cannot differ.
+fn parse_served_language(route: LanguageRoute, name: &str) -> Language {
+    let lang: Language = name.parse().unwrap_or_else(|_| {
+        cli_exit(CliError::UnknownLanguage {
+            lang: name.to_string(),
+            route,
+        })
+    });
+    if !route.serves(lang) {
+        cli_exit(CliError::UnsupportedLanguage {
+            lang: lang.canonical_name().to_string(),
+            route,
+        });
+    }
+    lang
+}
+
+// ── Path arithmetic ────────────────────────────────────────────
+//
+// `Path::parent` answers a lexical question, not a filesystem one:
+// for a path carrying no separator it returns `Some("")`, and `""`
+// names no directory — `read_dir("")` fails with `ENOENT`, and
+// `create_dir_all("")` with it. Callers here want the *containing
+// directory*, whose answer for a bare filename is the working
+// directory.
+//
+// The gap opens on the shortest way there is to name a document:
+//
+//     cd resources && sce-codegen generate door.scxml -l rust -o out
+//
+// which walked `""` for the §synth-6.2.6 source set and refused with
+// `cli/read-input` — carrying an empty path in the message, because
+// the path that failed to read *was* the empty string. Naming the
+// same document `./door.scxml`, or by any path with a separator in
+// it, generated it. Every site below already carried an
+// `unwrap_or(".")` written for this exact case; none of them fired,
+// because the case is `Some("")` and not `None`.
+
+/// The directory `path` lives in, as a directory that can be opened.
+fn containing_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        // Either `path` is a bare filename (`Some("")`) or it is a root
+        // with nothing above it (`None`). In both cases the directory
+        // holding it is the one the process is standing in.
+        _ => PathBuf::from("."),
+    }
+}
+
+/// The directory named `name` beside the directory `path` lives in.
+///
+/// `tests/forge/conformance/fixtures.json` + `resources` →
+/// `tests/forge/resources`, the in-repo conformance layout.
+///
+/// Kept apart from [`containing_dir`] rather than composed from it
+/// because the degenerate case resolves differently: the directory
+/// above `.` has no name a `Path` can spell without `..`, while the
+/// directory above a single relative component is the working
+/// directory and needs no prefix at all.
+fn sibling_of_containing_dir(path: &Path, name: &str) -> PathBuf {
+    let dir = containing_dir(path);
+    match dir.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.join(name),
+        // `dir` is the working directory itself — reached from a bare
+        // filename or a `./`-prefixed one. Its parent is spellable
+        // only as `..`.
+        _ if dir == Path::new(".") => Path::new("..").join(name),
+        // `dir` is one relative component (`tests/`), so the directory
+        // above it is the working directory and `name` alone names the
+        // sibling.
+        _ => PathBuf::from(name),
+    }
+}
+
+// ── Stdout ─────────────────────────────────────────────────────
+//
+// Every byte this process puts on stdout leaves through here.
+//
+// A consumer that stops reading closes the pipe, and the next write
+// fails with `BrokenPipe`. `println!` panics on that — exit 101, a
+// panic message on stderr, no NDJSON record — which is a status §6
+// does not define at all, reached by a condition the *consumer*
+// chose rather than a fault of this run. §6 states the universal the
+// other way round: "A non-zero exit with no NDJSON record is a
+// contract violation."
+//
+// It surfaced on `list-fixtures` first because that is the
+// subcommand whose help tells build systems to consume it without a
+// JSON parser, and its output outruns the pipe buffer, so
+// `list-fixtures … | head` lost the race about half the time. The
+// other stdout writers differed only in printing too little to lose
+// it — the panic was one long document away.
+//
+// `expand`, `requirements` and `unresolved` already carried the rule
+// this restores: a stdout write failure is `cli/write-output` at exit
+// 20, with a record naming the stream. Routing every writer through
+// these two helpers makes that rule the only way to reach stdout, so
+// a subcommand added later cannot reintroduce the panic by reaching
+// for `println!`.
+
+/// The path a stdout failure names. One spelling — the three sites
+/// that already handled the failure used two.
+const STDOUT_LABEL: &str = "<stdout>";
+
+/// Hand locked stdout to `emit` and end the process on failure.
+///
+/// The one primitive. Streaming producers (the NDJSON reports) need a
+/// writer rather than a finished string, so the writer — not the
+/// bytes — is what this takes.
+fn out_stream(emit: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    // Stdout is line-buffered, so output that ends without a newline
+    // sits in the buffer until the implicit flush at exit — which
+    // discards its error. Flushing here is what makes the failure
+    // reportable at all.
+    let result = emit(&mut handle).and_then(|()| handle.flush());
+    if let Err(source) = result {
+        drop(handle);
+        cli_exit(CliError::WriteOutput {
+            path: STDOUT_LABEL.to_string(),
+            source,
+        });
+    }
+}
+
+/// Write `text` to stdout, followed by a newline.
+fn out_line(text: &str) {
+    out_stream(|w| {
+        w.write_all(text.as_bytes())?;
+        w.write_all(b"\n")
+    })
+}
+
+/// Write `bytes` to stdout with nothing appended.
+///
+/// `expand` needs this: its output is compared byte-for-byte against
+/// the C++ pugixml canonicalisation, which carries no trailing
+/// newline.
+fn out_bytes(bytes: &[u8]) {
+    out_stream(|w| w.write_all(bytes))
+}
+
+/// `println!` for this binary's stdout: same call shape, but a closed
+/// reader ends the process through [`out_line`]'s contract instead of
+/// a panic.
+macro_rules! outln {
+    () => { out_line("") };
+    ($($arg:tt)*) => { out_line(&format!($($arg)*)) };
+}
+
+// ── Stdout manifest (success-path contract) ─────────────────────
+
+/// Accumulator populated during a single `generate` run and serialised
+/// once, at the end, by [`emit_generate_manifest`]. Lives as a plain
+/// local on the stack — no globals — so concurrent future callers
+/// (batch mode, daemon) get per-invocation isolation for free.
+#[derive(Default)]
+struct GenerateReport {
+    /// The kind the run read its one document as — see
+    /// `Manifest::document_kind`. `None` on a document-set run.
+    document_kind: Option<crate::manifest::DocumentKind>,
+    artifacts: Vec<PathBuf>,
+    needs_script_engine: Option<bool>,
+    script_engine_causes: Vec<crate::script_engine_analyzer::ScriptEngineCauseRecord>,
+    /// Whether any document in this run requires `Engine::tick()` rather
+    /// than `step()`. Accumulated as a union alongside
+    /// `needs_script_engine` because it answers the same kind of
+    /// question about the same set.
+    needs_event_scheduler: Option<bool>,
+    /// Whether any document in this run names a `<send>` / `<invoke>`
+    /// type the build has no lowering path for. Accumulated as a union
+    /// beside the two flags above because it answers the same kind of
+    /// question about the same set.
+    needs_host_processor: Option<bool>,
+    /// Whether the document sends to a Mesh peer (`<send target="#peer">`)
+    /// or requests one (`<invoke type="sce:mesh-rpc">`). A document fact;
+    /// the manifest qualifies it by the run's one target language to answer
+    /// whether the host must register a Mesh router.
+    talks_to_a_mesh_peer: bool,
+    /// The `<invoke type="scxml">` sites of the document whose child needs a
+    /// Mesh router of its own — see `Manifest::child_mesh_routers`. Set with
+    /// [`Self::talks_to_a_mesh_peer`], from the same model.
+    child_mesh_routers: Vec<crate::manifest::ChildMeshRouterSite>,
+    /// Every `<send target="#_parent">` of the ONE statechart this run
+    /// read; `None` when the run is not one statechart document (a forge
+    /// kind, or a document set, whose answer is not a union — see
+    /// `Manifest::needs_parent`).
+    parent_sends: Option<Vec<crate::parent_send_analyzer::ParentSend>>,
+    /// Every `<send>` of the ONE statechart this run read that picks its
+    /// processor or target by expression — see `Manifest::computed_routes`;
+    /// `None` when the run is not one statechart document.
+    computed_routes: Option<Vec<crate::computed_route_analyzer::ComputedRoute>>,
+    /// What the ONE statechart this run read presents to the outside — see
+    /// `Manifest::surface`; `None` when the run is not one statechart document.
+    surface: Option<crate::design_surface::Surface>,
+    /// Every marker of the document this run read, statechart or forge kind;
+    /// on a document-set run, of every member, each record naming the file it
+    /// was written in — see `Manifest::unresolved`.
+    unresolved: Vec<crate::unresolved_check::UnresolvedRecord>,
+    /// The event-schemas a statechart of this run imports without declaring
+    /// its interface closed ([`crate::open_matters::interface_left_open`]);
+    /// on a document-set run, those of every statechart member. Read only into
+    /// the manifest's `open`.
+    open_interface: Vec<String>,
+    /// The events a statechart of this run sends itself with no target that
+    /// something takes ([`crate::open_matters::self_delivered_events`]): the
+    /// ones a caller can send too; on a document-set run, those of every
+    /// statechart member. Read only into the manifest's `open`.
+    self_delivered: Vec<String>,
+    /// The authoring profile this run was given and how many statecharts it
+    /// judged (`--profile`); `None` when no profile was given.
+    profile: Option<crate::manifest::ProfileInfo>,
+    host_processor_causes: Vec<crate::host_processor_analyzer::HostProcessorCauseRecord>,
+    /// Every duty the run's statecharts state (docs/adr/0038), read from the
+    /// parsed model as `host_processor_causes` is.
+    host_duties: Vec<crate::forge::native_action::HostDutyRecord>,
+    /// The `--host-processor` declarations this run was given, echoed so
+    /// a consumer can check the build's half of the contract against the
+    /// registrations its host makes.
+    host_processor_types: Vec<String>,
+    /// The `--host-invoker` declarations, echoed for the same reason as
+    /// the line above: the build's half of a two-place contract.
+    host_invoker_types: Vec<String>,
+    /// The typed `<data>` declarations that got no reader — see
+    /// `Manifest::unreadable_variables`.
+    unreadable_variables: Vec<crate::reader_names::UnreadableVariable>,
+    /// The holder the generated transform keeps its `previous()` values
+    /// in, when it has one — see `Manifest::holder`.
+    holder: Option<crate::forge::generator::TransformHolderSymbols>,
+    rejected: Option<RejectedDocument>,
+    /// Descriptive deploy declarations, present only on a `--deploy`
+    /// run. `None` for every deploy-unaware invocation, which is what
+    /// keeps the manifest byte-identical for them.
+    deploy_facts: Option<crate::DeployFacts>,
+    /// The single backend this run emitted for, when there is one.
+    ///
+    /// Carried because `script_engine_language` is the TARGET's answer and
+    /// not the document's: C++ and Kotlin hand their engine the author's
+    /// ECMAScript, the other four hand it Lua the build already lowered.
+    /// A run that spans backends leaves this `None` and reports no engine
+    /// language, because any single value would be wrong for somebody.
+    target_language: Option<Language>,
+    /// The engine language this run SELECTED, when it selected one.
+    ///
+    /// `target_language` alone answered this while every backend had exactly
+    /// one arm. `--script-engine` gives C++ and Kotlin a real choice, so the
+    /// manifest has to report the run's selection rather than the backend's
+    /// default — a host that read the default would supply the wrong engine
+    /// for a machine generated with the flag, which is the same mis-supply
+    /// the field was introduced to prevent.
+    ///
+    /// `None` means the run did not ask, and the backend's default stands.
+    script_engine_target: Option<crate::generator::ScriptEngineTarget>,
+    /// The formatter that shaped this run's artefacts — see
+    /// `Manifest::formatter`. `None` when nothing was formatted.
+    formatter: Option<crate::manifest::FormatterInfo>,
+    /// What the run's `--write-deps` depfile says, when one was asked for:
+    /// held here and written by the caller of [`cmd_generate`], once per run,
+    /// so a `--with-imports` run writes one depfile for every document it
+    /// generated rather than each document's over the last.
+    depfile: Option<DepfileEntry>,
+    /// The symbols the run's machines emitted, per directory, held for the
+    /// caller of [`cmd_generate`] to write once per run ([`write_sourcemaps`]).
+    sourcemaps: Vec<SourcemapShare>,
+    /// The child documents this run writes into its output directory for a
+    /// build to generate by a run of their own ([`child_documents`]): a
+    /// hybrid `<invoke>`'s stub, a candidate, a `src` child. Read by
+    /// `--plan-children` ([`plan_child_generations`]), which plans each one's
+    /// generation, and `--children` ([`generate_child_generations`]), which
+    /// runs it.
+    child_documents: Vec<PathBuf>,
+    /// Of [`Self::child_documents`], the ones this run staged as copies of a
+    /// document in the checkout (a `src` child, a candidate), keyed by the
+    /// copy's path ([`tree_key`]), each with the document it copies
+    /// ([`copy_static_invoke_children`]).
+    staged_children: BTreeMap<PathBuf, PathBuf>,
+    /// The documents of the in-line children this run writes that its deploy
+    /// placed on a partition of their own ([`peer_documents`]), each a
+    /// machine of the deploy that the run of that partition generates. Read
+    /// by `--plan-children` beside [`Self::child_documents`].
+    peer_documents: Vec<PathBuf>,
+    /// The documents of a `--with-imports` run that were rejected, each
+    /// named — see `Manifest::rejected_documents`. Empty on a run of one
+    /// document, which says it in [`Self::rejected`].
+    rejected_documents: Vec<crate::manifest::RejectedMember>,
+    /// What the machines this run writes need linked beside them, as their
+    /// backend decided while rendering them (`GeneratedOutput::requires`):
+    /// the document's machine, every child it carries in line, and every
+    /// other output of the run. Stated by a `--plan --plan-requires` run
+    /// ([`finish_generated_output`]).
+    runtime_requires: BTreeSet<RuntimeRequirement>,
+    /// The machine name of the ONE statechart whose machine this run wrote
+    /// (its own, or the stub that stands in for a rejected one): the name the
+    /// parse gave the model, the file stem written as an identifier
+    /// (`crate::model::statechart_machine_name`), which names the
+    /// machine's files. `None` when the run wrote no statechart's machine (a
+    /// forge kind, a document set, a transport alone). Stated by a `--plan
+    /// --plan-machines` run ([`finish_generated_output`]), so a build reads
+    /// the machine's name from the generator rather than spelling the stem a
+    /// second time.
+    machine: Option<String>,
+}
+
+impl GenerateReport {
+    /// Mark, among the markers this run collected, the ones that cite a house
+    /// rule of the profile it was given, so `open` says them as the owner's
+    /// standing answer and not as a value chosen without one. A run given no
+    /// profile marks nothing: it cannot tell a rule's id from any other.
+    fn cite_house_rules(&mut self, profile: Option<&crate::authoring_profile::AuthoringProfile>) {
+        if let Some(profile) = profile {
+            profile.cite_house_rules(&mut self.unresolved);
+        }
+    }
+
+    /// Take in what the run of one member of a set found, as a set reports
+    /// it: every file it wrote, the yes-or-no facts as a union, the causes
+    /// and the aliases once each, and the records of every member, each
+    /// naming the file it is about. What only one document can answer —
+    /// `document_kind`, the parent sends, the routes, the surface, a holder,
+    /// the deploy — is left as the set leaves it, unanswered; a rejection is
+    /// named with its document by the run (`rejected_documents`).
+    fn absorb(&mut self, member: GenerateReport) {
+        fn either(set: Option<bool>, member: Option<bool>) -> Option<bool> {
+            Some(set.unwrap_or(false) || member.unwrap_or(false))
+        }
+        fn once_each<T: PartialEq>(set: &mut Vec<T>, member: Vec<T>) {
+            for item in member {
+                if !set.contains(&item) {
+                    set.push(item);
+                }
+            }
+        }
+        self.artifacts.extend(member.artifacts);
+        self.needs_script_engine = either(self.needs_script_engine, member.needs_script_engine);
+        self.needs_event_scheduler =
+            either(self.needs_event_scheduler, member.needs_event_scheduler);
+        self.needs_host_processor = either(self.needs_host_processor, member.needs_host_processor);
+        self.talks_to_a_mesh_peer |= member.talks_to_a_mesh_peer;
+        self.runtime_requires.extend(member.runtime_requires);
+        once_each(&mut self.script_engine_causes, member.script_engine_causes);
+        once_each(
+            &mut self.host_processor_causes,
+            member.host_processor_causes,
+        );
+        once_each(&mut self.open_interface, member.open_interface);
+        once_each(&mut self.self_delivered, member.self_delivered);
+        self.child_mesh_routers.extend(member.child_mesh_routers);
+        self.host_duties.extend(member.host_duties);
+        self.unreadable_variables
+            .extend(member.unreadable_variables);
+        self.unresolved.extend(member.unresolved);
+        // One profile judged every member: the set says it once, with every
+        // document it judged counted.
+        if let Some(theirs) = member.profile {
+            match self.profile.as_mut() {
+                Some(ours) => ours.judged = ours.judged.saturating_add(theirs.judged),
+                None => self.profile = Some(theirs),
+            }
+        }
+        if self.script_engine_target.is_none() {
+            self.script_engine_target = member.script_engine_target;
+        }
+        if self.formatter.is_none() {
+            self.formatter = member.formatter;
+        }
+        if let Some(theirs) = member.depfile {
+            match self.depfile.as_mut() {
+                Some(ours) => ours.absorb(theirs),
+                None => self.depfile = Some(theirs),
+            }
+        }
+        self.sourcemaps.extend(member.sourcemaps);
+    }
+}
+
+struct RejectedDocument {
+    spec: &'static str,
+    name: String,
+}
+
+/// Build the stdout manifest for `report` under `kind`.
+///
+/// The shape lives in `crate::manifest` — see
+/// SCE_ERROR_CONTRACT.md §10 for the prose contract and
+/// `schemas/sce-manifest.v1.schema.json` for the wire schema. Both
+/// `generate` and `check` funnel through here so the two subcommands
+/// cannot drift into two shapes of the same record.
+/// `target` is the single backend this run emitted for, or `None` when it
+/// spanned several (`check` sweeps every language). The engine language is
+/// the TARGET's answer — C++ and Kotlin hand the engine ECMAScript while the
+/// other four hand it lowered Lua — so a sweep has no single one to report
+/// and says nothing rather than something false.
+///
+/// `lexicon` is the language `open` is said in, for the person a host shows
+/// it to; `generate` says it in English, and `check` and `orchestrate` in the
+/// lexicon they were asked for, English unless asked otherwise.
+fn build_manifest<'a>(
+    report: &'a GenerateReport,
+    kind: ManifestKind,
+    languages: Option<Vec<LanguageVerdict>>,
+    target: Option<Language>,
+    lexicon: &crate::forge::page::Lexicon,
+) -> Manifest<'a> {
+    Manifest {
+        v: crate::manifest::MANIFEST_SCHEMA_VERSION,
+        kind: kind.as_str(),
+        generator: crate::GENERATOR_COMMIT,
+        document_kind: report.document_kind,
+        artifacts: report
+            .artifacts
+            .iter()
+            .map(|p| ArtifactEntry {
+                path: p.display().to_string(),
+            })
+            .collect(),
+        needs_script_engine: report.needs_script_engine.unwrap_or(false),
+        script_engine_causes: &report.script_engine_causes,
+        // Derived from the flag rather than carried beside it: a record
+        // naming a language for a machine that needs no engine, or
+        // needing one and naming none, would be two answers to one
+        // question.
+        // The run's SELECTION when it made one, the backend's default
+        // otherwise. Reporting the default over a selection would tell a host
+        // to supply the engine this machine was NOT generated for.
+        script_engine_language: report
+            .needs_script_engine
+            .unwrap_or(false)
+            .then(|| match report.script_engine_target {
+                Some(selected) => Some(selected.wire_name()),
+                None => target.map(Language::script_engine_language),
+            })
+            .flatten(),
+        needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
+        // The TARGET's answer too: only a backend that states what its
+        // machines link has an empty set that means "nothing", so any other
+        // backend, and a run spanning several, reports none.
+        runtime_requires: target
+            .filter(|language| language.states_runtime_requirements())
+            .map(|_| {
+                report
+                    .runtime_requires
+                    .iter()
+                    .map(|requirement| requirement.wire_name())
+                    .collect()
+            }),
+        needs_host_processor: report.needs_host_processor.unwrap_or(false),
+        // The TARGET's answer, like the engine language above: whether the
+        // host must register a Mesh router depends on the backend (C++
+        // generates its own), so a run spanning backends reports none.
+        needs_mesh_router: target.map(|language| {
+            report.talks_to_a_mesh_peer
+                && crate::host_processor_analyzer::routes_mesh_through_host(language)
+        }),
+        // Every backend's runtime asks its host's factory when a child that
+        // needs a router starts, so the answer does not depend on which; a
+        // run with no single target reports none, as above.
+        child_mesh_routers: match target {
+            Some(_) => report.child_mesh_routers.as_slice(),
+            None => &[],
+        },
+        needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
+        parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
+        computed_routes: report.computed_routes.as_deref().unwrap_or(&[]),
+        unresolved: &report.unresolved,
+        // What a document leaves open is the union over a set's members — a
+        // question one of them asks is one the set leaves — so `unresolved`
+        // is read for a set too. A parent and a host processor stay ONE
+        // document's answer: a set run's members each have their own, and the
+        // union would name a parent none of them may lack.
+        open: {
+            let one_document = report.document_kind.is_some();
+            crate::open_matters::of_in(
+                lexicon,
+                &report.unresolved,
+                if one_document {
+                    report.parent_sends.as_deref().unwrap_or(&[])
+                } else {
+                    &[]
+                },
+                if one_document {
+                    &report.host_processor_causes
+                } else {
+                    &[]
+                },
+                // An open interface is said of a set too: a statechart that
+                // imports schemas without holding itself to them is that
+                // whichever run reads it, and a set is where the imports are
+                // resolved.
+                &report.open_interface,
+                // Said of a set too, for the same reason: an event one member
+                // sends itself is one a caller can send, whichever run reads it.
+                &report.self_delivered,
+            )
+        },
+        profile: report.profile.clone().map(|mut info| {
+            // The citations are the run's own records marked `house_rule`, one
+            // per distinct id: applying a rule at three places is one rule.
+            if let Some(used) = info.house_rules.as_mut() {
+                used.cited = u32::try_from(
+                    report
+                        .unresolved
+                        .iter()
+                        .filter(|record| record.house_rule)
+                        .map(|record| record.id.as_str())
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
+                )
+                .expect("a run does not cite four billion rules");
+            }
+            info
+        }),
+        surface: report.surface.as_ref(),
+        host_processor_causes: &report.host_processor_causes,
+        host_duties: &report.host_duties,
+        host_processor_types: &report.host_processor_types,
+        host_invoker_types: &report.host_invoker_types,
+        unreadable_variables: &report.unreadable_variables,
+        // The TARGET's names, like the engine language above: a run that
+        // spans backends has several and reports none.
+        holder: target.and(report.holder.clone()),
+        rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
+            spec: rd.spec,
+            name: rd.name.clone(),
+        }),
+        rejected_documents: &report.rejected_documents,
+        deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
+        formatter: report.formatter.clone(),
+        languages,
+    }
+}
+
+/// Resolve `--script-engine` against what the backend can actually emit.
+///
+/// Returns `None` when the caller did not ask, which leaves the backend's
+/// default standing and keeps such a run byte-identical to one from before
+/// the flag existed.
+///
+/// The refusal follows the mesh-rpc shape in `sce-build/src/generator.rs`:
+/// name what was asked, name what this backend can do, and name what would
+/// lift the refusal — never emit a best effort. A backend half-migrated
+/// across the seam would otherwise produce an artifact that hands ONE engine
+/// two languages in one session, with no diagnostic anywhere saying so.
+///
+/// Both refusals are typed diagnostics, emitted in the run's error format
+/// like every other CLI-boundary failure. They were strings printed with
+/// `eprintln!` and a bare exit 1, so `--error-format=json` got prose and no
+/// record — no code to route on, no candidates to repair from.
+fn resolve_script_engine_target(
+    lang: Language,
+    requested: Option<&str>,
+) -> Result<Option<crate::generator::ScriptEngineTarget>, CliError> {
+    use crate::generator::ScriptEngineTarget;
+
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    let Some(target) = ScriptEngineTarget::parse(requested) else {
+        return Err(CliError::UnknownScriptEngine {
+            value: requested.to_string(),
+        });
+    };
+    if lang.supports_script_engine_target(target) {
+        return Ok(Some(target));
+    }
+
+    let mut message = String::new();
+    // Two different refusals, and naming the wrong one sends a reader to the
+    // wrong repair. A backend asked for LUA is part-way across a migration
+    // this can count; one asked for ECMASCRIPT has no source-emitting arm at
+    // all, and listing its lowered sites would read as "finish the migration"
+    // when the work is to build an arm that does not exist.
+    match target {
+        ScriptEngineTarget::Lua => {
+            let remaining = lang.unmigrated_expression_sites();
+            let unknown = lang.unclassified_expression_sites();
+            message.push_str(
+                ". A partial migration would hand one engine two languages in one session, \
+                 with no diagnostic saying so, so this refuses until every site is accounted \
+                 for.",
+            );
+            if !remaining.is_empty() {
+                message.push_str(&format!(
+                    "\n\n{} site(s) still hand the engine the author's text without the \
+                     (lowered, source) pair filter — route each through `to_script_source_*`:\n  {}",
+                    remaining.len(),
+                    remaining.join("\n  ")
+                ));
+            }
+            if !unknown.is_empty() {
+                message.push_str(&format!(
+                    "\n\n{} site(s) mention a model expression and reach a callee this build \
+                     does not know. Each needs a decision ONCE: if the callee evaluates, add it \
+                     to `ENGINE_ENTRY_POINTS` and route the site through `to_script_source_*`; \
+                     if it does not (a name, a validation, a literal), say so where it is \
+                     used:\n  {}",
+                    unknown.len(),
+                    unknown.join("\n  ")
+                ));
+            }
+        }
+        ScriptEngineTarget::EcmaScript => {
+            message.push_str(
+                ", and has no template arm that emits the author's source. Nothing walks that \
+                 way yet: the four lowering backends were built to lower, and adding a \
+                 source-emitting arm to one of them is a template change, not a flag.",
+            );
+        }
+    }
+    Err(CliError::UnsupportedScriptEngine {
+        lang: lang.canonical_name().to_string(),
+        engine: target.wire_name().to_string(),
+        supported: ScriptEngineTarget::ALL
+            .iter()
+            .filter(|candidate| lang.supports_script_engine_target(**candidate))
+            .map(|candidate| candidate.wire_name().to_string())
+            .collect(),
+        reason: message,
+    })
+}
+
+/// Serialise `report` and write it as a single JSON line to stdout.
+///
+/// Not in a `--plan` run, whose stdout is the plan's answer and nothing else:
+/// a consumer that reads it line by line takes every line for a line of the
+/// answer. What of the report the answer carries, what the run's machines
+/// need linked and the name of the machine it writes, is handed to it here
+/// instead, for [`finish_generated_output`] to state when it was asked for.
+fn emit_generate_manifest(report: &GenerateReport) {
+    if output_mode() == OutputMode::Plan {
+        let mut tree = pending_tree();
+        tree.requires.clone_from(&report.runtime_requires);
+        tree.machine.clone_from(&report.machine);
+        return;
+    }
+    outln!(
+        "{}",
+        build_manifest(
+            report,
+            ManifestKind::Generate,
+            None,
+            report.target_language,
+            &crate::forge::page::EN,
+        )
+        .to_line()
+    );
+}
+
+// ── CLI Definition ──────────────────────────────────────────────
+
+/// Generator identity: crate version plus the commit it was built from.
+///
+/// The crate version is frozen pre-1.0 and identifies nothing on its own,
+/// so a consumer pinning this binary needs the commit to attribute a
+/// generated artifact to the generator that produced it — otherwise the
+/// attribution has to be recorded by hand, which drifts. `unknown` when
+/// the build had no git checkout to read (vendored crate, release
+/// tarball); see `build.rs` for the resolution and its limits.
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SCE_GIT_COMMIT"), ")");
+
+#[derive(Parser)]
+#[command(
+    name = "sce-codegen",
+    about = "SCE SCXML Code Generator",
+    version = VERSION,
+)]
+struct Cli {
+    /// Override the SCE workspace root: the checkout carrying
+    /// `tools/codegen/templates/`, whose sources `verify-generator`
+    /// compares this binary against. Resolution priority: this flag →
+    /// `SCE_WORKSPACE_ROOT` env var → `CARGO_MANIFEST_DIR/..`
+    /// (compile-time, used for vendored builds where cwd lives in the
+    /// consumer workspace) → walk up from cwd. Set this when an automated
+    /// build (vendored or otherwise) cannot rely on the default
+    /// resolution. Global — applies to every subcommand.
+    #[arg(long, global = true, value_name = "PATH")]
+    workspace_root: Option<PathBuf>,
+
+    /// Root the `// From:` provenance line in every generated file is
+    /// expressed relative to. Without it the path is emitted exactly as
+    /// named on the command line; with it, inputs under the root are
+    /// re-expressed relative to the root and inputs outside it fall back
+    /// to the path as given. Set this when generated output is committed
+    /// or compared byte-for-byte and you want provenance that resolves on
+    /// a machine that never ran the generator. Never relative to the
+    /// process working directory — an artifact that varies with the
+    /// invoking directory cannot be reproduced without reproducing that
+    /// directory. Global — applies to every subcommand.
+    #[arg(long, global = true, value_name = "PATH")]
+    source_root: Option<PathBuf>,
+
+    /// Write nothing: run the whole generation in memory, and fail if the
+    /// files on disk are not as it would leave them — one it would write
+    /// that differs or is absent, one it would remove that is still there.
+    /// The §synth-6.2.6 drift check, done on content — it sees a hand edit,
+    /// a changed template and a changed generator alike, since each of them
+    /// changes bytes. Pass the same arguments that produced the files; a
+    /// tree post-processed after generating (a formatter run in place)
+    /// holds bytes the generator did not write, and cannot pass.
+    /// Accepted by `generate`, `orchestrate`, `generate-w3c`,
+    /// `generate-conformance` and `diagram`. `generate-w3c --clean` and
+    /// `--list` refuse it, since they generate nothing.
+    #[arg(long, global = true)]
+    assert_unchanged: bool,
+
+    /// Write nothing: run the whole generation in memory, and print the path
+    /// of every file it would have produced, one per line, in place of the
+    /// artifact manifest. The exit status is the generation's own — a run
+    /// that would have been refused is refused — and never says anything
+    /// about what is on disk.
+    ///
+    /// This is how a build system learns a command's outputs before it has
+    /// run it: a document can synthesize files the author never wrote (an
+    /// inline `<invoke>` becomes a child document with a machine of its own),
+    /// and a list of them kept in the build description is a second copy that
+    /// falls behind the document. Pass the arguments the real run takes, with
+    /// `--output-dir` naming where the files will go.
+    /// Accepted by the three commands whose files a build compiles and so has
+    /// to declare: `generate` (one document, or a set with `--with-imports`),
+    /// `orchestrate` (a document set compiled together) and
+    /// `generate-conformance` (a harness rendered from a fixture catalog).
+    /// `--assert-unchanged` is its opposite number and the two cannot be
+    /// combined.
+    #[arg(long, global = true, conflicts_with = "assert_unchanged")]
+    plan: bool,
+
+    /// With `--plan`: also plan the generation of every child document the
+    /// run writes into its output directory for a build to generate by a
+    /// command of its own, and of every child document those write in turn,
+    /// with the run's language, output directory, input root and include
+    /// directories, the child read from the run's own answer and never from
+    /// disk: a hybrid `<invoke>`'s stub, a candidate or `src` child staged
+    /// there (`--as-child`), and an in-line child the run's deploy placed on
+    /// a partition of its own (`--deploy <the run's deploy>`, SCE_MESH.md
+    /// §9.6.6 rule 3). After the run's own lines, each such generation is
+    /// printed as `<child document>\t\t<argument>`, each further argument
+    /// after another tab, followed by each file it would produce, and no
+    /// generation before it does, as `<child document>\t<file>`.
+    ///
+    /// A stub is written by the run itself, so before this a build could not
+    /// declare what its generation writes until the run had run; the answer
+    /// for it is the generator's, as the answer for the run is.
+    #[arg(long, global = true, requires = "plan")]
+    plan_children: bool,
+
+    /// With `--plan`: also state the machine name of the statechart whose
+    /// machine the run writes, and with `--plan-children` of each planned
+    /// generation's: the name the parse gives the model, the document's file
+    /// stem written as an identifier (SCE_ACCEPTED_SUBSET.md §2.1,
+    /// `job-tester.scxml` is the machine `job_tester`), which names the
+    /// machine's files, its namespace or package and its types. After the
+    /// run's own lines and its generations', each is printed as
+    /// `\tmachine\t<generation>\t<name>`, where `<generation>` is empty for
+    /// the run's own machine and the child document of a generation it
+    /// planned otherwise. A run that writes no statechart's machine (a forge
+    /// kind, a document set, a harness) states none. A line that begins with
+    /// a tab is never a file: a file is never named by an empty path.
+    ///
+    /// A build declares a machine's files before it has run the generator,
+    /// and a name it spelled from the stem itself would be a second spelling
+    /// of the generator's, which falls behind it: the build reads the name
+    /// from here instead.
+    #[arg(long, global = true, requires = "plan")]
+    plan_machines: bool,
+
+    /// Also write to FILE, one path per line, every file the run read: the
+    /// prerequisites a `--write-deps` depfile of the same run names (its
+    /// document, what that document includes and imports, the source set its
+    /// `source-hash` covers, the deploy, the templates and this program),
+    /// less every file the run produces; with `--plan --plan-children`,
+    /// those of every child generation it planned too. A file the run named
+    /// and did not find is written `?<path>`, since its appearing would
+    /// change what the run does, and a tool the run shaped its output with
+    /// (the C++ formatter) is written `!<name>`, since its version does.
+    ///
+    /// What a run writes is a function of what it read and of its arguments.
+    /// So a build that keeps a plan's answer can tell when it is still the
+    /// one the generator would give (when no file of this list is newer than
+    /// the answer), and an action cache can key a generation on the contents
+    /// of this list (ADR 0097). A run that records nothing it read writes no
+    /// list, and an answer without one is never reused.
+    #[arg(long, global = true, value_name = "FILE")]
+    reads: Option<PathBuf>,
+
+    /// With `--plan`: also state what the machines of each planned
+    /// generation need linked beside them that the header-only contracts of
+    /// their runtime do not provide, as the backend decided while rendering
+    /// them: `lua` (the Lua 5.4 engine a data model is evaluated in), `dom`
+    /// (the Lua binding of the XML DOM), `http` (the BasicHTTP client) and
+    /// `clock` (the link-time clock a scheduling machine reads by default).
+    /// After every other line, each is printed as
+    /// `\trequires\t<generation>\t<requirement>`, where `<generation>` is
+    /// empty for the run's own machines and, with `--plan-children`, the
+    /// child document of a generation it planned. A line that begins with a
+    /// tab is never a file: a file is never named by an empty path.
+    ///
+    /// The C11 backend states them, and includes each requirement's
+    /// interface exactly when it states it; the other backends state none. A
+    /// build links each with the library of its runtime that implements it,
+    /// so which machines need which library is the generator's answer and not
+    /// a list kept in the build.
+    #[arg(long, global = true, requires = "plan")]
+    plan_requires: bool,
+
+    /// Diagnostic output format on stderr. `human` (default) preserves
+    /// the existing CLI text. `json` emits one NDJSON record per error
+    /// for machine consumption; stdout output is unchanged. The flag
+    /// is global — every subcommand routes failure through the same
+    /// emitter (`cli_exit` / `ErrorFormat::emit_and_exit`), so consumers
+    /// see a uniform wire contract regardless of which subcommand ran.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ErrorFormat::Human,
+        global = true,
+        long_help = "\
+Diagnostic output format on stderr.
+
+  human  (default) Human-readable prose; preserves existing CLI output.
+  json             One NDJSON record per error, one object per line.
+                   Shape is defined by the schema at
+                   schemas/sce-diagnostic.v1.schema.json and documented
+                   in SCE_ERROR_CONTRACT.md. Example stderr line:
+
+    {\"v\":1,\"id\":\"fnv1a:1c56b923b2b2b87f\",\"code\":\"validation/missing-attribute\",\"stage\":\"validation\",\"message\":\"sce:field must have an 'id' attribute\",\"fix\":{\"kind\":\"add_attribute\",\"element\":\"sce:field\",\"attr\":\"id\"}}
+
+                   Required fields: v, id, code, stage, message.
+                   Optional fields (may be absent): spec, location,
+                   expected, actual, fix. Consumers MUST ignore
+                   unknown fields — purely additive schema changes
+                   are backwards-compatible and do not bump `v`.
+
+Stdout is unaffected — the artifact manifest (see
+SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
+"
+    )]
+    error_format: ErrorFormat,
+
+    /// Build with a bound moved: `--limit name=N` gives the bounds that carry
+    /// `sce:limit="name"` the number N in place of the one the document wrote.
+    /// Repeatable. A list variable, a bytes or string variable, an algorithm's
+    /// buffer and an algorithm's `returns-max-size` take it wherever they sit,
+    /// the machine's and the algorithms' alike, so the bounds that have to move
+    /// together do. The numbers are part of what the `source-hash` of every
+    /// file written says. A name that no document of this run carries moves
+    /// nothing, so a deployment that builds many documents with one set of
+    /// limits keeps the names it gives in one list and checks them against the
+    /// documents (the repository's own do:
+    /// `tests/a_limit_moves_every_bound_that_names_it.rs`).
+    /// Global — applies to every subcommand that reads a document.
+    #[arg(long = "limit", global = true, value_name = "NAME=N")]
+    limit: Vec<String>,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+/// CLI arguments for the `generate` subcommand. Extracted into a
+/// dedicated `Args` struct (rather than inline enum-variant fields) so
+/// the wide `Generate` surface does not dwarf the other `Commands`
+/// variants; the enum holds it boxed, keeping every variant pointer-sized
+/// and the `Subcommand` derive free of a `large_enum_variant` allow.
+///
+/// `Clone` because a `--with-imports` run generates each document it reaches
+/// as this subcommand generates one, from a copy of the arguments it was given
+/// with the document and its directory filled in.
+#[derive(clap::Args, Clone)]
+struct GenerateArgs {
+    /// Input SCXML file path, or the `sce:std/...` name of a standard
+    /// document. One document; several only with `--with-imports`, which
+    /// generates them together.
+    #[arg(required = true, value_name = "SCXML")]
+    scxml: Vec<String>,
+    #[arg(
+        short,
+        long,
+        default_value = "cpp",
+        help = LanguageRoute::Generate.flag_summary("Target language"),
+        long_help = LanguageRoute::Generate.flag_help("Target language"),
+    )]
+    language: String,
+    /// Which language the generated machine hands its script engine.
+    ///
+    /// `datamodel="ecmascript"` is a claim about a language and Lua is not
+    /// that language, so a backend running the datamodel on Lua has to
+    /// translate — at build time here, or at run time inside the engine's
+    /// input adapter. This is that choice, and it is a codegen INPUT because
+    /// C++ and Kotlin genuinely have both while the other four do not.
+    ///
+    /// Omit it and each backend emits for the engine it already emitted for,
+    /// so a run that does not ask is byte-identical to one before this flag
+    /// existed. The value is reported back on the manifest's
+    /// `script_engine_language`, which is what a host reads to know which
+    /// kind of engine to supply.
+    ///
+    /// A backend that cannot honour the request refuses rather than emitting
+    /// something half in each language. See docs/SCE_LUA_TRANSLATION_SEAM.md.
+    #[arg(long = "script-engine", value_name = "LANG")]
+    script_engine: Option<String>,
+    /// Output directory
+    #[arg(short, long, default_value = ".")]
+    output_dir: String,
+    /// Generate as child state machine (C++ invoke support)
+    #[arg(long)]
+    as_child: bool,
+    /// Parent machine stem for Kotlin/Go child emission. When supplied
+    /// with `--as-child`, the child's `package com.sce.generated.<child>`
+    /// (Kotlin) or `package <child>` (Go) header is rewritten to the
+    /// parent's package, and so is the header of every in-line child the
+    /// child itself starts, which is written beside it, matching the
+    /// layout `generate-w3c` produces via its internal `process_child`
+    /// hook. Without this flag a single-file `--as-child` invocation
+    /// leaves the child in its own derived package and the parent's
+    /// unqualified reference to the child `StateMachine` class fails to
+    /// resolve.
+    ///
+    /// C++ and Rust children already compile cleanly without the flag
+    /// (C++ resolves via `-I`, Rust via the parent's `mod.rs`) — the
+    /// flag is a no-op for those languages.
+    #[arg(long)]
+    parent_stem: Option<String>,
+    /// Generate, in this run and into the same output directory, each child
+    /// document the run writes (a hybrid `<invoke>`'s stub, a `src` child)
+    /// and the children those write in turn: the generations `--plan
+    /// --plan-children` names, run here instead of by a build. Each is
+    /// generated `--as-child` of this document (`--parent-stem`), so a
+    /// Kotlin or Go child joins its package as `generate-w3c` places it, and
+    /// over this run's input root, so every file of the run carries one
+    /// source set. A child's document is the run's own output, named by its
+    /// path in the output directory.
+    ///
+    /// What makes the run one action (ADR 0097): every file of a document
+    /// and its children comes from one invocation, whose reads (`--reads`)
+    /// cover the children's.
+    #[arg(long)]
+    children: bool,
+    /// Write CMake DEPFILE for incremental builds
+    #[arg(long)]
+    write_deps: Option<String>,
+    /// Go module path hosting the generated forge packages, e.g.
+    /// `github.com/acme/proj/generated`. When set, each Go
+    /// `<sce:import>` emits `import "{prefix}/{snake}"` instead of
+    /// the bare `"{snake}"` form (invalid outside GOPATH). Required
+    /// for any Go crossfile fixture; ignored for other languages.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Rust only: also generate the origin-aware owned projection of each
+    /// codec, `try_into_owned_in_origin`. It takes a storage profile that
+    /// implements `OriginStorage` and the origin its decoded bytes came from,
+    /// and builds each byte or text field through the container the profile
+    /// holds it in, so a message decoded from a shared frame can share it
+    /// instead of copying out of it. Off by default, and when off the output is
+    /// unchanged. Every codec an enabled codec embeds, repeats or dispatches
+    /// to has to be generated with it on too; ignored for other languages.
+    #[arg(long)]
+    owned_origin: bool,
+    /// Rust only: also generate each codec's view, `{Codec}View`, whose size
+    /// does not grow with its lists' declared maximum (ADR 0049). A view holds
+    /// a bounded list as the bytes its entries occupy and reads the entries by
+    /// walking them; it is built by one pass that refuses what `decode`
+    /// refuses. A codec with no list, embedded body or variant has nothing a
+    /// view would hold differently, so its view is the codec itself under that
+    /// name. Off by default, and when off the output is unchanged. Every codec
+    /// an enabled codec embeds, repeats or dispatches to has to be generated
+    /// with it on too; ignored for other languages.
+    #[arg(long)]
+    views: bool,
+    /// Rust only: always inline the functions that write each codec, so the
+    /// functions of a frame become one (docs/adr/0061). It trades text for the
+    /// instructions and calls of the nested writes; measure it on the target
+    /// before keeping it. Off by default, and when off the output is unchanged.
+    /// A property of one document, not of a set; ignored for other languages.
+    #[arg(long)]
+    inline_encode: bool,
+    /// Path to a .clang-format file for C++ output formatting.
+    /// When omitted, the built-in default style is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Emit C++ exactly as the templates produce it, without clang-format.
+    /// Formatting is on by default and needs clang-format 19, the pinned
+    /// major; a run that cannot find it stops instead of emitting bytes
+    /// no other host would produce.
+    #[arg(long)]
+    no_format: bool,
+    /// Path to deploy.yaml for SCE Mesh transport codegen.
+    /// When provided, generates transport routing code alongside
+    /// the state machine code. SM output remains identical.
+    #[arg(long)]
+    deploy: Option<String>,
+    /// Emit only the mesh transport — skip the state-machine backend code
+    /// generation entirely. Requires `--deploy`. For a deployment's peer
+    /// table committed on its own, whose machine is generated nowhere
+    /// beside it (`backends/rust/mesh/generate.sh`,
+    /// `backends/kotlin/mesh/generate.sh`).
+    ///
+    /// A build that generates the machine too runs one `generate` with
+    /// the deploy, which writes the machine and its transport, and
+    /// declares both from `--plan` (cmake/SCECodegenPlan.cmake). Splitting
+    /// that into a machine run and a transport-only run gives the
+    /// transport two producers, since the machine run with the deploy
+    /// writes it as well.
+    #[arg(long, requires = "deploy")]
+    transport_only: bool,
+    /// The machine of `--deploy` this forge document is generated for.
+    /// A `sce:kind="queue"` document resolves its `source="deploy"` capacity
+    /// and participants against that machine's `limits:`, the C11 backend
+    /// reads the machine's `platform.atomic_rmw_width`, `platform.core_count`
+    /// and `queues.<q>.min_wrap_ops`, and the C11 and Rust backends read the
+    /// atomics of its device's `target` triple (SCE Protocol-Synthesis RFC
+    /// §synth-5-P).
+    /// Without it a document with a `deploy` key is refused rather than
+    /// guessed, and an SCQ row on C11 is refused with
+    /// `queue/atomic-width-unstated`. Ignored for a statechart.
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
+    /// Partition identity for `<parallel>` rule-12 role assignment
+    /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
+    /// with `--deploy`, the generated SM code branches per
+    /// `<parallel>` on this partition's role (Root / NonRoot /
+    /// SinglePartition). Ignored without `--deploy`. Omitting the
+    /// flag preserves P0 behaviour — all parallels render via the
+    /// legacy single-partition path.
+    #[arg(long)]
+    partition: Option<String>,
+    /// RFC §synth-5-F build-time const-fold iteration budget.
+    ///
+    /// Caps the total iteration count across every `<sce:fold>`
+    /// body in the document — every fold tick and every nested
+    /// while/foreach iteration decrements one shared counter so
+    /// pathological const-fold bodies cannot turn `sce-build`
+    /// into a general-purpose compute platform. Omit to use the
+    /// SSoT default (1_000_000); set higher for legitimate large
+    /// tables, lower for tighter CI budgets.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: target the
+    /// `sce-rust-runtime` no_std variant.
+    ///
+    /// Only meaningful with `-l rust`; ignored for other
+    /// language targets. When set, validates that the SCXML
+    /// document does not use constructs that require a
+    /// std-coupled runtime (script engines, BasicHTTP send) —
+    /// the no_std variant cannot link Lua / QuickJS / tokio /
+    /// reqwest. Author-side violations fire
+    /// `codegen/no-std-script-not-supported` /
+    /// `codegen/no-std-http-not-supported`.
+    ///
+    /// Emission: `--no-std` produces allocator-free code —
+    /// `#![no_std]`, `core::time::Duration`, `NoOpHal` as the
+    /// default `Hal`, and elision of the invoke/script-engine
+    /// machinery (`session_id` / `invoke_id` / parent queue).
+    /// Every owned collection names a profile-resolving runtime
+    /// alias — `SceString` / `SceBytes` for payload fields,
+    /// `StateChain` for the active set and history records (the
+    /// microstep and its buffers are the runtime's own) — so the runtime
+    /// owns the std-vs-heapless choice and ONE emission compiles
+    /// against BOTH runtime profiles: the no_std runtime
+    /// (`thumbv7em-none-eabihf`, no global allocator) and the std
+    /// runtime (the AP profile). Parallel states and typed
+    /// bytes/string payloads are included; the
+    /// sce-portable-emit-probe crate gates both directions.
+    #[arg(long)]
+    no_std: bool,
+    /// Generate the variant of the document these features denote (ADR 0057
+    /// §6): comma-separated, `--features` alone for the variant with no
+    /// feature on.
+    ///
+    /// The document must import a feature model, and the selection is held
+    /// to it: a name it does not declare and a feature without one it requires
+    /// are refused, never completed. A document that carries feature
+    /// conditions is refused without this flag, since generating it as written
+    /// would choose the variant with every feature on for the build.
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
+    features: Option<Vec<String>>,
+    /// Declare an Event I/O Processor `type` this build's host serves
+    /// (§scxml-6.2.5 makes the identifier extensible). Repeatable.
+    ///
+    /// Without it, `<send type="x">` for an `x` SCE does not implement
+    /// compiles to a runtime `error.execution` and is reported on the
+    /// manifest as a `host_processor_causes` entry. With it, the same
+    /// site compiles to a dispatch into the handler the host registers
+    /// under that name, and the entry disappears — the declaration is
+    /// what turns "nobody performs this" into "the host performs this".
+    ///
+    /// The runtime half is the host's: `Engine::register_event_processor`.
+    /// A type declared here and never registered raises `error.execution`
+    /// at the send, because from the document's side an act nobody
+    /// performed is the same either way.
+    ///
+    /// Only backends with a host-processor runtime accept this; the rest
+    /// refuse the document rather than emit a dispatch they cannot
+    /// service.
+    #[arg(long = "host-processor", value_name = "TYPE")]
+    host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run
+    /// (§scxml-6.4.1 leaves the invokable set to the platform). Repeatable.
+    ///
+    /// Separate from `--host-processor` because they are separate
+    /// contracts: delivering an event is not the same capability as
+    /// running a process with a lifecycle, and one flag would make
+    /// declaring either silently claim both.
+    ///
+    /// Without it, `<invoke type="x">` for an `x` SCE does not implement
+    /// raises `error.execution` and starts nothing. With it, the site
+    /// starts the invocation the host registers under that name through
+    /// `Engine::register_invoker`, is cancelled when its state exits, and
+    /// completes when the host raises `done.invoke.<id>`.
+    ///
+    /// Not routed to a host invoker: parent-to-child
+    /// `<send target="#_invokeid">`, `autoforward`, and `<finalize>`.
+    /// Those are mechanics between two SCXML sessions.
+    #[arg(long = "host-invoker", value_name = "TYPE")]
+    host_invoker: Vec<String>,
+    /// Override the directory used for the §synth-6.2.6 `source-hash`
+    /// computation. Defaults to the SCXML file's parent
+    /// directory (the typical `resources/<num>/` test layout
+    /// where every input the codegen consumed lives next to the
+    /// driver file).
+    ///
+    /// Authoring workflows that stage the input file into a
+    /// temporary directory before generation (a copy of a tracked
+    /// fixture in `mktemp -d`, so synth-invoke children don't
+    /// pollute the source tree) must point this back at
+    /// the canonical input root, otherwise the embedded
+    /// `source-hash` reflects the transient staging directory
+    /// and `sce-codegen verify` cannot reproduce it from the
+    /// repo.
+    #[arg(long)]
+    input_root: Option<String>,
+    /// Emit the parsed document as JSON to `<path>` before
+    /// codegen runs. The envelope shape is `apis/forge-ast.v1.schema.json`;
+    /// see `docs/SCE_FORGE_AST.md` for the consumer contract.
+    ///
+    /// Covers every kind in the v1 envelope: 15 forge kinds plus
+    /// `statechart` (the `oneOf` discriminator distinguishes them
+    /// via `ast.document.kind`). Statechart documents flow through
+    /// the SCXML pipeline and are emitted post-analyzer, before
+    /// any deploy-time mutations or codegen prep.
+    ///
+    /// Codegen still runs after the emit — `--emit-ast` is an
+    /// addition to the pipeline, not a replacement. Documents
+    /// rejected by §scxml-5.8 (`document_rejected`) skip the
+    /// emit and continue to the existing rejection-stub codegen
+    /// path; the absence of `<path>` is the consumer signal.
+    #[arg(long)]
+    emit_ast: Option<String>,
+    /// Override the Kotlin `package` header prefix on emitted
+    /// `*Sm.kt` files. Defaults to `com.sce.generated` (every W3C
+    /// IRP fixture emits there). Non-W3C consumers — integration
+    /// fixtures under `integration_resources/<stem>/`, custom test
+    /// fixtures — pass a different prefix (e.g. `com.sce.integration`)
+    /// so the emitted tree lives under
+    /// `src/main/kotlin/com/sce/integration/<stem>/` rather than
+    /// `src/main/kotlin/com/sce/generated/<stem>/`, keeping the W3C
+    /// and integration directory trees disjoint at the package
+    /// level.
+    ///
+    /// Only meaningful with `-l kotlin`; ignored for other
+    /// language targets.
+    #[arg(long)]
+    kotlin_package_prefix: Option<String>,
+    /// Nest the emitted C++ namespace under
+    /// `SCE::Generated::<prefix>::<machine>` instead of the default
+    /// `SCE::Generated::<machine>`. Lets a separate catalog (suite) reuse
+    /// the same machine names as the in-tree catalog without an ODR clash
+    /// when both link into one binary. Empty/unset = the historical
+    /// un-namespaced shape (byte-identical). Only meaningful with `-l cpp`.
+    #[arg(long)]
+    cpp_namespace_prefix: Option<String>,
+    /// Prefix every emitted C symbol with `<prefix>_` (C has no
+    /// namespace, so the suite prefix nests each `<machine>_…` symbol —
+    /// struct tag, enum/macro names, and child-machine refs included).
+    /// Lets a separate catalog (suite) reuse the same machine names as
+    /// the in-tree catalog without an ODR clash when both link into one
+    /// binary. The C11 peer of `--cpp-namespace-prefix`. Empty/unset =
+    /// the historical un-prefixed shape (byte-identical). Only
+    /// meaningful with `-l c11`.
+    #[arg(long)]
+    c_symbol_prefix: Option<String>,
+    /// Reject the build when the
+    /// document carries any `<sce:unresolved>` placeholder
+    /// (attribute or element form). Default builds let the
+    /// marker survive in the model + the `sce-codegen
+    /// unresolved` NDJSON report; this flag lifts the marker to
+    /// `validation/unresolved-placeholder` so production CI
+    /// gates cannot merge IR with open decisions.
+    #[arg(long)]
+    strict_unresolved: bool,
+    /// Run the design-time statechart lints (`crate::lint_statechart`):
+    /// graph reachability, event-set exhaustiveness, and guard
+    /// analysis. Off by default because these reject **legal** SCXML —
+    /// they assert design intent, not validity, and the W3C IRP corpus
+    /// contains documents that deliberately declare unreachable states
+    /// (`resources/278` hosts a datamodel read from outside its
+    /// lexical scope; `resources/576` proves `initial` is honoured by
+    /// leaving its first state unentered). Turn it on for authored
+    /// documents, where an orphan region or a sibling missing an event
+    /// handler is nearly always a mistake.
+    #[arg(long)]
+    lint: bool,
+    /// Hold the statechart to an authoring profile: a JSON file the
+    /// specification's owner keeps beside the specification, stating what a
+    /// design is held to (SCE Accepted Subset §2.17). A statechart that is
+    /// valid and is not what the profile asks for is refused, every finding
+    /// listed, as a `profile/*` record; an unusable profile is refused whole
+    /// as `cli/profile-unusable`. The manifest names the profile by digest.
+    ///
+    /// Judged where `check --profile` judges it, by the same functions, so
+    /// the two commands cannot disagree about a document.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and
+    /// `<sce:use template="...">` fragments by name. Tried after
+    /// the including file's own directory and before the cwd
+    /// fallback, so an explicit search path wins over the implicit
+    /// cwd guess. Repeatable: `-I dir_a -I dir_b`. Decouples a
+    /// fragment reference from the includer's directory depth and
+    /// the fragment's on-disk location — a case file can write
+    /// `<sce:use template="foo.sce-template.xml">` instead of
+    /// `<sce:use template="../../_templates/foo.sce-template.xml">`.
+    ///
+    /// Applies to the SCXML preprocessing pipeline only; forge
+    /// `<sce:import>` resolution is unaffected.
+    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    include_dir: Vec<String>,
+    /// Generate the documents named AND every document they reach, each once,
+    /// in one run: every `<sce:import>` transitively (a local `src` beside the
+    /// document that imports it, an `sce:std/...` name from the standard
+    /// library built into this generator), every child an
+    /// `<invoke type="scxml" src="...">` names by its file, and every document
+    /// a hybrid `<invoke>` declares in `sce:candidates`.
+    ///
+    /// Each document is generated exactly as `generate` generates it alone,
+    /// with the same flags, and written below `--output-dir`, which becomes the
+    /// root of the tree, at the directory its package requires: for Kotlin a
+    /// forge kind under `com/sce/generated/<snake>/`, the package a machine's
+    /// import line names, and a statechart under its
+    /// `--kotlin-package-prefix` package; for Go each unit in a package
+    /// directory of its own, imported as `<--go-module-prefix>/<snake>`; for
+    /// Rust, Python, C++ and C11 every unit beside the others, as their
+    /// `super::` / `from .` / `#include` lines name them; for Swift every unit
+    /// beside the others too, the files of one module. A child a statechart
+    /// starts by its file or as a candidate is generated as that statechart's
+    /// child, into its package
+    /// (`--as-child --parent-stem`); in-line children are generated with their
+    /// parent, as always.
+    ///
+    /// A reference that names no document is refused where it is written, and
+    /// every refusal raised while generating a document the run reached
+    /// carries, as `reached-from` related sites, the references that brought
+    /// it in. `--assert-unchanged` and `--plan` apply to the whole tree.
+    /// `--input-root` roots the source hash of the caller's documents; a
+    /// standard document keeps the library's.
+    ///
+    /// `--write-deps` writes one depfile for the run: its target the first
+    /// file written, its prerequisites what every document read, less what
+    /// any of them wrote.
+    ///
+    /// Not with `--as-child`, `--parent-stem` or `--emit-ast`, which describe
+    /// one document's output, nor with `--deploy`: a deployment is a set's
+    /// question, which `orchestrate --deploy` answers.
+    #[arg(
+        long,
+        conflicts_with_all = ["as_child", "parent_stem", "emit_ast", "deploy"]
+    )]
+    with_imports: bool,
+}
+
+/// `--registry`'s long help, formatted from the constant the loader
+/// resolves against the project root.
+///
+/// Written this way rather than as a doc comment because the two have
+/// drifted before: the registry moved off `tests/CMakeLists.txt` and
+/// the help kept naming it, so a caller doing exactly what the help
+/// said got a JSON parse error on a build script. Formatting the one
+/// constant into the one sentence makes that particular drift
+/// unrepresentable; `cli_documented_catalog_paths` covers the rest.
+fn w3c_registry_flag_help() -> String {
+    format!(
+        "Path to the W3C conformance registry — the JSON catalog at \
+         `{}`, which declares every upstream test this build generates \
+         and the harness each one needs.\n\n\
+         Defaults to that path under the resolved project root. Name it \
+         when the caller is not this repository: together with \
+         `--resources` and `--output-dir`, that is what lets a vendoring \
+         build drive the suite without owning SCE's directory layout.",
+        crate::w3c_registry::W3C_REGISTRY_RELATIVE_PATH
+    )
+}
+
+/// `--manifest`'s long help, shared by the two subcommands that read a
+/// fixture catalog. Formatted from the constant for the same reason
+/// [`w3c_registry_flag_help`] is.
+fn forge_catalog_flag_help() -> String {
+    format!(
+        "Path to fixture catalog JSON — by default the numerical fixture \
+         catalog at `{}`. Pass `--catalog` to read a different one.",
+        crate::conformance::FORGE_CATALOG_RELATIVE_PATH
+    )
+}
+
+/// `check --language`'s long help: the route's menu, then the part
+/// specific to this subcommand — that the flag is repeatable and that
+/// naming nothing means sweeping every backend.
+///
+/// The menu half is formatted from [`LanguageRoute`] like every other
+/// route's, so the promise `check`'s own subcommand help makes — that
+/// `check -l X` and `generate -l X` always agree — cannot be broken by
+/// one of the two listing a backend the other omits. It was: `check`
+/// listed all six and `generate` omitted `python`.
+fn check_language_flag_help() -> String {
+    format!(
+        "{}\n\n\
+         Repeatable. When omitted every backend is checked and the \
+         per-backend verdict rides the manifest instead of the exit code \
+         — see the subcommand's long help for the exit contract.",
+        LanguageRoute::Check.flag_summary("Backend to check against")
+    )
+}
+
+/// `list-fixtures --language`'s long help. The flag filters a listing
+/// rather than selecting an output target, but it parses the same names
+/// through the same [`Language`] `FromStr`, so it owes callers the same
+/// menu — a name this route rejects is a name it must not have offered.
+fn list_fixtures_language_flag_help() -> String {
+    format!(
+        "{}\n\n\
+         When set, applies the per-backend schedule `generate-conformance` \
+         uses, so a backend's build derives its fixture set from the single \
+         manifest source of truth: a fixture that backend does not generate \
+         is left out — a kind outside c11's set, a codec using an MCU-only \
+         feature, a CBOR codec the backend refuses, a `may-fail` algorithm \
+         it does not lower. Unset, every fixture in the manifest is emitted.",
+        LanguageRoute::ListFixtures.flag_summary("Optional language gate")
+    )
+}
+
+/// `--catalog`'s long help. Both catalog locations come from their own
+/// modules, so neither can be renamed out from under this sentence.
+fn catalog_flag_help() -> String {
+    format!(
+        "Which catalog `--manifest` points at.\n\n\
+         `forge` (default) is the numerical fixture catalog at `{}`; \
+         `w3c` is the statechart conformance registry at `{}`. Named \
+         rather than sniffed from the file's shape: the two catalogs \
+         answer different questions, and a reader that guesses would \
+         pick one silently on a malformed file.",
+        crate::conformance::FORGE_CATALOG_RELATIVE_PATH,
+        crate::w3c_registry::W3C_REGISTRY_RELATIVE_PATH
+    )
+}
+
+/// CLI arguments for the `list-fixtures` subcommand, in an `Args` struct
+/// (as `GenerateW3cArgs` is) so `cmd_list_fixtures` takes one parameter,
+/// free of a `too_many_arguments` allow.
+#[derive(clap::Args)]
+struct ListFixturesArgs {
+    /// Path to fixture catalog JSON
+    #[arg(short, long, long_help = forge_catalog_flag_help())]
+    manifest: String,
+    /// Output format. `plain` (default) is one fixture name per line,
+    /// suitable for `for fixture in $(sce-codegen list-fixtures ...)`.
+    /// `cmake` emits a single semicolon-separated CMake list literal.
+    /// `space` emits a single space-separated line.
+    #[arg(short, long, default_value = "plain")]
+    format: String,
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::ListFixtures.flag_summary("Optional language gate"),
+        long_help = list_fixtures_language_flag_help(),
+    )]
+    language: Option<String>,
+    /// RFC §synth-5-B B2-test-vector: restrict the listing to fixtures
+    /// whose SCXML carries at least one `<sce:test-vector>` element
+    /// (algorithm kind only — codec test vectors defer to B5). The
+    /// cmake harness uses this to declare the per-fixture sidecar
+    /// header `<fixture>_test.h` as an additional OUTPUT of the
+    /// generate custom_command without speculating which fixtures
+    /// emit a sidecar. Requires `--resource-dir` to locate the
+    /// per-fixture SCXML files.
+    #[arg(long)]
+    has_test_vectors: bool,
+    /// Directory containing per-fixture `<name>.scxml` source files.
+    /// Required when `--has-test-vectors` is set.
+    #[arg(long)]
+    resource_dir: Option<String>,
+    /// Which catalog `--manifest` points at
+    #[arg(long, default_value = "forge", long_help = catalog_flag_help())]
+    catalog: String,
+    /// Restrict a `--catalog w3c` listing to fixtures naming this
+    /// harness (`simple`, `scheduled`, `http`). This is how a build
+    /// system reconstructs the per-harness registration groups
+    /// without parsing JSON. Unset lists every registered fixture.
+    #[arg(long)]
+    harness: Option<String>,
+    /// List each fixture's document instead of its name, in the same
+    /// order and format: a path under `--resource-dir`, or the
+    /// `sce:std/...` name of a standard document. A build hands this to
+    /// `generate` as it is, so no build spells where a fixture's
+    /// document lives. Forge catalog only.
+    #[arg(long)]
+    documents: bool,
+}
+
+/// CLI arguments for the `generate-w3c` subcommand. Extracted into an
+/// `Args` struct (mirroring `GenerateArgs`) so `cmd_generate_w3c` takes
+/// one parameter instead of eight, free of a `too_many_arguments` allow.
+#[derive(clap::Args)]
+struct GenerateW3cArgs {
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::GenerateW3c.flag_summary("Target language"),
+        long_help = LanguageRoute::GenerateW3c.flag_help("Target language"),
+    )]
+    language: String,
+    /// Which language the generated machines hand their script engine.
+    ///
+    /// The batch counterpart of `generate --script-engine`, and it exists for
+    /// the same reason the single-document flag does: a backend carrying both
+    /// arms of the language seam emits a DIFFERENT artifact for each, so a
+    /// conformance suite that can only be generated for one of them can only
+    /// be measured on one of them. `w3c-kotlin` ran two ECMAScript engines
+    /// against an ECMAScript tree and had no spelling at all for the lowered
+    /// tree its Lua engine evaluates — which is why that gate's Lua arm was a
+    /// comment describing a debt rather than a run.
+    ///
+    /// Resolved through the same `supports_script_engine_target` refusal as
+    /// `generate`, so a backend part-way across the seam refuses here too
+    /// rather than emitting a suite that hands one engine two languages.
+    #[arg(long = "script-engine", value_name = "LANG")]
+    script_engine: Option<String>,
+    /// Path to the W3C conformance registry
+    #[arg(long, long_help = w3c_registry_flag_help())]
+    registry: Option<String>,
+    /// Path to resources directory
+    #[arg(long)]
+    resources: Option<String>,
+    /// Root the generated trees are written under.
+    ///
+    /// Each backend keeps its own layout beneath this root
+    /// (`backends/rust/tests/`, `backends/kotlin/w3c/`, ...) because
+    /// the emitted code depends on it: the tests sit at a fixed place
+    /// relative to the machines they exercise. Only the root moves.
+    ///
+    /// Defaults to the project root, which is what an in-repo
+    /// regeneration wants. Naming a root outside this repository asks
+    /// for a suite of the caller's own, and the run then also emits the
+    /// files that make the tree buildable on its own — the build
+    /// manifest, the module root, and the harness the generated tests
+    /// call into. Together with `--registry`, `--resources` and
+    /// `--suite-package`, that is what lets a vendoring build drive the
+    /// conformance suite without owning SCE's directory layout or its
+    /// build system.
+    #[arg(long)]
+    output_dir: Option<String>,
+    /// Name the emitted conformance suite calls itself.
+    ///
+    /// Generated tests have to spell the suite they belong to: a Rust
+    /// integration test lives outside the crate and names it
+    /// (`sce_rust_tests::generated::test144`), a Go test imports
+    /// `<module>/harness`, a Kotlin test imports the package root. Give
+    /// the name in the target language's own idiom — a Cargo package
+    /// name (`acme-conformance`), a Go module path
+    /// (`github.com/acme/conformance`), a Kotlin package root
+    /// (`com.acme.conformance`).
+    ///
+    /// Defaults to the name this repository's own suite carries, so an
+    /// in-repo regeneration is unaffected. Only meaningful alongside an
+    /// `--output-dir` outside this repository: renaming the suite while
+    /// writing into the repository would desync the emitted sources
+    /// from the committed build files, so that combination is refused.
+    ///
+    /// The Python and C++/C11 backends refuse it, because neither emits
+    /// anything that names a suite — Python's tests import the machine
+    /// beside them by path and take fixtures from pytest's
+    /// directory-scoped conftest, and the C++ drivers are hand-authored
+    /// headers that CMake configures.
+    #[arg(long, value_name = "NAME")]
+    suite_package: Option<String>,
+    /// Generate single test by ID
+    #[arg(short, long)]
+    test: Option<String>,
+    /// Remove all generated files
+    #[arg(long)]
+    clean: bool,
+    /// List tests without generating
+    #[arg(long)]
+    list: bool,
+    /// Path to a .clang-format file for C++ output formatting.
+    /// When omitted, the built-in default style is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Emit C++ exactly as the templates produce it, without clang-format.
+    /// Formatting is on by default and needs clang-format 19, the pinned
+    /// major; a run that cannot find it stops instead of emitting bytes
+    /// no other host would produce.
+    #[arg(long)]
+    no_format: bool,
+}
+
+/// CLI arguments for the `check` subcommand.
+///
+/// Deliberately narrower than [`GenerateArgs`]: every flag that only
+/// shapes *output* (`--output-dir`, `--write-deps`, `--emit-ast`,
+/// formatting, namespace prefixes, `--as-child`) is absent, because
+/// `check` writes nothing for them to shape. What remains is the set
+/// that changes how the document is *read* — include path, unresolved
+/// strictness, forge import resolution, the const-fold budget, and the
+/// no_std validation axis — so a document that checks clean is one
+/// `generate` would accept under the same interpretation.
+#[derive(clap::Args)]
+struct CheckArgs {
+    /// Input SCXML file path. Shorthand for a single-document run;
+    /// `--scxml` names the rest of a set.
+    ///
+    /// Exempted by the same ids that put the run on the
+    /// document-set route and that the single-document-only flags below
+    /// conflict with. Exempting `--scxml` alone made a forge-only or
+    /// deploy-only set — both of which `orchestrate` accepts and builds
+    /// — unnameable to `check`: the only spelling left forced a forge
+    /// document into this statechart slot, where it was read as a
+    /// statechart and refused for having no initial state.
+    #[arg(required_unless_present_any = ["scxml_set", "forge", "document", "deploy"])]
+    scxml: Option<String>,
+    /// Statechart document joining the set, mirroring `orchestrate`'s
+    /// `--scxml`. Repeatable. Naming one puts the run on the
+    /// document-set route.
+    #[arg(long = "scxml", value_name = "PATH")]
+    scxml_set: Vec<String>,
+    /// Forge document joining the cross-doc registry, mirroring
+    /// `orchestrate`'s `--forge`. Repeatable. Naming one puts the run on
+    /// the document-set route, where cross-file `<sce:on-sample link>`
+    /// and `<sce:outbox ref>` references resolve.
+    #[arg(long = "forge", value_name = "PATH")]
+    forge: Vec<String>,
+    /// A document of either pipeline joining the set: SCE reads its root
+    /// and files it as `--scxml` or `--forge` itself, by the rule every
+    /// other route uses (`classify_document`). Repeatable.
+    ///
+    /// For a caller that holds documents and not their kinds — an author
+    /// handing over a set through the authoring MCP — so the one rule that
+    /// decides which pipeline reads a document is not copied into every
+    /// client. `--scxml` and `--forge` stay for a caller that states the
+    /// pipeline, and a document named both ways is read twice, as it
+    /// would be if listed twice.
+    #[arg(long = "document", value_name = "PATH")]
+    document: Vec<String>,
+    /// Path to `deploy.yaml`, mirroring `orchestrate`'s `--deploy`.
+    /// Fires the deploy-aware cross-doc validators — link-vs-deploy
+    /// declaration, burst absorption, reassembly — which otherwise
+    /// silent-skip. Omit to keep the run deploy-unaware.
+    #[arg(long = "deploy", value_name = "PATH")]
+    deploy: Option<String>,
+    /// The machine of `--deploy` the documents are generated for, mirroring
+    /// `generate` and `orchestrate`: every `sce:kind="queue"` document in the
+    /// set resolves its deploy keys and what the deploy says of the target's
+    /// atomics against that machine (SCE Protocol-Synthesis RFC §synth-5-P).
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
+    #[arg(
+        short,
+        long = "language",
+        value_name = "LANG",
+        help = LanguageRoute::Check.flag_summary("Backend to check against"),
+        long_help = check_language_flag_help(),
+    )]
+    language: Vec<String>,
+    /// Which language the generated machine would hand its script engine.
+    ///
+    /// Carried here because it is verdict-bearing on `generate`: a backend
+    /// that cannot emit for the requested engine REFUSES, and `check`'s
+    /// contract is that it reaches the verdict `generate` would. A verdict it
+    /// cannot be asked for is one it cannot reach.
+    ///
+    /// Single-document runs only, and the conflict is what says so rather
+    /// than a comment. `orchestrate` is the producer the document-set route
+    /// mirrors and it takes no engine selection yet, so accepting one here
+    /// would give `check` a verdict its own reference producer cannot be
+    /// asked for — and, worse, accepting it silently on a route that ignores
+    /// it. Extending the selection to `orchestrate` is what lifts this.
+    #[arg(
+        long = "script-engine",
+        value_name = "LANG",
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
+    )]
+    script_engine: Option<String>,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and `<sce:use template="...">`
+    /// fragments by name. Mirrors `generate`'s `-I`.
+    ///
+    /// Single-document runs only: the multi-doc compile entry point
+    /// that `orchestrate` and the document-set route share resolves
+    /// includes relative to each document, with no search path, so
+    /// honouring this there would answer a question no producer can
+    /// reproduce.
+    #[arg(
+        short = 'I',
+        long = "include-dir",
+        value_name = "DIR",
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
+    )]
+    include_dir: Vec<String>,
+    /// Reject the document when it carries any `<sce:unresolved>`
+    /// placeholder. Mirrors `generate --strict-unresolved`.
+    ///
+    /// On a document set, every member is held to it — statecharts first,
+    /// then forge documents, each in input order — and the first
+    /// placeholder found ends the run, by the same functions the single
+    /// document is refused with. `orchestrate` takes the same flag and runs
+    /// the same refusal before it generates anything, so the verdict this
+    /// route predicts is one its producer can be asked for; a set is where a
+    /// statechart and the schemas it imports are judged together, so an open
+    /// question in one of the schemas is the design's.
+    #[arg(long)]
+    strict_unresolved: bool,
+    /// Run the design-time statechart lints. Mirrors
+    /// `generate --lint` — same `crate::lint_statechart` call, so
+    /// `check --lint` and `generate --lint` cannot disagree about a
+    /// document.
+    ///
+    /// On a document set, each statechart of it is linted alone, by the same
+    /// call, in input order; the first one with findings ends the run, every
+    /// finding of it reported, and an expression the ECMAScript frontend
+    /// refused ends it too — the answer `check --lint` gives for one
+    /// document, so the two routes agree under the flag.
+    ///
+    /// ⚠ A set is linted whether or not the flag is given: the library entry
+    /// point every statechart of a set is compiled through refuses on the
+    /// FIRST design-time finding. What the flag adds on a set is the whole
+    /// list of findings for a statechart, where its absence reports one, and
+    /// the refused-expression check; `orchestrate` takes it for the same
+    /// reason `check` does, so the verdict this route predicts is one its
+    /// producer can be asked for. A set with no statechart in it has nothing
+    /// for the flag to judge and is refused rather than passed in silence.
+    #[arg(long, conflicts_with_all = ["forge"])]
+    lint: bool,
+    /// The language the manifest's `open` says what is left open in, for the
+    /// person a host shows it to. Nothing else of the manifest or the records
+    /// changes with it, and English is what every gate and record reads.
+    #[arg(
+        long,
+        value_name = "NAME",
+        default_value = "en",
+        value_parser = registered_lexicons()
+    )]
+    lexicon: String,
+    /// Hold the statecharts to an authoring profile: a JSON file the
+    /// specification's owner keeps beside the specification, stating what a
+    /// design is held to (SCE Accepted Subset §2.17). Mirrors
+    /// `generate --profile`.
+    ///
+    /// A statechart that is valid and is not what the profile asks for is
+    /// refused, and every finding of every statechart is listed, as a
+    /// `profile/*` record. An unusable profile is refused whole as
+    /// `cli/profile-unusable`. The manifest names the profile by digest and
+    /// says how many statecharts it judged, so a run of forge documents alone
+    /// reports zero and is not read as a pass. Taken on a document set too,
+    /// and by `orchestrate`, so the verdict this route predicts is one its
+    /// producer can be asked for.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
+    /// Go module path hosting the generated forge packages. Required to
+    /// check any Go crossfile document; ignored for other backends.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Build-time const-fold iteration budget. Mirrors `generate`.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+    /// Validate against the Rust `no_std` runtime variant. Only
+    /// meaningful when `rust` is among the checked backends.
+    ///
+    /// Single-document runs only: the document-set route renders through
+    /// the multi-doc compile entry point, which has no `no_std` variant
+    /// to render, so the flag has no producer to agree with there.
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
+    no_std: bool,
+    /// Check the variant of the document these features denote, mirroring
+    /// `generate --features` (ADR 0057 §6). Without it `check` judges the
+    /// document as written, with every variant held to its references.
+    ///
+    /// Single-document runs only, as `--no-std` is: the document-set route
+    /// compiles through the multi-document entry point, which reads each
+    /// document as written.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        num_args = 0..,
+        value_name = "FEATURE",
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
+    )]
+    features: Option<Vec<String>>,
+    /// Declare an Event I/O Processor `type` this build's host serves,
+    /// mirroring `generate --host-processor`. Repeatable.
+    ///
+    /// The declaration is read by the backend, not only by the manifest:
+    /// it moves what the machine EMITS, from a §scxml-6.2
+    /// `error.execution` refusal to a dispatch into the host's registry.
+    /// Without this flag `check` could not be asked for the
+    /// interpretation the build actually uses, so it answered about a
+    /// document `generate --host-processor` lowers differently — a
+    /// verdict its own contract says it cannot reach.
+    ///
+    /// Until 2026-08-24 this text said a backend with no registry REFUSES
+    /// the document. All six grew one and
+    /// `reject_host_processors_in_unsupported_lang` retired, so the
+    /// sentence outlived its own subject — and this one reaches users
+    /// through `--help`.
+    ///
+    /// Accepted on the document-set route too, since `orchestrate` grew
+    /// the same flag. It was single-document-only while `orchestrate`
+    /// carried no host declaration — a `check` that could be told
+    /// something its producer cannot be told would predict a build nobody
+    /// can run. Now both can be told, so both are.
+    ///
+    /// Still refused with `--forge` alone: a forge document has no
+    /// `<send>` for a processor to serve, so the declaration would have
+    /// nothing to change and accepting it would claim otherwise.
+    #[arg(
+        long = "host-processor",
+        value_name = "TYPE",
+        conflicts_with_all = ["forge"]
+    )]
+    host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run,
+    /// mirroring `generate --host-invoker`. Repeatable.
+    ///
+    /// Separate from `--host-processor` on both commands and for the same
+    /// reason: delivering an event is not the same capability as running
+    /// a process with a lifecycle. Kept separate here so a `check` cannot
+    /// clear a declaration the build will be refused for.
+    ///
+    /// Document sets too — see `--host-processor`.
+    #[arg(
+        long = "host-invoker",
+        value_name = "TYPE",
+        conflicts_with_all = ["forge"]
+    )]
+    host_invoker: Vec<String>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Generate code from a single SCXML file, or, with `--with-imports`,
+    /// from a set of documents and every document they import
+    Generate(Box<GenerateArgs>),
+    /// Validate a document without writing anything.
+    ///
+    /// Reaches the same verdict `generate` would — the same parse, the
+    /// same validators, the same backend codegen — and then discards
+    /// the result instead of writing it. Nothing is created: no
+    /// artifacts, no sourcemap, no output directory. The manifest's
+    /// `artifacts` array is empty by construction, which is the
+    /// contract, not an accident of the input.
+    ///
+    /// Two refusal axes, and the exit code distinguishes them:
+    ///
+    /// * The **document** axis (`xml/*`, `validation/*`, `scxml/*`) —
+    ///   the document is wrong under any backend. Always fatal: the
+    ///   diagnostic goes to stderr, stdout stays empty, exit is
+    ///   non-zero.
+    /// * The **backend** axis (`generate/*`, `codegen/*`) — the
+    ///   document is well-formed but some backend cannot lower a
+    ///   construct it uses. With `--language` named, this is fatal too,
+    ///   so `check -l X` and `generate -l X` always agree. With no
+    ///   `--language`, every backend is swept and the per-backend
+    ///   verdict rides the manifest's `languages` array with exit 0 —
+    ///   "only Rust can lower this" is an answer, not a failure.
+    ///
+    /// The reference producer is the one the invocation shape names.
+    /// A lone document is checked against `generate`; a document set —
+    /// any `--scxml`, `--forge`, or `--deploy` — is checked against
+    /// `orchestrate`, so the cross-doc registry is built and the deploy
+    /// validators fire instead of silent-skipping. `orchestrate` has to
+    /// be given an `--output-dir` and materialises the whole build into
+    /// it, which makes "is this system valid?" cost a tree of artifacts;
+    /// the document-set route answers it and writes nothing.
+    Check(Box<CheckArgs>),
+    /// Multi-doc generate with cross-doc registry — wires
+    /// `validate_on_sample_link_references` into production
+    /// (SCE Protocol-Synthesis RFC §synth-5-D).
+    /// Use this when the build has multiple SCXML/forge docs that
+    /// reference each other across files (`<sce:on-sample link>`,
+    /// `<sce:outbox ref>`); single-file `Generate` does not
+    /// build the cross-doc registry and silently skips cross-ref
+    /// validation. Both lists may be empty (no-op).
+    Orchestrate(Box<OrchestrateArgs>),
+    /// Batch generate W3C test state machines and test classes
+    GenerateW3c(Box<GenerateW3cArgs>),
+    /// Read metadata.txt description field
+    ReadMetadata {
+        /// Path to metadata.txt
+        metadata_file: String,
+    },
+    /// Build forge dependency manifest (JSON)
+    Manifest {
+        /// Directory containing forge SCXML files
+        dir: String,
+    },
+    /// Emit `sce:req` requirement-coverage NDJSON for a single SCXML
+    /// file. One JSON record per IR
+    /// node carrying a non-empty `sce:req` or `sce:provenance`
+    /// annotation, the latter on `spec_provenance` and omitted when
+    /// absent; empty output when the document has neither.
+    /// Emit the transition table as NDJSON — one record per IR node
+    /// that can carry `sce:req`, with the `source` column.
+    ///
+    /// The table is the trace table: sort by `source` and every
+    /// `(none)` row collects into one block, which is behaviour the
+    /// specification never asked for; compare `source` against a
+    /// manifest and a requirement with no row is `missing`.
+    ///
+    /// The stream is a registered wire surface: its shape is
+    /// `schemas/sce-transition-table.v1.schema.json`, one instance per
+    /// line. A row of kind `transition` also carries `index` and
+    /// `targets`.
+    TransitionTable {
+        /// SCXML file path
+        scxml: String,
+        /// Lead the stream with one `header` record naming the machine
+        /// and the §synth-6.2.6 `source_hash` of its source set, so an
+        /// export kept apart from the build can be checked against the
+        /// machine compiled from the same document. Off by default: the
+        /// stream is then rows only, as it always was.
+        #[arg(long)]
+        header: bool,
+        /// Directory the `source_hash` of `--header` is computed over.
+        /// Defaults to the SCXML file's parent directory, as in
+        /// `generate`; pass the same value `generate` was given, or the
+        /// two hashes name different source sets.
+        #[arg(long, requires = "header")]
+        input_root: Option<String>,
+        /// The `deploy.yaml` `generate` was given, when it was given
+        /// one: it is part of the source set the hash covers.
+        #[arg(long, requires = "header", value_name = "PATH")]
+        deploy: Option<String>,
+        /// Emit the table of the variant these features denote, mirroring
+        /// `generate --features` (ADR 0057 §6): comma-separated, `--features`
+        /// alone for the variant with no feature on. Without it the table of
+        /// a document written against a feature model is the featured table
+        /// (ADR 0057 §7): every node of every variant, each row of a node not
+        /// in every variant carrying its condition in `requires`.
+        #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
+        features: Option<Vec<String>>,
+    },
+    /// Emit the review table of a NON-statechart forge kind as NDJSON —
+    /// one record per node that can carry `sce:req`, with the `source`
+    /// column. NL→IR closure ledger row G3.
+    ///
+    /// The statechart family's artefact is `transition-table`; this is
+    /// the same object for the other kinds, read the same two ways.
+    /// Sort by `source` and every `(none)` row collects into one block,
+    /// which is behaviour the specification never asked for; compare
+    /// `source` against a manifest and a requirement with no row is
+    /// `missing`.
+    ///
+    /// The first row is the document's root, where every kind claims a
+    /// requirement for the document as a whole; a lookup's entries follow.
+    ReviewTable {
+        /// Forge document path (`sce:kind` other than `statechart`)
+        document: String,
+    },
+    /// Render a document as pseudocode on stdout — the surface a
+    /// specification author reviews instead of the XML. A statechart and
+    /// a forge kind are both rendered.
+    ///
+    /// Distinct from `review-table`, which is a projection: one row per
+    /// requirement-bearing node, read for what the document claims. This
+    /// is total — every field of the model reaches the output — because
+    /// it exists to be approved, and an approval of a summary is not an
+    /// approval of the document.
+    ///
+    /// ⚠ The page shows the model and nothing derived from it, because it
+    /// is the canonical text the reverse converter reads back. What the
+    /// model implies — a question left open, a parent the machine needs, a
+    /// processor the host must serve — is the manifest's `open` and the
+    /// top of the acceptance report's block B.
+    ///
+    /// ⚠ Exits with `cli/pseudo-unavailable` for a kind the renderer
+    /// does not cover. That is NOT a partial rendering: a text missing
+    /// part of the document reads exactly like one missing none of it.
+    Pseudo {
+        /// SCXML document path: a statechart, or a forge kind the
+        /// renderer covers (`sce:kind`)
+        document: String,
+        /// deploy.yaml to resolve this machine's `<send>` targets
+        /// against, so the rendering says what each send will actually
+        /// do. Every derived line begins with `!`.
+        ///
+        /// ⚠ The result is a review surface and not a document: the
+        /// reverse converter refuses it. Render without this flag to
+        /// get a text that reads back.
+        #[arg(long, value_name = "PATH")]
+        deploy: Option<String>,
+        /// How lines and nesting are written — `indent` nests by two
+        /// spaces a level, `endmark` keeps that indentation and also
+        /// closes each block with the word that opened it.
+        ///
+        /// ⚠ A choice of layout, never of content: a shape may
+        /// surround a value and may never alter one, so the same
+        /// document says the same thing in every shape.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "indent",
+            value_parser = registered_shapes()
+        )]
+        shape: String,
+        /// What the grammar's words are called.
+        ///
+        /// ⚠ Values the document wrote are never translated — only the
+        /// words the grammar itself spends.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "en",
+            value_parser = registered_lexicons()
+        )]
+        lexicon: String,
+    },
+    /// Draw a statechart as print figures — one SVG per container, the
+    /// document's top level and each compound or parallel state — for a
+    /// printed specification. Writes `<out>/document.svg` and
+    /// `<out>/inside-<state>.svg`, and prints each path written.
+    ///
+    /// Every transition is described once: numbered on its arrow in the
+    /// figure of the state it leaves, with its row in the table under
+    /// that figure. Box text is the pseudocode page's own words.
+    ///
+    /// A document of any other kind (a lookup, a codec, a timer, ...) is
+    /// not boxes and arrows, so it is set as the table of every value it
+    /// states, field by field, in `<out>/fields-<n>.svg`: nothing the
+    /// document says is left off a sheet except where each node was written
+    /// in its file. A kind that has a picture (a buffer pool's slots, ...)
+    /// also gets it, as `<out>/<picture>.svg` beside the table: the picture
+    /// is an aid to reading, the table is the reading.
+    ///
+    /// ⚠ Exits with `cli/diagram-does-not-fit` when a figure or a table is
+    /// larger than the page at `--min-pt`. It is never shrunk below that
+    /// size: the minimum is what the reader was promised.
+    Diagram {
+        /// Document path: a statechart, or a document of any other kind
+        document: String,
+        /// Directory the SVG files are written into
+        #[arg(short, long, value_name = "DIR")]
+        out: String,
+        /// The page each figure has to fit, margins included. `fit` draws
+        /// the set on the smallest of A4 portrait, A4 landscape, A3 portrait
+        /// and A3 landscape that holds it at `--min-pt`, for a reader with no
+        /// paper (a screen); the type is never shrunk, only the paper grows.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "a4-portrait",
+            value_parser = registered_pages()
+        )]
+        page: String,
+        /// The smallest type size on the page, in points. Titles are set
+        /// one point larger.
+        #[arg(long, value_name = "PT", default_value_t = 7.0)]
+        min_pt: f64,
+        /// Paper kept around every figure, in points, written into each
+        /// SVG. It is spent from the page's printable area, so a figure
+        /// that fits at `--margin 12` fits the page with that paper around
+        /// it. The default, 0, writes exactly what the command always wrote.
+        #[arg(long, value_name = "PT", default_value_t = 0.0)]
+        margin: f64,
+        /// What the figure's own words and the page's words are called.
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = "en",
+            value_parser = registered_lexicons()
+        )]
+        lexicon: String,
+        /// The specification's closed requirement set. Given it, the
+        /// command also writes the requirement checklist — every
+        /// requirement, its outcome, and where the figures show it — as
+        /// `<out>/checklist-<n>.svg`. A requirement no figure shows says
+        /// so, which is how a gap in the design becomes visible on paper.
+        #[arg(long, value_name = "PATH")]
+        manifest: Option<String>,
+    },
+    /// Emit what a diagram must be told to draw the annotation family —
+    /// NL→IR closure ledger row G2. One JSON object on stdout.
+    ///
+    /// `nodes` is every node the shared walk yields with the requirement
+    /// ids it claims — empty where nothing claims it, which is the
+    /// element a reviewer is looking for. `fragments` is, per
+    /// requirement, the dependency closure its evidence rests on.
+    ///
+    /// ⚠ The closure is the acceptance report's own, not a second
+    /// derivation: it CONTAINS nodes that carry no `sce:req` (the arming
+    /// `<send>`, the `<cancel>` naming it, the target's entry actions).
+    /// A consumer that re-picked nodes by `sce:req` would draw a
+    /// different answer and nothing would catch it, because a rendered
+    /// diagram is not bytes a test can diff.
+    AnnotationOverlay {
+        /// SCXML file path
+        scxml: String,
+    },
+    /// Render the acceptance report a person reviews in one sitting —
+    /// Requirement-closure RFC §7a.
+    ///
+    /// One block per requirement, carrying everything its behaviour
+    /// depends on rather than the nodes that happen to carry its id;
+    /// then the risk surface, then what the source says that this
+    /// document claims nothing about.
+    AcceptanceReport {
+        /// SCXML file path
+        scxml: String,
+        /// Closed requirement set this document is measured against.
+        #[arg(long)]
+        manifest: String,
+        /// The variant this page is accepted for, printed on it.
+        ///
+        /// An acceptance of one variant says nothing about another, so the
+        /// page a person signs has to say which one it shows.
+        #[arg(long)]
+        variant: String,
+        /// Verbatim sentences, keyed by requirement id.
+        ///
+        /// Never committed: it holds the source document's own text,
+        /// which the manifest deliberately does not. Supplying it puts
+        /// each sentence beside the design that claims it, and marks
+        /// the rendered page as a local artefact.
+        #[arg(long)]
+        sidecar: Option<String>,
+    },
+    /// Pin what a person accepted — Requirement-closure RFC §8.3.
+    ///
+    /// Writes an acceptance record: the manifest's revision and bytes, the
+    /// variant, and every file the parse read, each by sha256, named
+    /// relative to `--root`. `acceptance-check` re-checks it.
+    Accept {
+        /// SCXML file path — the entry document of the accepted design
+        scxml: String,
+        /// Closed requirement set the acceptance was measured against.
+        #[arg(long)]
+        manifest: String,
+        /// The sidecar of `--manifest`: the sentences behind its ids.
+        ///
+        /// Only its sha256 is recorded (the sentences are not copied), so
+        /// the record can be committed where the sidecar is not. A manifest
+        /// is coordinates only: two lists of one shape and different
+        /// sentences have one manifest digest, and without this a revision
+        /// of the accepted design cannot be tied to the list that was
+        /// accepted. The sidecar is refused unless it is the manifest's own.
+        #[arg(long, value_name = "PATH")]
+        sidecar: Option<String>,
+        /// The variant the acceptance is for. Compared verbatim.
+        #[arg(long)]
+        variant: String,
+        /// Root every pinned path is recorded relative to.
+        ///
+        /// Required rather than defaulted: a record names its files
+        /// relative to one root, and a default taken from wherever the
+        /// command happened to run would pin different paths from every
+        /// directory.
+        #[arg(long)]
+        root: String,
+        /// Where to write the record.
+        #[arg(long)]
+        out: String,
+        /// A specification file the design was authored from. Repeatable.
+        ///
+        /// Pinned by sha256 beside the design, so a revised specification
+        /// lapses the acceptance and `acceptance-check --source` can say
+        /// whether a specification is the one this design answers.
+        #[arg(long = "source", value_name = "PATH")]
+        source: Vec<String>,
+        /// The owner's decision record the design follows, if it has one.
+        #[arg(long, value_name = "PATH")]
+        decisions: Option<String>,
+        /// The authoring profile the design is held to, if there is one.
+        ///
+        /// The design is judged under it first, and a statechart that
+        /// departs from it is refused rather than accepted: an acceptance
+        /// is the owner's statement that this design is what they accept,
+        /// and one taken under a profile the design breaks would say
+        /// otherwise. Pinned by sha256 beside the design, so the record
+        /// answers for this profile and for no other.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
+        /// The scenario set whose examples the design is held to, if there
+        /// is one.
+        ///
+        /// Pinned by its bytes beside the design: the examples whose passing
+        /// closed a requirement are part of what the owner accepted it WITH,
+        /// and a set edited afterwards is another set. The record says nothing
+        /// of how the scenarios came out; that is a run's, on an engine
+        /// (`requirements --scenarios --trace`).
+        #[arg(long, value_name = "PATH")]
+        scenarios: Option<String>,
+        /// Which surface says the owner accepted: `direct` (the surface the
+        /// owner acts on took it from their own button) or `relayed` (a client
+        /// reported it, in a conversation the product did not see).
+        ///
+        /// Recorded as the caller stated it and never verified: the product is
+        /// not in the room. Left out, the record states nothing about it.
+        #[arg(long, value_name = "CHANNEL")]
+        channel: Option<crate::acceptance_record::Channel>,
+        /// The acceptance record this one replaces, if there is one.
+        ///
+        /// It has to be a record this tool reads, taken for the same
+        /// specification. Pinned by its bytes and named relative to `--root`.
+        /// It says how the acceptance stood when it was taken and cannot
+        /// lapse; it makes a chain of acceptances an auditor can walk.
+        #[arg(long, value_name = "RECORD")]
+        succeeds: Option<String>,
+    },
+    /// Judge the claims that point OUT of a document — Requirement-closure
+    /// RFC §5.2e/§5.2f.
+    ///
+    /// A `delegated` requirement names another document, and a decomposed
+    /// one names its children. Neither can be judged from inside the
+    /// manifest making the claim, so this takes a SET and follows each
+    /// claim to its end: a destination that never took the requirement, a
+    /// cycle in which every link resolves and nothing is implemented, and
+    /// a child that does not exist are all refused.
+    ///
+    /// Exits 0 only when every claim lands inside the set given. A claim
+    /// leaving that set is a hole in the closure, not a pass — the set on
+    /// the command line is what the caller is asserting is complete, so
+    /// the repair is to name the missing manifest.
+    RequirementClosure {
+        /// A requirement manifest joining the set. Repeatable, mirroring
+        /// `orchestrate`'s `--scxml`/`--forge`, which is how a cross-doc
+        /// registry is already spelled here.
+        #[arg(long = "manifest", value_name = "PATH", required = true)]
+        manifest: Vec<String>,
+    },
+    /// Re-check an acceptance record against the tree.
+    ///
+    /// Exits 0 when it still holds, and with `cli/acceptance-lapsed`
+    /// naming what moved when it does not.
+    AcceptanceCheck {
+        /// Acceptance record written by `accept`
+        record: String,
+        /// The variant being asked about.
+        #[arg(long)]
+        variant: String,
+        /// Root the record's paths are read against.
+        #[arg(long)]
+        root: String,
+        /// A specification file the question is about. Repeatable. With
+        /// any `--source` or `--decisions`, the record also has to have
+        /// been authored from exactly these files, by content — the
+        /// question asked before drafting the same specification again.
+        #[arg(long = "source", value_name = "PATH")]
+        source: Vec<String>,
+        /// The decision record the question is about.
+        #[arg(long, value_name = "PATH")]
+        decisions: Option<String>,
+        /// The authoring profile the question is about. Compared by
+        /// content like the two above, and a role left out is part of the
+        /// answer: a design accepted under no profile does not answer for a
+        /// request that names one, and the reverse.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
+        /// The scenario set the question is about. Compared by content, and
+        /// a role left out is part of the answer, as for the profile.
+        #[arg(long, value_name = "PATH")]
+        scenarios: Option<String>,
+    },
+    /// Say which of several acceptances still hold, and what moved in the ones
+    /// that do not.
+    ///
+    /// The question a shared profile raises: someone edits a rule, and every
+    /// specification that applied it has to be found. Each record is checked as
+    /// `acceptance-check` checks one, against its own variant, and the answer is
+    /// one JSON line per record (`holds`, and each lapse as data beside its
+    /// sentence, a rule's id and the places that cite it included), then a
+    /// summary line. It is a report: it exits 0 whenever it ran, and a record it
+    /// could not read is a line of its own (`unusable`), not the end of the run.
+    AcceptanceImpact {
+        /// Acceptance records written by `accept`.
+        #[arg(required = true, num_args = 1..)]
+        records: Vec<String>,
+        /// Root the records' paths are read against. One for all of them:
+        /// records of designs in separate trees are asked in separate runs.
+        #[arg(long)]
+        root: String,
+    },
+    /// Say what moved in a design since an acceptance record was taken, per
+    /// requirement.
+    ///
+    /// The record's digests of the rows the report showed the owner for each
+    /// requirement, against the rows of the design as it is now. Each requirement
+    /// is `unchanged`, `changed` (where the rows the record lacks are now, and how
+    /// many recorded rows no row matches), `new` or `dropped`, one JSON line each;
+    /// then one line for the rows that claim nothing, and a summary. A report: it
+    /// exits 0 whenever it ran. A record from before records kept evidence, or a
+    /// design that does not parse, is refused.
+    AcceptanceDelta {
+        /// Acceptance record written by `accept`.
+        record: String,
+        /// Root the record's paths are read against.
+        #[arg(long)]
+        root: String,
+        /// The design to compare with, when not the record's own document: another
+        /// draft of the same design.
+        #[arg(long, value_name = "SCXML")]
+        design: Option<String>,
+    },
+    Requirements {
+        /// SCXML file path. Several documents are read as ONE design, and
+        /// then `--manifest` is required.
+        #[arg(required = true, num_args = 1..)]
+        scxml: Vec<String>,
+        /// Closed requirement set to measure this document against.
+        ///
+        /// Without it the subcommand reports what the document claims;
+        /// with it, what the specification asked for — the outcome
+        /// classification of Requirement-closure RFC §5.3, which names
+        /// the outcomes rather than this help enumerating them.
+        /// `missing` exists only on this path: a document cannot be
+        /// asked what it left out unless something outside it holds
+        /// the answer.
+        //
+        // Plain `//`, so it stays with the code and does NOT render
+        // into `--help`: this is why the sentence above is shaped that
+        // way, which is a maintainer's business and not a user's.
+        //
+        // It used to say "four-way", and stopped being true the day
+        // `needs-scenario` landed for requirements met by something
+        // being ABSENT. Same lesson the `--language` help below
+        // records for backends — a sentence that counts has to be
+        // corrected every time one lands — but the lesson itself is
+        // not something a person running this command needs read to
+        // them.
+        #[arg(long)]
+        manifest: Option<String>,
+        /// Scenario set (`sce-scenario-set` v1) to hold the requirements
+        /// against, with the `--trace` a driver wrote for it.
+        ///
+        /// The set is judged here, from the trace, and not read from a
+        /// verdict file: a verdict somebody typed would close a requirement
+        /// on a claim, and a verdict computed from what a driver observed
+        /// does not. Rows the examples speak to move (`scenario-passed`,
+        /// `scenario-failed`), each carries its scenarios' verdicts, and a
+        /// `scenario-evidence` record before the first row says which
+        /// examples and which engine.
+        #[arg(long, value_name = "PATH", requires_all = ["manifest", "trace"])]
+        scenarios: Option<String>,
+        /// Observation trace (`sce-observation-trace` v1) a driver wrote
+        /// for the `--scenarios` set.
+        #[arg(long, value_name = "PATH", requires = "scenarios")]
+        trace: Option<String>,
+    },
+    /// Read a scenario set and say whether it is usable.
+    ///
+    /// A scenario set is a file of examples of what a specification says a
+    /// machine does: events sent in, virtual time passing, and what must be
+    /// observed, each anchored to a sentence of the specification. This
+    /// command reads one and reports it: a summary record, a record per
+    /// scenario, and a record per problem found. It runs nothing and says
+    /// nothing about any design.
+    ///
+    /// It reads the replay scenario too, the file every backend's driver
+    /// replays against a generated machine (a JSON object that names its
+    /// `machine` and lists its `steps`, and carries no `record`): each member
+    /// is held to the vocabulary every driver reads and to the rules between
+    /// them, and, with `--machine`, each event, state and variable it names is
+    /// held to the machine's document. A standard statechart a scenario names
+    /// by its library name (`sce:std/...`) is read from the library.
+    ///
+    /// ⚠ The problems are FINDINGS, not refusals: the command exits 0
+    /// whether or not the set has any, and the summary's `usable` says which.
+    /// A file that is neither a scenario set nor a replay scenario is
+    /// refused, as a requirement list is.
+    Scenarios {
+        /// Scenario set file (JSON, `sce-scenario-set` v1), or a replay
+        /// scenario (JSON, `machine` and `steps`)
+        file: String,
+        /// The specification the quotes are taken from, as text. With it
+        /// every quote is checked word for word; without it none is.
+        #[arg(long, value_name = "PATH", conflicts_with = "machine")]
+        specification: Option<String>,
+        /// The statechart a replay scenario drives. With it every event the
+        /// scenario sends the machine, and every state and variable it
+        /// expects, is held to the document.
+        #[arg(long, value_name = "PATH")]
+        machine: Option<String>,
+    },
+    /// Judge what an engine driver observed against what a scenario set
+    /// expects.
+    ///
+    /// Takes a scenario set and an observation trace a driver wrote for it,
+    /// and reports, per scenario, `pass`, `fail`, `not-judged`, `blocked` or
+    /// `awaiting-decision`, with each failed check and each gap. It runs
+    /// nothing: the trace is the record of a run made elsewhere.
+    ///
+    /// ⚠ `not-judged` is not `fail`. A check the driver could not see is a gap
+    /// and says why; only a check that was observed and did not hold fails
+    /// the scenario. A pass says the machine behaved as these examples say, on
+    /// the engine the trace names, and nothing larger.
+    ///
+    /// Findings, not refusals: the command exits 0 whatever it finds. A file
+    /// that is not a scenario set, or not an observation trace, is refused.
+    JudgeScenarios {
+        /// Scenario set file (JSON, `sce-scenario-set` v1)
+        set: String,
+        /// Observation trace file (JSON, `sce-observation-trace` v1)
+        trace: String,
+    },
+    /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
+    /// file. One JSON record per
+    /// marker (attribute form and element form both detected);
+    /// empty output when the document has no unresolved markers.
+    Unresolved {
+        /// SCXML file path
+        scxml: String,
+        /// The owner's authoring profile. The record of an `sce:assumed`
+        /// that cites one of its house rules says so (`house_rule`), which is
+        /// how the authoring core tells the owner's standing answer from a
+        /// value chosen without one. Nothing else in the output moves.
+        #[arg(long, value_name = "PATH")]
+        profile: Option<String>,
+    },
+    /// Emit value-space coverage NDJSON for a single forge document.
+    ///
+    /// One record per enum-typed input whose declared variants the
+    /// document does not name in full — the variants that reach only a
+    /// default branch. Empty output when every value space is named.
+    ///
+    /// ⚠ This is a REPORT, not a refusal. Falling through to a default
+    /// is legal and often correct; the command exists because the author
+    /// is the only one who can say whether it was intended, and cannot
+    /// say so about a fall-through nobody showed them.
+    Coverage {
+        /// SCXML file path (a `sce:kind` forge document)
+        scxml: String,
+    },
+    /// Generate a cross-language numerical conformance test harness from
+    /// a fixture catalog — one catalog is the single source of truth for
+    /// every backend it serves, which `--language` names.
+    ///
+    /// The count used to be spelled out here ("all 5 languages") and was
+    /// one short of what the dispatcher emitted; a sentence that counts
+    /// the backends has to be corrected every time one lands, so this
+    /// one does not count them.
+    GenerateConformance {
+        #[arg(
+            short,
+            long,
+            help = LanguageRoute::GenerateConformance.flag_summary("Target language"),
+            long_help = LanguageRoute::GenerateConformance.flag_help("Target language"),
+        )]
+        language: String,
+        /// Path to fixture catalog JSON
+        #[arg(short, long, long_help = forge_catalog_flag_help())]
+        manifest: String,
+        /// Output directory for the generated harness file
+        #[arg(short, long)]
+        output_dir: String,
+        /// Write a Make-format depfile for the harness.
+        ///
+        /// Same contract as `generate --write-deps`. Without it the two
+        /// CMake steps that render a harness were the only codegen
+        /// invocations in the tree with no `DEPFILE`, and declared their
+        /// inputs with a `file(GLOB ... CONFIGURE_DEPENDS)` that names
+        /// the per-kind fragments the scaffold includes directly and
+        /// nothing those fragments pull in.
+        #[arg(long)]
+        write_deps: Option<String>,
+    },
+    /// Expand preprocessors (XInclude + `sce:template`) on an SCXML
+    /// file and print the post-expansion text to stdout.
+    ///
+    /// Introduced for the SSOT byte-equivalence parity
+    /// harness (`tests/w3c_template_parity/`): the C++ test driver
+    /// compares this subcommand's stdout against the pugixml
+    /// runtime's `processXInclude` + `processSceTemplate` output.
+    /// Both producers canonicalise through the same pugixml
+    /// serialiser before diff.
+    ///
+    /// Calls [`crate::parser::expand_preprocessors`] — the same
+    /// function [`crate::parser::SCXMLParser::parse_file`]
+    /// uses — so no third-party caller can drift the subcommand's
+    /// semantics away from the codegen pipeline's view of the same
+    /// document.
+    Expand {
+        /// Input SCXML file path
+        scxml: String,
+        /// Additional directories searched (in declaration order) to
+        /// resolve `<xi:include href="...">` and
+        /// `<sce:use template="...">` fragments by name — same
+        /// semantics as `generate --include-dir`. Lets the parity
+        /// harness drive include-dir resolution through both engines
+        /// with a matching search path.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Print the variant of a statechart that a selection of features
+    /// denotes, as a plain document (ADR 0057 §6).
+    ///
+    /// The variant is the document with every element whose condition the
+    /// selection does not satisfy removed, and with its condition attributes
+    /// and its feature-model import taken out. Removed text is blanked rather
+    /// than cut, so every line and column of the variant is the line and
+    /// column of the same text in the source (after preprocessor expansion).
+    ///
+    /// The derivation is the one `generate --features` and `check --features`
+    /// read, and the variant is printed only when its parse accepts it: what
+    /// this prints is a document SCE accepts, which an engine that reads plain
+    /// SCXML (the Interpreter) runs as the variant.
+    Project {
+        /// Input SCXML file path
+        scxml: String,
+        /// The features the variant is selected by, comma-separated;
+        /// `--features` alone selects the variant with no feature on.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            num_args = 0..,
+            value_name = "FEATURE",
+            required = true
+        )]
+        features: Vec<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Print which element of each codec a value presents and which the
+    /// encoding derives (docs/adr/0058 §1).
+    ///
+    /// One table per codec document, a line per field and per named flag: a
+    /// value *presents* an element when nothing else on the wire determines
+    /// it, and the encoding *derives* one the codec declares determined by
+    /// what is presented (a length, a count, an embedded body's length, the
+    /// tag of a variant's active arm, the carrier bits a `variant-dispatch`
+    /// import fills, the flag a TLV chain ends on). Everything else, a header
+    /// flag bit among it, is presented. Read it to see which of the values a
+    /// consumer sets by hand the encoding will take over.
+    CodecRoles {
+        /// Codec documents. Imports are resolved from beside each, as
+        /// `generate` resolves them.
+        #[arg(required = true)]
+        scxml: Vec<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Print a CBOR or content-line codec document in codec format 2
+    /// (docs/adr/0055, section 8), the format `check` and `generate` read.
+    ///
+    /// A document that declares no `sce:codec-format`, or `="1"`, is refused
+    /// (`validation/codec-format-superseded`), and this is its rewrite: each
+    /// entry that was `sce:required="true"` is its bare type with the attribute
+    /// removed, each that was not (or was `="false"`) is `optional<T>`, and the
+    /// root declares `sce:codec-format="2"`. Every other byte is the author's,
+    /// comments and spacing included, so the output replaces the document as it
+    /// is, and a document that `check` accepts after it generates the bytes the
+    /// document of format 1 did.
+    ///
+    /// A document already in format 2 is printed as it is. One that is not a
+    /// CBOR or content-line codec has no format and is refused, as is one that
+    /// holds a directive the preprocessor expands: the entries that expand to
+    /// are no text of the document, so run `expand` and rewrite what it prints.
+    ///
+    /// The document goes to stdout as raw bytes, as `expand` does, so a caller
+    /// can capture it exactly.
+    CodecFormat {
+        /// The codec document to rewrite.
+        scxml: String,
+    },
+    /// Print a document with every bound it writes as an attribute moved into
+    /// the type of its declaration (docs/adr/0086, section 1.3).
+    ///
+    /// `sce:max-size` and `sce:max-count` on an event schema's field,
+    /// `sce:capacity` on a `sce-static` statechart's variable, and an
+    /// algorithm's `capacity=` on a local and `returns-max-size=` on its return
+    /// are synonyms of the bracket on the outermost type they bound, reported by
+    /// `check` and `generate` as `validation/bound-attribute-superseded`; this is
+    /// their rewrite: each type is written with that bound in its bracket
+    /// (`[N]`, or `[name=N]` where a `sce:limit` named it), and the attribute and
+    /// its `sce:limit` are removed. Every other byte is the author's, so a
+    /// document that writes no such bound is printed as it is, and one rewritten
+    /// generates the bytes it did.
+    ///
+    /// A declaration that writes its bound both in its type and as an attribute
+    /// is refused, as `check` refuses it, and so is a document that holds a
+    /// directive the preprocessor expands: run `expand` and rewrite what it
+    /// prints. The document goes to stdout as raw bytes, as `expand` does.
+    BoundSpelling {
+        /// The document to rewrite.
+        scxml: String,
+    },
+    /// Print the payload schema of an event schema (docs/adr/0087, section 1):
+    /// the JSON Schema (2020-12) of a value of its payload, as the schema's unit
+    /// declares it (`JSON_SCHEMA`), byte for byte, or with `--format gbnf` its
+    /// GBNF grammar, which no unit declares: a grammar counts each text's bytes
+    /// exactly, so its size is linear in the largest text bound, and it is
+    /// written only where it is used. Every bound is as this build resolves it
+    /// (`--limit`).
+    ///
+    /// For a host that is not generated, or a tool. The JSON Schema names the
+    /// `source-hash` `generate` writes for the same document, computed over the
+    /// same source set: pass the `--input-root` and `--deploy` `generate` was
+    /// given. A schema whose type has no grammar (an open enum, two records of
+    /// different documents under one name) is refused by name.
+    ///
+    /// A union document (docs/adr/0092, section 3.1, item 4) has the same two
+    /// texts for a value of the union: the `oneOf` of its cases, each its tag
+    /// as a required `const` before the case's fields, and one alternative per
+    /// case, the tag first; its `$id` names its tag enum's revision.
+    PayloadSchema {
+        /// The event-schema or union document.
+        scxml: String,
+        /// Which spelling to print.
+        #[arg(long, value_enum, default_value_t = PayloadSchemaFormat::JsonSchema)]
+        format: PayloadSchemaFormat,
+        /// Directory the `source-hash` is computed over. Defaults to the
+        /// document's parent directory, as in `generate`.
+        #[arg(long)]
+        input_root: Option<String>,
+        /// The `deploy.yaml` `generate` was given, when it was given one: it is
+        /// part of the source set the hash covers.
+        #[arg(long, value_name = "PATH")]
+        deploy: Option<String>,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use template>` fragments, as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Export a test suite to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
+    /// §9.5): the suite's types module, `<suite>_Types.ttcn`, the structural
+    /// manifest of it, `<suite>_Types.manifest.json`, the behaviour module,
+    /// `<suite>.ttcn`, and the correspondence witness of the two modules,
+    /// `<suite>.witness.json` (§9.4), written to `--output-dir`.
+    ///
+    /// `<suite>` is the unit name of the suite's document, its file's stem in
+    /// lower snake case. The suite and every document it reaches are first
+    /// held to the rules `check` holds them to. Every name the export writes
+    /// is a name of the documents, written as it is written: one that is no
+    /// TTCN-3 identifier, is a word TTCN-3 reserves, or is one identifier
+    /// with another name of its scope is refused (`test-profile/export-name`),
+    /// never renamed. Nothing is written until the whole export is computed,
+    /// so a refused suite leaves no file.
+    ///
+    /// The behaviour module imports the types module whole and holds the
+    /// port types, the templates, the module parameters, the component types
+    /// and their functions, a test case for each test case the suite
+    /// executes and the control part that executes them (§9.2, E2 to E15).
+    /// Each feature of the suite's feature model is a `modulepar boolean
+    /// PICS_<NAME>;` with no default, which the caller sets.
+    #[command(name = "export-ttcn3")]
+    ExportTtcn3 {
+        /// The `test-suite` document.
+        scxml: String,
+        /// Directory the files are written to.
+        #[arg(short, long, default_value = ".")]
+        output_dir: String,
+        /// Directory the `source-hash` the modules' headers carry is computed
+        /// over. Defaults to the suite's directory, as in `generate`.
+        #[arg(long)]
+        input_root: Option<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Check a recorded input trace against the test suite it is of, without
+    /// running it (docs/SCE_TTCN3_LANE.md §4, §10.2).
+    ///
+    /// The suite is read as `export-ttcn3` reads it, held to the rules
+    /// `check` holds it to with every document it reaches. The trace is read
+    /// by the Rust runtime's reader of a trace, and is refused where it is
+    /// not JSON, not of the shape `sce-test-trace.v1`, out of the order of its
+    /// instants or not its one canonical text (`test-profile/trace-text`),
+    /// where it is of another suite or of a test case the suite does not run
+    /// (`test-profile/trace-test-case`), and, for each input, where its port
+    /// is no system port of the test case's configuration
+    /// (`test-profile/trace-port`), its type is not on the `in` list of that
+    /// port's type (`test-profile/trace-type`), or its value does not belong
+    /// to its type (`test-profile/trace-value`). Every refusal is reported, in
+    /// the words of the runtime's reader, placed in the trace file with the
+    /// JSON pointer of what it is about.
+    ///
+    /// Exit 0 when the trace fits the suite, writing nothing; 1 when it does
+    /// not, each refusal a `test-profile/trace-*` record; any other status is
+    /// the one `SCE_ERROR_CONTRACT.md` §6 gives the record that says an input
+    /// was not read (the suite refused, a file not read, the command line).
+    #[command(name = "check-trace")]
+    CheckTrace {
+        /// The `test-suite` document.
+        suite: String,
+        /// The trace, a file of `sce-test-trace.v1`.
+        trace: String,
+        /// Directories searched to resolve the suite's `<xi:include>` and
+        /// `<sce:use>` fragments by name — same semantics as
+        /// `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
+    /// profile that holds each field of each codec of a set at the capacity a
+    /// deploy input's `codecs:` block gives it, or at its bound.
+    ///
+    /// A Rust tree takes a storage profile and holds no capacity, so one tree,
+    /// generated from the same documents, serves every deployment in a build.
+    /// Each deployment is a type in a file of its own: `<name>.rs`, written to
+    /// `--output-dir`, which is the directory of the tree's modules, since the
+    /// file names each codec's field tags as `super::<codec>`. Several
+    /// deployments are several runs, each with its own `--name`.
+    ///
+    /// A codec the build compiles under a `cfg` of its own is answered for under
+    /// the same one: `--gate serial_envelope='feature = "serial"'`. A capacity
+    /// for a codec, or a gate, that names no codec of the set is refused, as is
+    /// a capacity no form can hold.
+    Deployment {
+        /// The codec documents of the set, as the tree is generated from them.
+        /// Imports are resolved from beside each, as `generate` resolves them.
+        #[arg(required = true)]
+        scxml: Vec<String>,
+        /// The deploy input whose `codecs:` block gives the capacities.
+        #[arg(long)]
+        deploy: String,
+        /// The type the file declares, in upper camel case. The file is named
+        /// by it.
+        #[arg(long)]
+        name: String,
+        /// `<codec>=<cfg predicate>`: the `cfg` the build compiles that codec's
+        /// module under. Repeat for each such codec.
+        #[arg(long = "gate", value_name = "CODEC=PREDICATE")]
+        gate: Vec<String>,
+        /// Directory the file is written to: the directory of the tree's modules.
+        #[arg(short, long, default_value = ".")]
+        output_dir: String,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Print a `datamodel="sce-static"` statechart as the
+    /// `datamodel="ecmascript"` document the Interpreter runs.
+    ///
+    /// The Interpreter refuses a `sce-static` document
+    /// (`scxml/unsupported-datamodel`): its script engine holds no types and
+    /// checks no integer operation, so running one there would give it a
+    /// meaning the document did not. This is the way to run one anyway. It
+    /// reads the document the way `generate` does, then replaces its
+    /// expressions — and only its expressions — with the ECMAScript that
+    /// means what the typed document means, calling a small runtime library
+    /// installed by the document's first `<data>`. Every other byte is the
+    /// author's.
+    ///
+    /// An algorithm the document imports is read from beside it and installed
+    /// by the same `<data>`, so a call of one runs. A construct with no
+    /// lowering yet (an algorithm that loops over a bounded-collection import)
+    /// is refused with `generate/unsupported-feature` naming it; the
+    /// document is never passed through half-lowered. A document under any
+    /// other data model is printed as it is.
+    ///
+    /// The document goes to stdout as raw bytes with no trailing newline, as
+    /// `expand` does, so a caller can capture it exactly.
+    ///
+    /// An `<invoke>` that names its child by `src` (a file, or a statechart of
+    /// the standard library), and a hybrid one, which starts one of the
+    /// documents it declares in `sce:candidates`, start a document the
+    /// Interpreter loads at run time from beside the invoking one, so each is
+    /// lowered too and the lowering is several documents; a `src` that does not
+    /// say the name its child is written under is rewritten to it. With
+    /// `--out-dir` they are written there, each under the name
+    /// the lowered document starts it by, and one JSON line names them:
+    /// `{"v":1,"kind":"lower","documents":[{"path":...}]}`, the document asked
+    /// for first. Without it such a document is refused, naming the option.
+    Lower {
+        /// Input SCXML file path
+        scxml: String,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+        /// Write the lowered document and the documents its `<invoke>`s may
+        /// start into this directory, instead of printing the document.
+        #[arg(short = 'o', long = "out-dir", value_name = "DIR")]
+        out_dir: Option<String>,
+    },
+    /// Lower one `sce:kind="algorithm"` document for a script engine, without
+    /// a statechart around it.
+    ///
+    /// `lower` serves a statechart that imports algorithms; this serves a
+    /// caller that runs one algorithm directly — the check that holds the
+    /// Interpreter to the numerical conformance cases (E11) is one. The
+    /// document is an `sce:std/...` name or a path. The result is one JSON line,
+    /// `{"v":1,"kind":"lower-algorithm","symbol":...,"install":...}`: evaluate
+    /// `install` once in the script engine, then call
+    /// `SceStatic.algorithms.<symbol>(...)`. A failure throws an Error whose
+    /// `sceFailure` names it (overflow, divide-by-zero, precondition, out-of-range,
+    /// capacity-exceeded — or unrepresentable, for an integer the Interpreter's data
+    /// model cannot hold). An integer beyond the 2^53 a Number holds exactly is a
+    /// BigInt, as an argument and as an answer.
+    ///
+    /// Refused as `lower` refuses an import of it, with `generate/unsupported-feature`
+    /// naming the construct: a `bytes` literal, or an import the document cannot
+    /// read.
+    LowerAlgorithm {
+        /// An `sce:std/...` document name, or the path of an algorithm document
+        document: String,
+    },
+    /// Print the shape file of a `datamodel="sce-static"` statechart: the text
+    /// whose digest a state the machine saves is bound to (docs/adr/0109, D11;
+    /// SCE Accepted Subset §2.15, "Saving and restoring").
+    ///
+    /// The shape file is the writer's schema of every state a version of the
+    /// document saves. An author commits it for each released version
+    /// (`shapes/<version>.shape`), and a later version's `<sce:migration from
+    /// to>` names two of them; the build holds the last `to` to the document's
+    /// own shape, which is what this prints. A host-run `<invoke>` is part of the
+    /// shape only where the host serves its type, so the types are declared as
+    /// `generate` takes them. A document whose machine has no saved state is
+    /// refused.
+    Shape {
+        /// Input SCXML file path
+        scxml: String,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+        /// A type of `<invoke>` the host serves, as `generate --host-invoker`
+        /// declares it.
+        #[arg(long = "host-invoker", value_name = "TYPE")]
+        host_invoker: Vec<String>,
+        /// Write the shape file here instead of printing it.
+        #[arg(short = 'o', long = "output", value_name = "FILE")]
+        output: Option<String>,
+    },
+    /// Print, for every diagnostic code, whether a record of that code
+    /// carries the `spec_provenance` of the anchor enclosing it.
+    ///
+    /// `SCE_ERROR_CONTRACT.md` §2.1.2 promises that an empty
+    /// `spec_provenance` means exactly one thing — nothing enclosing
+    /// the location was anchored. That promise was checkable only from
+    /// inside: the table separating "cannot carry" from "not wired
+    /// yet" was a compile-time constant, so on the wire an absent
+    /// field was indistinguishable across three cases. This publishes
+    /// the table, the way `list-fixtures` publishes the fixture
+    /// registry so a build system need not parse JSON — knowledge kept
+    /// only on the inside is absent from the outside.
+    ///
+    /// One line per code, `<code>\t<carries|never|unknown|pending>\t<reason>`.
+    ///
+    /// Four verdicts because the roster holds four states. `never` is
+    /// the only claim about the CODE — nothing enclosing it could ever
+    /// be anchored. The other two refusals are claims about US:
+    /// `unknown` says no scenario has run that code, so the field's
+    /// emptiness records that nobody looked; `pending` says a run did
+    /// exercise it and the cause is a position its producer does not
+    /// yet thread, which is owed work. Collapsing either into `never`
+    /// publishes the stronger sentence on evidence nobody has.
+    ProvenanceRoster,
+    /// Print the kind catalog — what each `sce:kind` is for — as one JSON
+    /// line (`schemas/sce-kind-catalog.v1.schema.json`).
+    ///
+    /// For an author choosing a document's kind from a prose
+    /// specification, wherever that author is: each kind's evidence, the
+    /// behaviour that separates it from its neighbours, what the author
+    /// must decide before writing it, and a checked-in document of it
+    /// that `check` accepts. The catalog is compiled into this binary, so
+    /// it answers for the product that will judge the document.
+    Kinds {
+        /// Only this kind.
+        #[arg(long, value_name = "KIND", value_parser = registered_kinds())]
+        kind: Option<String>,
+    },
+    /// Answer many plans at once: run the `--plan` run each request of
+    /// `--requests` asks, up to `--jobs` at a time, and keep each answer under
+    /// `--results`.
+    ///
+    /// A build system has to know a generation's outputs when it is
+    /// configured, and asks each one's plan by itself (`--plan generate`, the
+    /// whole generation run in memory). Asked one after another, the plans of
+    /// a tree of a few hundred generations took longer than its build. Each
+    /// request is answered by a run of this program with the request's own
+    /// arguments, the run a build would make for that one plan, so an answer
+    /// here is byte for byte the one that run prints: a process each, and not
+    /// threads of this one, since a generation keeps its output mode, its
+    /// tree of files held in memory and the documents it holds in state of
+    /// its process, and a refused document ends the process that refuses it.
+    ///
+    /// `--requests` holds one request per line: a name, then each argument of
+    /// the run after the program, separated by tabs. The arguments ask one
+    /// plan (`--plan [--plan-children] generate <document> ...`, or a plan of
+    /// `orchestrate` or `generate-conformance`, the other two commands whose
+    /// files a build compiles), and nothing else is run. For each request,
+    /// `<results>/<name>.request` keeps its line, and then either `<name>.plan` holds what the plan printed, with
+    /// `<name>.reads` the files it read (`--reads`), or `<name>.error`
+    /// holds what the refused run wrote on stderr. Every `.plan` is dated
+    /// when the batch began, before any plan read anything, and strictly
+    /// after every file written before it: a file a plan read that changed
+    /// while it ran is not older than the answer, and one staged just before
+    /// the batch is.
+    /// The command fails only when it cannot answer: a refused plan is an
+    /// answer.
+    PlanBatch {
+        /// The requests, one per line: `<name>\t<argument>\t<argument>...`
+        #[arg(long, value_name = "FILE")]
+        requests: String,
+        /// The directory each answer is kept in, under its request's name
+        #[arg(long, value_name = "DIR")]
+        results: String,
+        /// How many plans run at once; one per processor when not given
+        #[arg(short, long, value_name = "N")]
+        jobs: Option<usize>,
+    },
+    /// Print the conformance fixture name list from a manifest. Build
+    /// systems consume this so they don't need a native JSON parser
+    /// (CMake, Gradle, plain Bash) to enumerate fixtures.
+    ListFixtures(ListFixturesArgs),
+
+    /// Refuse a W3C AOT test header whose brief states the spec section
+    /// its fixture targets.
+    ///
+    /// Reads every fixture the registry at `--manifest` registers and its
+    /// `Test<id>.h` under `--header-dir`. The section a fixture targets has
+    /// one home, `specnum` in `resources/<id>/metadata.txt`, and a brief
+    /// that restates it is a second answer — the rule `W3cRegistry::load`
+    /// already holds a summary to. Only the `@brief` paragraph is read: the
+    /// body below it is where a header cites the other sections a test
+    /// touches. `tests/CMakeLists.txt` runs this before `w3c_test_cli`, so
+    /// a brief stating a section fails the build. Prints how many headers
+    /// it read.
+    CheckAotBriefs {
+        /// Path to the W3C registry (`tests/w3c/conformance/fixtures.json`)
+        #[arg(short, long)]
+        manifest: String,
+        /// Directory holding one `Test<id>.h` per registered fixture
+        #[arg(long)]
+        header_dir: String,
+    },
+
+    /// Judge recorded queue histories for linearizability (SCE
+    /// Protocol-Synthesis RFC §synth-5-P, verification layer 2).
+    ///
+    /// Each FILE is a history in the JSON form that
+    /// `tests/forge/conformance/queue_history.schema.json` describes: what
+    /// the participants of one stress run observed, each operation with the
+    /// instants it was invoked and returned. The stress run of every backend
+    /// writes its histories in that form and this one command judges them,
+    /// so no backend carries a checker of its own. One line is printed per
+    /// file; the command fails when any file is not linearizable, is not a
+    /// history, or records no operation (a run that recorded nothing proves
+    /// nothing).
+    CheckQueueHistory {
+        /// The history files to judge
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
+    /// Judge recorded broadcast-log histories for linearizability (ADR 0062
+    /// section 5).
+    ///
+    /// Each FILE is a history in the JSON form that
+    /// `tests/forge/conformance/broadcast_history.schema.json` describes: what
+    /// the publisher and the readers of one stress run observed, each
+    /// operation with the instants it was invoked and returned. Judged and
+    /// reported as `check-queue-history` does: one line per file, and the
+    /// command fails when any file is not linearizable, is not a history, or
+    /// records no operation.
+    ///
+    /// Two checkers decide the question and `--method` picks which. The
+    /// general search is the definition and is exponential in the number of
+    /// operations in the worst case; the specialised checker decides in
+    /// `O(n log n)` by the theorem its module documents (`broadcast_history::
+    /// specialised`), and declines a history outside the theorem's
+    /// hypothesis. The default asks the specialised checker and falls back to
+    /// the general search when it declines.
+    CheckBroadcastHistory {
+        /// The history files to judge
+        #[arg(required = true)]
+        files: Vec<String>,
+
+        /// Which checker decides: `auto` (the specialised checker, then the
+        /// general search when it declines), `general` (the search alone) or
+        /// `specialised` (the specialised checker alone: a history it
+        /// declines is refused, naming the reason, instead of falling back)
+        #[arg(long, value_enum, default_value_t = HistoryMethod::Auto)]
+        method: HistoryMethod,
+    },
+
+    /// Verify that generated files were generated from the current inputs,
+    /// per spec §synth-6.2.6.
+    ///
+    /// Scans `out_dir` for emitted files (.rs / .cpp / .h / .kt / .go /
+    /// .py / .c), reads each file's `// SCE-GENERATED` header, recomputes
+    /// the `source-hash` from the current source set, and fails on
+    /// mismatch with `forge/source-hash-mismatch`. It reads headers, not
+    /// content, and needs no generation: whether the files hold what the
+    /// current generator produces is `--assert-unchanged`'s question.
+    Verify {
+        /// Generated output directory to verify (recursive).
+        out_dir: String,
+        /// A directory the documents the files were generated from lie
+        /// under; repeat it for a tree generated from several. Each file's
+        /// `source:` lines name its documents relative to a directory at or
+        /// below one of these, where `verify` finds them to recompute the
+        /// file's input closure.
+        #[arg(long, required = true)]
+        input_root: Vec<String>,
+        /// Path to deploy.yaml if it was part of the original codegen
+        /// input set. Optional — single-document codegen omits this.
+        #[arg(long)]
+        deploy: Option<String>,
+    },
+
+    /// Answer whether this binary was built from the sources in a given
+    /// tree.
+    ///
+    /// Nothing in the C++ build graph produces `sce-codegen` — CMake finds
+    /// whatever binary is in `target/` and generates with it — so a build
+    /// system has no way to ask that question of the build graph, and this
+    /// is where it asks instead. `cmake/SCEFindCodegen.cmake` runs it at
+    /// configure time and again as a build-time target, because a source
+    /// edit followed by `ninja` does not re-run configure.
+    ///
+    /// Exits `0` when the binary is current, `20` (`cli/*`) when it is
+    /// stale or carries no witness — two distinct codes, since "disagrees
+    /// with this tree" and "cannot be checked" have different repairs.
+    VerifyGenerator {
+        /// Workspace root to check this binary against. Defaults to the
+        /// same resolution chain `verify` uses, so an invocation from
+        /// anywhere inside the checkout finds it.
+        #[arg(long)]
+        root: Option<String>,
+    },
+
+    /// Write a generated tree into a directory from its actions (ADR 0097).
+    ///
+    /// The tree is the one `tools/codegen/trees/<TREE>.toml` declares. Each of
+    /// its generations is an action keyed by what it reads, taken from the
+    /// action cache when the cache holds it and run by this binary otherwise;
+    /// its files are written under `--into` at the paths they have in the
+    /// checkout, then the tree's index files and its formatter. Refused when
+    /// this binary was built from other sources than the checkout's, since
+    /// its results would be kept under another generator's key.
+    ///
+    /// The cache is `$SCE_ACTION_CACHE`, else `$XDG_CACHE_HOME/sce/actions`,
+    /// else `~/.cache/sce/actions`.
+    Materialize {
+        /// The tree, as its manifest names it.
+        tree: String,
+        /// Where the tree is written.
+        #[arg(long, value_name = "DIR")]
+        into: PathBuf,
+        /// Make the tree under `--into` exactly the one its actions produce:
+        /// also remove each generated file under the tree's roots that they
+        /// no longer write. For a directory that holds an earlier copy of the
+        /// tree, the checkout while a tree is still committed; files written
+        /// by hand beside it stay.
+        #[arg(long)]
+        replace: bool,
+        /// Write the tree a host whose script engine reads `LANG` compiles:
+        /// every generation of it that leaves the language to its backend is
+        /// also given `--script-engine LANG`, and is cached apart from the
+        /// tree's own. A generation whose manifest names its engine keeps it.
+        #[arg(long = "script-engine", value_name = "LANG")]
+        script_engine: Option<String>,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
+    /// PC offset back to its originating SCXML coordinates.
+    ///
+    /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
+    ///                     <artifact>` identifier in
+    ///                     `<sourcemap>/sce_sourcemap.json`.
+    /// `--pc <ADDR>`       Resolve an ELF program-counter address to the
+    ///                     function symbol containing it (`--elf`
+    ///                     required), then look that symbol up.
+    /// `--hardfault`       Read newline-separated PC addresses from
+    ///                     stdin and resolve each as `--pc` would, one
+    ///                     record per frame in the order given. Exits 1
+    ///                     when any frame is unresolvable.
+    ///
+    /// Spec lines 3253-3278 fix the tool's resolution contract:
+    /// PC → symbol → sourcemap → SCXML file:line + state_path. The
+    /// per-symbol attribution data ships in the sourcemap, so the
+    /// address→symbol hop reads the ELF symbol table rather than a
+    /// DWARF line program — `.symtab` carries the ranges this needs and
+    /// survives `--strip-debug`.
+    ///
+    /// On ARM the Thumb bit (bit 0) is cleared on both the symbol and
+    /// the query address, so a PC taken from a Cortex-M exception frame
+    /// resolves like its even neighbour.
+    ///
+    /// For the opposite direction — SCXML coordinates to the symbols
+    /// they lowered to — see `sce2sym`.
+    // The three modes and the `--elf` they need are expressed to the
+    // argument parser rather than checked by hand after it. A
+    // hand-rolled arity check is a second argument parser: it emitted
+    // prose and exited 2, which SCE_ERROR_CONTRACT.md §6 assigns to
+    // `xml/*` — so mistyping a flag reported a malformed *document*.
+    // Declared here, the same mistakes leave as `cli/usage`.
+    #[command(name = "addr2sce")]
+    #[command(group = clap::ArgGroup::new("addr2sce_mode")
+        .required(true)
+        .multiple(false)
+        .args(["symbol", "pc", "hardfault"]))]
+    Addr2Sce {
+        /// Directory containing `sce_sourcemap.json` (per-machine
+        /// output, e.g. `target/.../src/generated/test144/`).
+        sourcemap_dir: String,
+        /// Mangled symbol to look up directly (mutually exclusive
+        /// with `--pc` / `--hardfault`).
+        #[arg(long)]
+        symbol: Option<String>,
+        /// ELF program-counter address, hexadecimal with or without a
+        /// `0x` prefix (a bare value is read as hex — every stack dump
+        /// prints hex). Requires `--elf`.
+        #[arg(long, requires = "elf", value_parser = parse_pc_address)]
+        pc: Option<u64>,
+        /// ELF image whose symbol table maps an address to a function.
+        ///
+        /// Required by `--pc` / `--hardfault`: the sourcemap keys on
+        /// symbol *names*, and only the image knows which name owns a
+        /// given address.
+        #[arg(long)]
+        elf: Option<String>,
+        /// Read PC addresses from stdin, one per line, and resolve each
+        /// as `--pc` would. Blank lines are skipped so a pasted dump
+        /// works verbatim. Requires `--elf`.
+        #[arg(long, requires = "elf")]
+        hardfault: bool,
+    },
+    /// Resolve SCXML coordinates to the symbols they lowered to — the
+    /// reverse of `addr2sce`.
+    ///
+    /// `addr2sce` answers "which line of SCXML produced this symbol";
+    /// this answers "which symbols did this line of SCXML produce".
+    /// The two are not mirror images in shape: a mangled symbol is a
+    /// map key, so the forward direction is one exact lookup, while a
+    /// single SCXML coordinate legitimately lowers to several symbols
+    /// (a state's body, its entry block, each of its transitions) and,
+    /// across backends, to several sidecars. Output is therefore
+    /// NDJSON — one record per hit — against
+    /// `schemas/sce-symbol-lookup.v1.schema.json`.
+    ///
+    /// Pass more than one sourcemap directory to ask the same question
+    /// of several backends at once; each record names the sidecar it
+    /// came from.
+    ///
+    /// Every filter is optional and they intersect. With none, the
+    /// whole table is listed — the useful default for "what did this
+    /// document lower to", which a lookup that demanded a key could
+    /// not express.
+    // Named explicitly: clap's derived kebab-case renders this variant
+    // as `sce2-sym`, which does not match the `addr2sce` it is the
+    // reverse of. The pair reads as a pair only if both spell the
+    // direction the same way.
+    #[command(name = "sce2sym")]
+    Sce2Sym {
+        /// Directory containing `sce_sourcemap.json`. Repeat to query
+        /// several backends in one invocation.
+        #[arg(required = true)]
+        sourcemap_dir: Vec<String>,
+        /// Canonical state-hierarchy path, matched exactly (e.g.
+        /// `s1/s1p1`). The machine-level symbol carries an empty path.
+        #[arg(long)]
+        state: Option<String>,
+        /// 1-based source line that must fall inside the symbol's
+        /// line range, inclusive at both ends.
+        #[arg(long)]
+        line: Option<u32>,
+        /// IR node kind, matched exactly: `state`, `transition`,
+        /// `on_entry`, `on_exit`, `forge_body`, `machine`.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Event name, matched exactly. Symbols carrying no event
+        /// never match a constrained query.
+        #[arg(long)]
+        event: Option<String>,
+        /// Author-facing SCXML path, matched exactly. Narrows a
+        /// sourcemap that covers several documents.
+        #[arg(long)]
+        file: Option<String>,
+    },
+}
+
+/// Multi-doc generate with cross-doc registry — wires
+/// `validate_on_sample_link_references` into production
+/// (SCE Protocol-Synthesis RFC §synth-5-D).
+/// Use this when the build has multiple SCXML/forge docs that
+/// reference each other across files (`<sce:on-sample link>`,
+/// `<sce:outbox ref>`); single-file `Generate` does not
+/// build the cross-doc registry and silently skips cross-ref
+/// validation. Both lists may be empty (no-op).
+#[derive(clap::Args)]
+struct OrchestrateArgs {
+    /// Input SCXML file path (repeat for multiple files). Each of the three
+    /// document flags also takes the `sce:std/...` name of a standard
+    /// document, read from the library this generator embeds as `generate`
+    /// reads one.
+    #[arg(long = "scxml")]
+    scxml: Vec<String>,
+    /// Input forge file path (repeat for multiple files).
+    #[arg(long = "forge")]
+    forge: Vec<String>,
+    /// A document of either pipeline, filed as `--scxml` or `--forge` by
+    /// the rule every route reads a document by (repeat for multiple
+    /// files). The same flag `check` takes on its document-set route.
+    #[arg(long = "document", value_name = "PATH")]
+    document: Vec<String>,
+    /// Canonical source directory for drift hashing. Defaults to the first
+    /// input's parent, which must then contain every input in the batch.
+    /// Use a shared root for inputs in different directories, or the
+    /// original source root when generating staged derivatives.
+    #[arg(long)]
+    input_root: Option<String>,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and `<sce:use template="...">`
+    /// fragments by name — same semantics as `generate --include-dir`.
+    /// Without it, fragments resolve relative to the including document
+    /// only, which is the whole search path a multi-doc build had.
+    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    include_dir: Vec<String>,
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::Orchestrate.flag_summary("Target language"),
+        long_help = LanguageRoute::Orchestrate.flag_help("Target language"),
+    )]
+    language: String,
+    /// Output directory (one entry per input doc; sidecars travel
+    /// with their primary in `GeneratedOutput::files`).
+    #[arg(short, long)]
+    output_dir: String,
+    /// Optional path to deploy.yaml. When provided, the orchestrator
+    /// runs SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators that
+    /// otherwise silent-skip:
+    ///   - `validate_links_cross_doc` (§synth-5-K)
+    ///   - `validate_links_burst_invariants` (§synth-5-K [lines 2489-2500])
+    ///   - `validate_reassembly_cross_doc` (§synth-5-M [lines 2946-2995])
+    ///
+    /// Omit to keep the multi-doc orchestrator deploy-unaware
+    /// (matching every pre-existing call site's silent-skip
+    /// semantics).
+    #[arg(long)]
+    deploy: Option<String>,
+    /// The machine of `--deploy` the documents are generated for: every
+    /// `sce:kind="queue"` document in the set resolves its deploy keys and
+    /// what the deploy says of the target's atomics against that machine (SCE
+    /// Protocol-Synthesis RFC §synth-5-P).
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
+    /// Directory to write per-doc AST envelopes into. One
+    /// `<doc_stem>.ast.json` is emitted per `--forge` input AND
+    /// per `--scxml` input — the v1 envelope's `oneOf` arm covers
+    /// statechart documents (`ast.document.kind = "statechart"`)
+    /// alongside the 15 forge kinds, so the orchestrate emit path
+    /// is uniform across both classifier outputs. Documents
+    /// rejected by §scxml-5.8 (`document_rejected`) skip emit
+    /// silently — matching the single-doc `generate --emit-ast`
+    /// contract.
+    ///
+    /// Envelope shape: `apis/forge-ast.v1.schema.json`. Consumer
+    /// contract: `docs/SCE_FORGE_AST.md`. Useful for batch tools
+    /// (sce-db-gen, sce-eventstore-adapter, sce-ui-gen) that
+    /// consume IR across an entire multi-doc build without
+    /// invoking SCE codegen per file.
+    #[arg(long)]
+    emit_ast_dir: Option<String>,
+    /// Go module path hosting the generated forge packages.
+    /// Required to build any Go document carrying `<sce:import>`;
+    /// ignored for other backends. Every document of the set is given it:
+    /// each forge document, each statechart (whose machine imports the
+    /// packages of the algorithms it calls by it, as `generate
+    /// --go-module-prefix` gives it to one document) and each child a
+    /// statechart carries, and each kind declared inside any of them.
+    ///
+    /// `check`'s document-set route takes this flag and names this
+    /// subcommand as the producer whose verdict it mirrors. Without
+    /// it here that mirror could not hold: `check --scxml A --forge
+    /// B -l go --go-module-prefix M` returned exit 0 while the run
+    /// it claimed to predict had no way to be given `M` and failed
+    /// with `<sce:import> with language=go requires
+    /// ForgeCompileOptions.go_module_prefix`.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Build-time const-fold iteration budget, capping the total
+    /// iteration count across every `<sce:fold>` body in the
+    /// document. Mirrors `generate` and `check`; unset uses the
+    /// RFC §synth-5-F default of 1_000_000. Given to every document of the
+    /// set as `--go-module-prefix` is.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+    /// Declare an Event I/O Processor `type` this build's host serves,
+    /// mirroring `generate --host-processor`. Repeatable.
+    ///
+    /// Here for the reason `--go-module-prefix` is: `check`'s
+    /// document-set route names this subcommand as the producer whose
+    /// verdict it mirrors, and a flag that changes how a document is READ
+    /// must exist on the command whose conclusion it claims to predict.
+    /// Until it did, a document set could not be told what its host
+    /// serves at all — every `<send type>` naming a host processor stayed
+    /// the §scxml-6.2 refusal — and the parity gate stayed green because
+    /// `check` refused the flag on that route rather than because the two
+    /// commands agreed. Agreement is not the same as capability.
+    #[arg(long = "host-processor", value_name = "TYPE")]
+    host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run,
+    /// mirroring `generate --host-invoker`. Repeatable.
+    ///
+    /// Separate from `--host-processor` on every command carrying both,
+    /// and for the same reason: delivering an event is not the same
+    /// capability as running a process with a lifecycle.
+    #[arg(long = "host-invoker", value_name = "TYPE")]
+    host_invoker: Vec<String>,
+    /// Refuse the set when any member carries an `<sce:unresolved>`
+    /// placeholder, mirroring `generate --strict-unresolved` and taken by
+    /// `check` on its document-set route.
+    ///
+    /// Each member is held to it — statecharts first, then forge documents,
+    /// each in input order — and the first placeholder found ends the run,
+    /// before anything is generated. Here for the reason `--host-processor`
+    /// is: `check` answers it for a set and names this subcommand as the
+    /// producer whose verdict it predicts, so a build that must not merge an
+    /// unresolved design has to be able to ask for the same refusal of the
+    /// build itself. A marker blocks only this flag, and `sce:assumed`, the
+    /// value an author chose, does not count.
+    #[arg(long)]
+    strict_unresolved: bool,
+    /// Report every design-time finding of the first statechart that has
+    /// any, and end the run on a refused expression, mirroring
+    /// `generate --lint` and taken by `check` on its document-set route.
+    ///
+    /// A set is refused at the first design-time finding without it, since
+    /// every statechart is compiled through the library entry point that
+    /// lints; the flag widens that to the whole list, as it does for one
+    /// document. A set with no statechart is refused it rather than passed
+    /// by a check that never ran.
+    #[arg(long, conflicts_with = "forge")]
+    lint: bool,
+    /// The language the manifest's `open` says what is left open in, for the
+    /// person a host shows it to, mirroring `check --lexicon`, which a set's
+    /// verdict is predicted under. English is what every gate and record reads.
+    #[arg(
+        long,
+        value_name = "NAME",
+        default_value = "en",
+        value_parser = registered_lexicons()
+    )]
+    lexicon: String,
+    /// Hold the statecharts to an authoring profile, mirroring
+    /// `generate --profile` and taken by `check` on its document-set route.
+    /// Every finding of every statechart is listed and the run ends before
+    /// anything is generated; an unusable profile is refused whole.
+    #[arg(long, value_name = "PATH")]
+    profile: Option<String>,
+    /// Path to a .clang-format file for C++ output formatting, mirroring
+    /// `generate --format-style`. When omitted, the built-in default style
+    /// is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Emit C++ exactly as the templates produce it, mirroring
+    /// `generate --no-format`. Formatting is on by default and needs
+    /// clang-format 19, the pinned major: a document set is no reason for
+    /// its C++ to be shaped differently than the same documents generated
+    /// one at a time.
+    #[arg(long)]
+    no_format: bool,
+    /// Write a Make-format depfile for the set, with the contract of
+    /// `generate --write-deps`: its one target the first file the run
+    /// writes, its prerequisites every document of the set, what each
+    /// includes, the deploy, the source set the `source-hash` covers, the
+    /// templates and this program, less every file the run writes.
+    ///
+    /// Without it a build step that compiles a set's headers named its
+    /// documents and the deploy and nothing else, so a template edit left
+    /// the headers stale and the build reused them.
+    #[arg(long, value_name = "PATH")]
+    write_deps: Option<String>,
+}
+
+/// Recover `--error-format` from the raw argument vector.
+///
+/// Needed only on the parse-failure path: when [`Cli::try_parse`]
+/// fails there is no parsed `--error-format` to read, yet the failure
+/// still has to be rendered in the format the caller asked for. A
+/// caller that mistyped the format flag itself falls back to human,
+/// which is the right direction — the prose says what was wrong with
+/// the flag.
+fn peek_error_format<I: IntoIterator<Item = String>>(args: I) -> ErrorFormat {
+    let mut want_value = false;
+    for arg in args {
+        if want_value {
+            return if arg == "json" {
+                ErrorFormat::Json
+            } else {
+                ErrorFormat::Human
+            };
+        }
+        match arg.as_str() {
+            "--error-format" => want_value = true,
+            "--error-format=json" => return ErrorFormat::Json,
+            _ => {}
+        }
+    }
+    ErrorFormat::Human
+}
+
+/// Parse the command line, reporting a parse failure through the same
+/// diagnostic pipeline as every other failure.
+///
+/// `clap`'s own `parse()` prints prose and exits 2 on a malformed
+/// invocation. Both halves of that break the contract: exit 2 is the
+/// status `SCE_ERROR_CONTRACT.md` §6 assigns to `xml/*`, so a caller
+/// that mistyped a flag was told its document was malformed, and the
+/// prose carries no `code` for it to read instead.
+///
+/// `--help` and `--version` keep clap's behaviour exactly — they are
+/// successful requests for output, not failures, and they leave
+/// through clap's own writer on stdout with status 0.
+fn parse_cli() -> Cli {
+    match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            use clap::error::ErrorKind;
+            if matches!(
+                err.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                err.exit();
+            }
+            let _ = ERROR_FORMAT.set(peek_error_format(std::env::args()));
+            // `render()` is the message without clap's ANSI styling —
+            // §7 forbids escapes in JSON mode, and a human-mode reader
+            // gains nothing from colour it did not ask for.
+            cli_exit(CliError::Usage {
+                detail: err.render().to_string().trim_end().to_string(),
+            })
+        }
+    }
+}
+
+/// Run `sce-codegen` on this process's arguments, as the binary of that name
+/// does: parse them, run the command they name, and leave through the exit
+/// statuses of `SCE_ERROR_CONTRACT.md` §6. A command that fails exits the
+/// process with its status; one that succeeds returns.
+pub fn main() {
+    let cli = parse_cli();
+    let error_format = cli.error_format;
+    // Install the format once so every termination helper can read
+    // it without plumbing through function signatures. Tests that
+    // launch the binary inherit this install via the normal CLI
+    // parse; in-process helpers never run before this point.
+    let _ = ERROR_FORMAT.set(error_format);
+    // Same OnceLock pattern for the workspace-root override, so a
+    // command that needs it consults one source of truth without growing
+    // a `workspace_root: Option<&Path>` param on every helper signature.
+    if let Some(p) = cli.workspace_root {
+        let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
+    }
+    // Claimed before any subcommand runs so an explicit flag outranks the
+    // repo root `find_project_root` would otherwise install.
+    if let Some(p) = cli.source_root {
+        let _ = SOURCE_ROOT.set(p);
+    }
+    // The bounds this run builds with, for the whole run: every document it reads
+    // takes them (`crate::limits`).
+    let limits = match crate::limits::Limits::parse(&cli.limit) {
+        Ok(limits) => limits,
+        Err(e) => cli_exit(CliError::Usage {
+            detail: format!("--limit: {e}"),
+        }),
+    };
+    let _limits_scope = crate::limits::scope(&limits);
+    if cli.assert_unchanged {
+        if let Some(detail) = assert_unchanged_refusal(&cli.command) {
+            cli_exit(CliError::Usage { detail });
+        }
+        let _ = OUTPUT_MODE.set(OutputMode::AssertUnchanged);
+    }
+    if cli.plan {
+        if let Some(detail) = plan_refusal(&cli.command, cli.plan_children) {
+            cli_exit(CliError::Usage { detail });
+        }
+        let _ = OUTPUT_MODE.set(OutputMode::Plan);
+        let _ = PLAN_CHILDREN.set(cli.plan_children);
+        let _ = PLAN_REQUIRES.set(cli.plan_requires);
+        let _ = PLAN_MACHINES.set(cli.plan_machines);
+    }
+    if let Some(reads) = cli.reads {
+        if let Some(detail) = reads_refusal(&cli.command) {
+            cli_exit(CliError::Usage { detail });
+        }
+        let _ = READS.set(reads);
+    }
+    match cli.command {
+        Commands::Generate(args) => run_generate(*args, error_format),
+        Commands::Check(args) => cmd_check(*args, error_format),
+        Commands::Orchestrate(args) => cmd_orchestrate(*args, error_format),
+        Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
+        Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
+        Commands::Manifest { dir } => cmd_manifest(&dir),
+        Commands::Requirements {
+            scxml,
+            manifest,
+            scenarios,
+            trace,
+        } => cmd_requirements(
+            &scxml,
+            manifest.as_deref(),
+            scenarios.as_deref().zip(trace.as_deref()),
+            error_format,
+        ),
+        Commands::Scenarios {
+            file,
+            specification,
+            machine,
+        } => cmd_scenarios(
+            &file,
+            specification.as_deref(),
+            machine.as_deref(),
+            error_format,
+        ),
+        Commands::JudgeScenarios { set, trace } => cmd_judge_scenarios(&set, &trace),
+        Commands::TransitionTable {
+            scxml,
+            header,
+            input_root,
+            deploy,
+            features,
+        } => cmd_transition_table(
+            &scxml,
+            header.then_some((input_root.as_deref(), deploy.as_deref())),
+            selected_features(features),
+            error_format,
+        ),
+        Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
+        Commands::Pseudo {
+            document,
+            deploy,
+            shape,
+            lexicon,
+        } => cmd_pseudo(&document, deploy.as_deref(), &shape, &lexicon, error_format),
+        Commands::Diagram {
+            document,
+            out,
+            page,
+            min_pt,
+            margin,
+            lexicon,
+            manifest,
+        } => cmd_diagram(
+            &document,
+            &out,
+            SheetOptions {
+                page: &page,
+                min_pt,
+                margin_pt: margin,
+            },
+            &lexicon,
+            manifest.as_deref(),
+            error_format,
+        ),
+        Commands::AnnotationOverlay { scxml } => cmd_annotation_overlay(&scxml, error_format),
+        Commands::AcceptanceReport {
+            scxml,
+            manifest,
+            variant,
+            sidecar,
+        } => cmd_acceptance_report(
+            &scxml,
+            &manifest,
+            &variant,
+            sidecar.as_deref(),
+            error_format,
+        ),
+        Commands::Accept {
+            scxml,
+            manifest,
+            sidecar,
+            variant,
+            root,
+            out,
+            source,
+            decisions,
+            profile,
+            scenarios,
+            channel,
+            succeeds,
+        } => cmd_accept(
+            &AcceptRequest {
+                scxml: &scxml,
+                manifest: &manifest,
+                sidecar: sidecar.as_deref(),
+                variant: &variant,
+                root: &root,
+                out: &out,
+                channel,
+                succeeds: succeeds.as_deref(),
+            },
+            &authored_from(
+                &source,
+                decisions.as_deref(),
+                profile.as_deref(),
+                scenarios.as_deref(),
+            ),
+            error_format,
+        ),
+        Commands::AcceptanceCheck {
+            record,
+            variant,
+            root,
+            source,
+            decisions,
+            profile,
+            scenarios,
+        } => cmd_acceptance_check(
+            &record,
+            &variant,
+            &root,
+            &authored_from(
+                &source,
+                decisions.as_deref(),
+                profile.as_deref(),
+                scenarios.as_deref(),
+            ),
+        ),
+        Commands::AcceptanceImpact { records, root } => cmd_acceptance_impact(&records, &root),
+        Commands::AcceptanceDelta {
+            record,
+            root,
+            design,
+        } => cmd_acceptance_delta(&record, &root, design.as_deref()),
+        Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
+        Commands::Unresolved { scxml, profile } => {
+            cmd_unresolved(&scxml, profile.as_deref(), error_format)
+        }
+        Commands::Coverage { scxml } => cmd_coverage(&scxml, error_format),
+        Commands::GenerateConformance {
+            language,
+            manifest,
+            output_dir,
+            write_deps,
+        } => cmd_generate_conformance(&language, &manifest, &output_dir, write_deps.as_deref()),
+        Commands::PlanBatch {
+            requests,
+            results,
+            jobs,
+        } => cmd_plan_batch(&requests, &results, jobs),
+        Commands::ListFixtures(args) => cmd_list_fixtures(&args),
+        Commands::CheckAotBriefs {
+            manifest,
+            header_dir,
+        } => cmd_check_aot_briefs(&manifest, &header_dir),
+        Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
+        Commands::CheckBroadcastHistory { files, method } => {
+            cmd_check_broadcast_history(&files, method)
+        }
+        Commands::ProvenanceRoster => cmd_provenance_roster(),
+        Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
+        Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
+        Commands::Project {
+            scxml,
+            features,
+            include_dir,
+        } => cmd_project(&scxml, features, &include_dir),
+        Commands::CodecRoles { scxml, include_dir } => {
+            cmd_codec_roles(&scxml, &include_dir, error_format)
+        }
+        Commands::CodecFormat { scxml } => cmd_codec_format(&scxml, error_format),
+        Commands::BoundSpelling { scxml } => cmd_bound_spelling(&scxml, error_format),
+        Commands::PayloadSchema {
+            scxml,
+            format,
+            input_root,
+            deploy,
+            include_dir,
+        } => cmd_payload_schema(
+            &scxml,
+            format,
+            input_root.as_deref(),
+            deploy.as_deref(),
+            &include_dir,
+            error_format,
+        ),
+        Commands::ExportTtcn3 {
+            scxml,
+            output_dir,
+            input_root,
+            include_dir,
+        } => cmd_export_ttcn3(
+            &scxml,
+            &output_dir,
+            input_root.as_deref(),
+            &include_dir,
+            error_format,
+        ),
+        Commands::CheckTrace {
+            suite,
+            trace,
+            include_dir,
+        } => cmd_check_trace(&suite, &trace, &include_dir, error_format),
+        Commands::Deployment {
+            scxml,
+            deploy,
+            name,
+            gate,
+            output_dir,
+            include_dir,
+        } => cmd_deployment(
+            &scxml,
+            &deploy,
+            name,
+            &gate,
+            &output_dir,
+            &include_dir,
+            error_format,
+        ),
+        Commands::Lower {
+            scxml,
+            include_dir,
+            out_dir,
+        } => cmd_lower(&scxml, &include_dir, out_dir.as_deref(), error_format),
+        Commands::LowerAlgorithm { document } => cmd_lower_algorithm(&document, error_format),
+        Commands::Shape {
+            scxml,
+            include_dir,
+            host_invoker,
+            output,
+        } => cmd_shape(
+            &scxml,
+            &include_dir,
+            &host_invoker,
+            output.as_deref(),
+            error_format,
+        ),
+        Commands::Verify {
+            out_dir,
+            input_root,
+            deploy,
+        } => cmd_verify(&out_dir, &input_root, deploy.as_deref(), error_format),
+        Commands::VerifyGenerator { root } => cmd_verify_generator(root.as_deref(), error_format),
+        Commands::Materialize {
+            tree,
+            into,
+            replace,
+            script_engine,
+        } => cmd_materialize(
+            &tree,
+            &into,
+            replace,
+            script_engine.as_deref(),
+            error_format,
+        ),
+        Commands::Addr2Sce {
+            sourcemap_dir,
+            symbol,
+            pc,
+            elf,
+            hardfault,
+        } => cmd_addr2sce(
+            &sourcemap_dir,
+            symbol.as_deref(),
+            pc,
+            elf.as_deref(),
+            hardfault,
+            error_format,
+        ),
+        Commands::Sce2Sym {
+            sourcemap_dir,
+            state,
+            line,
+            kind,
+            event,
+            file,
+        } => cmd_sce2sym(
+            &sourcemap_dir,
+            crate::forge::sourcemap::SymbolQuery {
+                state_path: state.as_deref(),
+                line,
+                kind: kind.as_deref(),
+                event: event.as_deref(),
+                file: file.as_deref(),
+            },
+        ),
+    }
+    finish_generated_output();
+}
+
+/// Why `--plan` cannot apply to `command` (with `--plan-children` when
+/// `plan_children`), or `None` when it does.
+///
+/// A plan answers which files a build step writes, so it applies to the
+/// commands a build declares a step of: `generate`, `orchestrate` and
+/// `generate-conformance`, whose files a target compiles. Every other command
+/// is refused, so one added later is refused until it is placed here: a plan
+/// of a command that does not hold its files in memory would answer with
+/// none and write them besides. Two shapes of those
+/// commands write what a plan cannot answer for, and are refused:
+/// `--plan-children` plans the children one document's generation writes,
+/// which a set and a harness have none of, and `orchestrate --emit-ast-dir`
+/// writes its envelopes to disk whatever the run's mode.
+fn plan_refusal(command: &Commands, plan_children: bool) -> Option<String> {
+    match command {
+        Commands::Generate(_) => None,
+        Commands::Orchestrate(args) if args.emit_ast_dir.is_some() => Some(
+            "--plan cannot apply to orchestrate --emit-ast-dir: the envelopes are written \
+             beside the run and are no file of the step a plan answers for"
+                .to_string(),
+        ),
+        Commands::Orchestrate(_) | Commands::GenerateConformance { .. } if plan_children => Some(
+            "--plan-children plans the child documents of one document's generation; \
+                 orchestrate and generate-conformance write none of their own to plan"
+                .to_string(),
+        ),
+        Commands::Orchestrate(_) | Commands::GenerateConformance { .. } => None,
+        _ => Some(
+            "--plan applies only to the commands whose files a build compiles and so has \
+             to declare: generate, orchestrate and generate-conformance. The answer is the \
+             list of files a run of the command with the same arguments would write"
+                .to_string(),
+        ),
+    }
+}
+
+/// Why `--reads` cannot apply to `command`, or `None` when it does.
+///
+/// Every command that is not one of the three is refused rather than left
+/// to write no list: a caller keying a cache on the list (ADR 0097) would
+/// read a missing list as a run that read nothing.
+fn reads_refusal(command: &Commands) -> Option<String> {
+    match command {
+        Commands::Generate(_) | Commands::Orchestrate(_) | Commands::GenerateConformance { .. } => {
+            None
+        }
+        Commands::GenerateW3c(args) if args.clean || args.list => Some(
+            "--reads cannot apply to generate-w3c --clean or --list: neither generates a file, \
+             so there is no generation for the list to describe"
+                .to_string(),
+        ),
+        Commands::GenerateW3c(_) => None,
+        _ => Some(
+            "--reads applies only to the commands that record what they read: generate, \
+             orchestrate, generate-conformance and generate-w3c"
+                .to_string(),
+        ),
+    }
+}
+
+/// Why `--assert-unchanged` cannot apply to `command`, or `None` when it
+/// does.
+///
+/// Every command is named rather than covered by a wildcard, so a command
+/// added later has to be placed on one side or the other: a generator that
+/// the flag silently did not reach would report "unchanged" for files it
+/// never compared.
+fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
+    const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
+        generate files: generate, orchestrate, generate-w3c, generate-conformance, deployment, \
+        diagram and export-ttcn3";
+    match command {
+        // Both modes generate nothing, so a run in either would pass
+        // having compared nothing.
+        Commands::GenerateW3c(args) if args.clean || args.list => Some(
+            "--assert-unchanged cannot apply to generate-w3c --clean or --list: neither \
+             generates a file, so there is nothing to compare"
+                .to_string(),
+        ),
+        Commands::Generate(_)
+        | Commands::Orchestrate(_)
+        | Commands::GenerateW3c(_)
+        | Commands::GenerateConformance { .. }
+        | Commands::Deployment { .. }
+        | Commands::Diagram { .. }
+        | Commands::ExportTtcn3 { .. } => None,
+        Commands::Check(_)
+        | Commands::ReadMetadata { .. }
+        | Commands::Manifest { .. }
+        | Commands::Requirements { .. }
+        | Commands::Scenarios { .. }
+        | Commands::JudgeScenarios { .. }
+        | Commands::TransitionTable { .. }
+        | Commands::ReviewTable { .. }
+        | Commands::Pseudo { .. }
+        | Commands::AnnotationOverlay { .. }
+        | Commands::AcceptanceReport { .. }
+        | Commands::Accept { .. }
+        | Commands::AcceptanceCheck { .. }
+        | Commands::AcceptanceImpact { .. }
+        | Commands::AcceptanceDelta { .. }
+        | Commands::RequirementClosure { .. }
+        | Commands::Unresolved { .. }
+        | Commands::Coverage { .. }
+        | Commands::PlanBatch { .. }
+        | Commands::ListFixtures(_)
+        | Commands::CheckAotBriefs { .. }
+        | Commands::CheckQueueHistory { .. }
+        | Commands::CheckBroadcastHistory { .. }
+        | Commands::ProvenanceRoster
+        | Commands::Kinds { .. }
+        | Commands::Expand { .. }
+        | Commands::Project { .. }
+        | Commands::CodecRoles { .. }
+        | Commands::CodecFormat { .. }
+        | Commands::BoundSpelling { .. }
+        | Commands::PayloadSchema { .. }
+        | Commands::CheckTrace { .. }
+        | Commands::Lower { .. }
+        | Commands::LowerAlgorithm { .. }
+        | Commands::Shape { .. }
+        | Commands::Verify { .. }
+        | Commands::VerifyGenerator { .. }
+        | Commands::Materialize { .. }
+        | Commands::Addr2Sce { .. }
+        | Commands::Sce2Sym { .. } => Some(NOT_A_GENERATOR.to_string()),
+    }
+}
+
+// ── Subcommand: orchestrate ─────────────────────────────────────
+//
+// SCE Protocol-Synthesis RFC §synth-5-D entry point —
+// the production-side consumer that closes the silent
+// hole on `validate_on_sample_link_references`. Authors that hold
+// multi-doc builds (cross-file `<sce:on-sample link>` references, or
+// the `<sce:outbox ref>` axis) switch to
+// this subcommand to gain cross-doc registry construction + cross-ref
+// validation that the single-file `Generate` cannot provide.
+
+fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
+    // Destructured once, into the borrowed shapes the body below reads.
+    // The arguments travel as a struct because `Generate`, `Check` and
+    // `GenerateW3c` already do: a flat parameter list crossed clippy's
+    // `too_many_arguments` the moment this subcommand gained the two
+    // options `check` had all along.
+    let OrchestrateArgs {
+        mut scxml,
+        mut forge,
+        document,
+        input_root,
+        include_dir,
+        language: language_arg,
+        output_dir: output_dir_arg,
+        deploy,
+        target_machine,
+        emit_ast_dir: emit_ast_dir_arg,
+        go_module_prefix,
+        const_fold_budget,
+        host_processor,
+        host_invoker,
+        strict_unresolved,
+        lint,
+        lexicon,
+        profile: profile_path,
+        format_style,
+        no_format,
+        write_deps,
+    } = args;
+    let lexicon = check_lexicon(&lexicon);
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
+    let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+    file_documents(document, &mut scxml, &mut forge, error_format);
+    let scxml_paths: &[String] = &scxml;
+    let forge_paths: &[String] = &forge;
+    let scxml_path_bufs: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
+    let forge_path_bufs: Vec<PathBuf> = forge_paths.iter().map(PathBuf::from).collect();
+    // The refusals `check` gives a set under the same flags, by the same
+    // functions and in the same order, before anything is compiled or
+    // written: a design refused here has produced nothing. The declared
+    // transition function is among them whatever the flags, as it is there.
+    if strict_unresolved {
+        strict_set_unresolved(&scxml_path_bufs, &forge_path_bufs, error_format);
+    }
+    let profile_facts = profile.as_ref().map(|profile| {
+        judge_set_under_profile(profile, &scxml_path_bufs, &forge_path_bufs, error_format)
+    });
+    refuse_set_transition_functions(&scxml_path_bufs, error_format);
+    if lint {
+        lint_set_statecharts(&scxml_path_bufs, error_format);
+    }
+    let language: &str = &language_arg;
+    let output_dir: &str = &output_dir_arg;
+    let deploy_path: Option<&str> = deploy.as_deref();
+    let emit_ast_dir: Option<&str> = emit_ast_dir_arg.as_deref();
+    // Per-doc AST emit runs *before* the multi-doc compile so the AST
+    // surface is independent of any cross-doc validation outcome. A
+    // failing cross-doc validator must still produce ASTs for the
+    // docs that parsed successfully — consumer tooling treats AST
+    // emit as observation, not as compile commitment.
+    if let Some(dir) = emit_ast_dir {
+        emit_orchestrate_asts(scxml_paths, forge_paths, dir, &include_dirs, error_format);
+    }
+    let lang = parse_served_language(LanguageRoute::Orchestrate, language);
+    // Resolved at the first C++ file there is to write — see `CppFormatterSlot`.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style.as_deref(), no_format);
+
+    let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
+    let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
+
+    let template_dir = crate::find_template_dir_for(lang);
+
+    // C13 orchestrator wiring (`b501b18c`): parse the optional
+    // deploy.yaml into a `DeployConfig` so the multi-doc compile path
+    // can fire SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators.
+    // Shared with `check`'s document-set route, which enters the same
+    // validators and so must refuse the same broken topologies.
+    let deploy_cfg: Option<crate::mesh::deploy::DeployConfig> =
+        deploy_path.map(|p| load_deploy_config(p, error_format));
+
+    // SCE Protocol-Synthesis RFC §synth-6.2.6: the inferred root must
+    // describe the entire batch, not just whichever input came first.
+    // Computed before the compile, because a document declaring its
+    // transition table or its transition function carries this digest, and
+    // the compile is where those are generated.
+    let all_documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
+    let drift_ctx = document_set_drift_context(
+        input_root.as_deref(),
+        deploy_path,
+        &include_dirs,
+        &all_documents,
+    );
+
+    // The two options `check`'s document-set route accepts, since that
+    // route names this subcommand as the producer it mirrors: a verdict
+    // check can reach has to be a verdict this run can reach too.
+    // Everything else keeps `Generate`'s sentinel defaults.
+    let options = crate::ForgeCompileOptions {
+        go_module_prefix,
+        const_fold_budget,
+        include_dirs: include_dirs.clone(),
+        codec_capacities: deploy_cfg
+            .as_ref()
+            .map(|cfg| cfg.codec_capacities())
+            .unwrap_or_default(),
+        host_processor_types: host_processor,
+        host_invoker_types: host_invoker,
+        target_machine,
+        source_hash: Some(drift_ctx.header.source_hex()),
+        ..Default::default()
+    };
+
+    let outputs = match crate::compile_scxml_with_imports(
+        &scxml_refs,
+        &forge_refs,
+        &template_dir,
+        lang,
+        &options,
+        deploy_cfg.as_ref(),
+    ) {
+        Ok(o) => o,
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+
+    let out_root = Path::new(output_dir);
+    if !out_root.exists() {
+        if let Err(e) = ensure_output_dir(out_root) {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput {
+                    path: output_dir.to_string(),
+                    source: e,
+                },
+                "",
+            );
+        }
+    }
+
+    // §10 stdout manifest. Built from the same `GenerateReport` shape
+    // and the same `build_manifest` construction point the other two
+    // subcommands use, so the three cannot drift into three shapes of
+    // one record. Without it this subcommand wrote a tree of artifacts
+    // and told no one: `check` mirrors its verdict but reports
+    // `artifacts: []` by contract, so nothing on the wire named the
+    // files a build had just produced.
+    //
+    // `needs_script_engine` describes the **set** — the union over its
+    // statechart inputs — which is the form the question takes for a
+    // build deciding whether to link an engine, and the same form
+    // `check`'s document-set route answers it in. Both read it through
+    // `scxml_script_engine_facts`, so the two routes cannot disagree.
+    let mut report = GenerateReport {
+        deploy_facts: deploy_cfg.as_ref().map(|cfg| crate::DeployFacts {
+            static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
+        }),
+        // Echoed for the reason the single-document routes echo it: the
+        // declaration is the build's half of a two-place contract, and a
+        // consumer diffing the two manifests to confirm its host registers
+        // what the build promised must see the same field from both. Read
+        // off the options rather than off a model, because a document set
+        // has no single model to read — the declaration is the SET's.
+        host_processor_types: options.host_processor_types.clone(),
+        host_invoker_types: options.host_invoker_types.clone(),
+        target_language: Some(lang),
+        profile: profile_facts,
+        ..GenerateReport::default()
+    };
+    accumulate_host_requirements(&mut report, &scxml_path_bufs, &forge_path_bufs);
+    report.cite_house_rules(profile.as_ref());
+
+    // A statechart's output is its machine and the machine of every child it
+    // carries, each with what its declarations ask beside it
+    // (`crate::emit_carried_children`), so every file the machines name
+    // is written here and listed in the manifest. A file two documents of
+    // the set would both write was refused by the compile.
+    for (basename, generated) in &outputs {
+        // What the set's machines link is the union of what each states, as
+        // `generate` unions it over a document and its children.
+        report
+            .runtime_requires
+            .extend(generated.requires.iter().copied());
+        for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
+            let path = out_root.join(file_name);
+            write_drift_aware(&path, code, &drift_ctx);
+            // Recorded at the write, not from `outputs` — §10.1 defines
+            // `artifacts` as every file written, so a path that never
+            // reached the disk must never reach the manifest.
+            report.artifacts.push(path);
+        }
+        let _ = basename; // basename is the input-doc label; outputs already self-name.
+    }
+    report.formatter = cpp_formatter.used();
+
+    // What the set read, for the depfile it was asked for and the list a
+    // plan of it writes: the one entry both are written from, as for
+    // `generate`.
+    if records_reads(write_deps.as_deref()) {
+        let entry = document_set_depfile_entry(DocumentSetReads {
+            artifacts: &report.artifacts,
+            documents: &all_documents,
+            include_dirs: &include_dirs,
+            deploy: deploy_path.map(Path::new),
+            lang,
+            source_set: &drift_ctx.sources,
+            error_format,
+        });
+        if let Some(path) = write_deps.as_deref() {
+            write_depfile_entry(path, &entry);
+        }
+        write_reads(Some(&entry));
+    }
+
+    // A plan's stdout is its answer and nothing else; what of the manifest
+    // it carries, what the set's machines link, is handed to the answer.
+    if output_mode() == OutputMode::Plan {
+        pending_tree().requires.clone_from(&report.runtime_requires);
+        return;
+    }
+    outln!(
+        "{}",
+        build_manifest(
+            &report,
+            ManifestKind::Orchestrate,
+            None,
+            report.target_language,
+            lexicon,
+        )
+        .to_line()
+    );
+}
+
+/// What a document set's run read, for [`document_set_depfile_entry`].
+struct DocumentSetReads<'a> {
+    /// Every file the run wrote, in the order it wrote them: the first is
+    /// the depfile's target.
+    artifacts: &'a [PathBuf],
+    /// Every document of the set, statecharts and forge documents alike.
+    documents: &'a [&'a Path],
+    /// The directories a fragment a document includes is looked up in.
+    include_dirs: &'a [PathBuf],
+    deploy: Option<&'a Path>,
+    lang: Language,
+    /// The synth-6.2.6 source set behind the `source-hash` the run wrote.
+    source_set: &'a [PathBuf],
+    error_format: ErrorFormat,
+}
+
+/// The depfile entry of a document set's run (`orchestrate`): its artefacts,
+/// and every file it read: each document, each fragment a document includes
+/// (`<xi:include>`, `<sce:use>`), the deploy, the source set, every template
+/// of the target language (forge documents and statecharts render from
+/// different parts of the tree, so the scope is its root, less the other
+/// backends' templates) and this program.
+///
+/// The fragments are asked of the preprocessor every pipeline expands a
+/// document with, since the set's compile does not report them; a document
+/// of the library is in this program and includes nothing on disk.
+fn document_set_depfile_entry(reads: DocumentSetReads<'_>) -> DepfileEntry {
+    let DocumentSetReads {
+        artifacts,
+        documents,
+        include_dirs,
+        deploy,
+        lang,
+        source_set,
+        error_format,
+    } = reads;
+    let mut read: Vec<PathBuf> = documents.iter().map(|path| path.to_path_buf()).collect();
+    for document in documents {
+        if crate::forge::stdlib::names_standard(document) {
+            continue;
+        }
+        let name = document.display().to_string();
+        let content = read_named_document(&name).unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: name.clone(),
+                source,
+            })
+        });
+        match crate::parser::expand_preprocessors(&content, &name, document.parent(), include_dirs)
+        {
+            Ok((_expanded, _map, included)) => read.extend(included),
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        }
+    }
+    read.extend(deploy.map(Path::to_path_buf));
+    let Some((first, rest)) = read.split_first() else {
+        return DepfileEntry {
+            outputs: artifacts.to_vec(),
+            ..DepfileEntry::default()
+        };
+    };
+    let template_base = crate::find_template_base();
+    depfile_entry(DepfileInputs {
+        output_paths: artifacts,
+        template_dir: &template_base,
+        lang,
+        scxml_input: first,
+        preprocessor_deps: rest,
+        source_set,
+        self_written: &[],
+    })
+}
+
+/// Multi-doc AST emit helper for [`cmd_orchestrate`]. For every
+/// `--forge` input that parses as a forge document, writes
+/// `<doc_stem>.ast.json` under `dir`. `--scxml` inputs and any forge
+/// document the parser classifies as statechart are silently
+/// skipped (no envelope, no error) — statechart AST export is not
+/// part of v1.
+///
+/// Failures during parse propagate through the same NDJSON
+/// diagnostic channel `cmd_orchestrate` itself uses, so an
+/// `--error-format=json` consumer sees consistent records across
+/// the parse/emit/compile chain.
+fn emit_orchestrate_asts(
+    scxml_paths: &[String],
+    forge_paths: &[String],
+    dir: &str,
+    include_dirs: &[PathBuf],
+    error_format: ErrorFormat,
+) {
+    let dir_path = std::path::Path::new(dir);
+    if let Err(e) = ensure_output_dir(dir_path) {
+        error_format.emit_and_exit(
+            &CliError::WriteOutput {
+                path: dir.to_string(),
+                source: e,
+            },
+            "",
+        );
+    }
+
+    // Statechart AST emit — parallel to the forge loop below. Each
+    // `--scxml` input is parsed + analyzed (the SCXML pipeline's
+    // post-analyzer step) and serialised as the
+    // `statechart` arm of the v1 envelope. Skip-on-rejected:
+    // documents the analyzer flags via W3C 5.8 (`document_rejected`)
+    // skip emit and fall through silently — the absence of
+    // `<stem>.ast.json` is the consumer signal, matching the
+    // single-doc `generate --emit-ast` contract.
+    for scxml_path_str in scxml_paths {
+        let scxml_path = std::path::Path::new(scxml_path_str);
+        let stem = scxml_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        let mut parser = crate::parser::SCXMLParser::new();
+        let mut model = match parser.parse_file(scxml_path_str) {
+            Ok(m) => m,
+            Err(e) => error_format.emit_and_exit(&e, ""),
+        };
+        crate::analyzer::analyze(&mut model, scxml_path_str);
+        if model.document_rejected {
+            continue;
+        }
+        let parsed = crate::forge::ast_export::statechart_parsed_forge(model);
+        let out_path = dir_path.join(format!("{stem}.ast.json"));
+        if let Err(e) = crate::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput {
+                    path: out_path.display().to_string(),
+                    source: e,
+                },
+                "",
+            );
+        }
+    }
+
+    for forge_path_str in forge_paths {
+        let forge_path = std::path::Path::new(forge_path_str);
+        let content = read_named_document(forge_path_str).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::ReadInput {
+                    path: forge_path_str.to_string(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        let label = crate::DocumentLabel::for_input_path(forge_path_str);
+
+        // Expand before parsing, as the statechart loop above does via
+        // `parse_file`. An AST emitted from unexpanded source would
+        // describe a document the author never wrote — every node a
+        // `<sce:use>` was carrying would simply be absent from it.
+        let positions = match crate::parser::expand_preprocessors(
+            &content,
+            forge_path_str,
+            forge_path.parent(),
+            include_dirs,
+        ) {
+            Ok((expanded, map, _deps)) => {
+                crate::model::AuthoredPositions::new(forge_path_str, expanded, map)
+            }
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        };
+
+        let parsed =
+            match crate::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+                Ok(Some(p)) => p,
+                // Statechart: silent skip per v1 contract.
+                Ok(None) => continue,
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
+
+        let out_path = dir_path.join(format!("{}.ast.json", label.identifier));
+        if let Err(e) = crate::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput {
+                    path: out_path.display().to_string(),
+                    source: e,
+                },
+                "",
+            );
+        }
+    }
+}
+
+// ── Subcommand: generate ────────────────────────────────────────
+
+/// Wire `code` of the first diagnostic an error expands to.
+///
+/// The per-backend verdict carries the same code a consumer would read
+/// off stderr, so a refusal surfaced through the manifest routes to the
+/// repair path the diagnostic wire already defines.
+fn first_diagnostic_code<E: ToDiagnostics>(err: &E) -> String {
+    err.to_diagnostics()
+        .first()
+        .map(|d| d.code.as_str().to_string())
+        .unwrap_or_else(|| "generate/unknown".to_string())
+}
+
+/// Record one backend's outcome, or terminate.
+///
+/// `explicit` is the caller's `--language` choice: when the operator
+/// named the backend, its refusal is the answer to the question they
+/// asked and must behave exactly as `generate -l <lang>` does. When no
+/// backend was named the sweep is exploratory, so a refusal is data —
+/// but only a refusal that belongs to one backend.
+///
+/// Only such a refusal can ride the manifest's `languages` array. A
+/// document, a cross-doc reference or a deploy topology is wrong under
+/// every backend, so a sweep has nothing to report about it and must
+/// fail the same way `--language` would — otherwise `check` answers
+/// "valid" with exit 0 for a build no producer can produce.
+///
+/// ⚠ Which one a refusal is, is read off the refusal
+/// ([`Diagnostic::refuses_one_backend`]), never off the route. There
+/// were two route-level rules and each was wrong in its own direction —
+/// one called an undeclared name six backend rejections and exited 0,
+/// the other made a Go-only refusal fatal for all six.
+///
+/// [`Diagnostic::refuses_one_backend`]: crate::forge::diagnostic::Diagnostic::refuses_one_backend
+fn record_backend_outcome<E: ToDiagnostics>(
+    verdicts: &mut Vec<LanguageVerdict>,
+    lang: Language,
+    explicit: bool,
+    error_format: ErrorFormat,
+    outcome: Result<(), E>,
+) {
+    let wire = crate::manifest::language_wire_name(lang);
+    match outcome {
+        Ok(()) => verdicts.push(LanguageVerdict::ok(wire)),
+        Err(e) => {
+            let one_backends = e
+                .to_diagnostics()
+                .first()
+                .is_some_and(|d| d.refuses_one_backend());
+            if explicit || !one_backends {
+                error_format.emit_and_exit(&e, "");
+            }
+            verdicts.push(LanguageVerdict::rejected(wire, first_diagnostic_code(&e)));
+        }
+    }
+}
+
+/// The selection `--features` makes (ADR 0057 §6), or `None` when the flag is
+/// absent. `--features` alone and `--features=` select the variant with no
+/// feature on; an empty entry between commas names nothing and is dropped.
+fn selected_features(features: Option<Vec<String>>) -> Option<Vec<String>> {
+    features.map(|names| {
+        names
+            .into_iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    })
+}
+
+/// Refuse a selection for a forge document: only a statechart is written
+/// against a feature model, so a selection there is held to nothing.
+fn refuse_a_selection_of_a_forge_document(
+    features: &Option<Vec<String>>,
+    path: &str,
+    error_format: ErrorFormat,
+) {
+    if let Some(features) = features {
+        error_format.emit_and_exit(
+            &crate::forge::error::Located::new(
+                crate::forge::error::ForgeError::from(
+                    crate::forge::error::ValidationError::FeatureSelectionWithoutModel {
+                        features: features.clone(),
+                    },
+                ),
+                path,
+                None,
+                None,
+            ),
+            "",
+        );
+    }
+}
+
+/// `parser`, reading the variant `features` select when there is a selection.
+fn select_variant(parser: SCXMLParser, features: &Option<Vec<String>>) -> SCXMLParser {
+    match features {
+        Some(names) => parser.with_features(names.clone()),
+        None => parser,
+    }
+}
+
+/// The refusal of a product line whose in-line children are not the same in
+/// every variant, or `None` (ADR 0057 §9).
+///
+/// A run writes one machine per in-line child beside the document's, made from
+/// the child's name and text alone, and a lifted run writes the document's.
+/// Those are what each build's variant writes exactly when every variant
+/// carries the same children with the same text; a child that a variant
+/// removes or changes is a file that one output cannot be for every build, so
+/// it is refused like any construct the generator does not keep variable.
+/// `language` is the backend whose generation for every build is refused.
+fn children_not_in_every_variant(
+    document: &SCXMLModel,
+    variants: &crate::variant_lift::Variants,
+    language: Language,
+    scxml_path: &str,
+) -> Option<Located<ForgeError>> {
+    let children = |model: &SCXMLModel| -> BTreeMap<String, Option<String>> {
+        model
+            .inline_child_invokes()
+            .into_iter()
+            .map(|invoke| (invoke.child_name.clone(), invoke.inline_child_xml.clone()))
+            .collect()
+    };
+    let written = children(document);
+    let variant = variants
+        .variants()
+        .iter()
+        .find(|variant| children(&variant.model) != written)?;
+    let theirs = children(&variant.model);
+    let child = written
+        .keys()
+        .chain(theirs.keys())
+        .find(|name| written.get(*name) != theirs.get(*name))
+        .cloned()
+        .unwrap_or_default();
+    Some(Located::new(
+        ForgeError::from(
+            crate::forge::error::GenerateError::CodegenFeatureLiftingMismatch {
+                model: variants.product_line().model_name().to_string(),
+                language: crate::manifest::language_wire_name(language).to_string(),
+                features: variant.features.clone(),
+                difference: format!(
+                    "the in-line child `{child}` is not the same in every variant, and a run writes \
+                     its machine as a file of its own"
+                ),
+            },
+        ),
+        scxml_path,
+        None,
+        None,
+    ))
+}
+
+/// What `generate` makes of a parsed statechart before a backend renders it:
+/// three mutations of the model, each decided by the run's arguments.
+///
+/// The document's run takes them at three points, judging and reporting on
+/// the model between them. A variant of a product line that one output keeps
+/// variable (ADR 0057 §9) is judged by the family check instead
+/// ([`crate::check_every_variant`]) and takes them in a row
+/// ([`Self::variant`]), so that it is rendered from the model
+/// `generate --features` renders for it.
+struct StatechartPreparation<'a> {
+    scxml_path: &'a str,
+    /// Whether the machine is generated as a child templated on its parent
+    /// (`--as-child`, on a backend whose child takes the parent's type).
+    parent_template: bool,
+    host_processor: &'a [String],
+    host_invoker: &'a [String],
+    /// The digest of the run's sources, which a declared transition table or
+    /// function is bound to; `None` for a run that writes neither (`check`).
+    source_hex: Option<String>,
+    deploy_path: Option<&'a str>,
+    for_partition: Option<&'a str>,
+}
+
+/// Why a variant could not be prepared, in the type each step refuses with.
+enum PreparationRefusal {
+    Parse(Located<ForgeError>),
+    Host(crate::host_processor_analyzer::ReservedHostType),
+    Deploy(crate::DeployMutationError),
+}
+
+impl From<Located<ForgeError>> for PreparationRefusal {
+    fn from(refusal: Located<ForgeError>) -> Self {
+        PreparationRefusal::Parse(refusal)
+    }
+}
+
+impl PreparationRefusal {
+    fn exit(self, error_format: ErrorFormat) -> ! {
+        match self {
+            PreparationRefusal::Parse(refusal) => error_format.emit_and_exit(&refusal, ""),
+            PreparationRefusal::Host(refused) => cli_exit(refused.into()),
+            PreparationRefusal::Deploy(e) => {
+                error_format.emit_and_exit(&e.source, e.stage.error_prefix())
+            }
+        }
+    }
+}
+
+impl StatechartPreparation<'_> {
+    /// The analysis, with the role the run gives the machine and the host
+    /// surfaces it declares.
+    fn analyzed(
+        &self,
+        model: &mut SCXMLModel,
+    ) -> Result<(), crate::host_processor_analyzer::ReservedHostType> {
+        if self.parent_template {
+            model.has_parent_communication = true;
+        }
+        analyzer::analyze(model, self.scxml_path);
+        // §scxml-6.2.5: apply the host's declaration before any backend
+        // renders, so what the emitted code does, what the analyzer reports
+        // and what the manifest publishes are one decision.
+        crate::host_processor_analyzer::declare_host_surfaces(
+            model,
+            self.host_processor,
+            self.host_invoker,
+        )
+    }
+
+    /// What a backend reads beside the analysis: a declared transition table
+    /// or function bound to the run's digest, and the source path markers
+    /// name. Judged before, since a check reads neither.
+    fn bound(&self, model: &mut SCXMLModel) {
+        if let Some(source_hex) = &self.source_hex {
+            crate::bind_run_digest(model, source_hex);
+        }
+        resolve_source_path(model, Path::new(self.scxml_path));
+    }
+
+    /// The deploy's mutations, and the facts it states; `None` without one.
+    fn deployed(
+        &self,
+        model: &mut SCXMLModel,
+    ) -> Result<Option<crate::DeployFacts>, crate::DeployMutationError> {
+        self.deploy_path
+            .map(|deploy| {
+                crate::apply_deploy_model_mutations(model, Path::new(deploy), self.for_partition)
+            })
+            .transpose()
+    }
+
+    /// The three in a row, for a variant.
+    fn variant(&self, model: &mut SCXMLModel) -> Result<(), PreparationRefusal> {
+        self.analyzed(model).map_err(PreparationRefusal::Host)?;
+        self.bound(model);
+        self.deployed(model).map_err(PreparationRefusal::Deploy)?;
+        Ok(())
+    }
+}
+
+/// Resolve `--language` into the backends to check and whether the
+/// operator named them.
+///
+/// An empty list means "sweep every backend"; a non-empty one pins the
+/// question to what was named, which is what makes a refusal fatal. Both
+/// `check` routes resolve it here so the sweep-vs-named split cannot
+/// come to mean two different things depending on the invocation shape.
+fn requested_backends(language: &[String], error_format: ErrorFormat) -> (bool, Vec<Language>) {
+    let explicit = !language.is_empty();
+    let langs: Vec<Language> = if explicit {
+        language
+            .iter()
+            .map(|name| {
+                name.parse::<Language>().unwrap_or_else(|_| {
+                    error_format.emit_and_exit(
+                        &CliError::UnknownLanguage {
+                            lang: name.to_string(),
+                            route: LanguageRoute::Check,
+                        },
+                        "",
+                    )
+                })
+            })
+            .collect()
+    } else {
+        // "Every backend" is every one that emits something and writes nothing
+        // in part: a sweep that included a backend with no emitter yet, or one
+        // that lowers a kind in part, would end each document's verdict list
+        // with a refusal that says nothing about the document.
+        // Naming one (`--language swift`) still asks the question and is
+        // refused by name, fatally, as any named backend's refusal is.
+        Language::ALL
+            .iter()
+            .copied()
+            .filter(|language| crate::forge::codegen_matrix::sweeps(*language))
+            .collect()
+    };
+    (explicit, langs)
+}
+
+/// Read and parse a `deploy.yaml`, or terminate.
+///
+/// Both `orchestrate` and `check`'s document-set route enter the C13
+/// cross-doc validators through the same `Option<&DeployConfig>`, so
+/// they must also agree on what a broken topology does. Read failures
+/// route through [`CliError`]; parse failures route through
+/// `ForgeError::Mesh` so the wire JSON shape matches every other
+/// deploy-side diagnostic, and the label points at the path the operator
+/// passed rather than at whatever the parser was reading.
+fn load_deploy_config(path: &str, error_format: ErrorFormat) -> crate::mesh::deploy::DeployConfig {
+    let content = fs::read_to_string(path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: path.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    match crate::mesh::deploy::parse_deploy_str(&content) {
+        // The path as the operator passed it labels every later refusal of a
+        // fact this deployment states, as it labels this one.
+        Ok(cfg) => crate::mesh::deploy::DeployConfig {
+            source: Some(path.to_string()),
+            ..cfg
+        },
+        Err(e) => {
+            // Placed at the key the refusal names (docs/adr/0106 #76).
+            let at = e.mark_in(&content);
+            let forge_err: ForgeError = crate::mesh::error::MeshError::from(e).into();
+            let located = Located::new(
+                forge_err,
+                path,
+                at.map(|mark| mark.line),
+                at.map(|mark| mark.col),
+            );
+            error_format.emit_forge_and_exit(&located)
+        }
+    }
+}
+
+/// Report every expression the ECMAScript frontend refused, and let
+/// `--lint` decide whether they end the run.
+///
+/// The refusal is a generation-time verdict that used to reach nobody:
+/// [`crate::filters`] emits it as Lua that raises when evaluated —
+/// the spec's requirement, and the reason W3C tests 309 and 344 stay
+/// generatable — and the parser's message then survived only as a string
+/// literal inside the artifact. `check` answered `status: "ok"` for a
+/// document that cannot run.
+///
+/// `--lint` is where the answer flips, because it is already the flag
+/// that separates the two kinds of author. The design-time lints are off
+/// by default since the W3C corpus declares unreachable states on
+/// purpose; `scripts/gates/example-codegen.sh` turns them on for every
+/// document *this repository writes*, which carry no such excuse. A
+/// refused expression is the same shape of claim: conformance obliges
+/// SCE to generate one, and nothing obliges an author to write one.
+///
+/// Both subcommands call this so `check` and `generate` cannot disagree,
+/// which `check_and_generate_agree_on_every_document_and_backend`
+/// already sweeps.
+fn report_refused_expressions(
+    model: &crate::model::SCXMLModel,
+    document: &str,
+    lint: bool,
+    error_format: ErrorFormat,
+) {
+    let refused = crate::ecmascript_acceptance::refusals(model, document);
+    if refused.is_empty() {
+        return;
+    }
+    // The place each stands is written ahead of it by the reporter, as for
+    // every refusal.
+    for refusal in &refused {
+        error_format.report(refusal, "");
+    }
+    if lint {
+        // Reported first, then fatal: an author fixing a document wants
+        // every refusal it carries, not the first one re-discovered a
+        // build at a time.
+        std::process::exit(refused[0].exit_code());
+    }
+}
+
+/// Script-engine facts for one statechart, or `None` when the document
+/// does not parse.
+///
+/// Report-only, and silent on failure by design: the compile pass that
+/// follows reads the same file and is what reports a parse error, with
+/// the diagnostic code and exit status the producer would give. Failing
+/// here instead would put the first refusal on a pass whose job is to
+/// describe the run, not to judge it.
+fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
+    let mut parser = SCXMLParser::new();
+    let mut model = parser.parse_file(path).ok()?;
+    // Read before the analysis, where the single-document routes read them.
+    let unresolved = crate::unresolved_check::unresolved_records(&model);
+    let open_interface = crate::open_matters::interface_left_open(&model);
+    let self_delivered = crate::open_matters::self_delivered_events(&model);
+    analyzer::analyze(&mut model, path);
+    Some(HostRequirements {
+        needs_script_engine: model.needs_script_engine,
+        script_engine_causes: model.script_engine_cause_records(),
+        needs_event_scheduler: model.needs_event_scheduler_driving(),
+        needs_host_processor: !model.host_processor_causes.is_empty(),
+        host_processor_causes: model.host_processor_cause_records(),
+        host_duties: crate::forge::native_action::host_duty_records(&model),
+        unreadable_variables: model.unreadable_variables,
+        unresolved,
+        open_interface,
+        self_delivered,
+    })
+}
+
+/// One forge document of a set as the marker readers take it — expanded, with
+/// the map back to the rows its author wrote — or `None` when it does not
+/// read: silent on failure for the reason [`scxml_host_requirement_facts`]
+/// is, the compile pass that follows reads the same file and reports it.
+fn forge_document_positions(path: &Path) -> Option<crate::model::AuthoredPositions> {
+    let label = path.to_string_lossy();
+    let content = read_named_document(&label).ok()?;
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let (expanded, map, _deps) =
+        crate::parser::expand_preprocessors(&content, &label, Some(base_dir), &[]).ok()?;
+    Some(crate::model::AuthoredPositions::new(&*label, expanded, map))
+}
+
+/// Every marker of one forge document of a set, or `None` when it does not
+/// read ([`forge_document_positions`]).
+fn forge_document_markers(path: &Path) -> Option<Vec<crate::unresolved_check::UnresolvedRecord>> {
+    crate::unresolved_check::unresolved_records_forge(&forge_document_positions(path)?).ok()
+}
+
+/// `--strict-unresolved` over a document set: each member refused for the
+/// first `sce:unresolved` it carries, by the functions the single-document
+/// routes refuse with — statecharts first, then forge documents, each in
+/// input order, and the first refusal ends the run.
+///
+/// A member that does not read is skipped, not reported, as
+/// [`scxml_host_requirement_facts`] leaves it. ⚠ `sce:assumed` does not
+/// count, here or on one document: a value the author chose is on the record
+/// and does not block the build, which is the whole difference between the
+/// two markers.
+fn strict_set_unresolved(
+    scxml_paths: &[PathBuf],
+    forge_paths: &[PathBuf],
+    error_format: ErrorFormat,
+) {
+    for path in scxml_paths {
+        let mut parser = SCXMLParser::new();
+        let Ok(model) = parser.parse_file(&path.to_string_lossy()) else {
+            continue;
+        };
+        if let Err(e) = crate::unresolved_check::check_strict_unresolved(&model) {
+            error_format.emit_and_exit(&e, "");
+        }
+    }
+    for path in forge_paths {
+        let Some(positions) = forge_document_positions(path) else {
+            continue;
+        };
+        if let Err(e) = crate::unresolved_check::check_strict_unresolved_forge(&positions) {
+            error_format.emit_forge_and_exit(&e);
+        }
+    }
+}
+
+/// `--profile`: read the owner's authoring profile, or end the run.
+///
+/// Read before anything else on every route that takes the flag, so an
+/// unusable profile is the first thing said about a run and not a footnote to
+/// a document verdict. Refused whole (`cli/profile-unusable`): a profile
+/// applied in part would say a document was held to something it was not.
+fn load_profile(path: Option<&str>) -> Option<crate::authoring_profile::AuthoringProfile> {
+    let path = path?;
+    match crate::authoring_profile::AuthoringProfile::load(Path::new(path)) {
+        Ok(profile) => Some(profile),
+        Err(unusable) => cli_exit(CliError::ProfileUnusable {
+            path: path.to_string(),
+            fault: unusable.kind,
+            detail: unusable.detail,
+        }),
+    }
+}
+
+/// A document of a run, parsed as the compile reads it, and the label its
+/// findings are reported under.
+enum Judged<'a> {
+    Statechart(&'a SCXMLModel, &'a str),
+    Forge(&'a crate::forge::model::ParsedForge, &'a str),
+}
+
+/// Hold parsed documents to `profile`: every finding of every document is
+/// reported, and the run ends on them; a run that passes returns the
+/// manifest's account of the profile.
+///
+/// All findings, not the first: an owner reading the answer decides what to
+/// do about the whole design, and a list that stops at the first document
+/// hides how far the departure goes. `judged` counts the documents the
+/// profile was APPLIED to, which is the documents it asks something of: a
+/// statechart only when some setting reaches statecharts
+/// ([`AuthoringProfile::judges_statecharts`]), and a forge document only when
+/// some setting reaches its kind ([`AuthoringProfile::judges_forge`]). A
+/// profile that holds only house rules and guidance asks nothing of any
+/// document, so a run under it reports `judged: 0` — which says the profile was
+/// given and held nothing to it, and is the reading a `1` for a statechart it
+/// enforced nothing on would have contradicted.
+///
+/// [`AuthoringProfile::judges_statecharts`]: crate::authoring_profile::AuthoringProfile::judges_statecharts
+/// [`AuthoringProfile::judges_forge`]: crate::authoring_profile::AuthoringProfile::judges_forge
+fn judge_under_profile(
+    profile: &crate::authoring_profile::AuthoringProfile,
+    documents: &[Judged<'_>],
+    error_format: ErrorFormat,
+) -> crate::manifest::ProfileInfo {
+    let mut findings: Vec<Located<ForgeError>> = Vec::new();
+    let mut judged = 0usize;
+    for document in documents {
+        match document {
+            Judged::Statechart(model, label) => {
+                if profile.judges_statecharts() {
+                    judged += 1;
+                    findings.extend(profile.judge_statechart(model, label));
+                }
+            }
+            Judged::Forge(parsed, label) => {
+                if profile.judges_forge(parsed.document.kind()) {
+                    judged += 1;
+                    findings.extend(profile.judge_forge(parsed, label));
+                }
+            }
+        }
+    }
+    error_format.emit_all_and_exit(&findings, "Forge codegen error: ");
+    profile_info(profile, judged)
+}
+
+/// The manifest's account of a profile a run was given.
+fn profile_info(
+    profile: &crate::authoring_profile::AuthoringProfile,
+    judged: usize,
+) -> crate::manifest::ProfileInfo {
+    crate::manifest::ProfileInfo {
+        name: profile.name().map(str::to_string),
+        sha256: profile.sha256().to_string(),
+        judged: u32::try_from(judged).expect("a run does not name four billion statecharts"),
+        guidance: u32::try_from(profile.guidance().len())
+            .expect("a profile does not hold four billion instructions"),
+        // What the run cites is the manifest's to count, once its records
+        // are known (`build_manifest`); the rules held are the profile's.
+        house_rules: (!profile.house_rules().is_empty()).then(|| crate::manifest::HouseRuleUse {
+            held: u32::try_from(profile.house_rules().len())
+                .expect("a profile does not hold four billion rules"),
+            cited: 0,
+        }),
+    }
+}
+
+/// One forge document of a set parsed as the compile reads it — expanded, then
+/// through the forge parse with its imports — or `None` when it does not read
+/// (silent on failure, for [`forge_document_positions`]'s reason).
+fn forge_document_parsed(path: &Path) -> Option<crate::forge::model::ParsedForge> {
+    let positions = forge_document_positions(path)?;
+    let spelled = path.to_string_lossy();
+    let label = crate::DocumentLabel::for_input_path(&spelled);
+    crate::forge::parser::parse_forge_with_imports(&positions.expanded, label)
+        .ok()
+        .flatten()
+}
+
+/// `--profile` over a document set: each member parsed as the compile below
+/// reads it, and held to the profile.
+///
+/// A member that does not read is skipped, not reported, as
+/// [`strict_set_unresolved`] leaves it: the compile that follows refuses it
+/// in its own words, and the profile has nothing to say about a document that
+/// is not one. ⚠ `judged` counts the documents that read and that the profile
+/// reaches, so a set whose only statechart was skipped says zero and not one.
+fn judge_set_under_profile(
+    profile: &crate::authoring_profile::AuthoringProfile,
+    scxml_paths: &[PathBuf],
+    forge_paths: &[PathBuf],
+    error_format: ErrorFormat,
+) -> crate::manifest::ProfileInfo {
+    let statecharts: Vec<(SCXMLModel, String)> = scxml_paths
+        .iter()
+        .filter_map(|path| {
+            let label = path.to_string_lossy().into_owned();
+            SCXMLParser::new()
+                .parse_file(&label)
+                .ok()
+                .map(|model| (model, label))
+        })
+        .collect();
+    let forge: Vec<(crate::forge::model::ParsedForge, String)> = forge_paths
+        .iter()
+        .filter_map(|path| {
+            forge_document_parsed(path).map(|parsed| (parsed, path.to_string_lossy().into_owned()))
+        })
+        .collect();
+    let documents: Vec<Judged<'_>> = statecharts
+        .iter()
+        .map(|(model, label)| Judged::Statechart(model, label))
+        .chain(
+            forge
+                .iter()
+                .map(|(parsed, label)| Judged::Forge(parsed, label)),
+        )
+        .collect();
+    judge_under_profile(profile, &documents, error_format)
+}
+
+/// What one statechart document asks of the host that will run it.
+///
+/// Carried together because the manifest reports them together and the
+/// set-union routes accumulate them in one pass — splitting the walk
+/// would let the two answers be derived from two different parses of
+/// the same file.
+struct HostRequirements {
+    needs_script_engine: bool,
+    script_engine_causes: Vec<crate::script_engine_analyzer::ScriptEngineCauseRecord>,
+    needs_event_scheduler: bool,
+    needs_host_processor: bool,
+    host_processor_causes: Vec<crate::host_processor_analyzer::HostProcessorCauseRecord>,
+    host_duties: Vec<crate::forge::native_action::HostDutyRecord>,
+    unreadable_variables: Vec<crate::reader_names::UnreadableVariable>,
+    /// What the document leaves open — `sce:unresolved` / `sce:assumed`.
+    unresolved: Vec<crate::unresolved_check::UnresolvedRecord>,
+    /// The event-schemas it imports without declaring its interface closed.
+    open_interface: Vec<String>,
+    /// The events it sends itself with no target that something takes.
+    self_delivered: Vec<String>,
+}
+
+/// Fold every document's [`HostRequirements`] into `report`.
+///
+/// `orchestrate` and `check` describe the same thing about the same set
+/// — the manifest's flags are the union over the statechart inputs —
+/// and used to spell that fold twice, once per subcommand. Two copies
+/// of a union is two places a newly reported requirement has to be
+/// added, and the one that is missed reports `false` rather than
+/// failing, which no test sees.
+///
+/// A document that does not parse is skipped rather than reported: the
+/// compile pass that follows reads the same files and is what raises the
+/// parse error, with the diagnostic code and exit status the producer
+/// would give.
+///
+/// The markers ride along, statecharts and forge documents alike, for the
+/// reason the flags do: a set is accepted or refused as one, and one member
+/// that leaves a question open must not disappear into that verdict. Each
+/// record carries the file it was written in, so the union loses nothing.
+fn accumulate_host_requirements(
+    report: &mut GenerateReport,
+    paths: &[PathBuf],
+    forge_paths: &[PathBuf],
+) {
+    let mut needs_script_engine = false;
+    let mut needs_event_scheduler = false;
+    let mut needs_host_processor = false;
+    for path in paths {
+        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
+            continue;
+        };
+        needs_script_engine |= facts.needs_script_engine;
+        needs_event_scheduler |= facts.needs_event_scheduler;
+        needs_host_processor |= facts.needs_host_processor;
+        for cause in facts.script_engine_causes {
+            if !report.script_engine_causes.contains(&cause) {
+                report.script_engine_causes.push(cause);
+            }
+        }
+        for cause in facts.host_processor_causes {
+            if !report.host_processor_causes.contains(&cause) {
+                report.host_processor_causes.push(cause);
+            }
+        }
+        // A duty is one site of one document; a set reports each member's.
+        report.host_duties.extend(facts.host_duties);
+        // Per document, not unioned: each record carries its location, and
+        // one name refused in two documents is two refusals.
+        report
+            .unreadable_variables
+            .extend(facts.unreadable_variables);
+        report.unresolved.extend(facts.unresolved);
+        for alias in facts.open_interface {
+            if !report.open_interface.contains(&alias) {
+                report.open_interface.push(alias);
+            }
+        }
+        // Named once however many members send it, like the aliases above.
+        for event in facts.self_delivered {
+            if !report.self_delivered.contains(&event) {
+                report.self_delivered.push(event);
+            }
+        }
+    }
+    for path in forge_paths {
+        if let Some(markers) = forge_document_markers(path) {
+            report.unresolved.extend(markers);
+        }
+    }
+    report.needs_script_engine = Some(needs_script_engine);
+    report.needs_event_scheduler = Some(needs_event_scheduler);
+    report.needs_host_processor = Some(needs_host_processor);
+}
+
+/// Every refusal `sce:transition-function="emit"` earns across a document
+/// set (SCE Accepted Subset §2.21), all reported in one run before anything
+/// is compiled; nothing for a set whose statecharts declare nothing.
+///
+/// Not a lint, so it runs whatever the flags, at the point the
+/// single-document routes ask it: after what the document leaves open and
+/// the profile, before the lints. Both set routes, `check` and
+/// `orchestrate`, call this one function, and it asks the one producer the
+/// single-document routes ask, [`crate::transition_function_findings`].
+///
+/// The compile that follows judges the declaration too, through the
+/// library's `compile_model`, but its result carries one error, so it
+/// rejects on the first record alone. Without this pass the same document
+/// told `check` every refusal and `check --scxml` one of them, and
+/// `orchestrate` one, so an author paid a run per repair on exactly the
+/// routes a build uses. The model asked is the one `compile_model` judges:
+/// parsed without include directories, analyzed under the same label, past
+/// `analyzer::can_generate_static`. So the codes, the locations and the
+/// anchors are the ones the single-document routes report.
+///
+/// A statechart that does not parse, or that `can_generate_static` refuses,
+/// is skipped here: the compile reads the same file and refuses it with its
+/// own record, and the single-document routes never reach the declaration of
+/// such a document either. The in-line children of each statechart are
+/// judged with it, by the same call.
+///
+/// Returns whether any statechart of the set, or any child one carries,
+/// declares what a run's digest is bound to ([`crate::bind_run_digest`]):
+/// its transition table or its transition function. `check` computes the
+/// digest `orchestrate` would embed only for such a set.
+fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorFormat) -> bool {
+    let mut findings = Vec::new();
+    let mut binds_a_digest = false;
+    for path in scxml_paths {
+        let label = path.to_string_lossy();
+        let mut parser = SCXMLParser::new();
+        let Ok(mut model) = parser.parse_file(&label) else {
+            continue;
+        };
+        // The document's own declarations, and every child's it carries: the
+        // set compile writes those children and binds them as it binds the
+        // document (`crate::carried_children`).
+        binds_a_digest |= model
+            .with_carried_descendants()
+            .into_iter()
+            .any(|machine| !crate::digest_bound_declarations(machine).is_empty());
+        analyzer::analyze(&mut model, &label);
+        if analyzer::can_generate_static(&model, &label).is_err() {
+            continue;
+        }
+        findings.extend(crate::transition_function_findings(&model, &label));
+    }
+    error_format.emit_all_and_exit(&findings, "");
+    binds_a_digest
+}
+
+/// The drift-header context of a run over a document set: what
+/// `orchestrate` stamps on every file it writes, and so the digest a
+/// declared transition table or function of the set carries.
+///
+/// One computation for the set routes, so the function `check` renders is
+/// rendered from the digest `orchestrate` would bind. The set is compiled
+/// jointly (cross-document references are resolved across it), so every file
+/// of it covers the closure of every document of it (ADR 0094 section 4).
+fn document_set_drift_context(
+    input_root: Option<&str>,
+    deploy_path: Option<&str>,
+    include_dirs: &[PathBuf],
+    documents: &[&Path],
+) -> DriftContext {
+    DriftContext::of_documents(
+        documents,
+        drift::ClosureOptions {
+            include_dirs,
+            input_root: input_root.map(Path::new),
+            deploy_yaml: deploy_path.map(Path::new),
+        },
+    )
+}
+
+/// `--lint` over a document set: every statechart of it, linted as
+/// `generate --lint` lints one — the design-time findings, then the
+/// expressions the ECMAScript frontend refused — and the first statechart
+/// with findings ends the run, every finding of it reported.
+///
+/// A statechart that does not parse is skipped, not reported: the compile
+/// pass that follows reads the same file and raises the parse error with its
+/// own code and exit status, as [`scxml_host_requirement_facts`] leaves it.
+///
+/// ⚠ Not what makes a set linted: the compile pass that follows lints every
+/// statechart anyway and refuses on its first finding. This is what makes the
+/// flag mean, on a set, what it means on one document — every finding, and
+/// the refused expressions.
+///
+/// ⚠ A set with no statechart is refused. The flag judges statecharts, so
+/// over a set of forge documents it would have judged nothing and reported
+/// nothing — an opt-in check that passes because it never ran.
+fn lint_set_statecharts(scxml_paths: &[PathBuf], error_format: ErrorFormat) {
+    if scxml_paths.is_empty() {
+        cli_exit(CliError::Usage {
+            detail: "--lint judges statecharts, and this document set holds none — drop the \
+                     flag, or add the statechart the design-time lints are meant for"
+                .to_string(),
+        });
+    }
+    for path in scxml_paths {
+        let label = path.to_string_lossy();
+        let mut parser = SCXMLParser::new();
+        let Ok(model) = parser.parse_file(&label) else {
+            continue;
+        };
+        error_format.emit_all_and_exit(
+            &crate::lint_statechart_findings(&model, &label),
+            "Forge codegen error: ",
+        );
+        report_refused_expressions(&model, &label, true, error_format);
+    }
+}
+
+/// `sce-codegen check` over a document set — every verdict
+/// `orchestrate` would reach, nothing written.
+///
+/// This is [`cmd_orchestrate`] with its write loop absent. Both enter
+/// [`crate::compile_scxml_with_imports`], which builds the cross-doc
+/// registry, fires the SCE Protocol-Synthesis RFC §synth-5-K +
+/// §synth-5-M deploy validators when a topology is supplied, and returns
+/// every artifact in memory. Writing is the caller's step, so declining
+/// to take it is the whole difference between the two subcommands —
+/// there is no second validation path here that could drift out of
+/// agreement with the producer.
+///
+/// The manifest reports the set, not a document: `needs_script_engine`
+/// is the union over the statechart inputs, which is the question a
+/// build system asks (does this build link an engine?) rather than a
+/// per-file property it would have to re-aggregate itself.
+fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
+    let CheckArgs {
+        scxml,
+        scxml_set,
+        forge,
+        document,
+        deploy,
+        target_machine,
+        language,
+        // The document-set route renders every backend it was given; the
+        // single-document route below is where a selection is resolved and
+        // refused, so naming it here would be a second answer to one question.
+        script_engine: _,
+        include_dir,
+        strict_unresolved,
+        lint,
+        lexicon,
+        profile: profile_path,
+        go_module_prefix,
+        const_fold_budget,
+        no_std: _,
+        // Declared to conflict with every argument that reaches this route,
+        // as `--no-std` is: a set is compiled as written.
+        features: _,
+        host_processor,
+        host_invoker,
+        // The flags this route cannot honour are declared to conflict
+        // with every argument that reaches it, so clap refuses the
+        // combination before dispatch rather than this function accepting
+        // and ignoring them. The two host declarations are NOT among them
+        // any more: `orchestrate` carries both, so this route can be told
+        // what the producer can be told and is bound to honour it below.
+    } = args;
+    let lexicon = check_lexicon(&lexicon);
+
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
+    let (explicit, langs) = requested_backends(&language, error_format);
+
+    // The positional is shorthand for the first statechart, so a set may
+    // be written either way round; order is input order in both cases.
+    let mut scxml_list: Vec<String> = scxml.into_iter().chain(scxml_set).collect();
+    let mut forge_list = forge;
+    file_documents(document, &mut scxml_list, &mut forge_list, error_format);
+    let scxml_paths: Vec<PathBuf> = scxml_list.into_iter().map(PathBuf::from).collect();
+    let forge_paths: Vec<PathBuf> = forge_list.into_iter().map(PathBuf::from).collect();
+    let scxml_refs: Vec<&Path> = scxml_paths.iter().map(|p| p.as_path()).collect();
+    let forge_refs: Vec<&Path> = forge_paths.iter().map(|p| p.as_path()).collect();
+
+    // Parsed once, before the per-backend loop: a malformed topology is
+    // fatal regardless of backend, and `orchestrate` refuses it at the
+    // same point.
+    let deploy_cfg = deploy
+        .as_deref()
+        .map(|p| load_deploy_config(p, error_format));
+
+    // In the order the single-document route asks them: what the document
+    // leaves open before what a lint says of it.
+    if strict_unresolved {
+        strict_set_unresolved(&scxml_paths, &forge_paths, error_format);
+    }
+    // The owner's expectation follows what a design leaves open and precedes
+    // the lints, the order the single-document route asks them in: whether
+    // the statechart is the design that was accepted comes before what a
+    // lint says of it.
+    let profile_facts = profile
+        .as_ref()
+        .map(|profile| judge_set_under_profile(profile, &scxml_paths, &forge_paths, error_format));
+    // Not a lint: refused whatever the flags, every record at once, where
+    // the single-document route refuses it.
+    let binds_a_digest = refuse_set_transition_functions(&scxml_paths, error_format);
+    if lint {
+        lint_set_statecharts(&scxml_paths, error_format);
+    }
+    // A declared table or function carries the digest `orchestrate` stamps
+    // on its files, and the compile below refuses a declared function it is
+    // given none for. So the digest is computed as `orchestrate` computes it
+    // without `--input-root` (the value moves no verdict), and only for a set
+    // that declares one: walking the source set is otherwise work this route
+    // never needed.
+    let source_hash = binds_a_digest.then(|| {
+        let documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
+        let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+        document_set_drift_context(None, deploy.as_deref(), &include_dirs, &documents)
+            .header
+            .source_hex()
+    });
+
+    let mut report = GenerateReport {
+        deploy_facts: deploy_cfg.as_ref().map(|cfg| crate::DeployFacts {
+            static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
+        }),
+        // Echoed for the reason the single-document route echoes it, and
+        // read off the same values the compile below is given — so a
+        // consumer cannot be shown a declaration this run did not use.
+        host_processor_types: host_processor.clone(),
+        host_invoker_types: host_invoker.clone(),
+        profile: profile_facts,
+        ..GenerateReport::default()
+    };
+    accumulate_host_requirements(&mut report, &scxml_paths, &forge_paths);
+    report.cite_house_rules(profile.as_ref());
+
+    let options = crate::ForgeCompileOptions {
+        go_module_prefix,
+        const_fold_budget,
+        include_dirs: include_dir.iter().map(PathBuf::from).collect(),
+        codec_capacities: deploy_cfg
+            .as_ref()
+            .map(|cfg| cfg.codec_capacities())
+            .unwrap_or_default(),
+        // §scxml-6.2.5 + §scxml-6.4.1: the same declaration `orchestrate`
+        // takes, read the same way. Without it here this route would
+        // answer for an interpretation the producer can be given and this
+        // check was not — the mirror image of the defect that made these
+        // flags single-document-only in the first place.
+        host_processor_types: host_processor,
+        host_invoker_types: host_invoker,
+        // The machine `orchestrate` was given, for the same reason: a queue
+        // refused against that machine's atomics is a verdict this check has
+        // to reach too.
+        target_machine,
+        source_hash,
+        ..Default::default()
+    };
+
+    let mut verdicts: Vec<LanguageVerdict> = Vec::new();
+    for lang in &langs {
+        let template_dir = crate::find_template_dir_for(*lang);
+        let outcome = crate::compile_scxml_with_imports(
+            &scxml_refs,
+            &forge_refs,
+            &template_dir,
+            *lang,
+            &options,
+            deploy_cfg.as_ref(),
+        )
+        .map(|_| ());
+        record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+    }
+
+    outln!(
+        "{}",
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
+    );
+}
+
+/// `sce-codegen check` — every verdict `generate` would reach, nothing
+/// written.
+///
+/// Runs the real pipeline rather than a validation subset: the same
+/// parser, the same validators, and the same per-backend codegen, whose
+/// in-memory `GeneratedOutput` is then dropped instead of written. A
+/// subset would answer a different question than the one the operator
+/// asked — "does this parse" instead of "would this generate" — and the
+/// two diverge exactly where template rendering does.
+///
+/// Writing nothing is structural, not a policy this function enforces
+/// by being careful: every file `generate` produces is written by the
+/// CLI from a `GeneratedOutput` the library returned, so a code path
+/// that never calls a write helper cannot emit. The library's compile
+/// entry points touch no filesystem.
+///
+/// The same holds one level up. A document set is compiled by
+/// [`crate::compile_scxml_with_imports`], the entry point
+/// `orchestrate` calls, which returns every artifact in memory and
+/// leaves the writes to its caller — so [`cmd_check_document_set`] is
+/// `cmd_orchestrate` with the write loop absent rather than a second
+/// validation path that has to be kept in agreement with it.
+/// The lexicon `check --lexicon` or `orchestrate --lexicon` named. Clap has refused a name the registry
+/// does not carry, so a miss is the parser and the registry disagreeing, and
+/// says which.
+fn check_lexicon(name: &str) -> &'static crate::forge::page::Lexicon {
+    crate::forge::page::lexicon_named(name).unwrap_or_else(|| {
+        cli_exit(CliError::Usage {
+            detail: format!("the '{name}' lexicon is not in this build's registry"),
+        })
+    })
+}
+
+fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
+    // A lone document is checked against `generate`; anything that
+    // needs a cross-doc registry or a deploy topology is checked
+    // against `orchestrate`. Routing on the invocation shape keeps each
+    // route mirroring exactly one producer — a single route would have
+    // to agree with both, and the two producers do not agree with each
+    // other about what a document set means.
+    if !args.scxml_set.is_empty()
+        || !args.forge.is_empty()
+        || !args.document.is_empty()
+        || args.deploy.is_some()
+    {
+        cmd_check_document_set(args, error_format);
+        return;
+    }
+    let CheckArgs {
+        scxml,
+        scxml_set: _,
+        forge: _,
+        document: _,
+        deploy: _,
+        target_machine: _,
+        language,
+        script_engine,
+        include_dir,
+        strict_unresolved,
+        lint,
+        lexicon,
+        profile: profile_path,
+        go_module_prefix,
+        const_fold_budget,
+        no_std,
+        features,
+        host_processor,
+        host_invoker,
+    } = args;
+    let features = selected_features(features);
+    let lexicon = check_lexicon(&lexicon);
+    // The router above leaves only the single-document shape here, and
+    // clap's `required_unless_present` guarantees the positional is the
+    // one that carries it.
+    let scxml_path: &str = scxml
+        .as_deref()
+        .expect("clap requires the positional when no --scxml is given");
+
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
+    let (explicit, langs) = requested_backends(&language, error_format);
+
+    let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: scxml_path.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+
+    let mut report = GenerateReport {
+        document_kind: crate::manifest::DocumentKind::of(&scxml_content),
+        ..GenerateReport::default()
+    };
+    let mut verdicts: Vec<LanguageVerdict> = Vec::new();
+
+    match crate::classify_document(&scxml_content) {
+        crate::Pipeline::Forge => {
+            refuse_a_selection_of_a_forge_document(&features, scxml_path, error_format);
+            let doc_label = crate::DocumentLabel::for_input_path(scxml_path);
+            let base_dir = Path::new(scxml_path)
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
+
+            // Expand first. The statechart arm reaches the expander
+            // through `Parser::parse_file`; this arm had no equivalent,
+            // so the same command answered differently about whether
+            // templates exist depending on the document's kind. Every
+            // refusal of the expanded text below leaves through its map
+            // back to the authored rows, as the statechart arm's do.
+            let positions = match crate::parser::expand_preprocessors(
+                &scxml_content,
+                scxml_path,
+                Some(base_dir),
+                &include_dir.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            ) {
+                Ok((expanded, map, _deps)) => {
+                    crate::model::AuthoredPositions::new(scxml_path, expanded, map)
+                }
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+
+            // Document axis: a parse failure is fatal regardless of
+            // which backends were asked for.
+            let parsed = match crate::forge::parser::parse_forge_with_imports(
+                &positions.expanded,
+                doc_label,
+            ) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    error_format.emit_forge_and_exit(&crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::WrongPipeline {
+                            kind: crate::forge::model::ForgeKind::Statechart,
+                            pipeline: crate::Pipeline::Forge,
+                        }
+                        .into(),
+                        doc_label.diagnostic_label,
+                        None,
+                        None,
+                    ));
+                }
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
+
+            // `--strict-unresolved` reaches the forge pipeline too. It did
+            // not until 2026-09-18: a forge document carrying
+            // `sce:unresolved` generated with exit 0, so an author who
+            // marked a value they did not know was told nothing and the
+            // build shipped the guess. Runs before any backend, for the
+            // same reason as the statechart arm below — the refusal should
+            // reach a CI gate as `validation/unresolved-placeholder`, not
+            // as a puzzle in the generated code.
+            if strict_unresolved {
+                // Already placed where the author wrote the marker.
+                if let Err(e) = crate::unresolved_check::check_strict_unresolved_forge(&positions) {
+                    error_format.emit_forge_and_exit(&e);
+                }
+            }
+            report.unresolved = match crate::unresolved_check::unresolved_records_forge(&positions)
+            {
+                Ok(records) => records,
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+            report.cite_house_rules(profile.as_ref());
+            // Only the settings that reach this kind judge it; when none does
+            // the manifest says the profile was given and judged nothing.
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(profile, &[Judged::Forge(&parsed, scxml_path)], error_format)
+            });
+
+            for lang in &langs {
+                let forge_opts = crate::ForgeCompileOptions {
+                    go_module_prefix: go_module_prefix.clone(),
+                    const_fold_budget,
+                    ..Default::default()
+                };
+                let outcome = crate::compile_forge_from_parsed(
+                    &parsed,
+                    doc_label,
+                    *lang,
+                    base_dir,
+                    &forge_opts,
+                )
+                .map(|_| ())
+                .map_err(|e| positions.authored(e));
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+            }
+            // No script engine is reachable from a forge kind, and nothing
+            // in one schedules or drives a child session, so `step()`
+            // suffices. ⚠ That is not "stateless": a transform reading
+            // `previous()` keeps values between activations in its holder,
+            // which `generate` reports as `holder`. `check` sweeps several
+            // backends, whose holder names differ, so it reports none.
+            report.needs_script_engine = Some(false);
+            report.needs_event_scheduler = Some(false);
+        }
+        crate::Pipeline::Scxml => {
+            let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+            let document_parser = || SCXMLParser::new().with_include_dirs(include_dirs.clone());
+            let mut parser = select_variant(document_parser(), &features);
+            let mut model = match parser.parse_file(scxml_path) {
+                Ok(m) => m,
+                Err(e) => error_format.emit_and_exit(&e, ""),
+            };
+            // ADR 0057 §5: the document as written stands for every variant it
+            // denotes, so each is held to what the document is held to. A
+            // selection asks about one variant, which the parse above read.
+            if features.is_none() {
+                if let Err(e) = crate::check_every_variant(&model, scxml_path, &include_dirs, lint)
+                {
+                    error_format.emit_and_exit(&e, "");
+                }
+            }
+            // What `generate` makes of the model before a backend renders it,
+            // for this run: no parent, no deploy, nothing bound to a digest.
+            let preparation = StatechartPreparation {
+                scxml_path,
+                parent_template: false,
+                host_processor: &host_processor,
+                host_invoker: &host_invoker,
+                source_hex: None,
+                deploy_path: None,
+                for_partition: None,
+            };
+
+            if strict_unresolved {
+                if let Err(e) = crate::unresolved_check::check_strict_unresolved(&model) {
+                    error_format.emit_and_exit(&e, "");
+                }
+            }
+            report.unresolved = crate::unresolved_check::unresolved_records(&model);
+            report.cite_house_rules(profile.as_ref());
+            report.open_interface = crate::open_matters::interface_left_open(&model);
+            report.self_delivered = crate::open_matters::self_delivered_events(&model);
+            // The owner's expectation, judged on the model as parsed and
+            // where the set route judges it, so the two cannot disagree.
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(
+                    profile,
+                    &[Judged::Statechart(&model, scxml_path)],
+                    error_format,
+                )
+            });
+
+            // §scxml-6.2.5: apply the host's declaration here, at the
+            // point `generate` applies it, so the model every backend
+            // below renders is the model the build would render. Before
+            // this call the two commands read the same document through
+            // different eyes: `generate --host-processor x` turned the
+            // `<send type="x">` sites into dispatches and refused the
+            // backends with no registry, while `check` had no way to be
+            // told about `x` at all and reported every backend `ok`.
+            if let Err(refused) = preparation.analyzed(&mut model) {
+                cli_exit(refused.into());
+            }
+
+            // §scxml-5.8: a rejected document is a successful run that
+            // produced stubs. `check` reports the rejection the same way
+            // `generate` does — the difference is only that no stub was
+            // written.
+            if model.document_rejected {
+                report.rejected = Some(RejectedDocument {
+                    spec: "W3C SCXML 5.8",
+                    name: model.name.clone(),
+                });
+                report.needs_script_engine = Some(false);
+                report.needs_event_scheduler = Some(false);
+                for lang in &langs {
+                    verdicts.push(LanguageVerdict::ok(crate::manifest::language_wire_name(
+                        *lang,
+                    )));
+                }
+                outln!(
+                    "{}",
+                    build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon)
+                        .to_line()
+                );
+                return;
+            }
+
+            if let Err(located) = analyzer::can_generate_static(&model, scxml_path) {
+                error_format.emit_forge_and_exit(&located);
+            }
+
+            // Not a lint: a document declaring `sce:transition-function`
+            // that holds what a pure function cannot is refused whatever the
+            // flags, every refusal at once. Ahead of the lints, as in
+            // `generate` and the library, so the three agree on which
+            // records one run reports.
+            error_format
+                .emit_all_and_exit(&crate::transition_function_findings(&model, scxml_path), "");
+
+            // Document axis, opt-in: the design-time lints reject legal
+            // SCXML, so the operator asks for them. Same call the
+            // library entry points make, so a document cannot pass here
+            // and fail there. Every finding, not the first: the author
+            // repairs all of them, and the library's single error is the
+            // first of this list.
+            if lint {
+                error_format.emit_all_and_exit(
+                    &crate::lint_statechart_findings(&model, scxml_path),
+                    "Forge codegen error: ",
+                );
+            }
+
+            // Always reported, fatal only under `--lint`. Placed beside
+            // the lints for the same reason they are: `generate` runs it
+            // at the matching point in its own pass.
+            report_refused_expressions(&model, scxml_path, lint, error_format);
+
+            // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
+            // node reaching codegen without a source coordinate emits a
+            // silent SCE-MAP marker, and `check` is contracted to reach
+            // the same verdict `generate` does. Always on, both paths.
+            if let Err(e) =
+                crate::forge::provenance::validate_emission_provenance(&model, scxml_path)
+            {
+                error_format.emit_forge_and_exit(&e);
+            }
+
+            // Also not a lint, and here for the same reason: a
+            // `sce:unhandled` declaration the document contradicts is a
+            // false statement, not design advice. Its SHAPE is already
+            // refused unconditionally by the parser; only its TRUTH was
+            // behind `--lint`, so the half that could rot silently was the
+            // half that says something.
+            error_format.emit_all_and_exit(
+                &crate::unhandled_declaration_findings(&model, scxml_path),
+                "",
+            );
+
+            if no_std && langs.contains(&Language::Rust) {
+                if let Err(err) =
+                    crate::validate_no_std_compatibility(&model, Path::new(scxml_path))
+                {
+                    // Already located on the offending node and already
+                    // carrying the anchor enclosing it — the gate owns
+                    // both. Re-wrapping here is what used to discard
+                    // the row before either could exist.
+                    error_format.emit_forge_and_exit(&err);
+                }
+            }
+
+            preparation.bound(&mut model);
+
+            // ADR 0057 §9: the variants a backend that keeps the variability
+            // renders the document with, derived as `generate` derives them,
+            // so the verdict on that backend is the verdict `generate` reaches.
+            // The first such backend the run names is the one a refusal names:
+            // the sweep stops at it.
+            let lifting = langs.iter().copied().find(|lang| lang.keeps_variability());
+            let variants = if let Some(lifting) = lifting.filter(|_| {
+                features.is_none()
+                    && model
+                        .product_line
+                        .as_ref()
+                        .is_some_and(|line| line.is_gated())
+            }) {
+                let variants = crate::variant_lift::Variants::derive(
+                    &model,
+                    scxml_path,
+                    &document_parser,
+                    &mut |variant| preparation.variant(variant),
+                )
+                .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
+                if let Some(refused) = variants.as_ref().and_then(|variants| {
+                    children_not_in_every_variant(&model, variants, lifting, scxml_path)
+                }) {
+                    error_format.emit_forge_and_exit(&refused);
+                }
+                variants
+            } else {
+                None
+            };
+
+            // The machine's files are named by the machine name the parse gave
+            // it, the file stem written as an identifier, as `generate` names
+            // them.
+            let input_stem = model.name.as_str();
+
+            report.needs_script_engine = Some(model.needs_script_engine);
+            report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
+            report.parent_sends = Some(crate::parent_send_analyzer::records(&model));
+            report.computed_routes = Some(crate::computed_route_analyzer::records(&model));
+            report.surface = Some(crate::design_surface::Surface::of(&model));
+            report.script_engine_causes = model.script_engine_cause_records();
+            report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
+            report.talks_to_a_mesh_peer =
+                crate::host_processor_analyzer::talks_to_a_mesh_peer(&model);
+            report.child_mesh_routers = crate::manifest::ChildMeshRouterSite::of(
+                &crate::host_processor_analyzer::child_mesh_sites(&model),
+            );
+            report.host_processor_causes = model.host_processor_cause_records();
+            report.host_duties = crate::forge::native_action::host_duty_records(&model);
+            report
+                .unreadable_variables
+                .clone_from(&model.unreadable_variables);
+            // Echoed for the same reason `generate` echoes them: the
+            // declaration is the build's half of a two-place contract,
+            // and a consumer diffing the two manifests to confirm its
+            // host registers what the build promised must see the same
+            // field from both.
+            report
+                .host_processor_types
+                .clone_from(&model.host_processor_types);
+            report
+                .host_invoker_types
+                .clone_from(&model.host_invoker_types);
+
+            for lang in &langs {
+                // Reached before rendering, so `check` refuses what `generate`
+                // would refuse rather than reporting a verdict for an artifact
+                // that could never be produced.
+                let selected_engine =
+                    match resolve_script_engine_target(*lang, script_engine.as_deref()) {
+                        Ok(selected) => selected,
+                        Err(refusal) => error_format.emit_and_exit(&refusal, ""),
+                    };
+                let template_dir = crate::find_template_dir_for(*lang);
+                let forge_options = crate::ForgeCompileOptions {
+                    go_module_prefix: go_module_prefix.clone(),
+                    const_fold_budget,
+                    ..Default::default()
+                };
+                let codegen_options = crate::generator::StatechartCodegenOptions {
+                    no_std,
+                    ..Default::default()
+                };
+                let emit_options = crate::ModelEmitOptions {
+                    forge: Some(&forge_options),
+                    codegen: Some(&codegen_options),
+                    script_engine: selected_engine,
+                    variants: variants.as_ref(),
+                    ..Default::default()
+                };
+                // The machine, then every child it carries, through the
+                // operation `generate` writes them with: a child `generate`
+                // would refuse is this backend's refusal here too. Nothing is
+                // written, so nothing is bound to a digest.
+                let outcome = crate::emit_model_artifacts(
+                    &model,
+                    &template_dir,
+                    input_stem,
+                    scxml_path,
+                    *lang,
+                    &emit_options,
+                )
+                .and_then(|_| {
+                    crate::emit_carried_children(
+                        &model,
+                        &template_dir,
+                        &crate::CarriedChildRun {
+                            document: scxml_path,
+                            language: *lang,
+                            host_processor_types: &host_processor,
+                            host_invoker_types: &host_invoker,
+                            digest: crate::RunDigest::NotWritten,
+                        },
+                        &model.name,
+                        &emit_options,
+                    )
+                })
+                .map(|_| ());
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+            }
+        }
+    }
+
+    // A run that reaches its manifest reports every bound the document wrote
+    // as an attribute, with the rewrite; fatal only under `--lint`. Here and
+    // not where the document is read, so a refused run carries its refusal
+    // alone.
+    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
+    outln!(
+        "{}",
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
+    );
+}
+
+/// `generate`: one document, through [`cmd_generate`], or, with
+/// `--with-imports`, every document a set reaches.
+fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
+    if args.with_imports {
+        if args.children {
+            cli_exit(CliError::Usage {
+                detail: "--children generates the child documents of one document's \
+                         generation; a `--with-imports` run generates several"
+                    .to_string(),
+            });
+        }
+        if plans_children() {
+            cli_exit(CliError::Usage {
+                detail: "--plan-children plans the child documents of one document's \
+                         generation; a `--with-imports` run generates several"
+                    .to_string(),
+            });
+        }
+        cmd_generate_with_imports(args, error_format);
+        return;
+    }
+    if args.scxml.len() > 1 {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "generate takes one document and was given {}; several are generated \
+                 together, with every document they import, by `generate --with-imports`",
+                args.scxml.len()
+            ),
+        });
+    }
+    if args.children {
+        if output_mode() == OutputMode::Plan {
+            cli_exit(CliError::Usage {
+                detail: "--children generates a run's children; a plan plans them, with \
+                         --plan-children"
+                    .to_string(),
+            });
+        }
+        if args.write_deps.is_some() {
+            cli_exit(CliError::Usage {
+                detail: "--write-deps names the prerequisites of one generation's build step, \
+                         and a --children run is several; --reads lists what all of them read"
+                    .to_string(),
+            });
+        }
+    }
+    // A child of a `--children` run is a document the run wrote into its output
+    // directory, so it is named by its path there (`OUTPUT_ROOT`), never by
+    // where that directory happens to be.
+    if args.children {
+        let _ = OUTPUT_ROOT.set(PathBuf::from(&args.output_dir));
+    }
+    let depfile = args.write_deps.clone();
+    let children_of = plans_children().then(|| args.clone());
+    let generates_children = args.children.then(|| args.clone());
+    let mut report = cmd_generate(args, error_format);
+    let mut shares = std::mem::take(&mut report.sourcemaps);
+    if generates_children.is_none() {
+        write_sourcemaps(std::mem::take(&mut shares));
+    }
+    write_run_depfile(depfile.as_deref(), &report);
+    let mut read = report.depfile.clone();
+    if let Some(args) = children_of {
+        let children_read = plan_child_generations(&args, &report, error_format);
+        read = joined_reads(read, children_read);
+    }
+    if let Some(args) = generates_children {
+        let (children_read, children_shares) =
+            generate_child_generations(&args, &report, error_format);
+        read = joined_reads(read, children_read);
+        shares.extend(children_shares);
+        write_sourcemaps(shares);
+    }
+    write_reads(read.as_ref());
+    emit_generate_manifest(&report);
+}
+
+/// What two parts of one run read, as one entry. A part that recorded
+/// nothing makes the whole unknown: a list short of what one part read would
+/// let an answer that part changed be reused.
+fn joined_reads(first: Option<DepfileEntry>, second: Option<DepfileEntry>) -> Option<DepfileEntry> {
+    let (mut first, second) = (first?, second?);
+    first.absorb(second);
+    Some(first)
+}
+
+/// How a build generates a child document a run writes, which
+/// `--plan-children` plans ([`plan_child_generations`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildGeneration {
+    /// A child its parent starts in its own process (a `src` child, a
+    /// candidate, a hybrid `<invoke>`'s stub): `--as-child`, without the
+    /// deploy, which describes the run's own document.
+    InItsParentsProcess,
+    /// An in-line child the run's deploy placed on a partition of its own
+    /// (SCE_MESH.md §9.6.6 rule 3): a machine of the deploy, generated with
+    /// it as the run of that partition generates it, `--deploy <the run's
+    /// deploy>`.
+    OnItsOwnPartition,
+}
+
+impl ChildGeneration {
+    /// What the generation is run with beside what every generation of the
+    /// build is given (the language, the output directory, the input root,
+    /// the include directories, the prefixes, the formatting and the
+    /// depfile): the arguments a `--plan-children` answer states for it, so a
+    /// build runs the generation the plan planned without knowing which kind
+    /// it is.
+    fn arguments(self, run: &GenerateArgs) -> Vec<String> {
+        match self {
+            Self::InItsParentsProcess => vec!["--as-child".to_string()],
+            Self::OnItsOwnPartition => run
+                .deploy
+                .iter()
+                .flat_map(|deploy| ["--deploy".to_string(), deploy.clone()])
+                .collect(),
+        }
+    }
+
+    /// The generation of `document`: `run`'s arguments less what describes
+    /// the run's own document (its depfile, its variant, its host's
+    /// declarations, its partition, its AST and profile), with this kind's
+    /// ([`Self::arguments`]) and the run's input root, so the source set is
+    /// one that is on disk.
+    fn of(self, document: &Path, run: &GenerateArgs, input_root: &str) -> GenerateArgs {
+        let mut child = run.clone();
+        child.scxml = vec![document.to_string_lossy().into_owned()];
+        child.as_child = self == Self::InItsParentsProcess;
+        if self == Self::InItsParentsProcess {
+            child.deploy = None;
+        }
+        child.parent_stem = None;
+        child.write_deps = None;
+        child.transport_only = false;
+        child.target_machine = None;
+        child.partition = None;
+        child.features = None;
+        child.host_processor.clear();
+        child.host_invoker.clear();
+        child.input_root = Some(input_root.to_string());
+        child.emit_ast = None;
+        child.profile = None;
+        child.with_imports = false;
+        child.children = false;
+        child
+    }
+}
+
+/// The generations a run's report asks for: the children in its process
+/// first, then the ones on partitions of their own. One answer for a plan
+/// that plans them ([`plan_child_generations`]) and a run that generates
+/// them ([`generate_child_generations`]).
+fn child_generations_asked_by(report: &GenerateReport) -> Vec<(PathBuf, ChildGeneration)> {
+    let in_process = report
+        .child_documents
+        .iter()
+        .map(|path| (tree_key(path), ChildGeneration::InItsParentsProcess));
+    let on_partitions = report
+        .peer_documents
+        .iter()
+        .map(|path| (tree_key(path), ChildGeneration::OnItsOwnPartition));
+    in_process.chain(on_partitions).collect()
+}
+
+/// `--children`: after a run of `args` has written its document's files,
+/// generate each child document it wrote and each child those write in turn,
+/// in this run, into its output directory: the generations `--plan
+/// --plan-children` names ([`ChildGeneration`]), with two things a build's own
+/// steps leave to it decided here. A child its parent starts in its own
+/// process joins the run document's package (`--parent-stem`, the layout
+/// `generate-w3c` gives a test's children), and every child is generated over
+/// the run's input root, so the run's files carry one source set.
+///
+/// Returns what every generation read, joined, and the sourcemap shares of
+/// every child, for the caller to write with the run's own as one sidecar per
+/// directory: a child's machines land beside the run's.
+fn generate_child_generations(
+    args: &GenerateArgs,
+    report: &GenerateReport,
+    error_format: ErrorFormat,
+) -> (Option<DepfileEntry>, Vec<SourcemapShare>) {
+    let document = args.scxml.first().map(String::as_str).unwrap_or_default();
+    let input_root = args.input_root.clone().unwrap_or_else(|| {
+        containing_dir(Path::new(document))
+            .to_string_lossy()
+            .into_owned()
+    });
+    let parent_stem = Path::new(document)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned());
+    let mut pending: std::collections::VecDeque<(PathBuf, ChildGeneration)> =
+        child_generations_asked_by(report).into();
+    let mut generated: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut staged: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    let mut read = Some(DepfileEntry::default());
+    let mut shares = Vec::new();
+    while let Some((child, kind)) = pending.pop_front() {
+        // A child the run names and wrote no document for has nothing to be
+        // generated from, as a plan does not plan it.
+        if !child.is_file() || !generated.insert(child.clone()) {
+            continue;
+        }
+        // A child the run staged as a copy of a document in the checkout is
+        // generated from that document, so its files name where its author
+        // wrote it; a stub the run wrote exists only in the output directory.
+        let staged_from = report
+            .staged_children
+            .get(&child)
+            .or_else(|| staged.get(&child))
+            .cloned();
+        let document = staged_from.as_deref().unwrap_or(&child);
+        let mut child_args = kind.of(document, args, &input_root);
+        if kind == ChildGeneration::InItsParentsProcess {
+            child_args.parent_stem = parent_stem.clone();
+        }
+        let mut child_report = cmd_generate(child_args, error_format);
+        staged.extend(std::mem::take(&mut child_report.staged_children));
+        read = joined_reads(read, child_report.depfile.take());
+        shares.append(&mut child_report.sourcemaps);
+        pending.extend(child_generations_asked_by(&child_report));
+    }
+    (read, shares)
+}
+
+/// `--plan-children`: after a `--plan` run of `args`, plan the generation of
+/// each child document the run wrote and of each child document those write
+/// in turn, and keep each one's arguments and files beside the run's
+/// ([`PendingTree::generations`]), for [`finish_generated_output`] to print
+/// after them.
+///
+/// A child's generation is the one a build runs for it ([`ChildGeneration`]):
+/// `generate <child> --as-child` for a child its parent starts in its own
+/// process ([`GenerateReport::child_documents`]), `generate <child> --deploy
+/// <the run's deploy>` for an in-line child the deploy placed on a partition
+/// of its own ([`GenerateReport::peer_documents`]), each with the run's
+/// language, output directory, include directories and prefixes, and the
+/// run's input root. The child is read from what the generations before it
+/// produced, held in memory (`crate::confine::with_documents`): a stub, or
+/// the document of an in-line child, exists nowhere else until the run has
+/// run, which is the whole reason a build cannot plan it alone.
+///
+/// Each generation's own tree is kept apart from the run's, so the run's
+/// answer is exactly the files the run writes, as without the flag, and a
+/// file an earlier generation already produces is left out of a later one's:
+/// every file has the one generation that owns it. A child the run names and
+/// wrote no document for is not planned; its generation would have nothing
+/// to read either.
+///
+/// Returns what every planned generation read ([`GenerateReport::depfile`]),
+/// as one entry, when the run records its reads ([`records_reads`]) and each
+/// of them recorded it: `None` when one did not, since a list short of what
+/// one generation read is no list of what the plan read.
+fn plan_child_generations(
+    args: &GenerateArgs,
+    report: &GenerateReport,
+    error_format: ErrorFormat,
+) -> Option<DepfileEntry> {
+    let mut run = std::mem::take(&mut *pending_tree());
+    let document = args.scxml.first().map(String::as_str).unwrap_or_default();
+    let input_root = args.input_root.clone().unwrap_or_else(|| {
+        containing_dir(Path::new(document))
+            .to_string_lossy()
+            .into_owned()
+    });
+    let asked_by = child_generations_asked_by;
+    // Every document a generation produced so far, for the next to read.
+    fn hold(tree: &PendingTree, held: &mut BTreeMap<PathBuf, String>) {
+        let documents = tree
+            .produced()
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "scxml")
+            })
+            .filter_map(|path| match tree.content.get(path) {
+                Some(Some(bytes)) => String::from_utf8(bytes.clone())
+                    .ok()
+                    .map(|text| (path.clone(), text)),
+                _ => None,
+            });
+        held.extend(documents);
+    }
+    let mut held: BTreeMap<PathBuf, String> = BTreeMap::new();
+    hold(&run, &mut held);
+    let mut owned: BTreeSet<PathBuf> = run.produced().cloned().collect();
+    let mut pending: std::collections::VecDeque<(PathBuf, ChildGeneration)> =
+        asked_by(report).into();
+    let mut planned: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut read = Some(DepfileEntry::default());
+    while let Some((child, kind)) = pending.pop_front() {
+        if !held.contains_key(&child) || !planned.insert(child.clone()) {
+            continue;
+        }
+        let child_args = kind.of(&child, args, &input_root);
+        let mut child_report =
+            crate::confine::with_documents(held.clone(), || cmd_generate(child_args, error_format));
+        read = joined_reads(read, child_report.depfile.take());
+        write_sourcemaps(std::mem::take(&mut child_report.sourcemaps));
+        let tree = std::mem::take(&mut *pending_tree());
+        hold(&tree, &mut held);
+        let files: Vec<PathBuf> = tree
+            .produced()
+            .filter(|path| owned.insert((*path).clone()))
+            .cloned()
+            .collect();
+        run.generations.push(PlannedGeneration {
+            document: child,
+            arguments: kind.arguments(args),
+            files,
+            requires: std::mem::take(&mut child_report.runtime_requires),
+            machine: child_report.machine.take(),
+        });
+        pending.extend(asked_by(&child_report));
+    }
+    *pending_tree() = run;
+    read
+}
+
+/// Write the one depfile a `generate` run was asked for (`--write-deps`), from
+/// what its documents recorded.
+fn write_run_depfile(depfile_path: Option<&str>, report: &GenerateReport) {
+    if let (Some(path), Some(entry)) = (depfile_path, report.depfile.as_ref()) {
+        write_depfile_entry(path, entry);
+    }
+}
+
+/// `generate --with-imports`: every document the named ones reach
+/// ([`crate::import_closure::walk`]), each generated by
+/// [`cmd_generate`] exactly as `generate` generates it alone, below one
+/// output root at the directory its package requires.
+///
+/// One manifest for the run, as for a document set: every file written, the
+/// facts that are a union over the set (`needs_script_engine` and its
+/// siblings, the causes, the markers) merged, and the facts that belong to one
+/// statechart alone (`needs_parent`, `surface`) left out, since the run is not
+/// one document.
+fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
+    let lang: Language = args.language.parse().unwrap_or_else(|_| {
+        error_format.emit_and_exit(
+            &CliError::UnknownLanguage {
+                lang: args.language.clone(),
+                route: LanguageRoute::Generate,
+            },
+            "",
+        )
+    });
+    // A named document that cannot be read is refused as `generate` refuses
+    // it, before any walk: the run's first word about it is the one a run of
+    // that document alone would say.
+    for named in &args.scxml {
+        if let Err(source) = read_named_document(named) {
+            cli_exit(CliError::ReadInput {
+                path: named.clone(),
+                source,
+            });
+        }
+    }
+    let include_dirs: Vec<PathBuf> = args.include_dir.iter().map(PathBuf::from).collect();
+    let units = crate::import_closure::walk(
+        &args.scxml,
+        crate::import_closure::WalkOptions {
+            include_dirs: &include_dirs,
+            input_root: args.input_root.as_deref().map(Path::new),
+        },
+    )
+    .unwrap_or_else(|refusal| {
+        set_reached_from(refusal.reached_from);
+        error_format.emit_forge_and_exit(&refusal.error)
+    });
+
+    let root = PathBuf::from(&args.output_dir);
+    let mut set = GenerateReport {
+        target_language: Some(lang),
+        host_processor_types: args.host_processor.clone(),
+        host_invoker_types: args.host_invoker.clone(),
+        ..GenerateReport::default()
+    };
+    // Which document wrote each file, so a second writer of one path is
+    // refused rather than left to overwrite the first.
+    let mut writers: BTreeMap<PathBuf, String> = BTreeMap::new();
+    // A child started by two statecharts whose packages are one directory —
+    // every language but Kotlin and Go — is the same file twice; it is
+    // generated once.
+    let mut generated: BTreeSet<(String, PathBuf)> = BTreeSet::new();
+    for unit in &units {
+        let directory = root.join(unit.directory(lang, args.kotlin_package_prefix.as_deref()));
+        if !generated.insert((unit.identity.clone(), directory.clone())) {
+            continue;
+        }
+        let mut one = args.clone();
+        one.with_imports = false;
+        one.scxml = vec![unit.document.clone()];
+        one.output_dir = directory.display().to_string();
+        // The caller's root describes the caller's documents; a standard
+        // document's source set is the library's, as when it is generated
+        // by its own name.
+        if unit.is_standard() {
+            one.input_root = None;
+        }
+        if let crate::import_closure::Role::Child { parent } = &unit.role {
+            one.as_child = true;
+            one.parent_stem = Some(parent.clone());
+        }
+        set_reached_from(unit.reached_from.clone());
+        let report = cmd_generate(one, error_format);
+        for artifact in &report.artifacts {
+            if let Some(first) = writers.insert(tree_key(artifact), unit.document.clone()) {
+                let refusal = Located::new(
+                    ForgeError::from(crate::forge::error::ManifestError::ArtifactPathCollision {
+                        artifact: artifact.display().to_string(),
+                        first: first.clone(),
+                    }),
+                    unit.document.clone(),
+                    None,
+                    None,
+                )
+                .related_to(crate::forge::error::RelatedSite {
+                    role: crate::forge::error::RelatedRole::ConflictingUse,
+                    location: crate::forge::error::SourceLocation {
+                        file: first,
+                        line: None,
+                        col: None,
+                    },
+                    actual: None,
+                });
+                error_format.emit_forge_and_exit(&refusal);
+            }
+        }
+        set_reached_from(Vec::new());
+        // A rejection is one document's; the set names each with its document.
+        if let Some(rejected) = &report.rejected {
+            set.rejected_documents
+                .push(crate::manifest::RejectedMember {
+                    document: unit.document.clone(),
+                    spec: rejected.spec,
+                    name: rejected.name.clone(),
+                });
+        }
+        set.absorb(report);
+    }
+    // One sidecar per directory, naming every machine any member wrote there.
+    write_sourcemaps(std::mem::take(&mut set.sourcemaps));
+    // One depfile for the run: its target the first file the run wrote, its
+    // prerequisites every document and template any member read, less every
+    // file any member wrote.
+    write_run_depfile(args.write_deps.as_deref(), &set);
+    write_reads(set.depfile.as_ref());
+    emit_generate_manifest(&set);
+}
+
+/// Generate one document as `generate` does, and hand back what the run
+/// found for the manifest rather than printing it: `generate` prints it for
+/// its one document, and `--with-imports` merges the reports of every
+/// document it reaches into one.
+fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport {
+    // Unpack the CLI args struct into the internal borrowed names the
+    // body uses. `args` owns the data for the whole function, so the
+    // `&` / `as_deref()` borrows below stay valid for every use.
+    let GenerateArgs {
+        scxml,
+        language,
+        script_engine,
+        output_dir,
+        as_child,
+        parent_stem,
+        write_deps,
+        go_module_prefix,
+        owned_origin,
+        views,
+        inline_encode,
+        format_style,
+        no_format,
+        deploy,
+        transport_only,
+        target_machine,
+        partition,
+        const_fold_budget,
+        no_std,
+        features,
+        host_processor,
+        host_invoker,
+        input_root,
+        emit_ast,
+        kotlin_package_prefix,
+        cpp_namespace_prefix,
+        c_symbol_prefix,
+        strict_unresolved,
+        lint,
+        profile: profile_path,
+        include_dir,
+        // Decided by `run_generate`, which calls this once per document.
+        with_imports: _,
+        children: _,
+    } = args;
+    // Before anything else is read: an unusable profile is the first thing
+    // said about the run.
+    let profile = load_profile(profile_path.as_deref());
+    // One document: `run_generate` refuses more without `--with-imports`, and
+    // that run hands this function one at a time.
+    let scxml_path: &str = scxml.first().map(String::as_str).unwrap_or_default();
+    let language: &str = &language;
+    let output_dir: &str = &output_dir;
+    let parent_stem = parent_stem.as_deref();
+    let depfile_path = write_deps.as_deref();
+    let go_module_prefix = go_module_prefix.as_deref();
+    let format_style = format_style.as_deref();
+    let deploy_path = deploy.as_deref();
+    let for_partition = partition.as_deref();
+    let input_root_override = input_root.as_deref();
+    let emit_ast_path = emit_ast.as_deref();
+    let kotlin_package_prefix = kotlin_package_prefix.as_deref();
+    let cpp_namespace_prefix = cpp_namespace_prefix.as_deref();
+    let c_symbol_prefix = c_symbol_prefix.as_deref();
+    let include_dirs: &[String] = &include_dir;
+    let features = selected_features(features);
+
+    let lang = parse_served_language(LanguageRoute::Generate, language);
+
+    // Every stdout artifact, the `needs_script_engine` verdict, and
+    // any W3C rejection are collected here and flushed as a single
+    // JSON manifest at each function exit. Stays local — no globals.
+    //
+    // `target_language` is set here, at the one place the run's backend is
+    // known, so every exit path reports the engine language that backend
+    // actually needs rather than a constant.
+    let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
+        Ok(selected) => selected,
+        Err(refusal) => error_format.emit_and_exit(&refusal, ""),
+    };
+
+    let mut report = GenerateReport {
+        target_language: Some(lang),
+        script_engine_target,
+        ..GenerateReport::default()
+    };
+
+    // C++ formatter: resolved at the first C++ artefact to shape and reused for
+    // the rest — see `CppFormatterSlot`. The manifest names it only if it
+    // shaped something, which each exit below reads from `used()`.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);
+
+    // SCE Forge: detect non-statechart kind and route to forge pipeline.
+    // Read the file once; the same content is reused for both detection and compilation.
+    // A standard document (`sce:std/...`) is read from the library this
+    // generator embeds (`read_named_document`).
+    let scxml_content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: scxml_path.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    report.document_kind = crate::manifest::DocumentKind::of(&scxml_content);
+
+    // Where the document's children are staged from: the `--input-root`
+    // the caller names (a staged-input workflow copies its tracked fixture
+    // into a temporary directory and names the tracked one), or else the
+    // document's own directory.
+    let drift_input_root: std::path::PathBuf = match input_root_override {
+        Some(s) => std::path::PathBuf::from(s),
+        None => containing_dir(Path::new(scxml_path)),
+    };
+    // Spec §synth-6.2.6 drift context (ADR 0094): the input closure of this
+    // document, which every file this invocation writes is generated from —
+    // its machine or unit, and the in-line children it carries. A staged copy
+    // hashes as the document under `--input-root` it stands for.
+    let closure_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let drift_ctx = DriftContext::of_documents(
+        &[Path::new(scxml_path)],
+        drift::ClosureOptions {
+            include_dirs: &closure_include_dirs,
+            input_root: input_root_override.map(Path::new),
+            deploy_yaml: deploy_path.map(Path::new),
+        },
+    );
+
+    match crate::classify_document(&scxml_content) {
+        crate::Pipeline::Forge => {
+            refuse_a_selection_of_a_forge_document(&features, scxml_path, error_format);
+            // ⚠ This was the BASENAME, on the written reasoning that a
+            // filename with its extension is "enough for downstream tooling
+            // to open the file without guessing the suffix". The suffix is
+            // the part that got thought about; the DIRECTORY did not. A
+            // consumer handed `x.scxml` can open it from exactly one place.
+            let doc_label = crate::DocumentLabel::for_input_path(scxml_path);
+
+            let base_dir = Path::new(scxml_path)
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
+            let mut forge_opts = crate::ForgeCompileOptions {
+                go_module_prefix: go_module_prefix.map(str::to_owned),
+                const_fold_budget,
+                // What the deployment's storing forms hold (docs/adr/0077 §7).
+                codec_capacities: deploy_path
+                    .map(|path| load_deploy_config(path, error_format).codec_capacities())
+                    .unwrap_or_default(),
+                owned_origin,
+                views,
+                inline_encode,
+                // The digest every file of this run is headed by, which a schema
+                // unit's payload schema names (docs/adr/0087, section 1.1).
+                source_hash: Some(drift_ctx.header.source_hex()),
+                ..Default::default()
+            };
+
+            // Expand before parsing — see the `generate` arm for why
+            // this cannot be left to the caller. The expanded text keeps
+            // its map back to the authored rows, which every refusal of it
+            // below passes through.
+            let (positions, preprocessor_deps) = match crate::parser::expand_preprocessors(
+                &scxml_content,
+                scxml_path,
+                Some(base_dir),
+                &include_dirs.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            ) {
+                Ok((expanded, map, deps)) => (
+                    crate::model::AuthoredPositions::new(scxml_path, expanded, map),
+                    deps,
+                ),
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+
+            // Single-parse path: parse once, emit AST if requested,
+            // then run codegen against the same `ParsedForge` value via
+            // `compile_forge_from_parsed`. Avoids the previous
+            // architectural mismatch where the CLI parsed for emit and
+            // `compile_forge_with_imports` parsed again internally —
+            // `ParsedForge` is a cacheable artefact, not throwaway work.
+            let parsed = match crate::forge::parser::parse_forge_with_imports(
+                &positions.expanded,
+                doc_label,
+            ) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    // Defensive — `classify_document` already routed
+                    // Statechart to the Scxml arm. A future classifier
+                    // refactor must not silently land here.
+                    error_format.emit_forge_and_exit(&crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::WrongPipeline {
+                            kind: crate::forge::model::ForgeKind::Statechart,
+                            pipeline: crate::Pipeline::Forge,
+                        }
+                        .into(),
+                        doc_label.diagnostic_label,
+                        None,
+                        None,
+                    ));
+                }
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
+
+            // `--strict-unresolved` on the GENERATE route. The check also
+            // sits in `cmd_check`'s forge arm; both are needed and neither
+            // is redundant — a build that never runs `check` would
+            // otherwise ship a document whose author wrote down that they
+            // did not know a value. Placed before `--emit-ast` so a
+            // refused document exports no AST either: an AST of a document
+            // the build rejected is an artifact nothing should read.
+            if strict_unresolved {
+                // Already placed where the author wrote the marker.
+                if let Err(e) = crate::unresolved_check::check_strict_unresolved_forge(&positions) {
+                    error_format.emit_forge_and_exit(&e);
+                }
+            }
+            report.unresolved = match crate::unresolved_check::unresolved_records_forge(&positions)
+            {
+                Ok(records) => records,
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+            report.cite_house_rules(profile.as_ref());
+            // Only the settings that reach this kind judge it; when none does
+            // the manifest says the profile was given and judged nothing.
+            report.profile = profile.as_ref().map(|profile| {
+                judge_under_profile(profile, &[Judged::Forge(&parsed, scxml_path)], error_format)
+            });
+
+            if let Some(ast_path) = emit_ast_path {
+                let path = std::path::Path::new(ast_path);
+                if let Err(e) = crate::forge::ast_export::write_envelope_to_path(path, &parsed) {
+                    error_format.emit_and_exit(
+                        &CliError::WriteOutput {
+                            path: ast_path.to_string(),
+                            source: e,
+                        },
+                        "",
+                    );
+                }
+            }
+
+            // SCE Protocol-Synthesis RFC §synth-5-P: a queue's `source="deploy"`
+            // numbers, and what the deploy says of the target's atomics, are
+            // resolved here where the deploy and the machine are in hand, by
+            // the function `compile_forge_with_deploy` resolves them with.
+            if let (
+                crate::forge::model::ForgeDocument::Queue(queue),
+                Some(deploy_file),
+                Some(machine),
+            ) = (&parsed.document, deploy_path, target_machine.as_deref())
+            {
+                let cfg = load_deploy_config(deploy_file, error_format);
+                match crate::resolve_queue_deploy_limits(
+                    queue,
+                    &cfg,
+                    machine,
+                    doc_label.diagnostic_label,
+                ) {
+                    Ok(resolution) => {
+                        forge_opts.queue_resolutions = Some(std::collections::HashMap::from([(
+                            queue.name.clone(),
+                            resolution,
+                        )]));
+                    }
+                    Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+                }
+            }
+
+            match crate::compile_forge_from_parsed(&parsed, doc_label, lang, base_dir, &forge_opts)
+            {
+                Ok(output) => {
+                    // Whether the host drives this document through a holder
+                    // is decided by the call the generator made while
+                    // rendering it, not re-derived here.
+                    if let crate::forge::model::ForgeDocument::Transform(m) = &parsed.document {
+                        report.holder = crate::forge::generator::transform_holder(m, lang);
+                    }
+                    // Preprocessor inputs ahead of the import closure.
+                    // Both are files this compile read, and a template
+                    // edit has to trigger a rebuild exactly as an edit to
+                    // an imported document does — otherwise the output
+                    // goes stale while the build reports success, which
+                    // is the staleness the import entry above prevents.
+                    let mut import_deps = preprocessor_deps;
+                    import_deps.extend(output.deps);
+                    report.runtime_requires.extend(output.requires);
+                    let files = maybe_format_files(output.files, &cpp_formatter);
+                    let out = Path::new(output_dir);
+                    for (filename, code) in &files {
+                        let path = out.join(filename);
+                        write_drift_aware(&path, code, &drift_ctx);
+                        report.artifacts.push(path.clone());
+                    }
+                    if records_reads(depfile_path) {
+                        // Through `depfile_entry`, not a local
+                        // `format!`. The inline version this replaced
+                        // named the input `.scxml` and nothing else — no
+                        // templates on any of the six backends, and no
+                        // `<sce:import>` targets — so editing
+                        // `forge/cpp/codec.h.jinja2` or an imported
+                        // document left the output stale while the build
+                        // reported success.
+                        //
+                        // Imports belong here because the importing
+                        // document's `source-hash` covers them: editing
+                        // an imported document demonstrably changes this
+                        // document's output.
+                        //
+                        // They come from `GeneratedOutput::deps` — what
+                        // the compile read — rather than from
+                        // `parsed.imports`, which is the *direct* imports
+                        // only. Re-deriving them here was the same
+                        // second-source defect one layer over: in an
+                        // `algorithm → codec → codec` chain the leaf went
+                        // undeclared while widening it still changed this
+                        // document's `source-hash`.
+                        let out = Path::new(output_dir);
+                        let targets: Vec<PathBuf> =
+                            files.iter().map(|(f, _)| out.join(f)).collect();
+                        // The forge scope, not the statechart one:
+                        // `forge::generator::generate_*` loads
+                        // `templates/forge/<lang>`.
+                        let forge_template_dir = crate::find_template_base()
+                            .join("forge")
+                            .join(lang.forge_template_subdir());
+                        report.depfile = Some(depfile_entry(DepfileInputs {
+                            output_paths: &targets,
+                            template_dir: &forge_template_dir,
+                            lang,
+                            scxml_input: Path::new(scxml_path),
+                            preprocessor_deps: &import_deps,
+                            source_set: &drift_ctx.sources,
+                            self_written: &[],
+                        }));
+                    }
+                    report.needs_script_engine = Some(false);
+                    report.needs_event_scheduler = Some(false);
+                    // A run that succeeds reports what it read and the
+                    // rewrite; fatal only under `--lint`, as `check` does.
+                    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
+                    report.formatter = cpp_formatter.used();
+                    return report;
+                }
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            }
+        }
+        crate::Pipeline::Scxml => {}
+    }
+
+    let template_dir = crate::find_template_dir_for(lang);
+
+    // The `--include-dir` search path lets `<xi:include>` / `<sce:use>`
+    // resolve fragments by name; empty in the common case, so the
+    // parser resolves exactly as `absolute → base → cwd` when no
+    // include dirs are passed.
+    // §scxml-6.4: a hybrid invoke's candidates are found where
+    // `copy_static_invoke_children` stages them from — the input root first
+    // — so the arguments each one may keep are read from the real document.
+    //
+    // A variant of a product line is parsed by this parser too (ADR 0057 §9),
+    // so it is made by one function.
+    let document_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let document_parser = || {
+        SCXMLParser::new()
+            .with_include_dirs(document_include_dirs.clone())
+            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect())
+    };
+    let mut parser = select_variant(document_parser(), &features);
+    // Typed parser failures (XML/XSD/validation) flow straight to the
+    // unified diagnostic emitter — the old CliError::ScxmlParse
+    // wrapper collapsed forge codes into cli/scxml-parse, losing the
+    // xml/* / validation/* signal consumers dispatch on.
+    let mut model = match parser.parse_file(scxml_path) {
+        Ok(m) => m,
+        Err(e) => error_format.emit_and_exit(&e, ""),
+    };
+
+    // `--strict-unresolved` lifts the
+    // model's `<sce:unresolved>` markers from silent metadata to a
+    // build-failing rejection. Runs before any codegen so CI gates
+    // see the `validation/unresolved-placeholder` diagnostic on the
+    // wire instead of a downstream "why is my generated code blank
+    // at this assign expression" surprise.
+    if strict_unresolved {
+        if let Err(e) = crate::unresolved_check::check_strict_unresolved(&model) {
+            error_format.emit_and_exit(&e, "");
+        }
+    }
+    report.unresolved = crate::unresolved_check::unresolved_records(&model);
+    report.cite_house_rules(profile.as_ref());
+    report.open_interface = crate::open_matters::interface_left_open(&model);
+    report.self_delivered = crate::open_matters::self_delivered_events(&model);
+    // The owner's expectation, judged where `check` judges it — on the model
+    // as parsed, before any codegen — so a design the profile refuses
+    // produces nothing.
+    report.profile = profile.as_ref().map(|profile| {
+        judge_under_profile(
+            profile,
+            &[Judged::Statechart(&model, scxml_path)],
+            error_format,
+        )
+    });
+
+    // `has_parent_communication` carries two distinct meanings across
+    // backends:
+    //   - cpp/rust/kotlin/go/python: enables the `ParentStateMachine`
+    //     class-template parameter (analyzer derives `needs_parent_template
+    //     = has_parent_communication && !is_remote_invoke_target`). Every
+    //     `--as-child` invocation must template against the parent type
+    //     because the parent's invoke spawn site passes `self_` (parent
+    //     pointer) into the child constructor — even when the child has
+    //     no `<send target="#_parent">` of its own.
+    //   - c11: there is no parent type to template on. The child always
+    //     emits `_init_invoked`, and `_init_with_parent` only when it may
+    //     address its parent (`SCXMLModel::may_address_parent`). The c11
+    //     parent's `invoke_methods.jinja2` starts a child through one of
+    //     the two, switching on the parser-derived
+    //     `invoke_info.child_has_send_to_parent`, and hands the values of
+    //     the invoke's `<param>`s and `namelist` to that start
+    //     (docs/adr/0098). Forcing the child side to `true` while the
+    //     parent's value is `false`, or the reverse, names a start the
+    //     other side does not have (`_init_with_parent` is declared only
+    //     for a child that may address its parent → linker error). For
+    //     c11 the parser-derived value is the correct gate — children that
+    //     genuinely route to `#_parent` (test191/338) flip it on their
+    //     own, and `<donedata>`-only children (donedata_local_invoke) are
+    //     started through `_init_invoked` under the parser-derived `false`.
+    let preparation = StatechartPreparation {
+        scxml_path,
+        parent_template: as_child && lang != Language::C11,
+        host_processor: &host_processor,
+        host_invoker: &host_invoker,
+        source_hex: Some(drift_ctx.header.source_hex()),
+        deploy_path,
+        for_partition,
+    };
+    if let Err(refused) = preparation.analyzed(&mut model) {
+        cli_exit(refused.into());
+    }
+
+    // AST export — emit the analyzed model BEFORE any deploy-time
+    // mutations (resolve_source_path, inject_server_model_mutations,
+    // inject_partition_context_for, populate_event_queue_capacity_
+    // from_deploy) so the envelope captures the parser+analyzer IR
+    // — the statechart parallel of `ParsedForge` for forge kinds.
+    //
+    // Skip-on-rejected: document_rejected is the W3C 5.8
+    // structured rejection (unloadable external script). Skip the
+    // emit and fall through to the rejection-stub codegen path
+    // below; the absence of the envelope file is the consumer
+    // signal, matching the Forge precedent "parse fails → no envelope".
+    if let Some(ast_path) = emit_ast_path {
+        if !model.document_rejected {
+            let parsed = crate::forge::ast_export::statechart_parsed_forge(model.clone());
+            let path = Path::new(ast_path);
+            if let Err(e) = crate::forge::ast_export::write_envelope_to_path(path, &parsed) {
+                error_format.emit_and_exit(
+                    &CliError::WriteOutput {
+                        path: ast_path.to_string(),
+                        source: e,
+                    },
+                    "",
+                );
+            }
+        }
+    }
+
+    // §scxml-5.8: Document rejected at parse time (e.g., unloadable external script)
+    // Generate a language-appropriate rejection stub so AOT test reports PASS.
+    if model.document_rejected {
+        // Named as the machine it stands in for: the file stem written as an
+        // identifier, the name the parse gave the model.
+        let input_stem = model.name.as_str();
+        let out = Path::new(output_dir);
+        ensure_output_dir(out).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::CreateOutputDir {
+                    path: out.display().to_string(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        let pascal = crate::filters::to_pascal_case(input_stem.to_string());
+
+        // §synth-5-O traceability — every drift-headered file must carry an
+        // `SCE-MAP:` marker, otherwise `validate_emitted_files_have_markers`
+        // fires `traceability/meta-generated-source-line-marker-missing`
+        // on the next codegen call in the same output dir. Rejection
+        // stubs go through `write_drift_aware` (which prepends the
+        // §synth-6.2.6 header), so they MUST include a marker line too. Use
+        // the SCXML basename + line 1 — the document was rejected at
+        // parse time, no finer location is available.
+        let scxml_basename = Path::new(scxml_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown.scxml");
+        // Through the comment encoder, as a template's marker is, so the
+        // walker reads it back as the document's own name.
+        let marker = crate::forge::sourcemap::marker_payload(scxml_basename, 1, &[]);
+
+        // Each backend names its stub files and their contents; the
+        // write, the manifest bookkeeping, and the sourcemap emit are
+        // shared below. Previously each arm wrote its own files and
+        // none of them recorded what it wrote, so the manifest claimed
+        // `"artifacts":[]` for a run that had just written a stub —
+        // contradicting SCE_ERROR_CONTRACT.md §10.1, which defines the
+        // field as every file written during the run.
+        let stubs: Vec<(String, String)> = match lang {
+            // The constant is what a test reads to know the document was rejected: the stub
+            // has no machine to run, and a comment alone would leave it nothing to assert.
+            Language::Swift => vec![(
+                format!("{input_stem}_sm.swift"),
+                format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     public let sceDocumentRejected{pascal} = true\n"
+                ),
+            )],
+            Language::Cpp => {
+                let header = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     #pragma once\n\
+                     #define SCE_DOCUMENT_REJECTED 1\n\
+                     namespace SCE::Generated::{name} {{\n\
+                     struct {pascal} {{\n\
+                     }};\n\
+                     }}  // namespace SCE::Generated::{name}\n",
+                    name = input_stem,
+                    pascal = pascal
+                );
+                vec![
+                    (format!("{input_stem}_sm.h"), header),
+                    (
+                        format!("{input_stem}_sm.inl"),
+                        "// W3C SCXML 5.8: Document rejected\n".to_string(),
+                    ),
+                ]
+            }
+            Language::Rust => vec![(
+                format!("{input_stem}_sm.rs"),
+                format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     // This state machine was rejected at parse time.\n"
+                ),
+            )],
+            Language::Kotlin => vec![(
+                format!("{input_stem}Sm.kt"),
+                format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     package com.sce.generated.{name}\n",
+                    name = input_stem
+                ),
+            )],
+            Language::Go => vec![(
+                format!("{input_stem}_sm.go"),
+                format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // {marker}\n\
+                     package {name}\n",
+                    name = input_stem
+                ),
+            )],
+            Language::Python => vec![(
+                format!("{input_stem}_sm.py"),
+                format!(
+                    "# W3C SCXML 5.8: Document rejected\n\
+                     # {marker}\n"
+                ),
+            )],
+            Language::C11 => {
+                // C11 rejected-document sentinel: emit a header-only
+                // sentinel matching the C++ shape so any downstream
+                // consumer that includes the .h compiles to a no-op.
+                // The body file
+                // carries an `extern const int` definition so the
+                // translation unit is non-empty (ISO C forbids empty
+                // translation units, surfaces under
+                // `-Wpedantic -Werror`); the symbol's name doubles as a
+                // grep-able marker that links cleanly even if the host
+                // never declares it.
+                let guard = filters::to_snake_case(input_stem.to_string()).to_uppercase();
+                let header = format!(
+                    "/* W3C SCXML 5.8: Document rejected */\n\
+                     // {marker}\n\
+                     #ifndef SCE_GEN_{guard}_SM_H\n\
+                     #define SCE_GEN_{guard}_SM_H\n\
+                     #define SCE_DOCUMENT_REJECTED 1\n\
+                     extern const int sce_document_rejected_{stem};\n\
+                     #endif\n",
+                    guard = guard,
+                    stem = input_stem
+                );
+                let body = format!(
+                    "/* W3C SCXML 5.8: Document rejected */\n\
+                     // {marker}\n\
+                     #include \"{input_stem}_sm.h\"\n\
+                     const int sce_document_rejected_{stem} = 1;\n",
+                    input_stem = input_stem,
+                    stem = input_stem
+                );
+                vec![
+                    (format!("{input_stem}_sm.h"), header),
+                    (format!("{input_stem}_sm.c"), body),
+                ]
+            }
+        };
+
+        for (filename, content) in &stubs {
+            let path = out.join(filename);
+            write_drift_aware(&path, content, &drift_ctx);
+            report.artifacts.push(path);
+        }
+        // The stub stands in for the machine, under the machine's name.
+        report.machine = Some(model.name.clone());
+
+        // The document parsed — §5.8 refuses to *generate* it, not to
+        // read it — so its symbols resolve and the sidecar is emitted
+        // exactly as the `generate-w3c` path already did. Without this
+        // the two paths disagreed: the committed W3C trees carry a
+        // sourcemap for a rejected document while a standalone
+        // `generate` on the same input produced none.
+        let mut sourcemap_acc = SymbolAccumulator::new();
+        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
+        report.sourcemaps.push(SourcemapShare {
+            directory: out.to_path_buf(),
+            symbols: sourcemap_acc,
+            source_hash: drift_ctx.header.source_hex(),
+        });
+
+        report.rejected = Some(RejectedDocument {
+            spec: "W3C SCXML 5.8",
+            name: model.name.clone(),
+        });
+        // The depfile was asked for and the build edge declares it, so it is
+        // written for a rejected document too. Returning without one left
+        // Ninja on CMake 3.x with an edge whose depfile "is missing" after
+        // every run, which it reads as out of date: `test301` regenerated,
+        // and relinked its runner, on every build (CMake 4.x records the
+        // dependencies at build time instead and never looks for the file,
+        // which hid it). A stub is not rendered from a template, but the
+        // templates stay declared anyway — the depfile has one shape, and a
+        // template edit costs a stub regeneration that changes nothing.
+        if records_reads(depfile_path) {
+            report.depfile = Some(depfile_entry(DepfileInputs {
+                output_paths: &report.artifacts,
+                template_dir: &template_dir,
+                lang,
+                scxml_input: Path::new(scxml_path),
+                preprocessor_deps: parser.preprocessor_deps(),
+                source_set: &drift_ctx.sources,
+                self_written: &[],
+            }));
+        }
+        report.needs_script_engine = Some(false);
+        report.needs_event_scheduler = Some(false);
+        // Stubs are written as they are, so this reads `None`: nothing was
+        // handed to the formatter.
+        report.formatter = cpp_formatter.used();
+        return report;
+    }
+
+    if let Err(located) = analyzer::can_generate_static(&model, scxml_path) {
+        // §wire-W5 D3: `can_generate_static` returns the
+        // correctly-classified ForgeError directly — `ScxmlSemanticError`
+        // for hard semantic violations (top-level script rejected,
+        // initial-state names undeclared) and `ValidationDynamicFeatures`
+        // for genuine codegen limitations (no initial attribute).
+        // It anchors the record itself: the rejections that belong to a
+        // node carry that node's line, and only the document-scoped
+        // ones arrive with the file alone.
+        error_format.emit_and_exit(&located, "");
+    }
+
+    // Not a lint — see the `check` call site, which sits at the same point.
+    // The document's in-line children are judged by the same call.
+    error_format.emit_all_and_exit(&crate::transition_function_findings(&model, scxml_path), "");
+
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
+    // rejection. Only fires when `--no-std` is paired with `-l rust`
+    // (the flag is a no-op for other language targets, mirroring how
+    // `--go-module-prefix` is rust/kotlin-inert). Two axes:
+    //   1. `<script>` — Lua/QuickJS need `alloc`, no_std forbids it.
+    //   2. BasicHTTP send — tokio/reqwest are std-coupled.
+    // The model already carries `needs_script_engine` /
+    // `has_unresolved_external_script` / `needs_http_send` flags from
+    // the parser + analyzer passes; this gate just reads them.
+    if no_std && lang == Language::Rust {
+        if let Err(err) = crate::validate_no_std_compatibility(&model, Path::new(scxml_path)) {
+            // See the `check` call site: the gate returns a located,
+            // anchored record, so there is nothing left to wrap.
+            error_format.emit_and_exit(&err, "");
+        }
+    }
+
+    // Document axis, opt-in — see `CheckArgs::lint`. Placed on the same
+    // side of `can_generate_static` as the `check` call site so the two
+    // subcommands report the same diagnostics for the same document.
+    if lint {
+        error_format.emit_all_and_exit(
+            &crate::lint_statechart_findings(&model, scxml_path),
+            "Forge codegen error: ",
+        );
+    }
+
+    // Always reported, fatal only under `--lint` — see the `check` call
+    // site for why the flag is the one that decides.
+    report_refused_expressions(&model, scxml_path, lint, error_format);
+
+    // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
+    // Runs before `resolve_source_path` so a `None` cannot leak into the
+    // marker-emitting templates, matching `lib.rs::compile_model`.
+    if let Err(e) = crate::forge::provenance::validate_emission_provenance(&model, scxml_path) {
+        error_format.emit_forge_and_exit(&e);
+    }
+
+    // Not a lint — see the `check` call site. Placed beside its sibling so
+    // the two commands cannot acquire the check at different points and
+    // start disagreeing about a document again.
+    error_format.emit_all_and_exit(
+        &crate::unhandled_declaration_findings(&model, scxml_path),
+        "",
+    );
+
+    // What the document's declarations cannot hold is the digest of the
+    // source set this run read: the transition table and the transition
+    // function are built here, where that digest is known and after the AST
+    // export, which stays the analysed document. The hash is the one every
+    // file of this run embeds; every route that writes one binds it through
+    // the same call.
+    preparation.bound(&mut model);
+
+    // Typed generator failures route through `Located<ForgeError>` so
+    // the NDJSON wire carries the real `generate/*` code (template-load,
+    // template-render, invalid-config) instead of collapsing to
+    // `cli/scxml-generate`. minijinja does not surface the failing
+    // template's row/col through its public error surface, so `None`
+    // line/col is honest — fabricating `(1, 1)` would misroute consumer
+    // repair loops to the top of the source (see
+    // `feedback_correctness_before_features`).
+    // out_path is needed early: the documents of the in-line children are
+    // held under it (and under `deploy_dir` when distinct) BEFORE
+    // `inject_partition_context_for` runs, which opens every machine
+    // `deploy.yaml` declares (synth-invoke children among them) by name
+    // from `deploy_dir`. The dir is created here so the writes after the
+    // deploy has been applied have somewhere to land.
+    let out_path = Path::new(output_dir);
+    ensure_output_dir(out_path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::CreateOutputDir {
+                path: out_path.display().to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+
+    // SCE_MESH.md §9.6.6: the document of every inline-`<content>` synth
+    // child, at every depth, as a document of its own, carrying the same
+    // trailing-newline contract as the sources beside it: it is read back
+    // as a document and by humans.
+    //
+    // Who reads it as a document:
+    // - this run's deploy: `inject_partition_context_for` and the peer
+    //   scans open every machine `deploy.yaml` declares, by name, from
+    //   `deploy_dir`, and a synth child may be one of them;
+    // - the run of the partition a deploy places a child on (§9.6.6 rule
+    //   3), which generates the child's machine from the document this run
+    //   writes into `-o` (`--plan-children` plans it,
+    //   cmake/SCECodegenPlan.cmake).
+    // The child's local machine is not one of those reads: this run
+    // writes it (`crate::emit_carried_children`, below).
+    //
+    // Which documents this run writes is known only once the deploy has been
+    // applied, and the deploy reads them first: so they are held in memory
+    // under the paths it reads them from (`crate::confine::hold`), the
+    // deploy is applied, and only then is each written, by the run that owns
+    // it ([`SCXMLModel::carried_documents_written`]). A child below one the
+    // deploy placed on another partition is that partition's run's to write,
+    // with the machine it writes beside it: written here as well, it had two
+    // producers. Pollution of the parent's *source* directory stays closed:
+    // the write targets are caller-controlled (`-o`, `--deploy <path>`),
+    // never `scxml_path`'s parent.
+    let deploy_dir: Option<&Path> = deploy_path
+        .map(|deploy_file| Path::new(deploy_file).parent().unwrap_or(Path::new(".")))
+        .filter(|deploy_dir| *deploy_dir != out_path);
+    // Each written child records the document it came from (ADR 0094, owner's
+    // answer 2): the document this run's closure is of, which is the
+    // authored one even when this run itself generates from a written child.
+    // A run that generates from the child is then stamped with that
+    // document's closure, and `verify` finds that document under a root.
+    let origin = drift_ctx
+        .header
+        .seeds
+        .first()
+        .map(String::as_str)
+        .unwrap_or_default();
+    let carried_documents: Vec<(String, String)> = model
+        .inline_child_invokes()
+        .into_iter()
+        .filter_map(|inv| {
+            inv.inline_child_xml.as_deref().and_then(|xml| {
+                if inv.child_name.is_empty() {
+                    None
+                } else {
+                    Some((
+                        inv.child_name.clone(),
+                        drift::record_origin(&with_trailing_newline(xml), origin),
+                    ))
+                }
+            })
+        })
+        .collect();
+    for (stem, xml) in &carried_documents {
+        for dir in std::iter::once(out_path).chain(deploy_dir) {
+            crate::confine::hold(&dir.join(format!("{stem}.scxml")), xml.clone());
+        }
+    }
+
+    // SCE Mesh: every deploy-derived model mutation, before SM
+    // generation. The SM generator must see the injected server-response
+    // <send> actions to emit the raiseExternal calls that drive
+    // handleServerResponse routing, and must see the partition context
+    // (SCE_MESH.md §14 rule 12) to pick the right `<parallel>`-final
+    // branch and the right `<send target="#_parent">` site.
+    //
+    // The sequence lives in `apply_deploy_model_mutations` rather than
+    // here so that anything else compiling with a deploy in scope — the
+    // library entry `compile_scxml_lang_with_deploy`, and the gates that
+    // use it — applies the same mutations in the same order. When it sat
+    // inline in this function it was, in practice, unavailable to
+    // everything else, and the value gate over author `<param>` literals
+    // silently compiled a different shape of machine as a result.
+    match preparation.deployed(&mut model) {
+        // The descriptive half of the deploy travels into the
+        // manifest. Without a reader a declaration is
+        // indistinguishable from a typo — the author believes they
+        // configured something and nothing in the build says
+        // otherwise.
+        Ok(facts) => report.deploy_facts = facts,
+        Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
+    }
+    // The documents this run owns, now that the deploy has said which: every
+    // carried child's whose machine it writes, and every one a deploy placed
+    // on a partition of its own directly below them, which that partition's
+    // run reads. Every file this invocation writes that is not a declared
+    // artefact is collected as it is written, so the depfile filter cannot
+    // fall behind a new side-effect write: `-o` is frequently the directory
+    // the input was staged into, which puts a child's document in the
+    // invocation's own source set.
+    let mut self_written: Vec<PathBuf> = Vec::new();
+    let documents_written: BTreeSet<String> = model
+        .carried_documents_written()
+        .into_iter()
+        .map(|invoke| invoke.child_name.clone())
+        .collect();
+    for (stem, xml) in carried_documents
+        .iter()
+        .filter(|(stem, _)| documents_written.contains(stem))
+    {
+        for dir in std::iter::once(out_path).chain(deploy_dir) {
+            let dst = dir.join(format!("{stem}.scxml"));
+            if let Err(e) = try_emit_generated(&dst, xml.as_bytes(), WritePolicy::Always) {
+                eprintln!(
+                    "Warning: Cannot write synth SCXML to {}: {e}",
+                    dst.display()
+                );
+            }
+            self_written.push(dst);
+        }
+    }
+    // Which in-line children the deploy placed on a partition of their own is
+    // known once it has been applied: their documents were written above, and
+    // their machines are the generations of those partitions.
+    report.peer_documents = peer_documents(&model, out_path);
+
+    // ADR 0057 §9: a document that carries feature conditions, generated
+    // with no selection by a backend that keeps the variability, is
+    // generated once for every build. Each variant is held to what the
+    // document is held to (the family check `check` runs) and prepared as
+    // the document was, and the output is held to what each generates alone.
+    let variants = if features.is_none()
+        && lang.keeps_variability()
+        && model
+            .product_line
+            .as_ref()
+            .is_some_and(|line| line.is_gated())
+    {
+        if let Err(refused) =
+            crate::check_every_variant(&model, scxml_path, &document_include_dirs, lint)
+        {
+            error_format.emit_forge_and_exit(&refused);
+        }
+        let variants = crate::variant_lift::Variants::derive(
+            &model,
+            scxml_path,
+            &document_parser,
+            &mut |variant| preparation.variant(variant),
+        )
+        .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
+        if let Some(refused) = variants
+            .as_ref()
+            .and_then(|variants| children_not_in_every_variant(&model, variants, lang, scxml_path))
+        {
+            error_format.emit_forge_and_exit(&refused);
+        }
+        variants
+    } else {
+        None
+    };
+
+    // `--transport-only` (a peer table committed on its own): skip the
+    // state-machine backend emit + its side-product files (sourcemap,
+    // static-invoke copy, hybrid stubs). The transport-only branch still
+    // threads `out_path` and the report through to the mesh emit block
+    // below so depfile + sourcemap-marker validation operate on the
+    // transport header alone. `out_path` + `ensure_output_dir` ran above
+    // (before the deploy was applied) — the dir already exists here.
+    let mut output_paths: Vec<PathBuf> = Vec::new();
+    let mut artifact_deps = parser.preprocessor_deps().to_vec();
+
+    if !transport_only {
+        // One set of emit options, for the document and every child it
+        // carries, so the synth-invoke `_sm.*` artefacts land next to the
+        // parent in `output_dir` rendered as the parent is. Before the
+        // children were emitted here the standalone generate skipped them
+        // entirely — downstream consumers had to re-invoke
+        // `sce-codegen generate --as-child` per child after the parser
+        // dropped a sibling `.scxml` next to the source. With the parser
+        // purified (no disk side-effect), codegen emit is the single
+        // materialization point for synth children.
+        //
+        // `<sce:capacity>` parsing, the deploy.yaml
+        // `default_event_queue_capacity` populator, and the
+        // `pub const EVENT_QUEUE_CAPACITY` template emission feed the
+        // heapless event-queue bound. The `--no-std` CLI flag both
+        // validates compatibility (script/HTTP rejection — consumed
+        // earlier in `validate_no_std_compatibility`) and switches
+        // the templates to the no_std emission: `#![no_std]`,
+        // `core::time::Duration`, and the profile-resolving runtime
+        // collection aliases across the sub-templates
+        // (send.rs.jinja2 / process_transition.rs.jinja2 /
+        // invoke_methods.rs.jinja2).
+        //
+        // The backend dispatch itself is not here: it is
+        // `crate::emit_model_artifacts`, which the library entries
+        // call too. That function emits the machine AND the sibling
+        // artifact of every kind the document declares in place, and a
+        // second copy of the dispatch here would be a copy that forgets
+        // the siblings — which is exactly what this CLI did until the
+        // two met. Nor are the children here: they are
+        // `crate::emit_carried_children`, which `check` and the
+        // document-set compile (`orchestrate`) call too.
+        //
+        // What stays here is the one thing the library cannot decide:
+        // `--as-child --parent-stem P`, which generates the document into
+        // P's package, and each of its in-line children with it — they are
+        // written beside it and it names their machines unqualified
+        // (`crate::place_in_package`). Without `--parent-stem` the
+        // in-line children join the document's own package. P is a stem, and
+        // the package is named by the machine name the parent's own parse
+        // gives it: the stem written as an identifier.
+        let adopter = parent_stem
+            .filter(|_| as_child)
+            .map(crate::model::statechart_machine_name);
+        let forge_options = crate::ForgeCompileOptions {
+            go_module_prefix: go_module_prefix.map(str::to_owned),
+            const_fold_budget,
+            owned_origin,
+            views,
+            inline_encode,
+            // The digest the files of this run are headed by, which the unit of
+            // a schema the document declares in place names in its payload
+            // schema, as a schema document's does (docs/adr/0087, section 1.1).
+            source_hash: Some(drift_ctx.header.source_hex()),
+            ..Default::default()
+        };
+        let codegen_options = crate::generator::StatechartCodegenOptions {
+            no_std,
+            ..Default::default()
+        };
+        // The engine target is the run's selection, or the backend's
+        // default when the caller did not ask — resolved and refused
+        // already, so reaching here means the backend can emit it.
+        let emit_options = crate::ModelEmitOptions {
+            forge: Some(&forge_options),
+            codegen: Some(&codegen_options),
+            script_engine: script_engine_target,
+            cpp_namespace_prefix,
+            kotlin_package_prefix,
+            c_symbol_prefix,
+            variants: variants.as_ref(),
+        };
+        // The machine's files are named by the machine name the parse gave
+        // it: the file stem written as an identifier (SCE_ACCEPTED_SUBSET.md
+        // §2.1), never the stem a second time.
+        let mut output = crate::emit_model_artifacts(
+            &model,
+            &template_dir,
+            &model.name,
+            scxml_path,
+            lang,
+            &emit_options,
+        )
+        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+        if let Some(adopter) = adopter.as_deref() {
+            crate::place_in_package(
+                &mut output,
+                lang,
+                &model.name,
+                &model.name,
+                adopter,
+                kotlin_package_prefix,
+            );
+        }
+        artifact_deps.extend(output.deps);
+        // What the machine needs linked, as its backend decided while
+        // rendering it, and below what each child it carries needs.
+        report.runtime_requires.extend(output.requires);
+        // The name its files were written under, for a plan to state.
+        report.machine = Some(model.name.clone());
+
+        let files = maybe_format_files(output.files, &cpp_formatter);
+        for (filename, code) in &files {
+            let file_path = out_path.join(filename);
+            write_drift_aware(&file_path, code, &drift_ctx);
+            report.artifacts.push(file_path.clone());
+            output_paths.push(file_path);
+        }
+
+        // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap JSON sidecar
+        // alongside the per-language SM output. Cross-backend
+        // byte-identity is preserved because the symbol table + hashes
+        // are language-agnostic.
+        //
+        // Accumulated rather than written here: the synth-invoke loop
+        // below emits further machines into the same directory, and
+        // there is one sidecar for all of them.
+        let mut sourcemap_acc = SymbolAccumulator::new();
+        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
+
+        // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
+        // parent, at every depth, so a consumer no longer drives a separate
+        // `--as-child` pass per inline `<content>` child. The child's
+        // declarations mean what they mean on a root: it was judged with
+        // the parent (`transition_function_findings` asks the in-line
+        // children), and it is bound to the digest its machine's header
+        // carries, this run's, so its transition function and table are
+        // written beside its machine and named after its stem.
+        //
+        // Synth SCXML was already written to `out_path` (and `deploy_dir`
+        // when distinct) earlier in this function, before the
+        // mesh-injection chain that depends on the file. No second emit
+        // here.
+        let source_hex = drift_ctx.header.source_hex();
+        let children = crate::emit_carried_children(
+            &model,
+            &template_dir,
+            &crate::CarriedChildRun {
+                document: scxml_path,
+                language: lang,
+                host_processor_types: &host_processor,
+                host_invoker_types: &host_invoker,
+                digest: crate::RunDigest::Of(&source_hex),
+            },
+            adopter.as_deref().unwrap_or(&model.name),
+            &emit_options,
+        )
+        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+        for crate::EmittedChild { child, output } in children {
+            artifact_deps.extend(output.deps);
+            report.runtime_requires.extend(output.requires);
+            let child_files = maybe_format_files(output.files, &cpp_formatter);
+            for (filename, code) in &child_files {
+                let file_path = out_path.join(filename);
+                write_drift_aware(&file_path, code, &drift_ctx);
+                report.artifacts.push(file_path.clone());
+                output_paths.push(file_path);
+            }
+            collect_sourcemap_symbols(&child.model, &mut sourcemap_acc);
+        }
+
+        // Every machine this invocation emitted into `out_path` is now
+        // in the table, so the sidecar covers the whole directory
+        // rather than whichever machine was written last. Held for the
+        // run's caller, which writes it with every other document's of the
+        // same run (`write_sourcemaps`).
+        report.sourcemaps.push(SourcemapShare {
+            directory: out_path.to_path_buf(),
+            symbols: sourcemap_acc,
+            source_hash: drift_ctx.header.source_hex(),
+        });
+
+        report.needs_script_engine = Some(model.needs_script_engine);
+        report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
+        report.parent_sends = Some(crate::parent_send_analyzer::records(&model));
+        report.computed_routes = Some(crate::computed_route_analyzer::records(&model));
+        report.surface = Some(crate::design_surface::Surface::of(&model));
+        // Projected from the list the analyzer stored on the model in the
+        // same statement that set the flag — not recomputed here, which
+        // would re-derive it from a model later passes have since touched.
+        // The flag and its explanation cannot disagree.
+        report.script_engine_causes = model.script_engine_cause_records();
+        // Same projection, same reason, for the sibling question: which
+        // `<send>` / `<invoke>` types this build has no path for.
+        report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
+        report.talks_to_a_mesh_peer = crate::host_processor_analyzer::talks_to_a_mesh_peer(&model);
+        report.child_mesh_routers = crate::manifest::ChildMeshRouterSite::of(
+            &crate::host_processor_analyzer::child_mesh_sites(&model),
+        );
+        report.host_processor_causes = model.host_processor_cause_records();
+        report.host_duties = crate::forge::native_action::host_duty_records(&model);
+        report.child_documents = child_documents(&model, out_path);
+        report
+            .unreadable_variables
+            .clone_from(&model.unreadable_variables);
+        report
+            .host_processor_types
+            .clone_from(&model.host_processor_types);
+        report
+            .host_invoker_types
+            .clone_from(&model.host_invoker_types);
+
+        // §scxml-6.4: which children a build generates by a run of their own is
+        // the run's answer, not a listing written beside its output: the child
+        // documents it writes ([`child_documents`]), whose generations
+        // `--plan-children` plans (cmake/SCECodegenPlan.cmake).
+        //
+        // Copy each child document the machines start by `src`, or
+        // as a candidate, to the output directory, beside the parent that
+        // starts it, where a build generates the child's own machine from it
+        // (`copy_static_invoke_children` says which). An in-line child is not
+        // copied: it has no file, and this run writes its machine.
+        // ⚠ `drift_input_root`, not the document's own directory. A build
+        // that stages the parent into its output tree first — which the
+        // CMake integration flow does — would otherwise look for the
+        // candidates beside the STAGED copy, where nothing was ever put.
+        // `--input-root` is the caller naming where the source set lives,
+        // and a candidate is declared relative to the document the author
+        // wrote, not to wherever the build moved it.
+        //
+        // A staged child is read for the children it names in turn, where its
+        // author wrote it, so it is given no input root; its include
+        // directories are the run's.
+        let parse_staged_child = |child: &Path| {
+            SCXMLParser::new()
+                .with_include_dirs(document_include_dirs.clone())
+                .parse_file(&child.to_string_lossy())
+                .ok()
+        };
+        report.staged_children = copy_static_invoke_children(
+            &model,
+            Path::new(scxml_path),
+            &drift_input_root,
+            out_path,
+            &parse_staged_child,
+        );
+        // §scxml-6.4 (test216/530): the hybrid stub is output, so it goes where
+        // output goes — for every backend.
+        //
+        // ⚠ C11 used to write it beside the SCXML source instead, because the
+        // W3C C11 harness found children by globbing RESOURCE_DIR at configure
+        // time. The harness now asks `--plan generate --plan-children` for a
+        // fixture's generation and the generation of every child document it
+        // writes (cmake/SCECodegenPlan.cmake), so the stub is planned from the
+        // text written here and no copy of it is kept in the source tree
+        // (`hybrid_stubs_are_written_only_by_the_generator`). A write into the
+        // source tree was never what made it visible. What the write did do
+        // was put an ignored `.scxml` into whatever directory a C11 generate
+        // was pointed at — and the §synth-6.2.6 source set reads every `.scxml`
+        // under the input root, so the next committed-tree regeneration there
+        // embedded a `source-hash` no clean checkout could reproduce
+        // (measured 2026-09-22 on `invoke_expression_failure_is_reported`).
+        self_written.extend(generate_hybrid_child_scxmls(&model, out_path));
+    } // end of `if !transport_only` — mesh transport emit follows.
+
+    // SCE Mesh: generate transport routing code when --deploy is provided.
+    // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
+    // share the same entry point. Server-response injection ran above (pre-SM)
+    // and is idempotent, so the re-run inside compile_mesh_transport is a no-op.
+    if let Some(deploy_file) = deploy_path {
+        match crate::compile_mesh_transport(&mut model, Path::new(deploy_file), lang) {
+            Ok(result) => {
+                for w in result
+                    .dynamic_target_sends
+                    .iter()
+                    .filter(|s| s.is_warning())
+                {
+                    eprintln!("Warning: {w}");
+                }
+                for n in &result.deadline_override_notices {
+                    eprintln!("Notice: {n}");
+                }
+                for n in &result.subscription_lint_notices {
+                    eprintln!("Lint: {n}");
+                }
+                // SCE_MESH.md §7.7 circular dependency detection. A ring
+                // is reported once per build, by its lexicographically
+                // smallest member, so repeating the machine name here
+                // would be misleading — the cycle text names every
+                // participant already.
+                for c in &result.invoke_wait_cycles {
+                    eprintln!("Warning: {c}");
+                }
+                // SCE_MESH.md §16.4 auto-merge notice stream: surfacing
+                // the merge events is what keeps permissive mode out of
+                // the silently-broken-hook pattern — an author who
+                // wrote a split partition plan must see that the
+                // analyzer collapsed it, otherwise the build behaves
+                // differently from what the author requested.
+                for n in &result.distributability_merge_notices {
+                    eprintln!(
+                        "Notice: machine '{}' <parallel id=\"{}\"> {:?} auto-merged — \
+                         partitions {:?} absorbed into '{}' (SCE_MESH.md §16.4).",
+                        n.machine, n.parallel_id, n.rule, n.absorbed, n.canonical,
+                    );
+                }
+                // SCE_MESH.md §16.3 R3 snapshot-read notices: advisory
+                // only; printed so authors see "entry-point sync
+                // required" cues without a build error.
+                for n in &result.distributability_snapshot_notices {
+                    eprintln!(
+                        "Notice: machine '{}' <parallel id=\"{}\"> region '{}' reads \
+                         ancestor data '{}' that sibling region '{}' writes — \
+                         snapshot captured at parallel entry (SCE_MESH.md §16.3 R3).",
+                        n.machine, n.parallel_id, n.reader_region, n.location, n.writer_region,
+                    );
+                }
+                // What the transport read beside the deploy (a device's
+                // `vsomeip.json`) is an input of the run, as the deploy is.
+                artifact_deps.extend(result.output.deps);
+                report.runtime_requires.extend(result.output.requires);
+                let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
+                for (filename, code) in &mesh_files {
+                    let file_path = out_path.join(filename);
+                    write_drift_aware(&file_path, code, &drift_ctx);
+                    report.artifacts.push(file_path.clone());
+                    output_paths.push(file_path);
+                }
+            }
+            // A refusal of the deployment is placed in it, at the key it names
+            // (docs/adr/0106 #76); a refusal of the documents keeps its own place.
+            Err(e @ crate::mesh::error::MeshError::Deploy(_)) => {
+                let at = fs::read_to_string(deploy_file)
+                    .ok()
+                    .and_then(|text| match &e {
+                        crate::mesh::error::MeshError::Deploy(refusal) => refusal.mark_in(&text),
+                        _ => None,
+                    });
+                let located = Located::new(
+                    ForgeError::from(e),
+                    deploy_file,
+                    at.map(|mark| mark.line),
+                    at.map(|mark| mark.col),
+                );
+                error_format.emit_and_exit(&located, "Mesh error: ")
+            }
+            Err(e) => error_format.emit_and_exit(&e, "Mesh error: "),
+        }
+    }
+
+    // Write DEPFILE for CMake incremental builds. Preprocessor deps
+    // (xi:include targets, sce:use template fragments) come from the
+    // parser instance — they are the actual external files
+    // `parse_file` consumed during this invocation, so editing one
+    // correctly invalidates `<case>_sm.{h,inl}` artifacts on the next
+    // ninja/make run. tc8-harness's CMake glob workaround can be
+    // retired once consumers pick up this flag. A plan asked for what it read
+    // (`--reads`) records the same entry: the list it writes is these
+    // prerequisites.
+    if records_reads(depfile_path) {
+        report.depfile = Some(depfile_entry(DepfileInputs {
+            output_paths: &output_paths,
+            template_dir: &template_dir,
+            lang,
+            scxml_input: Path::new(scxml_path),
+            preprocessor_deps: &artifact_deps,
+            source_set: &drift_ctx.sources,
+            self_written: &self_written,
+        }));
+    }
+
+    // §synth-5-O ownership-boundary walker. Every
+    // SCE-emitted file (one carrying a §synth-6.2.6 drift header) must
+    // contain at least one `SCE-MAP:` marker per ARCHITECTURE.md
+    // "Traceability Ownership Boundary". External meta-generator
+    // output (no drift header) is silently out-of-scope. Fires
+    // `traceability/meta-generated-source-line-marker-missing` on
+    // codegen-internal regression — surfaces immediately rather than
+    // letting a broken template ship.
+    if let Err(err) = crate::forge::sourcemap::validate_emitted_files_have_markers_in(
+        &RunTree,
+        Path::new(output_dir),
+    ) {
+        error_format.emit_and_exit(&err, "");
+    }
+
+    // A run that succeeds reports what it read and the rewrite; fatal only
+    // under `--lint`, as `check` does.
+    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
+    report.formatter = cpp_formatter.used();
+    report
+}
+
+/// Collect the file names of the child documents of model's static/hybrid
+/// invokes.
+///
+/// Every machine the run writes is asked, the document and each child it
+/// carries at any depth ([`SCXMLModel::with_carried_descendants`]): a carried
+/// child's machine names its children as the document's names its own, and
+/// the build that compiles it has to have them. A carried child is listed once,
+/// where its parent starts it; a child two machines start is listed once.
+///
+/// A `src` child is listed by its own file name, the stem as `src` writes it
+/// (`ScxmlInvokeInfo::child_file_name`), the name the run stages it under
+/// ([`copy_static_invoke_children`]); its machine name is that stem written as
+/// an identifier, which a hyphen in the stem tells apart from the file. A
+/// carried child, a hybrid invoke's stub and a candidate are listed by the
+/// name the run writes or reads each under.
+fn collect_invoke_child_documents(model: &SCXMLModel) -> Vec<String> {
+    let mut children: Vec<String> = Vec::new();
+    let mut listed: BTreeSet<String> = BTreeSet::new();
+    let mut list = |file_name: Option<String>| {
+        if let Some(file_name) = file_name {
+            if listed.insert(file_name.clone()) {
+                children.push(file_name);
+            }
+        }
+    };
+    let of_stem = |stem: &str| (!stem.is_empty()).then(|| format!("{stem}.scxml"));
+    for machine in model.with_carried_descendants() {
+        for invoke in machine.iter_scxml_invokes() {
+            list(
+                invoke
+                    .child_file_name()
+                    .or_else(|| of_stem(&invoke.child_name)),
+            );
+        }
+        for invoke in machine.iter_hybrid_invokes() {
+            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a declared candidate set
+            // replaces the stub, so what the build has to generate is one child
+            // per candidate. Naming the stub here as well would ask the build for
+            // a machine the parent no longer references.
+            if invoke.candidates.is_empty() {
+                list(of_stem(&invoke.child_name));
+            } else {
+                for candidate in &invoke.candidates {
+                    list(of_stem(&candidate.stem));
+                }
+            }
+        }
+    }
+    children
+}
+
+/// The child documents a run of `model` writes into `output_dir` for a build
+/// to generate by a run of their own: every child its machines start
+/// ([`collect_invoke_child_documents`]) but the ones they carry, whose
+/// machines the run itself writes ([`SCXMLModel::inline_child_invokes`]). A
+/// child the run finds no document for is named all the same, and a plan of
+/// it finds none to read ([`plan_child_generations`]).
+fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    let carried: BTreeSet<String> = model
+        .inline_child_invokes()
+        .into_iter()
+        .map(|invoke| format!("{}.scxml", invoke.child_name))
+        .collect();
+    collect_invoke_child_documents(model)
+        .into_iter()
+        .filter(|file_name| !carried.contains(file_name))
+        .map(|file_name| output_dir.join(file_name))
+        .collect()
+}
+
+/// The documents of the in-line children a run of `model` writes into
+/// `output_dir` ([`SCXMLModel::carried_documents_written`]) and writes no
+/// machine of: the ones its deploy placed on a partition of their own
+/// (SCE_MESH.md §9.6.6 rule 3,
+/// [`crate::model::ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]).
+/// Each is a machine of the deploy, generated with it by the run of its
+/// partition from the document this run wrote ([`plan_child_generations`]).
+/// One placed on a partition below another is not among them: the run of
+/// the partition above it writes its document, and names it in turn.
+fn peer_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    model
+        .carried_documents_written()
+        .into_iter()
+        .filter(|invoke| {
+            !invoke.carries_a_child_written_with_its_parent() && !invoke.child_name.is_empty()
+        })
+        .map(|invoke| output_dir.join(format!("{}.scxml", invoke.child_name)))
+        .collect()
+}
+
+/// §scxml-6.4: Copy external `src="…"` static invoke children from
+/// source to output directory.
+///
+/// A build that generates the machine of each child document itself reads
+/// the document beside the parent in the output tree, where the parent's
+/// generation named it. External (`<invoke src="file.scxml"/>`) children live
+/// on disk in the parent's source directory and are copied unchanged into
+/// `output_dir`. The CMake routes of this repository stage the ones a fixture
+/// holds into that directory before the build (`--plan generate` names them,
+/// cmake/SCECodegenPlan.cmake), and the copy then finds the file already
+/// there and changes nothing.
+///
+/// Inline (`<invoke><content><scxml>…</scxml></content></invoke>`) children
+/// are kept in-memory on [`ScxmlInvokeInfo::inline_child`] and never
+/// materialise as parent-adjacent files (Mesh §9.6.6 naming is enforced by
+/// codegen emit, not by a parser write). They are skipped here — there is
+/// no source-side file to copy and downstream codegen reads them from the
+/// parent model directly. Their own children are not: a carried child's
+/// machine is written by this run, so a document it starts by `src` or as a
+/// candidate is staged as one the document starts is, from the same
+/// directory, which is where the carried child's references were written from
+/// ([`SCXMLModel::with_carried_descendants`]).
+///
+/// A staged document's own children are staged with it, at every depth
+/// ([`child_documents_to_stage`]): the generation of the staged copy reads it
+/// from the output directory, where none of the documents it names is beside
+/// it unless this run put it there.
+///
+/// Returns each copy staged, by its path in the output directory, with the
+/// document it is a copy of: a run that generates its children itself
+/// (`--children`) generates a staged child from where its author wrote it, so
+/// the child's files name that document and not the copy.
+fn copy_static_invoke_children(
+    model: &SCXMLModel,
+    scxml_path: &Path,
+    input_root: &Path,
+    output_dir: &Path,
+    parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
+) -> BTreeMap<PathBuf, PathBuf> {
+    let mut staged = BTreeMap::new();
+    for child in child_documents_to_stage(model, scxml_path, input_root, parse) {
+        let dest = output_dir.join(&child.file_name);
+        match stage_child_document(&child.from, &dest) {
+            Ok(()) => {
+                staged.insert(tree_key(&dest), child.from);
+            }
+            Err(e) => eprintln!(
+                "Warning: Cannot copy {} {} to output: {e}",
+                child.reference.what(),
+                child.from.display()
+            ),
+        }
+    }
+    staged
+}
+
+/// How an `<invoke>` names a child document a run stages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildReference {
+    /// By `src` (§scxml-6.4).
+    Src,
+    /// As one of a hybrid invoke's `sce:candidates`
+    /// (SCE_ACCEPTED_SUBSET.md §2.13).
+    Candidate,
+}
+
+impl ChildReference {
+    fn what(self) -> &'static str {
+        match self {
+            Self::Src => "static invoke child",
+            Self::Candidate => "invoke candidate",
+        }
+    }
+}
+
+/// A child document a run stages into its output directory: where it was
+/// read from, the file name it is staged under (its own, as its author named
+/// it, which a later run reads it by and names its machine from), and how it
+/// was named.
+struct StagedChild {
+    from: PathBuf,
+    file_name: String,
+    reference: ChildReference,
+}
+
+/// The child documents the machines of one document name, each as written
+/// from that document and with its own file name: every candidate of every
+/// hybrid invoke, then every `src` child, in document order. The file name,
+/// not the machine's: a machine name is the stem written as an identifier
+/// (`crate::model::statechart_machine_name`), and a copy staged under it
+/// would be a second document beside the first wherever the output directory
+/// is the source directory.
+fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildReference)> {
+    // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a hybrid invoke that
+    // declared `sce:candidates` has one child per candidate, and they are
+    // ordinary documents beside the parent — the same shape a static `src`
+    // child has, which is why they are staged by the same pass rather than
+    // by a second one that would drift from it.
+    let candidates = machines
+        .iter()
+        .flat_map(|machine| machine.iter_hybrid_invokes())
+        .flat_map(|invoke| invoke.candidates.iter())
+        .map(|candidate| {
+            (
+                PathBuf::from(&candidate.path),
+                format!("{}.scxml", candidate.stem),
+                ChildReference::Candidate,
+            )
+        });
+    let src_children = machines
+        .iter()
+        .flat_map(|machine| machine.iter_scxml_invokes())
+        .filter_map(|invoke| {
+            let file_name = invoke.child_file_name()?;
+            invoke
+                .child_document_path()
+                .map(|written| (written, file_name, ChildReference::Src))
+        });
+    candidates.chain(src_children).collect()
+}
+
+/// §scxml-6.4: every child document a run of `model`, read from `document`,
+/// stages into its output directory, in the order it stages them: the ones
+/// its machines name ([`SCXMLModel::with_carried_descendants`]), then the ones
+/// each of those names in turn, at every depth, each once.
+///
+/// Each is found where the parse found it
+/// ([`crate::parser::locate_child_document`]), from the document that
+/// names it: a child of the run's document in the input root first, where
+/// its author wrote it when the run reads a staged copy, then beside the
+/// document; a child of a staged child beside that child as it was found,
+/// which is where its author wrote it, and is read (`parse`) for the
+/// documents it names.
+///
+/// Its children are staged here, by the run that stages it, because the
+/// generation of a staged child reads the copy in the output directory, and
+/// a document its author wrote beside the child (or under a directory its
+/// `src` names) is not beside the copy: the child's generation, the parse of
+/// its machine and the plan of it (`--plan-children`) found none, so the
+/// machine the child's machine names had no generation. A candidate the run
+/// finds nowhere is said; a `src` child found nowhere is one the parse gave
+/// an engine and no names. A child that is found and refused never reaches
+/// this: the parse of the document that names it refused that document.
+fn child_documents_to_stage(
+    model: &SCXMLModel,
+    document: &Path,
+    input_root: &Path,
+    parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
+) -> Vec<StagedChild> {
+    let mut staged: Vec<StagedChild> = Vec::new();
+    let mut named: BTreeSet<String> = BTreeSet::new();
+    let mut stage = |references: Vec<(PathBuf, String, ChildReference)>,
+                     roots: &[PathBuf],
+                     dir: &Path,
+                     staged: &mut Vec<StagedChild>| {
+        for (written, file_name, reference) in references {
+            match crate::parser::locate_child_document(roots, Some(dir), &written) {
+                Some(from) => {
+                    if named.insert(file_name.clone()) {
+                        staged.push(StagedChild {
+                            from,
+                            file_name,
+                            reference,
+                        });
+                    }
+                }
+                None if reference == ChildReference::Candidate => eprintln!(
+                    "Warning: invoke candidate {} is not beside the document or its input root",
+                    written.display()
+                ),
+                None => {}
+            }
+        }
+    };
+    let document_dir = document.parent().unwrap_or(Path::new("."));
+    stage(
+        child_references(&model.with_carried_descendants()),
+        &[input_root.to_path_buf()],
+        document_dir,
+        &mut staged,
+    );
+    let mut next = 0;
+    while let Some(from) = staged.get(next).map(|child| child.from.clone()) {
+        next += 1;
+        let Some(child) = parse(&from) else {
+            continue;
+        };
+        let child_dir = from.parent().unwrap_or(Path::new("."));
+        stage(
+            child_references(&child.with_carried_descendants()),
+            &[],
+            child_dir,
+            &mut staged,
+        );
+    }
+    staged
+}
+
+/// Copy a child document to `dest`, next to the output that invokes it.
+///
+/// Emitted like generated output, which it is: the copy a later step reads.
+/// So it follows its source — a copy made only when `dest` was absent kept the
+/// first version it ever saw, and an edit to the child never reached the output
+/// directory again — and an `--assert-unchanged` run compares it rather than
+/// writing it. Where the build staged the child into the output directory
+/// already, `src` is `dest` and nothing moves.
+fn stage_child_document(src: &Path, dest: &Path) -> std::io::Result<()> {
+    // `src` is a path the document names (`sce:candidates`), and what is copied is written to the
+    // output: the one place a file outside could leave the machine's folder by being copied.
+    let bytes = crate::confine::read(src)?;
+    try_emit_generated(dest, &bytes, WritePolicy::IfChanged)
+}
+
+/// §scxml-6.4: Write the stub child for every hybrid invoke
+/// (srcexpr/contentexpr) into `output_dir` — see
+/// [`crate::model::HybridInvokeInfo::stub_document`] for what the stub is
+/// and when there is none.
+///
+/// The stub is rewritten unconditionally (via `write_if_changed`) — the file
+/// is codegen-owned, so keeping a stale copy on disk hides generator-logic
+/// changes from the next incremental build. `write_if_changed` skips the
+/// write when the bytes are identical, so CMake mtime-based dependency
+/// tracking stays quiet on no-op runs.
+///
+/// A child the document carries has its hybrid invokes' stubs written as well:
+/// its machine is this run's, and names them
+/// ([`SCXMLModel::with_carried_descendants`]).
+fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    let mut written = Vec::new();
+    for invoke in model
+        .with_carried_descendants()
+        .into_iter()
+        .flat_map(|machine| machine.iter_hybrid_invokes())
+    {
+        let Some(stub) = invoke.stub_document() else {
+            continue;
+        };
+        let dest = output_dir.join(format!("{}.scxml", invoke.child_name));
+        write_if_changed(&dest, &stub);
+        written.push(dest);
+    }
+    written
+}
+
+/// A path in the form two spellings of the same file compare equal in.
+///
+/// `canonicalize` when the file exists or the run holds it in memory
+/// (`crate::confine::canonicalize`, so a file a `--plan` run wrote
+/// compares as the one a writing run puts on disk), the path as given
+/// otherwise — which is the right fallback, since a prerequisite that does
+/// not exist cannot be something this invocation just wrote.
+fn depfile_identity(path: &Path) -> PathBuf {
+    crate::confine::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Every family of file a depfile is written from.
+///
+/// Grouped rather than passed one by one because the families differ in
+/// *why* they belong, not just in what they hold, and the distinctions
+/// are what the axis keeps getting wrong: reachability (templates,
+/// imports) versus coverage (the source set) versus production
+/// (artefacts, side-effect writes), the last of which must be
+/// subtracted rather than added.
+struct DepfileInputs<'a> {
+    /// Files this invocation declares as artefacts — the first of them is
+    /// the depfile's target, and all of them are the first half of what it
+    /// must not depend on.
+    output_paths: &'a [PathBuf],
+    /// Loader scope for the render, whose templates are prerequisites.
+    template_dir: &'a Path,
+    lang: Language,
+    /// The document compiled, named as a prerequisite in its own right.
+    scxml_input: &'a Path,
+    /// External files the parser consumed: `<xi:include>` targets,
+    /// `<sce:use>` fragments, `<sce:import>` closures, and whatever else
+    /// a pipeline reports having read.
+    preprocessor_deps: &'a [PathBuf],
+    /// The synth-6.2.6 source set behind the embedded `source-hash`.
+    source_set: &'a [PathBuf],
+    /// Side-effect writes: synth children, hybrid stubs.
+    self_written: &'a [PathBuf],
+}
+
+/// What one generation contributes to a depfile: the files it produced —
+/// its artefacts first, the first of them the depfile's target — the files
+/// it wrote beside them, and every file it read, before the produced ones are
+/// taken back out. A run writes it as a Make-format depfile
+/// ([`write_depfile_entry`]), and a plan lists what it read from it
+/// ([`write_reads`]).
+///
+/// [`DepfileInputs::self_written`] names files this invocation produced
+/// that are not artefacts — the §9.6.6 synth children and the
+/// hybrid-invoke stubs, which land in `-o` (or beside the deploy file)
+/// as a side effect. They are subtracted from the prerequisites below,
+/// and the reason is not cosmetic: a synth child is written into the
+/// directory it was generated from, so the *next* run's source set
+/// covers it, and declaring it made the mesh §9.6.6 step depend on its
+/// own output. Ninja rejects that outright —
+/// `dependency cycle: parent_synth_inline__sce_synth_invoke__remote_inv
+/// .scxml -> itself` — taking 131 of 378 tests down with it. A file this
+/// run wrote cannot be a reason to re-run it.
+///
+/// Kept apart from the write because a `generate --with-imports` run writes
+/// ONE depfile for every document it generates: each document's entry is
+/// taken in ([`DepfileEntry::absorb`]), and only the whole run's produced
+/// files are subtracted, so a document one member reads and another member
+/// writes — none, today, but the subtraction is where a cycle would hide —
+/// is not declared as a prerequisite of the edge that writes it.
+#[derive(Clone, Debug, Default)]
+struct DepfileEntry {
+    outputs: Vec<PathBuf>,
+    self_written: Vec<PathBuf>,
+    prerequisites: Vec<PathBuf>,
+}
+
+impl DepfileEntry {
+    /// Take in another generation of the same run.
+    fn absorb(&mut self, other: DepfileEntry) {
+        self.outputs.extend(other.outputs);
+        self.self_written.extend(other.self_written);
+        self.prerequisites.extend(other.prerequisites);
+    }
+}
+
+/// The templates a render for `lang` from `template_dir` can read.
+///
+/// Taken from the loader rather than from a second walk of our own.
+/// `loader_template_files` is what `load_templates` registers, so the depfile
+/// cannot name a smaller set than the render can reach. Walking `template_dir`
+/// alone — the shape this used to have — silently dropped the shared
+/// `_macros/` family for every backend scoped to a subdirectory (rust,
+/// kotlin, go, python): editing `_macros/sce_map_marker.jinja2` left their
+/// output stale while the build reported success. C++ and C11 hid it, their
+/// scope being the whole tree.
+///
+/// Then minus the templates belonging to other backends. Over-declaring only
+/// costs a spurious rebuild, but the cost is real: the hand-kept list this
+/// replaced named only rust/kotlin/go, so a C++ build declared 18 templates it
+/// cannot render and a C11 build 65, and one Rust template edit regenerated
+/// all 270 C11 outputs. Removing them is safe because they are outside what
+/// this backend's render reads — which `codegen_depfile_content` proves by
+/// pruning every undeclared template and re-rendering.
+fn language_template_files(template_dir: &Path, lang: Language) -> Vec<PathBuf> {
+    let foreign = lang.foreign_template_prefixes();
+    crate::generator::loader_template_files(template_dir)
+        .into_iter()
+        .filter(|(name, _)| {
+            // Matched against the loader-registered name, which is relative
+            // to the template root — the frame the prefixes are defined in.
+            // Matching the path on disk instead let every component of the
+            // checkout prefix take part, so a tree under `/home/go/…` or
+            // `/srv/c/…` classified its own templates as another backend's
+            // and wrote an empty depfile. `codegen_depfile_path_independence`
+            // holds the two frames apart by rendering from a relocated tree.
+            //
+            // Component-wise within that name, not substring: a directory
+            // named `go_helpers` must not read as `go`, and `forge/rust/` is
+            // as foreign to C++ as `rust/` is — a plain prefix test would keep
+            // the whole `forge/` half of the other five backends.
+            !name.split('/').any(|c| foreign.contains(&c))
+        })
+        .map(|(_, path)| path)
+        .collect()
+}
+
+/// The sce-codegen binary as a prerequisite (a rebuild of the binary covers
+/// every change to the generator's own sources; more precise than listing
+/// them), when it can name itself.
+fn this_program() -> Option<PathBuf> {
+    std::env::current_exe().ok().filter(|exe| exe.exists())
+}
+
+/// What a `generate-w3c` run reads (`--reads`): the registry; every file of
+/// the resources directory, since the source set every machine's
+/// `source-hash` covers is all of its documents, and each test's children,
+/// includes and metadata are files of it too; and the templates of the
+/// backend's language. The whole directory rather than the files the tests
+/// of this run happened to open, because that is the set the run's drift
+/// context already folds into every file it writes.
+fn w3c_reads(lang: Language, registry: &Path, resources: &Path) -> DepfileEntry {
+    let mut prerequisites = vec![registry.to_path_buf()];
+    let mut pending = vec![resources.to_path_buf()];
+    let mut found = Vec::new();
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => pending.push(path),
+                Ok(kind) if kind.is_file() => found.push(path),
+                _ => {}
+            }
+        }
+    }
+    found.sort();
+    prerequisites.extend(found);
+    prerequisites.extend(language_template_files(
+        &crate::find_template_dir_for(lang),
+        lang,
+    ));
+    prerequisites.extend(this_program());
+    DepfileEntry {
+        outputs: Vec::new(),
+        self_written: Vec::new(),
+        prerequisites,
+    }
+}
+
+/// The entry one generation's `inputs` describe — see [`DepfileEntry`] for
+/// why each family is a prerequisite.
+fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
+    let DepfileInputs {
+        output_paths,
+        template_dir,
+        lang,
+        scxml_input,
+        preprocessor_deps,
+        source_set,
+        self_written,
+    } = inputs;
+    let mut deps = Vec::new();
+
+    // Add the SCXML input file itself as a dependency
+    deps.push(scxml_input.to_path_buf());
+
+    // Add user-side preprocessor inputs (xi:include targets, sce:use
+    // template fragments) collected by the parser. Without this slice
+    // a fragment edit silently ships stale `_sm.{h,inl}` because
+    // CMake/Ninja have no prerequisite to invalidate. See tc8-harness
+    // feedback report.
+    deps.extend(preprocessor_deps.iter().cloned());
+
+    // The synth-6.2.6 input closure behind the `source-hash` every emitted
+    // file carries — taken from the `DriftContext` that computed the
+    // hash, not read again here. Every member moves the header, so a member
+    // left undeclared is an artefact ninja reuses with a header that no
+    // longer describes its inputs, which `sce-codegen verify` rejects.
+    // Since ADR 0094 the closure is what the generation reads, so a
+    // sibling the document never names is no longer declared, and its edit
+    // re-runs nothing.
+    deps.extend(source_set.iter().cloned());
+
+    deps.extend(language_template_files(template_dir, lang));
+    deps.extend(this_program());
+
+    DepfileEntry {
+        outputs: output_paths.to_vec(),
+        self_written: self_written.to_vec(),
+        prerequisites: deps,
+    }
+}
+
+/// Write the depfile `entry` describes at `depfile_path`.
+///
+/// An `--assert-unchanged` run writes no depfile and compares none: a
+/// depfile describes what a build read, not what the generator produced,
+/// and a run that writes nothing is not a build step. A `--plan` run is the
+/// same: it is asked for the files a build step would produce, and is not one.
+fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
+    if output_mode().holds_in_memory() {
+        return;
+    }
+    let deps = depfile_prerequisites(entry);
+
+    // One target: the primary artefact, which every route writes first (the
+    // header, for the backends that also write a `.inl` or a `.c`).
+    //
+    // Naming every artefact here is what this used to do, and it made each
+    // one an obligation on the build edge rather than a fact about it. Ninja
+    // re-reads a depfile on every run unless the edge carries `deps = gcc`,
+    // and on that path it refuses one that mentions an output the edge did
+    // not declare: "depfile mentions '…__sce_synth_invoke__inv1_sm.h' as an
+    // output, but no such output was declared" stopped every build of the
+    // tree under CMake 3.28 (2026-09-30), where a fixture's synth children
+    // had gone unlisted. CMake 4.4 writes `deps = gcc`, reads the depfile
+    // once and never asks, so the same tree was green there. A build edge
+    // cannot always know those names — `sce_add_state_machine` is handed a
+    // consumer's document, and a synth child is named from inside it.
+    //
+    // The prerequisites are the same whichever artefact carries them: every
+    // artefact comes out of the one run, so the edge re-runs when any
+    // prerequisite moves, and the rest follow. That is the shape a
+    // compiler's `-MD` depfile has — one target, the object — for the same
+    // reason. What the edge still owes ninja is that this target be its
+    // FIRST output; otherwise ninja reads the depfile as describing some
+    // other edge and re-runs this one every time.
+    if let Some(primary) = entry.outputs.first() {
+        let mut content = format!("{}: ", primary.display());
+        for (i, dep) in deps.iter().enumerate() {
+            if i > 0 {
+                content.push_str(" \\\n    ");
+            }
+            content.push_str(&dep.display().to_string());
+        }
+        content.push('\n');
+        fs::write(depfile_path, content).unwrap_or_else(|e| {
+            cli_exit(CliError::WriteOutput {
+                path: depfile_path.to_string(),
+                source: e,
+            })
+        });
+    }
+}
+
+/// `--reads`: write what a run read, a plan or a generation, one path per
+/// line, to the file it was asked to write it to. The list is the
+/// prerequisites the depfile of the same run would name
+/// ([`depfile_prerequisites`]), each made absolute against the working
+/// directory the run was given, so a reader in another directory reads the
+/// same files.
+///
+/// Two things a depfile can leave in are taken out or said apart, because a
+/// reader keying an answer on the list would find either one missing and
+/// run again, every time, with nothing changed:
+/// - every file the run produced, a plan's child generations' included,
+///   compared as written ([`plain_absolute`]): a file a later generation
+///   reads and an earlier one wrote is the run's own, and before a plan's
+///   build has run it is on no disk;
+/// - a file that is not there (`crate::confine::exists`) is written
+///   `?<path>`: the run looked for it and did not find it, so its answer is
+///   current while the file stays absent, and not once it appears.
+///
+/// A run whose generations did not all record what they read (`read` is
+/// `None`) writes no list: an answer without one is never reused, and one
+/// with a list short of a file would be reused after that file changed.
+fn write_reads(read: Option<&DepfileEntry>) {
+    let (Some(path), Some(entry)) = (reads_file(), read) else {
+        return;
+    };
+    let tree = pending_tree();
+    let produced: BTreeSet<PathBuf> = tree
+        .produced()
+        .chain(
+            tree.generations
+                .iter()
+                .flat_map(|generation| &generation.files),
+        )
+        .map(|file| plain_absolute(file))
+        .collect();
+    drop(tree);
+    let also_read = ALSO_READ
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let mut list = String::new();
+    for file in depfile_prerequisites(entry).into_iter().chain(also_read) {
+        if produced.contains(&plain_absolute(&file)) {
+            continue;
+        }
+        let file = std::path::absolute(&file).unwrap_or(file);
+        if !crate::confine::exists(&file) {
+            list.push('?');
+        }
+        list.push_str(&file.display().to_string());
+        list.push('\n');
+    }
+    // The tools the run shaped its output with, each `!<name>`, after the
+    // files: a tool is named, never a path, since which binary serves it is
+    // the reader's to resolve as this program resolves it.
+    for tool in TOOLS_USED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+    {
+        list.push('!');
+        list.push_str(tool);
+        list.push('\n');
+    }
+    fs::write(path, list).unwrap_or_else(|e| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source: e,
+        })
+    });
+}
+
+/// `path` made absolute against the working directory, `.` and `..` folded
+/// as written: the one spelling two names of a file a run produced compare
+/// in, whether or not it is on disk yet.
+fn plain_absolute(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut plain = PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir if plain.file_name().is_some() => {
+                plain.pop();
+            }
+            other => plain.push(other.as_os_str()),
+        }
+    }
+    plain
+}
+
+/// The prerequisites `entry` names once what the run produced is taken back
+/// out of it: the depfile's, and a plan's read list ([`write_reads`]),
+/// one list for both.
+fn depfile_prerequisites(entry: &DepfileEntry) -> Vec<PathBuf> {
+    let mut deps = entry.prerequisites.clone();
+
+    // Drop anything this invocation wrote. Its own artefacts as well as
+    // the side-effect writes: both are outputs of this build edge, and
+    // an edge that lists its own output as a prerequisite is a cycle,
+    // not a dependency.
+    let produced: std::collections::HashSet<PathBuf> = entry
+        .outputs
+        .iter()
+        .chain(entry.self_written.iter())
+        .map(|p| depfile_identity(p))
+        .collect();
+    deps.retain(|p| !produced.contains(&depfile_identity(p)));
+
+    // A standard document — the input, or one the input imports — is in the
+    // generator, not on disk, so the generator binary declared above is its
+    // prerequisite. Named here it would be a file that never exists, which a
+    // build system reads as always out of date.
+    deps.retain(|p| !crate::forge::stdlib::names_standard(p));
+
+    // Collapse duplicates while preserving first-seen order. The same
+    // canonical path can land in `deps` more than once (e.g. a fragment
+    // pulled in via both `<xi:include>` and `<sce:use>` — pipeline-level
+    // de-dup is the sink's responsibility per parser comment).
+    let mut seen = std::collections::HashSet::new();
+    deps.retain(|p| seen.insert(p.clone()));
+    deps
+}
+
+// ── Subcommand: generate-w3c ────────────────────────────────────
+
+/// Test info parsed from CMakeLists.txt
+#[derive(Debug, Clone)]
+struct TestInfo {
+    test_type: String,
+    comment: String,
+}
+
+/// Metadata from resources/XXX/metadata.txt
+#[derive(Debug, Default)]
+struct TestMetadata {
+    description: String,
+    specnum: String,
+}
+
+/// The fixed per-test codegen surface passed to `generate_test_file` — a
+/// parameter object grouping the test's id, stems, target state, feature
+/// flags, and metadata so the trait method takes one argument instead of
+/// eight (replacing the `too_many_arguments` allow).
+#[derive(Clone, Copy)]
+struct TestFileSpec<'a> {
+    test_id: &'a str,
+    input_stem: &'a str,
+    machine_name: &'a str,
+    pass_state: &'a str,
+    needs_script: bool,
+    uses_http: bool,
+    test_type: &'a str,
+    metadata: &'a TestMetadata,
+}
+
+// CLI command dispatcher for `generate-w3c`. Takes the parsed
+// `GenerateW3cArgs` and unpacks it into the borrowed names the body uses.
+fn cmd_generate_w3c(args: GenerateW3cArgs) {
+    let GenerateW3cArgs {
+        language,
+        script_engine,
+        registry,
+        resources,
+        output_dir,
+        suite_package,
+        test,
+        clean,
+        list,
+        format_style,
+        no_format,
+    } = args;
+    let language: &str = &language;
+    let registry = registry.as_deref();
+    let resources = resources.as_deref();
+    let output_dir = output_dir.as_deref();
+    let single_test = test.as_deref();
+    let format_style = format_style.as_deref();
+
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        cli_exit(CliError::UnknownLanguage {
+            lang: language.to_string(),
+            route: LanguageRoute::GenerateW3c,
+        })
+    });
+
+    // Resolve project root
+    let project_root = find_project_root();
+    let resources_dir = resources
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.join("resources"));
+    let registry_file = registry
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.join(crate::w3c_registry::W3C_REGISTRY_RELATIVE_PATH));
+
+    // Inputs were already retargetable through `--registry` and
+    // `--resources`; the output root was not, so a caller outside this
+    // repository could enumerate and validate the suite but had nowhere
+    // to put what it generated.
+    let output_root = output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.clone());
+    if output_dir.is_some() {
+        // Only when the caller named one: with the default root the two
+        // are the same directory and the extra candidate would say
+        // nothing.
+        let _ = OUTPUT_ROOT.set(output_root.clone());
+    }
+
+    let packaging = resolve_suite_packaging(
+        lang,
+        suite_package.as_deref(),
+        &project_root,
+        &output_root,
+        output_dir.is_some(),
+    );
+
+    // Resolved before a single file is written, and refused rather than
+    // approximated — the same call `generate` makes. A backend that cannot
+    // emit for the named engine must not emit 202 machines for the other one
+    // under the caller's name for this one.
+    let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
+        Ok(target) => target,
+        Err(refusal) => cli_exit(refusal),
+    };
+    // The two backends that own both arms of the seam take the run's
+    // selection; the other four have a single arm, and it is
+    // `supports_script_engine_target` above — not silence here — that turns
+    // asking them for the other one into a refusal. Asking one of them for
+    // the arm it already has is a tautology, which is why passing nothing on
+    // is not a dropped selection.
+    let engine_or_default = |lang: Language| {
+        script_engine_target.unwrap_or_else(|| lang.default_script_engine_target())
+    };
+
+    let backend: Box<dyn W3cBackend> = match lang {
+        Language::Rust => Box::new(RustBackend::new(&output_root, &packaging)),
+        Language::Go => Box::new(GoBackend::new(&output_root, &packaging)),
+        Language::Kotlin => Box::new(KotlinBackend::new(
+            &output_root,
+            &packaging,
+            engine_or_default(Language::Kotlin),
+        )),
+        Language::Cpp => Box::new(CppBackend::new(
+            &output_root,
+            engine_or_default(Language::Cpp),
+        )),
+        Language::Python => Box::new(PythonBackend::new(&output_root, &packaging)),
+        // `lang` holds the backend the caller named, not prose about
+        // it: `actual` on the wire then means the same kind of value
+        // here as on every other language refusal, and the reason the
+        // route excludes it rides the route's own exclusion note.
+        Language::Swift => Box::new(SwiftBackend::new(&output_root)),
+        Language::C11 => cli_exit(CliError::UnsupportedLanguage {
+            lang: lang.canonical_name().to_string(),
+            route: LanguageRoute::GenerateW3c,
+        }),
+    };
+
+    // C++ formatter: resolved at the first generated test and reused for the
+    // rest — see `CppFormatterSlot`. `--list` and `--clean` emit nothing, so
+    // they never ask for it and a listing needs no clang-format.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);
+
+    generate_w3c_unified(
+        backend.as_ref(),
+        &resources_dir,
+        &registry_file,
+        single_test,
+        clean,
+        list,
+        &cpp_formatter,
+    );
+    if !clean && !list {
+        write_reads(Some(&w3c_reads(lang, &registry_file, &resources_dir)));
+    }
+}
+
+/// Decide what the emitted suite calls itself and whether it has to
+/// arrive buildable.
+///
+/// Two facts come out of this, and keeping them together is deliberate
+/// — every refusal below is about their combination. A run writing
+/// into this repository is a regeneration of the committed trees,
+/// whose build files are hand-authored and fix the name; a run writing
+/// anywhere else is producing a package that has to stand on its own.
+fn resolve_suite_packaging(
+    lang: Language,
+    suite_package: Option<&str>,
+    project_root: &Path,
+    output_root: &Path,
+    output_dir_named: bool,
+) -> SuitePackaging {
+    // Compared after realising the directory, because an output root
+    // that does not exist yet canonicalises to nothing and would
+    // compare unequal to every path including itself.
+    let standalone = output_dir_named && {
+        if let Err(e) = ensure_output_dir(output_root) {
+            cli_exit(CliError::CreateOutputDir {
+                path: output_root.display().to_string(),
+                source: e,
+            });
+        }
+        let resolved = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        resolved(output_root) != resolved(project_root)
+    };
+
+    let refuse = |detail: String| -> ! { cli_exit(CliError::InvalidSuitePackage { detail }) };
+
+    let identity = match suite_package {
+        Some(name) => {
+            // Applicability before spelling: a caller naming a suite for
+            // a backend that has none should be told that, not told
+            // their perfectly good name is malformed.
+            let parsed = SuiteIdentity::parse(lang, name)
+                .unwrap_or_else(|e: SuiteIdentityError| refuse(e.to_string()));
+            if !standalone {
+                refuse(format!(
+                    "naming a suite only applies to a tree written outside this repository. \
+                     This run writes into {}, whose build files are committed and already fix \
+                     the name to '{}'; renaming the emitted sources would leave them naming a \
+                     package that does not exist. Pass --output-dir <DIR> to emit a suite of \
+                     your own.",
+                    project_root.display(),
+                    SuiteIdentity::for_language(lang)
+                        .expect("applicability established above")
+                        .name(),
+                ));
+            }
+            Some(parsed)
+        }
+        // Silence is right when the caller did not ask: the backends
+        // that name no suite simply have nothing to resolve.
+        None => SuiteIdentity::for_language(lang).ok(),
+    };
+
+    SuitePackaging {
+        identity,
+        standalone: standalone.then(|| StandaloneSuite {
+            package_root: output_root.to_path_buf(),
+            sce_root: project_root.to_path_buf(),
+        }),
+    }
+}
+
+fn find_project_root() -> PathBuf {
+    // `SCE_WORKSPACE_ROOT` first, for the same reason
+    // [`locate_workspace_root`] honours it: `CARGO_MANIFEST_DIR` is baked in
+    // at compile time, so a binary built in one checkout and run in another
+    // resolves to the one that BUILT it. That is right for a vendored
+    // consumer and wrong for every other reader, and this resolver decides
+    // where the W3C trees are WRITTEN — so the failure is not a bad lookup
+    // but an escape. Measured: running the regeneration procedure inside a
+    // linked git worktree (whose `.git` is a file, so no other layer
+    // corrects the root) rewrote nine files in the original checkout while
+    // reporting success in the worktree, and the paths it embedded in the
+    // generated Kotlin were absolute into that other tree.
+    //
+    // The variable was already the documented escape hatch; it simply did
+    // not reach this resolver, which is why pinning it did not help.
+    let marker = Path::new(crate::w3c_registry::W3C_REGISTRY_RELATIVE_PATH);
+    let pinned = std::env::var("SCE_WORKSPACE_ROOT").ok().and_then(|p| {
+        let candidate = PathBuf::from(&p);
+        if candidate.join(marker).exists() {
+            return Some(fs::canonicalize(&candidate).unwrap_or(candidate));
+        }
+        eprintln!(
+            "sce-codegen: SCE_WORKSPACE_ROOT '{p}' does not contain {} — ignoring it",
+            marker.display(),
+        );
+        None
+    });
+
+    // Try CARGO_MANIFEST_DIR ancestor, then CWD
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let candidate = crate_dir.join("..");
+    // The marker is the conformance registry, not `tests/CMakeLists.txt`:
+    // probing for the build script made a CMake-less checkout unable to
+    // resolve a root at all, which is the same coupling the registry
+    // format itself carried.
+    let root = if let Some(pinned) = pinned {
+        pinned
+    } else if candidate.join(marker).exists() {
+        fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf())
+    } else {
+        let cwd = std::env::current_dir().expect("Cannot get CWD");
+        if !cwd.join(marker).exists() {
+            cli_exit(CliError::ProjectRootNotFound);
+        }
+        cwd
+    };
+    // Every in-repo batch command reaches its inputs through this root and
+    // records `// From:` provenance relative to it — that is what the
+    // committed trees carry, and the only spelling that stays meaningful
+    // on a machine that never ran the generator. Installing it here means
+    // a future batch entry point inherits the convention rather than
+    // having to remember it. `main` installs an explicit `--source-root`
+    // before any subcommand runs, so the flag still wins.
+    let _ = SOURCE_ROOT.set(root.clone());
+    root
+}
+
+/// Load the registered tests from the W3C conformance registry.
+///
+/// The registry used to be `tests/CMakeLists.txt`, read back with a
+/// regex over `sce_generate_static_w3c_test(...)` calls. Reading a build
+/// script as data made CMake the source of truth for a fact that is not
+/// a build fact, and it meant a repository vendoring SCE without CMake
+/// could not enumerate the fixture set at all. The catalog it reads now
+/// is the same shape the forge conformance harness has used all along.
+fn load_w3c_registry(registry_file: &Path) -> BTreeMap<String, TestInfo> {
+    let registry = crate::w3c_registry::W3cRegistry::load(registry_file).unwrap_or_else(|e| {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "w3c-registry",
+            detail: e.to_string(),
+        })
+    });
+    registry
+        .fixtures()
+        .iter()
+        .map(|f| {
+            (
+                f.id.clone(),
+                TestInfo {
+                    test_type: f.harness.clone(),
+                    comment: f.summary.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// Read metadata.txt for a test: the metadata of the test number the id
+/// begins with, which a variant shares (`w3c_registry::fixture_dir`).
+fn read_metadata(resources_dir: &Path, test_id: &str) -> TestMetadata {
+    let meta_file = crate::w3c_registry::fixture_dir(resources_dir, test_id).join("metadata.txt");
+    if !meta_file.exists() {
+        return TestMetadata::default();
+    }
+
+    let content = fs::read_to_string(&meta_file).unwrap_or_default();
+    let mut metadata = TestMetadata::default();
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some((key, value)) = line.split_once(':') {
+            match key.trim() {
+                "description" => metadata.description = value.trim().to_string(),
+                "specnum" => metadata.specnum = value.trim().to_string(),
+                _ => {}
+            }
+        }
+    }
+    metadata
+}
+
+/// Find the committed SCXML document of a test ID, where the registry's one
+/// rule puts it (`w3c_registry::fixture_document`).
+fn find_scxml(resources_dir: &Path, test_id: &str) -> Option<PathBuf> {
+    let scxml = crate::w3c_registry::fixture_document(resources_dir, test_id);
+    if scxml.exists() {
+        Some(scxml)
+    } else {
+        None
+    }
+}
+
+/// Convert to PascalCase (matches Python to_pascal_case and Rust filters::to_pascal_case)
+fn to_pascal_case(name: &str) -> String {
+    filters::to_pascal_case(name.to_string())
+}
+
+/// Detect pass state from analyzed model.
+fn detect_pass_state(model: &SCXMLModel) -> Option<String> {
+    let final_states: Vec<&str> = model
+        .states
+        .iter()
+        .filter(|(_, s)| s.is_final)
+        .map(|(id, _)| id.as_str())
+        .collect();
+
+    // Priority: pass > final > single non-fail final state
+    for state in &final_states {
+        if state.eq_ignore_ascii_case("pass") {
+            return Some("Pass".to_string());
+        }
+    }
+    for state in &final_states {
+        if state.eq_ignore_ascii_case("final") {
+            return Some("Final".to_string());
+        }
+    }
+    let non_fail: Vec<_> = final_states
+        .iter()
+        .filter(|s| !s.eq_ignore_ascii_case("fail"))
+        .collect();
+    if non_fail.len() == 1 {
+        // The member the machine declares for the state, keyword escape included.
+        return Some(filters::to_state_variant(non_fail[0].to_string()));
+    }
+    None
+}
+
+/// Check if model uses BasicHTTP send (performHttpSend in generated code).
+fn model_uses_http_send(model: &SCXMLModel) -> bool {
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            if action_uses_http_send(&trans.actions) {
+                return true;
+            }
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            if action_uses_http_send(block) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn action_uses_http_send(actions: &[crate::model::Action]) -> bool {
+    for action in actions {
+        if action.action_type == "send" && action.send_type.contains("BasicHTTPEventProcessor") {
+            return true;
+        }
+        if action
+            .nested_blocks()
+            .iter()
+            .any(|block| action_uses_http_send(block.actions))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+// ── W3cBackend Trait ───────────────────────────────────────────
+
+/// Trait abstracting language-specific W3C test generation behavior.
+/// Each backend implements language-specific SM generation, test file creation,
+/// child processing, and cleanup logic.
+trait W3cBackend {
+    /// Human-readable language name for summary output.
+    fn language_name(&self) -> &str;
+
+    /// Base directory for generated state machine code.
+    fn sm_output_base(&self) -> &Path;
+
+    /// Directory for generated test files (may differ from sm_output_base).
+    fn test_output_dir(&self) -> &Path;
+
+    /// Generate SM code. Returns Vec of (filename, code) pairs.
+    /// C++ returns .h + .inl, others return one file.
+    /// Produce (filename, code) pairs for the state machine. Errors are
+    /// returned as `ForgeError` so the W3C batch loop can drive them
+    /// through `ToDiagnostics::to_diagnostics()` — preserving the
+    /// structured `code` / `stage` / `fix` / `location` signal all the
+    /// way to NDJSON output. Stringifying here would collapse every
+    /// failure into `cli/scxml-generate` and lose the repair routing.
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError>;
+
+    /// The language this backend generates, which picks the templates the
+    /// files beside a machine are rendered from.
+    fn language(&self) -> Language;
+
+    /// The files a declared transition function adds beside a machine this
+    /// backend generated (SCE Accepted Subset §2.21), named after
+    /// `input_stem` as the machine is; none for a document that declares
+    /// none. Through the one seam every route renders the function by,
+    /// `generator::transition_function_files`, so a parent and a child of
+    /// this suite get what `generate` gives the same document.
+    ///
+    /// Named under the default roots: this route hands no backend's machine a
+    /// namespace, package or symbol prefix, so the function has none to
+    /// follow. What a suite does to the machine's names on the way out it
+    /// does to the function's too ([`Self::rewrite_beside_machine`]).
+    fn transition_function_files(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let language = self.language();
+        let template_dir = crate::find_template_dir_for(language);
+        let files = crate::generator::transition_function_files(
+            model,
+            crate::generator::TemplateSource::Directory(&template_dir),
+            input_stem,
+            language,
+            crate::generator::TransitionFunctionNaming::default(),
+        )
+        .map_err(ForgeError::from)?;
+        Ok(files
+            .into_iter()
+            .map(|(filename, code)| (filename, self.rewrite_beside_machine(code)))
+            .collect())
+    }
+
+    /// The rewrite this suite applies to a machine's source on the way out,
+    /// applied to a file written beside it. The identity unless the suite
+    /// renames what the templates spell (Kotlin's package root).
+    fn rewrite_beside_machine(&self, code: String) -> String {
+        code
+    }
+
+    /// Hook after writing parent SM (e.g. Rust writes mod.rs).
+    ///
+    /// Takes the model because the artifact it writes is a generated
+    /// file like any other: it carries a drift header and therefore a
+    /// source-traceability marker, and a marker needs the machine's real
+    /// location to name.
+    fn post_write_parent(
+        &self,
+        _test_id: &str,
+        _test_mod_dir: &Path,
+        _input_stem: &str,
+        _model: &SCXMLModel,
+        _drift_ctx: &DriftContext,
+    ) {
+    }
+
+    /// Process a successfully generated child SM: fix package, register module, etc.
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    );
+
+    /// Declare a file written beside a child's machine (its transition
+    /// function, `filename`) where the backend's module index names the
+    /// files of a test directory. Only Rust has such an index: a sibling
+    /// file it does not name is never compiled. The others find a file by
+    /// its directory or its package, and declare nothing.
+    fn declare_child_sibling(
+        &self,
+        _test_mod_dir: &Path,
+        _filename: &str,
+        _drift_ctx: &DriftContext,
+    ) {
+    }
+
+    /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
+    // Trait method shared by every backend; the per-test codegen surface
+    // is grouped into `TestFileSpec`. Default is a no-op — backends that
+    // emit test files override it.
+    fn generate_test_file(&self, _spec: &TestFileSpec) -> String {
+        String::new()
+    }
+
+    /// Test filename (relative to test_output_dir or test_mod_dir).
+    /// Default returns empty (backends that generate test files must override).
+    fn test_filename(&self, _test_id: &str, _input_stem: &str) -> String {
+        String::new()
+    }
+
+    /// Test file lives in test_mod_dir (Go) vs test_output_dir (Rust, Kotlin).
+    fn test_in_sm_dir(&self) -> bool {
+        false
+    }
+
+    /// Whether this backend writes SM files into per-test subdirectories (testNNN/).
+    /// C++ writes to a flat output directory; others use subdirectories.
+    fn uses_per_test_subdirs(&self) -> bool {
+        true
+    }
+
+    /// §scxml-6.4: Whether this backend's parent template constructs a
+    /// generated child class for hybrid (`srcexpr` / `contentexpr`)
+    /// invokes. Every backend now instantiates the stub by name
+    /// (`Test{N}Hybrid{M}Policy` etc.), so the child SM must be emitted —
+    /// Kotlin included, since it stopped resolving the evaluated value
+    /// into a document at run time (docs/SCE_ACCEPTED_SUBSET.md §2.13).
+    /// Static `src=` / inline `<content>` invokes always get a stub
+    /// because every backend's template references the child class
+    /// by name and there is no runtime fallback.
+    fn emits_hybrid_child_stub(&self) -> bool {
+        true
+    }
+
+    /// Whether this backend generates test files alongside SM code.
+    /// C++ test headers are managed by CMake, not by sce-codegen.
+    fn generates_test_files(&self) -> bool {
+        true
+    }
+
+    /// Whether this backend writes the fixtures of the harness `test_type` names. The registry is
+    /// language-neutral, and a backend that has built some of its harnesses and not the rest says
+    /// which: a fixture of another harness is skipped and named in the summary, not written into
+    /// a test that has nothing to run it with.
+    fn serves_harness(&self, _test_type: &str) -> bool {
+        true
+    }
+
+    /// Whether `refusal` is this backend declining a document by name, which a backend that
+    /// lowers a document in part reports as the document it does not lower yet, and not as a
+    /// failed run. The default is that every refusal is a failure.
+    fn is_a_named_refusal(&self, _refusal: &ForgeError) -> bool {
+        false
+    }
+
+    /// Files that make the emitted tree a package in its own right:
+    /// the build manifest, the module root, the harness the generated
+    /// tests call into.
+    ///
+    /// Absolute paths, so a backend can put them wherever its language
+    /// expects rather than beneath one of the two generated-code roots.
+    /// Empty for an in-repo regeneration — the repository already
+    /// carries hand-authored ones — and empty for a backend whose
+    /// suite is not a package `sce-codegen` can describe.
+    ///
+    /// Deliberately separate from the generated-code path: none of
+    /// these is derived from an SCXML document, so none carries a
+    /// drift header or an `SCE-MAP:` marker, and the traceability
+    /// walker skips them for exactly that reason. This method does not
+    /// implement the drift contract — it names files that sit outside
+    /// it — so it cites no section.
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        Vec::new()
+    }
+
+    /// Whether the tree being written is a suite of the caller's own
+    /// rather than this repository's committed one.
+    ///
+    /// Decides one thing beyond the support files: whether a
+    /// single-fixture run still writes the module index. In this
+    /// repository it must not — the committed index enumerates every
+    /// fixture and a one-fixture run would truncate it to one. In an
+    /// emitted suite the index describes what the run produced, so a
+    /// one-fixture suite listing one fixture is the correct and
+    /// complete answer, and withholding it leaves a package whose
+    /// crate root names a module that does not exist.
+    fn is_standalone_suite(&self) -> bool {
+        false
+    }
+
+    /// Called after main loop to write module indices (Rust writes root mod.rs).
+    fn finalize(&self, _generated_ids: &[String], _drift_ctx: &DriftContext) {}
+
+    /// Clean all generated files.
+    fn clean(&self);
+
+    /// Clean stale generated files for tests no longer in registry.
+    /// Returns number of stale entries removed. Default is no-op.
+    fn clean_stale(&self, _valid_ids: &BTreeSet<String>) -> usize {
+        0
+    }
+}
+
+// ── Shared Utilities for W3C Generation ────────────────────────
+
+/// Unified child SM generation for all backends.
+///
+/// Enumerates children directly from the parent model's invoke lists
+/// (`iter_scxml_invokes` + `iter_hybrid_invokes`). The parser
+/// authoritatively populates `child_name` for both kinds: static invokes
+/// resolve to the inline-extracted or `src=`-derived stem (parser §6.4),
+/// and hybrid invokes synthesize `{model.name}_hybrid{idx}` to match the
+/// stub written by `generate_hybrid_child_scxmls`. Static children live
+/// in the parent's source directory; hybrid stubs live in the
+/// per-test output directory. No filesystem scanning, no parent-code
+/// substring heuristics, and no naming-convention filtering — the
+/// backend trait carries no child-discovery hooks anymore.
+///
+/// A child whose document its invoke carries (written in-line, or a
+/// standard statechart) is generated with the children ITS document carries,
+/// at every depth, each right after the machine that starts it: they are
+/// named after that machine (`<child>__sce_synth_invoke__<id>`), and that
+/// machine names them. Such a child's `src` and hybrid children are the test's
+/// as the document's are; a child read from disk brings only the children it
+/// carries.
+///
+/// A child declaring its transition function or table is generated as a
+/// fixture is: judged, bound to this run's digest, and written with its
+/// function beside its machine.
+///
+/// Returns what became of the children ([`ChildrenOutcome`]), each judged by
+/// the rule the fixture's own document is: the fixture is skipped at the
+/// first child that is not found, that the generator cannot generate
+/// statically, or that the backend names as not lowered yet, and fails on
+/// every refusal of the children otherwise (a parse, a declaration the child
+/// does not keep, a machine or a function the backend could not render).
+///
+/// What is shared with `generate`, and what is this route's alone:
+/// - A carried child is prepared by `crate::carried_children`, the
+///   preparation `generate`, `check` and `orchestrate` use: one child, one
+///   machine, whichever route writes it. A fixture whose carried child the
+///   generator cannot generate never reaches here: the fixture's own gate
+///   asks the child (`analyzer::can_generate_carried_children`).
+/// - A `src` child and a hybrid invoke's stub are not carried children: each
+///   is a document of the suite read from disk (the stub one this route wrote
+///   beside the test), so each is parsed, judged and bound here as the fixture
+///   is, and the children it carries are prepared by the shared operation.
+/// - The machine is rendered by the backend's own `W3cBackend::generate_sm`,
+///   not by `crate::emit_carried_children`, for the reason the fixture's
+///   is: the suite places every machine of a test in one package of its own
+///   (`test<id>`) and names it in the backend's module index, neither of which
+///   a run of `generate` does.
+fn generate_child_sms(
+    backend: &dyn W3cBackend,
+    test_id: &str,
+    model: &SCXMLModel,
+    scxml_path: &Path,
+    test_mod_dir: &Path,
+    drift_ctx: &DriftContext,
+    sourcemap_acc: &mut SymbolAccumulator,
+) -> ChildrenOutcome {
+    let mut refused = Vec::new();
+    let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
+    let mut seen = BTreeSet::new();
+
+    // ChildSource captures where the child SCXMLModel comes from: an
+    // inline `<content>` parser kept the model in-memory on the parent
+    // invoke (no disk read needed; the document as written, read for the
+    // children it starts, while its machine is the prepared one), an
+    // external `src="…"` child must be re-parsed from `resource_dir`, or a
+    // hybrid stub from `test_mod_dir`. Replaces the prior unconditional disk
+    // read which was a leftover from the parser-writes-synth-child era.
+    enum ChildSource {
+        Inline(Box<SCXMLModel>),
+        Disk(PathBuf),
+    }
+
+    // The children `machine` starts, each under the machine name the parse
+    // gave it: a child whose document its invoke carries (written in-line, or
+    // a standard statechart) from that document, and — when `whole` — a `src`
+    // child from `resource_dir` and a hybrid invoke's stub from `stub_dir`.
+    // The document and each child it carries are machines of this test whose
+    // children are all the test's; a child read from disk is a document of its
+    // own, of which only the children it carries are.
+    fn started(
+        machine: &SCXMLModel,
+        whole: bool,
+        resource_dir: &Path,
+        stub_dir: Option<&Path>,
+    ) -> Vec<(String, ChildSource)> {
+        let mut children = Vec::new();
+        for invoke in machine.iter_scxml_invokes() {
+            match invoke.inline_child.as_deref() {
+                Some(child) => children.push((
+                    invoke.child_name.clone(),
+                    ChildSource::Inline(Box::new(child.clone())),
+                )),
+                None if whole => children.push((
+                    invoke.child_name.clone(),
+                    ChildSource::Disk(resource_dir.to_path_buf()),
+                )),
+                None => {}
+            }
+        }
+        if let Some(stub_dir) = stub_dir.filter(|_| whole) {
+            children.extend(machine.iter_hybrid_invokes().map(|invoke| {
+                (
+                    invoke.child_name.clone(),
+                    ChildSource::Disk(stub_dir.to_path_buf()),
+                )
+            }));
+        }
+        children
+    }
+
+    // The children `entries` names, queued right after the machine that
+    // starts them, in its document order, ahead of what was queued before:
+    // each is generated right after its parent, with its own children after
+    // it.
+    fn queue_next(
+        pending: &mut std::collections::VecDeque<(String, ChildSource)>,
+        entries: Vec<(String, ChildSource)>,
+    ) {
+        for (offset, entry) in entries.into_iter().enumerate() {
+            pending.insert(offset, entry);
+        }
+    }
+
+    // A document of the suite (the fixture, or a child read from disk), and
+    // the children it carries, prepared by the one operation `generate`,
+    // `check` and `orchestrate` prepare them with.
+    let language = backend.language();
+    let source_hex = drift_ctx.header.source_hex();
+    let carried_by = |document: &SCXMLModel, path: &str| {
+        crate::carried_children(
+            document,
+            &crate::CarriedChildRun {
+                document: path,
+                language,
+                host_processor_types: &[],
+                host_invoker_types: &[],
+                digest: crate::RunDigest::Of(&source_hex),
+            },
+        )
+    };
+    let mut prepared: BTreeMap<String, crate::CarriedChild> =
+        match carried_by(model, &scxml_path.to_string_lossy()) {
+            Ok(children) => children
+                .into_iter()
+                .map(|child| (child.stem.clone(), child))
+                .collect(),
+            Err(e) => return ChildrenOutcome::Refused(vec![e]),
+        };
+
+    let stub_dir = backend.emits_hybrid_child_stub().then_some(test_mod_dir);
+    let mut pending: std::collections::VecDeque<(String, ChildSource)> =
+        started(model, true, resource_dir, stub_dir).into();
+
+    while let Some((child_name, child_source)) = pending.pop_front() {
+        let child_name = child_name.as_str();
+        if child_name.is_empty() || !seen.insert(child_name.to_string()) {
+            continue;
+        }
+
+        // The children each child carries are machines of the test as well:
+        // its machine starts them by name, and a run that wrote only the
+        // parent's children left one that names a machine nobody wrote. A
+        // carried child's `src` and hybrid children are the test's too, as
+        // the document's are: its machine is this test's, and
+        // `generate_hybrid_child_scxmls` wrote its stubs.
+        // Where a carried child was written, which places a refusal of its
+        // rendering; a document read from disk names its own file.
+        let (mut child_model, label, origin) = match child_source {
+            // Prepared with its document, above or when the child read from
+            // disk that carries it was judged: analysed, its declaration
+            // judged with the document's and bound to this run's digest. The
+            // preparation leaves no child out (one the generator cannot
+            // generate refuses its document, through the document's own gate),
+            // and a document's children are queued only once they were
+            // prepared.
+            ChildSource::Inline(carried) => {
+                let child = prepared.remove(child_name).expect(
+                    "a carried child is queued only by a document whose carried children \
+                     were prepared",
+                );
+                queue_next(
+                    &mut pending,
+                    started(&carried, true, resource_dir, stub_dir),
+                );
+                (child.model, child.label, Some(child.origin))
+            }
+            // Not a carried child, so not the shared preparation's: a `src`
+            // child is a document of the suite read from the fixture's
+            // directory, and a hybrid invoke's stub one this route wrote
+            // (`generate_hybrid_child_scxmls`), and each is judged here by the
+            // rule the fixture is (`generate_w3c_unified`). What it carries is
+            // prepared beside it.
+            ChildSource::Disk(source_dir) => {
+                let child_path = source_dir.join(format!("{child_name}.scxml"));
+                if !crate::confine::exists(&child_path) {
+                    return ChildrenOutcome::Skipped(format!(
+                        "its child {} is not found",
+                        child_path.display()
+                    ));
+                }
+                let child_str = child_path.to_string_lossy().into_owned();
+                let mut parsed = match SCXMLParser::new().parse_file(&child_str) {
+                    Ok(parsed) => parsed,
+                    Err(e) => {
+                        refused.push(e);
+                        continue;
+                    }
+                };
+                analyzer::analyze(&mut parsed, &child_str);
+                // §scxml-5.8: a rejected document is generated, as a rejected
+                // fixture is.
+                if let Err(gate) = analyzer::can_generate_static(&parsed, &child_str) {
+                    if !parsed.document_rejected {
+                        return ChildrenOutcome::Skipped(format!(
+                            "its child {child_name} is {}",
+                            not_generated_statically(&gate)
+                        ));
+                    }
+                }
+                // The declaration means on a child what it means on a root,
+                // and the children it carries are judged with it.
+                if !parsed.document_rejected {
+                    let findings = crate::transition_function_findings(&parsed, &child_str);
+                    if !findings.is_empty() {
+                        refused.extend(findings);
+                        continue;
+                    }
+                }
+                crate::bind_run_digest(&mut parsed, &source_hex);
+                resolve_source_path(&mut parsed, &child_path);
+                // Only a child that is generated starts the children it
+                // carries; each is prepared beside it, once it was judged, and
+                // queued once it was prepared.
+                match carried_by(&parsed, &child_str) {
+                    Ok(children) => prepared.extend(
+                        children
+                            .into_iter()
+                            .map(|child| (child.stem.clone(), child)),
+                    ),
+                    Err(e) => {
+                        refused.push(e);
+                        continue;
+                    }
+                }
+                queue_next(
+                    &mut pending,
+                    started(&parsed, false, resource_dir, stub_dir),
+                );
+                (parsed, child_str, None)
+            }
+        };
+        // A refusal of the child's rendering names no row of it: a carried
+        // child's stands where its author wrote the child, as every refusal of
+        // one does; a document read from disk's names that document.
+        let rendering_refused = |error: ForgeError| {
+            let refusal = Located::new(error, label.as_str(), None, None);
+            match origin.as_ref() {
+                Some(origin) => origin.place(refusal),
+                None => refusal,
+            }
+        };
+
+        // Templates derive generated PascalCase symbols from
+        // `model.name`; `generate_hybrid_child_scxmls` writes the
+        // synthesized `<scxml name="test{NUM}_hybrid{idx}">` so the
+        // parser already produces the matching name. The guard
+        // below is a defensive no-op for hybrid stubs and still
+        // covers static children whose source SCXML carries a
+        // different `<scxml name=...>` than the invoke `src=` stem.
+        if child_model.name != child_name {
+            child_model.name = child_name.to_string();
+        }
+
+        // The child's symbols belong in the same directory sidecar as
+        // the parent's — one `sce_sourcemap.json` describes the whole
+        // emitted directory, not just whichever machine wrote it last.
+        collect_sourcemap_symbols(&child_model, sourcemap_acc);
+
+        match backend.generate_sm(&child_model, child_name) {
+            Ok(files) => {
+                if let Some((_, code)) = files.into_iter().next() {
+                    backend.process_child(test_id, child_name, code, test_mod_dir, drift_ctx);
+                }
+                // Beside the child's machine and named after its stem, as
+                // `generate` writes a child's function. Written as rendered:
+                // the function names no machine, so nothing in it is
+                // re-addressed the way a child machine's package is.
+                match backend.transition_function_files(&child_model, child_name) {
+                    Ok(beside) => {
+                        for (filename, code) in &beside {
+                            write_if_changed_drift_aware(
+                                &test_mod_dir.join(filename),
+                                code,
+                                drift_ctx,
+                            );
+                            backend.declare_child_sibling(test_mod_dir, filename, drift_ctx);
+                        }
+                    }
+                    Err(e) => {
+                        refused.push(rendering_refused(e));
+                    }
+                }
+            }
+            // A backend that names what it does not lower yet skips the
+            // fixture, as it skips one whose own document it does not lower.
+            Err(e) if backend.is_a_named_refusal(&e) => {
+                return ChildrenOutcome::Skipped(format!(
+                    "its child {child_name} is not lowered yet: {e}"
+                ));
+            }
+            Err(e) => {
+                refused.push(rendering_refused(e));
+            }
+        }
+    }
+    if refused.is_empty() {
+        ChildrenOutcome::Written
+    } else {
+        ChildrenOutcome::Refused(refused)
+    }
+}
+
+/// What became of the children a fixture's machines start
+/// ([`generate_child_sms`]), held to the rule the suite holds the fixture's
+/// own document to (`generate_w3c_unified`).
+///
+/// A child is a machine of the test: the machine that starts it names it, so
+/// the test builds only with the child's machine beside it. A child this suite
+/// cannot write is therefore an outcome of the fixture, as its own document's
+/// is: skipped and named when the child is not found, the generator cannot
+/// generate it statically, or the backend names it as not lowered yet; failed,
+/// with every record, when it is refused (its parse, its declaration, its
+/// rendering). No stub stands in for such a child: a stub that builds is a
+/// child that does nothing, so the test would run, and its verdict would be
+/// about a machine the document does not describe.
+enum ChildrenOutcome {
+    /// Every child the fixture's machines start was written.
+    Written,
+    /// The fixture is skipped, for the reason given.
+    Skipped(String),
+    /// The fixture fails, on these records, none of them empty.
+    Refused(Vec<crate::CompileError>),
+}
+
+/// How a skipped document is named: why the generator cannot generate it
+/// statically ([`analyzer::can_generate_static`]), and where.
+fn not_generated_statically(refused: &crate::CompileError) -> String {
+    let at = match refused.location.line {
+        Some(line) => format!("{}:{line}", refused.location.file),
+        None => refused.location.file.clone(),
+    };
+    format!(
+        "not generated statically, refused at {at}: {}",
+        refused.error
+    )
+}
+
+/// The single unified W3C test generation loop shared by all backends.
+fn generate_w3c_unified(
+    backend: &dyn W3cBackend,
+    resources_dir: &Path,
+    registry_file: &Path,
+    single_test: Option<&str>,
+    clean: bool,
+    list: bool,
+    cpp_formatter: &CppFormatterSlot<'_>,
+) {
+    if clean {
+        backend.clean();
+        return;
+    }
+
+    // Named for what it is read from. The line used to say "C++ test
+    // registry" from when the registry was `tests/CMakeLists.txt` and
+    // C++ was the only backend it scheduled; it is printed by every
+    // backend, and the registry is now a language-neutral catalog.
+    let registered = load_w3c_registry(registry_file);
+    outln!("W3C conformance registry: {} fixtures", registered.len());
+
+    if list {
+        for (tid, info) in &registered {
+            let scxml = find_scxml(resources_dir, tid);
+            let status = if scxml.is_some() { "OK" } else { "MISSING" };
+            let comment_trunc: String = info.comment.chars().take(70).collect();
+            outln!(
+                "  {tid:6} [{:9}] {status} -- {comment_trunc}",
+                info.type_str()
+            );
+        }
+        return;
+    }
+
+    let test_ids: Vec<String> = if let Some(tid) = single_test {
+        vec![tid.to_string()]
+    } else {
+        let mut ids: Vec<String> = registered.keys().cloned().collect();
+        ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+        ids
+    };
+
+    let mut generated_static = Vec::new();
+    let mut generated_script = Vec::new();
+    let mut skipped = Vec::new();
+    let mut failed = Vec::new();
+
+    for test_id in &test_ids {
+        let scxml_path = match find_scxml(resources_dir, test_id) {
+            Some(p) => p,
+            None => {
+                skipped.push((test_id.clone(), "SCXML not found".to_string()));
+                continue;
+            }
+        };
+        // Spec §synth-6.2.6 drift context (ADR 0094): every file of this
+        // test — its machine, its children's, its harness — is generated from
+        // its document, so each carries that document's closure, and an edit
+        // to one test moves the headers of no other.
+        let drift_ctx =
+            DriftContext::of_documents(&[scxml_path.as_path()], drift::ClosureOptions::default());
+
+        if let Some(info) = registered.get(test_id.as_str()) {
+            if !backend.serves_harness(&info.test_type) {
+                skipped.push((
+                    test_id.clone(),
+                    format!(
+                        "the `{}` harness is not built for {} yet",
+                        info.test_type,
+                        backend.language_name()
+                    ),
+                ));
+                continue;
+            }
+        }
+
+        let mut parser = SCXMLParser::new();
+        let scxml_str = scxml_path.to_str().unwrap_or("");
+        match parser.parse_file(scxml_str) {
+            Ok(mut model) => {
+                analyzer::analyze(&mut model, scxml_str);
+
+                // §scxml-5.8: document_rejected models have initial->pass already
+                // redirected by the parser, so they CAN be generated. Any other
+                // document the generator cannot generate statically is skipped
+                // and named, before a file of it is written. A child the
+                // fixture carries is asked by the same gate
+                // (`analyzer::can_generate_carried_children`), so a fixture
+                // whose carried child cannot be generated is skipped by this
+                // rule, named by the child's refusal, and no stub stands in
+                // for the child (`ChildrenOutcome` says why).
+                if let Err(refused) = analyzer::can_generate_static(&model, scxml_str) {
+                    if !model.document_rejected {
+                        skipped.push((test_id.clone(), not_generated_statically(&refused)));
+                        continue;
+                    }
+                }
+
+                // Not a lint: a fixture declaring `sce:transition-function`
+                // that holds what a pure function cannot is refused here as
+                // `generate` refuses it, by the same producer, every record
+                // on the JSON stream and the fixture failed rather than
+                // generated. A rejected document (`document_rejected`) is
+                // written as its stub before the declaration is read, as
+                // `generate` writes it.
+                if !model.document_rejected {
+                    let refused = crate::transition_function_findings(&model, scxml_str);
+                    if let Some(first) = refused.first() {
+                        for err in &refused {
+                            emit_batch_failure_ndjson(err);
+                        }
+                        failed.push((
+                            test_id.clone(),
+                            format!(
+                                "{} refusal(s) of sce:transition-function, the first: {}",
+                                refused.len(),
+                                first.error
+                            ),
+                        ));
+                        continue;
+                    }
+                }
+                // Bound to the digest every file of this run carries, as
+                // `generate` binds it, so a fixture declaring its table or
+                // its function is generated with them.
+                crate::bind_run_digest(&mut model, &drift_ctx.header.source_hex());
+
+                resolve_source_path(&mut model, &scxml_path);
+
+                // Named as `generate` names a machine's files: by the machine
+                // name the parse gave the model.
+                let input_stem = model.name.as_str();
+
+                // The machine and, beside it, the transition function the
+                // fixture declares: one result, so a backend that cannot
+                // render the function fails the fixture instead of writing
+                // the machine alone.
+                let generated = backend
+                    .generate_sm(&model, input_stem)
+                    .and_then(|mut files| {
+                        files.extend(backend.transition_function_files(&model, input_stem)?);
+                        Ok(files)
+                    });
+                match generated {
+                    Ok(files) => {
+                        // Format C++ output before writing to disk
+                        let files = maybe_format_files(files, cpp_formatter);
+
+                        // Determine write directory: per-test subdir or flat output dir
+                        let test_mod_dir = if backend.uses_per_test_subdirs() {
+                            backend.sm_output_base().join(format!("test{test_id}"))
+                        } else {
+                            backend.sm_output_base().to_path_buf()
+                        };
+                        ensure_output_dir(&test_mod_dir).unwrap_or_else(|e| {
+                            cli_exit(CliError::CreateOutputDir {
+                                path: test_mod_dir.display().to_string(),
+                                source: e,
+                            })
+                        });
+
+                        // Write SM files
+                        for (filename, code) in &files {
+                            let file_path = test_mod_dir.join(filename);
+                            write_if_changed_drift_aware(&file_path, code, &drift_ctx);
+                        }
+
+                        // Post-write hook (e.g. Rust writes initial mod.rs)
+                        backend.post_write_parent(
+                            test_id,
+                            &test_mod_dir,
+                            input_stem,
+                            &model,
+                            &drift_ctx,
+                        );
+
+                        // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap
+                        // JSON sidecar. Byte-identical across backends
+                        // for the same SCXML input. Accumulated so the
+                        // child pass below lands in the same sidecar.
+                        let mut sourcemap_acc = SymbolAccumulator::new();
+                        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
+
+                        // §scxml-6.4: Generate hybrid SCXML stubs + child state machines
+                        // (only for backends that use per-test subdirs; C++ handles children via CMake)
+                        if backend.uses_per_test_subdirs() {
+                            generate_hybrid_child_scxmls(&model, &test_mod_dir);
+                            // A child the suite cannot write is the fixture's
+                            // outcome, as its own document's would be, and
+                            // nothing of the fixture stays: its machine names
+                            // the child, so what was written would not build.
+                            match generate_child_sms(
+                                backend,
+                                test_id,
+                                &model,
+                                &scxml_path,
+                                &test_mod_dir,
+                                &drift_ctx,
+                                &mut sourcemap_acc,
+                            ) {
+                                ChildrenOutcome::Written => {}
+                                ChildrenOutcome::Skipped(reason) => {
+                                    remove_generated(&test_mod_dir);
+                                    skipped.push((test_id.clone(), reason));
+                                    continue;
+                                }
+                                ChildrenOutcome::Refused(records) => {
+                                    for err in &records {
+                                        emit_batch_failure_ndjson(err);
+                                    }
+                                    remove_generated(&test_mod_dir);
+                                    let first = records
+                                        .first()
+                                        .map_or_else(String::new, |err| err.error.to_string());
+                                    failed.push((
+                                        test_id.clone(),
+                                        format!(
+                                            "{} refusal(s) of a child, the first: {first}",
+                                            records.len()
+                                        ),
+                                    ));
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // One sidecar per emitted directory, covering
+                        // every machine that landed in it.
+                        flush_sourcemap(&sourcemap_acc, &test_mod_dir, &drift_ctx);
+
+                        // Detect pass state and generate test file (if backend supports it)
+                        if backend.generates_test_files() {
+                            let pass_state = detect_pass_state(&model);
+                            if let Some(ref pass) = pass_state {
+                                let machine = to_pascal_case(input_stem);
+                                let metadata = read_metadata(resources_dir, test_id);
+                                let test_type = registered
+                                    .get(test_id.as_str())
+                                    .map(|i| i.test_type.as_str())
+                                    .unwrap_or("SIMPLE");
+                                let uses_http = model_uses_http_send(&model);
+                                let needs_script = model.needs_script_engine;
+
+                                let test_code = backend.generate_test_file(&TestFileSpec {
+                                    test_id,
+                                    input_stem,
+                                    machine_name: &machine,
+                                    pass_state: pass,
+                                    needs_script,
+                                    uses_http,
+                                    test_type,
+                                    metadata: &metadata,
+                                });
+                                let test_filename = backend.test_filename(test_id, input_stem);
+                                let test_file_dir = if backend.test_in_sm_dir() {
+                                    &test_mod_dir
+                                } else {
+                                    backend.test_output_dir()
+                                };
+                                let test_file = test_file_dir.join(&test_filename);
+                                ensure_output_dir(test_file_dir).ok();
+                                write_if_changed_drift_aware(&test_file, &test_code, &drift_ctx);
+
+                                if needs_script {
+                                    generated_script.push(test_id.clone());
+                                } else {
+                                    generated_static.push(test_id.clone());
+                                }
+                            } else {
+                                // Pass-state detection is a batch
+                                // post-condition, not a compiler
+                                // pipeline stage, so it emits inline
+                                // as CliError::ScxmlGenerate rather
+                                // than through the shared typed
+                                // emitter (which only carries
+                                // ForgeError codes).
+                                let reason = "pass state not detected";
+                                if matches!(current_error_format(), ErrorFormat::Json) {
+                                    let cli_err = CliError::ScxmlGenerate {
+                                        stage: "pass-state-detection",
+                                        detail: format!("{test_id}: {reason}"),
+                                    };
+                                    for diag in cli_err.to_diagnostics() {
+                                        emit_ndjson(&diag);
+                                    }
+                                }
+                                failed.push((test_id.clone(), reason.to_string()));
+                            }
+                        } else {
+                            // Backend doesn't generate test files (C++); count as generated
+                            if model.needs_script_engine {
+                                generated_script.push(test_id.clone());
+                            } else {
+                                generated_static.push(test_id.clone());
+                            }
+                        }
+                    }
+                    Err(e) if backend.is_a_named_refusal(&e) => {
+                        skipped.push((test_id.clone(), format!("not lowered yet: {e}")));
+                    }
+                    Err(e) => {
+                        // Codegen produces bare `ForgeError` (minijinja
+                        // unwinds without row/col), so wrap at the call
+                        // site with the scxml path as the file label
+                        // and leave line/col None — fabricating `(1,1)`
+                        // would mislead the repair loop.
+                        let located = crate::forge::error::Located::new(
+                            e,
+                            scxml_path.display().to_string(),
+                            None,
+                            None,
+                        );
+                        let reason = format!("codegen failed: {}", located.error);
+                        emit_batch_failure_ndjson(&located);
+                        failed.push((test_id.clone(), reason));
+                    }
+                }
+            }
+            Err(e) => {
+                // Parser already populated `Located` with file +
+                // (when available) row/col, so emit straight through.
+                let reason = format!("parse error: {e}");
+                emit_batch_failure_ndjson(&e);
+                failed.push((test_id.clone(), reason));
+            }
+        }
+    }
+
+    // Clean stale files (backends that override clean_stale, e.g. Kotlin)
+    let mut stale_removed = 0;
+    if single_test.is_none() {
+        let valid_ids: BTreeSet<String> = generated_static
+            .iter()
+            .chain(generated_script.iter())
+            .cloned()
+            .collect();
+        if !valid_ids.is_empty() {
+            stale_removed = backend.clean_stale(&valid_ids);
+        }
+    }
+
+    // Finalize (Rust writes root mod.rs)
+    if single_test.is_none() || backend.is_standalone_suite() {
+        let mut all_ids: Vec<String> = generated_static
+            .iter()
+            .chain(generated_script.iter())
+            .cloned()
+            .collect();
+        all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+        // The suite's index lists the tests that generated, and whether one
+        // generates depends on its document: the set form over the resources
+        // tree (ADR 0094 section 4).
+        let suite_ctx = DriftContext::of_directory(resources_dir, drift::ClosureOptions::default());
+        backend.finalize(&all_ids, &suite_ctx);
+    }
+
+    // A suite of the caller's own arrives buildable or it does not
+    // arrive at all: the generated tests name a package, and the
+    // package is these files. Outside the `single_test` guard above,
+    // because unlike the module index they do not enumerate fixtures —
+    // a one-fixture suite needs its manifest and its harness exactly as
+    // much as a full one.
+    for (path, contents) in backend.suite_support_files() {
+        let parent = containing_dir(&path);
+        if let Err(e) = ensure_output_dir(&parent) {
+            cli_exit(CliError::CreateOutputDir {
+                path: parent.display().to_string(),
+                source: e,
+            });
+        }
+        emit_generated(&path, contents.as_bytes(), WritePolicy::Always);
+        outln!("  Suite support: {}", path.display());
+    }
+
+    // Summary
+    let total_generated = generated_static.len() + generated_script.len();
+    outln!("\n{}", "=".repeat(60));
+    outln!("{} W3C Test Generation Summary", backend.language_name());
+    outln!("{}", "=".repeat(60));
+    outln!("  Generated (pure static):    {}", generated_static.len());
+    outln!("  Generated (script engine):  {}", generated_script.len());
+    outln!("  Generated (total):          {total_generated}");
+    outln!("  Skipped:                    {}", skipped.len());
+    outln!("  Failed:                     {}", failed.len());
+    if stale_removed > 0 {
+        outln!("  Stale removed:              {stale_removed}");
+    }
+    outln!("  Total:                      {}", test_ids.len());
+
+    if !skipped.is_empty() {
+        outln!("\nSkipped:");
+        for (tid, reason) in &skipped {
+            outln!("  {tid}: {reason}");
+        }
+    }
+
+    if !failed.is_empty() {
+        outln!("\nFailed tests:");
+        for (tid, reason) in &failed {
+            outln!("  {tid}: {reason}");
+        }
+    }
+
+    if total_generated > 0 {
+        outln!(
+            "\nGenerated SM classes: {}",
+            backend.sm_output_base().display()
+        );
+        if !backend.test_in_sm_dir() {
+            outln!(
+                "Generated test classes: {}",
+                backend.test_output_dir().display()
+            );
+        }
+        outln!(
+            "\nGenerated test IDs (static): {}",
+            generated_static.join(" ")
+        );
+        if !generated_script.is_empty() {
+            outln!(
+                "Generated test IDs (script): {}",
+                generated_script.join(" ")
+            );
+        }
+    }
+
+    if !failed.is_empty() {
+        // Per-test failures are already printed above in human mode.
+        // In JSON mode we still emit a single structured summary so
+        // consumers see a record (not just a silent non-zero exit) and
+        // can dedup via the id — the failed list is part of the key.
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "w3c-batch",
+            detail: format!(
+                "{} of {} tests failed: {}",
+                failed.len(),
+                test_ids.len(),
+                failed
+                    .iter()
+                    .map(|(id, _)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        });
+    }
+
+    // §synth-5-O ownership-boundary walker. Mirrors
+    // the cmd_generate hook: every drift-headered file under either
+    // the SM output base or the per-test harness directory must
+    // carry an `SCE-MAP:` marker. Non-drift-headered files (external
+    // meta-generator output, hand-authored sources) are silently
+    // skipped per ARCHITECTURE.md "Traceability Ownership Boundary".
+    for root in [backend.sm_output_base(), backend.test_output_dir()] {
+        if let Err(err) =
+            crate::forge::sourcemap::validate_emitted_files_have_markers_in(&RunTree, root)
+        {
+            current_error_format().emit_and_exit(&err, "");
+        }
+    }
+}
+
+// ── RustBackend ────────────────────────────────────────────────
+
+struct RustBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+    /// Crate the generated integration tests name. They live outside
+    /// the crate they exercise, so `use`-ing it is not optional.
+    suite: SuiteIdentity,
+    /// Set when the emitted crate has to stand on its own.
+    standalone: Option<StandaloneSuite>,
+}
+
+impl RustBackend {
+    const RELATIVE_ROOT: &'static str = "backends/rust/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        let tests_crate = output_root.join(Self::RELATIVE_ROOT);
+        Self {
+            sm_base: tests_crate.join("src/generated"),
+            test_dir: tests_crate.join("tests"),
+            tmpl_dir: crate::find_template_dir_for(Language::Rust),
+            suite: packaging.identity().clone(),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
+        }
+    }
+
+    /// Cargo manifest for a suite standing on its own.
+    ///
+    /// The SCE dependencies are named by path into the checkout that
+    /// generated the suite. That is a function of the run's inputs —
+    /// `--workspace-root` / `SCE_WORKSPACE_ROOT` / the registry walk —
+    /// and never of where the output landed, so two runs writing to
+    /// different roots still emit the same manifest.
+    ///
+    /// The empty `[workspace]` table is not decoration: without it a
+    /// suite emitted anywhere beneath a Cargo workspace is claimed by
+    /// that workspace, and cargo refuses to build a package its
+    /// workspace root does not list.
+    fn cargo_manifest(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "# GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             #\n\
+             # W3C SCXML 1.0 conformance suite. The SCE packages below are\n\
+             # named by path into the checkout this suite was generated from;\n\
+             # re-point them if that checkout moves.\n\
+             \n\
+             [workspace]\n\
+             \n\
+             [package]\n\
+             name = \"{name}\"\n\
+             version = \"0.0.0\"\n\
+             edition = \"2021\"\n\
+             rust-version = \"1.75\"\n\
+             publish = false\n\
+             \n\
+             [dependencies]\n\
+             sce-rust-runtime = {{ path = \"{sce}/backends/rust/runtime\", \
+             default-features = false, features = [\"http-send\"] }}\n\
+             sce-rust-lua = {{ path = \"{sce}/backends/rust/lua\" }}\n\
+             linkme = \"0.3\"\n\
+             log = \"0.4\"\n\
+             reqwest = {{ version = \"0.12\", features = [\"blocking\"] }}\n\
+             serde_json = \"1\"\n",
+            name = self.suite.name(),
+        )
+    }
+
+    /// Crate root. Names the two modules the generated integration
+    /// tests reach through, and nothing else: this repository's own
+    /// `lib.rs` also declares `integration`, a hand-curated tree the
+    /// W3C generator never writes and an emitted suite therefore does
+    /// not have.
+    fn crate_root(&self) -> String {
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             \n\
+             //! W3C SCXML 1.0 conformance suite generated by `sce-codegen`.\n\
+             //!\n\
+             //! - [`generated`]: one module per fixture, each holding the\n\
+             //!   state machine compiled from that fixture's SCXML.\n\
+             //! - [`harness`]: the runner the generated integration tests in\n\
+             //!   `tests/` call into.\n\
+             //!\n\
+             //! ```bash\n\
+             //! cargo test -p {name}\n\
+             //! ```\n\
+             \n\
+             pub mod generated;\n\
+             pub mod harness;\n",
+            name = self.suite.name(),
+        )
+    }
+}
+
+impl W3cBackend for RustBackend {
+    fn language_name(&self) -> &str {
+        "Rust"
+    }
+    fn language(&self) -> Language {
+        Language::Rust
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        // W3C SCXML W3C-test runner always emits std-coupled code:
+        // the 202-fixture AOT suite exercises std-backed engine paths
+        // (HTTP, script engines, multi-thread Arc<Mutex> external
+        // queue). `--no-std` is a CLI-only profile; W3C
+        // fixtures stay byte-identical to the std emission.
+        let code = crate::generator::generate(model, &self.tmpl_dir, false)?;
+        Ok(vec![(format!("{input_stem}_sm.rs"), code)])
+    }
+
+    fn post_write_parent(
+        &self,
+        _test_id: &str,
+        test_mod_dir: &Path,
+        input_stem: &str,
+        model: &SCXMLModel,
+        drift_ctx: &DriftContext,
+    ) {
+        // Suppressions live on the generated `*_sm.rs` itself (see
+        // `state_machine.rs.jinja2` header comment); the parent mod.rs no
+        // longer needs to redundantly wrap the declaration in `#[allow(...)]`.
+        //
+        // §synth-5-O traceability — `write_if_changed_drift_aware` prepends the
+        // §synth-6.2.6 header, so the ownership-boundary walker requires this
+        // file to carry at least one `SCE-MAP:` marker line. It renders from
+        // `rust/module_index.rs.jinja2` so the marker names the `_machine`
+        // symbol at the machine's own location; the string this replaced was
+        // written here by hand and cited line 1 of the SCXML unconditionally,
+        // which is the XML declaration, not the `<scxml>` element.
+        let mod_content =
+            match crate::generator::generate_rust_module_index(model, &self.tmpl_dir, input_stem) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("Failed to render mod.rs for {input_stem}: {e}");
+                    return;
+                }
+            };
+        write_if_changed_drift_aware(&test_mod_dir.join("mod.rs"), &mod_content, drift_ctx);
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        let child_sm_file = test_mod_dir.join(format!("{child_name}_sm.rs"));
+        write_if_changed_drift_aware(&child_sm_file, &code, drift_ctx);
+
+        // Add child module to the test's mod.rs. The existing file opens
+        // with the drift header from `post_write_parent`;
+        // `write_if_changed_drift_aware`'s downstream
+        // `prepend_or_replace_header` detects that banner and replaces
+        // the header block in place, so a plain string append below
+        // the read content is safe — the headered output still has
+        // exactly one §synth-6.2.6 header at the top.
+        //
+        // Read back through `read_generated`, not the disk: under
+        // `--assert-unchanged` the file `post_write_parent` produced was
+        // never written, and the disk holds the previous run's, which
+        // already names this child.
+        let mod_file = test_mod_dir.join("mod.rs");
+        if let Some(existing) = read_generated(&mod_file) {
+            if !existing.contains(&format!("mod {child_name}_sm;")) {
+                let addition = format!(
+                    "mod {child_name}_sm;\n\
+                     pub use {child_name}_sm::*;\n"
+                );
+                write_if_changed_drift_aware(
+                    &mod_file,
+                    &format!("{existing}{addition}"),
+                    drift_ctx,
+                );
+            }
+        }
+    }
+
+    fn declare_child_sibling(&self, test_mod_dir: &Path, filename: &str, drift_ctx: &DriftContext) {
+        // Appended to the test's `mod.rs` as `process_child` appends the
+        // child's machine, and read back the same way. A parent's function
+        // is declared by `module_index.rs.jinja2` itself; a child's machine
+        // is appended here, so its function is too.
+        let Some(module) = filename.strip_suffix(".rs") else {
+            return;
+        };
+        let mod_file = test_mod_dir.join("mod.rs");
+        if let Some(existing) = read_generated(&mod_file) {
+            if !existing.contains(&format!("mod {module};")) {
+                write_if_changed_drift_aware(
+                    &mod_file,
+                    &format!("{existing}pub mod {module};\n"),
+                    drift_ctx,
+                );
+            }
+        }
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            ..
+        } = *spec;
+        let timeout_secs = if test_type == "scheduled" || test_type == "http" {
+            5
+        } else {
+            3
+        };
+        // An integration test compiles as its own crate, so every path
+        // into the suite is spelled from outside it. `suite` is what
+        // the caller named the suite, defaulting to this repository's
+        // own crate — before it was an input, the literal here made the
+        // emitted tests compile only inside a checkout carrying that
+        // one name.
+        let suite = self.suite.rust_module_path();
+        // Engine DI parity: instantiate LuaEngine per-test and pass it
+        // to `Policy::new(engine)` instead of registering a process-global singleton.
+        let policy_ctor = if needs_script {
+            format!(
+                "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
+                 std::sync::Arc::new(sce_rust_lua::LuaEngine::new());\n\
+                 \x20   {{POLICY_BINDING}} = {suite}::generated::test"
+            )
+        } else {
+            format!("    {{POLICY_BINDING}} = {suite}::generated::test")
+        };
+        let policy_args = if needs_script {
+            "(script_engine)"
+        } else {
+            "()"
+        };
+        let is_http = test_type == "http" && uses_http;
+        let http_setup = if is_http {
+            format!("    {suite}::harness::setup_http_test(&mut engine);\n")
+        } else {
+            String::new()
+        };
+        // §scxml-C-2-3: the harness owns the inbound listener, so it declares
+        // the access URI the machine publishes in `_ioprocessors`. Documents
+        // converted from the W3C corpus address their BasicHTTP sends through
+        // that entry, so a machine that publishes nothing sends nowhere. The
+        // declaration lands on the policy before the engine takes ownership,
+        // because `_ioprocessors` is populated once at session setup.
+        let policy_binding = if is_http && needs_script {
+            "let mut policy"
+        } else {
+            "let policy"
+        };
+        let http_access_uri = if is_http && needs_script {
+            format!(
+                "\x20   policy.set_basic_http_access_uri({suite}::harness::http_test_server_url());\n"
+            )
+        } else {
+            String::new()
+        };
+        let policy_ctor = policy_ctor.replace("{POLICY_BINDING}", policy_binding);
+        // docs/adr/0096: a machine with a script engine is refused its start
+        // when its script session cannot be established, and the test says so
+        // when that happens; the start of one without cannot be refused, which
+        // the irrefutable pattern states.
+        let start = if needs_script {
+            "    engine.initialize().expect(\"the machine's script session is established\");\n"
+        } else {
+            "    let Ok(()) = engine.initialize();\n"
+        };
+        let pass_variant = to_pascal_case(pass_state);
+        let marker =
+            crate::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // {marker}\n\
+             use std::time::Duration;\n\
+             \n\
+             #[test]\n\
+             fn test_{test_id}() {{\n\
+             {policy_ctor}{test_id}::{machine_name}Policy::new{policy_args};\n\
+             {http_access_uri}\
+             \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
+             {http_setup}\
+             {start}\
+             \x20   let completed = engine.run_until_completion(\n\
+             \x20       Duration::from_secs({timeout_secs}),\n\
+             \x20       Duration::from_millis(10),\n\
+             \x20   );\n\
+             \x20   assert!(completed, \"Test {test_id} timed out\");\n\
+             \x20   assert_eq!(\n\
+             \x20       engine.terminal_state(),\n\
+             \x20       Some({suite}::generated::test{test_id}::{machine_name}State::{pass_variant}),\n\
+             \x20       \"Test {test_id} reached wrong final state\"\n\
+             \x20   );\n\
+             }}\n"
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("test_{test_id}.rs")
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        vec![
+            (root.join("Cargo.toml"), self.cargo_manifest(standalone)),
+            (root.join("src/lib.rs"), self.crate_root()),
+            // The committed harness itself, compiled into the
+            // generator, so an emitted suite cannot carry a stale copy.
+            // The only edit is the suite's own name, which the harness
+            // spells in the usage example it documents.
+            (
+                root.join("src/harness.rs"),
+                self.suite
+                    .rewrite_rust_source(crate::w3c_suite::RUST_HARNESS_SOURCE),
+            ),
+        ]
+    }
+
+    fn finalize(&self, generated_ids: &[String], drift_ctx: &DriftContext) {
+        if generated_ids.is_empty() {
+            return;
+        }
+        // §synth-5-O traceability — `write_if_changed_drift_aware` prepends the
+        // §synth-6.2.6 header, so the ownership-boundary walker requires a
+        // marker line. This aggregator mod.rs has no single source SCXML;
+        // reference the first registered test as the index entry point
+        // so addr2sce still maps back into the generated tree.
+        //
+        // Hand-curated non-W3C-IRP fixtures live under
+        // `backends/rust/tests/src/integration/` with their own hand-authored
+        // `mod.rs`, so this aggregator only owns the W3C suite — the
+        // generated/ tree is "codegen output, full overwrite" and the
+        // integration/ tree is "hand-authored mod.rs over codegen-
+        // emitted bodies".
+        let first_id = &generated_ids[0];
+        let mut mod_lines = vec![
+            "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),
+            format!(
+                "// {}",
+                crate::forge::sourcemap::marker_payload(&format!("test{first_id}.scxml"), 1, &[])
+            ),
+            format!(
+                "//! Generated W3C SCXML conformance test state machines ({} tests).\n",
+                generated_ids.len()
+            ),
+        ];
+        for id in generated_ids {
+            mod_lines.push(format!("pub mod test{id};"));
+        }
+        mod_lines.push(String::new());
+        write_if_changed_drift_aware(
+            &self.sm_base.join("mod.rs"),
+            &mod_lines.join("\n"),
+            drift_ctx,
+        );
+    }
+
+    fn clean(&self) {
+        // Remove generated dirs but not handcrafted files
+        for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("test"))
+            {
+                remove_generated(&path);
+            }
+        }
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("test_") && name.ends_with(".rs") {
+                    remove_generated(&path);
+                }
+            }
+        }
+        outln!("Cleaned Rust generated files");
+    }
+}
+
+// ── GoBackend ──────────────────────────────────────────────────
+
+struct GoBackend {
+    sm_base: PathBuf,
+    tmpl_dir: PathBuf,
+    /// Module the generated tests import their harness from.
+    suite: SuiteIdentity,
+    /// Set when the emitted module has to stand on its own.
+    standalone: Option<StandaloneSuite>,
+}
+
+impl GoBackend {
+    const RELATIVE_ROOT: &'static str = "backends/go/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        let tests_module = output_root.join(Self::RELATIVE_ROOT);
+        Self {
+            sm_base: tests_module.join("generated"),
+            tmpl_dir: crate::find_template_dir_for(Language::Go),
+            suite: packaging.identity().clone(),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
+        }
+    }
+
+    /// Module file for a suite standing on its own.
+    ///
+    /// The SCE modules keep the import paths their own sources declare
+    /// — a Go package's import path is baked into every file that
+    /// imports it — and are redirected to the generating checkout with
+    /// `replace`, which is what the committed module file already does
+    /// for its siblings. Only the redirect target moves.
+    fn go_mod(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             //\n\
+             // W3C SCXML 1.0 conformance suite. The SCE modules below are\n\
+             // redirected into the checkout this suite was generated from;\n\
+             // re-point the replace directives if that checkout moves.\n\
+             \n\
+             module {module}\n\
+             \n\
+             go 1.23.0\n\
+             \n\
+             require (\n\
+             \tgithub.com/newmassrael/sce-go-lua v0.0.0\n\
+             \tgithub.com/newmassrael/sce-go-runtime v0.0.0\n\
+             )\n\
+             \n\
+             require (\n\
+             \tgithub.com/Shopify/go-lua v0.0.0-20221004153744-91867de107cf // indirect\n\
+             \tgithub.com/newmassrael/sce-forge-runtime v0.0.0 // indirect\n\
+             )\n\
+             \n\
+             replace (\n\
+             \tgithub.com/newmassrael/sce-forge-runtime => {sce}/backends/go/forge-runtime\n\
+             \tgithub.com/newmassrael/sce-go-lua => {sce}/backends/go/lua\n\
+             \tgithub.com/newmassrael/sce-go-runtime => {sce}/backends/go/runtime\n\
+             )\n",
+            module = self.suite.go_module_path(),
+        )
+    }
+}
+
+impl W3cBackend for GoBackend {
+    fn language_name(&self) -> &str {
+        "Go"
+    }
+    fn language(&self) -> Language {
+        Language::Go
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.sm_base
+    } // Go tests live in sm dir
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = crate::generator::generate_go(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}_sm.go"), code)])
+    }
+
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        let parent_package = format!("test{test_id}");
+        let child_pkg = crate::filters::to_snake_case(child_name.to_string());
+        let fixed_code = code.replace(
+            &format!("package {child_pkg}"),
+            &format!("package {parent_package}"),
+        );
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.go"));
+        write_if_changed_drift_aware(&child_file, &fixed_code, drift_ctx);
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            metadata,
+        } = *spec;
+        let is_http = test_type == "http" && uses_http;
+        let timeout = if test_type == "scheduled" {
+            "5 * time.Second"
+        } else {
+            "3 * time.Second"
+        };
+
+        // The harness is a package inside the suite's own module, so
+        // the import path is the module path. Before it was an input,
+        // the literal here made the emitted tests importable only from
+        // a module carrying this repository's name.
+        let harness_import = format!("{}/harness", self.suite.go_module_path());
+
+        let engine_setup = if needs_script {
+            // Engine DI parity: each test owns its LuaEngine; the
+            // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
+            // pair was deleted in the step #6 cleanup.
+            //
+            // §scxml-C-2-3: for HTTP fixtures the harness owns the inbound
+            // listener, so it declares the access URI the machine publishes in
+            // _ioprocessors. The converted documents address their BasicHTTP
+            // sends through that entry.
+            let access_uri = if is_http {
+                "\tpolicy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI()\n"
+            } else {
+                ""
+            };
+            format!(
+                "\tpolicy := New{machine_name}Policy()\n\
+                 \tpolicy.SessionID = sce.GenerateSessionID()\n\
+                 \tpolicy.ScriptEngine = scegotest.NewLuaEngine()\n\
+                 {access_uri}\
+                 \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            )
+        } else {
+            format!(
+                "\tpolicy := New{machine_name}Policy()\n\
+                 \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            )
+        };
+
+        let http_setup = if is_http {
+            "\n\tscegotest.SetupHTTPTest(engine)\n"
+        } else {
+            ""
+        };
+
+        let marker =
+            crate::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // {marker}\n\
+             // W3C SCXML {specnum}: {description}\n\
+             package test{test_id}\n\
+             \n\
+             import (\n\
+             \t\"testing\"\n\
+             \t\"time\"\n\
+             \n\
+             \tsce \"github.com/newmassrael/sce-go-runtime\"\n\
+             \tscegotest \"{harness_import}\"\n\
+             )\n\
+             \n\
+             func TestW3C{test_id}(t *testing.T) {{\n\
+             {engine_setup}{http_setup}\n\
+             \tif err := engine.Initialize(); err != nil {{\n\
+             \t\tt.Fatalf(\"Test {test_id} did not start: %v\", err)\n\
+             \t}}\n\
+             \tcompleted := engine.RunUntilCompletion({timeout}, 10*time.Millisecond)\n\
+             \tif !completed {{\n\
+             \t\tt.Fatalf(\"Test {test_id} timed out\")\n\
+             \t}}\n\
+             \tended, ok := engine.TerminalState()\n\
+             \tscegotest.AssertEndedIn(t, ended, ok, {machine_name}State{pass_state}, \"{test_id}\")\n\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, _test_id: &str, input_stem: &str) -> String {
+        format!("{input_stem}_test.go")
+    }
+
+    fn test_in_sm_dir(&self) -> bool {
+        true
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        vec![
+            (root.join("go.mod"), self.go_mod(standalone)),
+            // The one remote dependency the SCE Lua module pulls in
+            // needs its checksum, and the redirected SCE modules do not
+            // — a `replace` onto a filesystem path is verified by the
+            // path, not by go.sum. Shipping the committed sums keeps
+            // the emitted module verifiable without a network fetch to
+            // rebuild them.
+            (
+                root.join("go.sum"),
+                crate::w3c_suite::GO_SUM_SOURCE.to_string(),
+            ),
+            (
+                root.join("harness/harness.go"),
+                crate::w3c_suite::GO_HARNESS_SOURCE.to_string(),
+            ),
+        ]
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            remove_generated(&self.sm_base);
+            outln!("Cleaned: {}", self.sm_base.display());
+        }
+    }
+}
+
+// ── SwiftBackend ───────────────────────────────────────────────
+
+/// The Swift W3C suite: a machine for each document the backend lowers, in a directory of its
+/// own per test, and a Swift Testing file for each in the test target beside it.
+///
+/// Swift lowers a document in part, so it is the one backend of this route that is allowed to
+/// leave fixtures out. A document it refuses by name is skipped and named in the summary, and
+/// only the `simple` harness is built (the others need a clock the test advances and an echo
+/// endpoint). A child a parent starts that Swift refuses is not covered: the parent would be
+/// written without it. No fixture of the suite has one, and the package is built from what is
+/// written, so one would show there.
+struct SwiftBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl SwiftBackend {
+    const RELATIVE_ROOT: &'static str = "backends/swift/tests";
+
+    fn new(output_root: &Path) -> Self {
+        let package = output_root.join(Self::RELATIVE_ROOT);
+        Self {
+            sm_base: package.join("Sources/W3cMachines"),
+            test_dir: package.join("Tests/W3cMachinesTests"),
+            tmpl_dir: crate::find_template_dir_for(Language::Swift),
+        }
+    }
+}
+
+impl W3cBackend for SwiftBackend {
+    fn language_name(&self) -> &str {
+        "Swift"
+    }
+
+    fn language(&self) -> Language {
+        Language::Swift
+    }
+
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = crate::generator::generate_swift(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}_sm.swift"), code)])
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        // One module holds every machine of the suite, and a child's policy is named after the
+        // child, so it sits beside its parent as it is.
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.swift"));
+        write_if_changed_drift_aware(&child_file, &code, drift_ctx);
+    }
+
+    fn serves_harness(&self, test_type: &str) -> bool {
+        test_type == "simple"
+    }
+
+    fn is_a_named_refusal(&self, refusal: &ForgeError) -> bool {
+        matches!(refusal, ForgeError::Generate(_))
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            metadata,
+            ..
+        } = *spec;
+        let marker =
+            crate::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // {marker}\n\
+             \n\
+             import SceRuntime\n\
+             import Testing\n\
+             import W3cMachines\n\
+             \n\
+             // W3C SCXML {specnum}: {description}\n\
+             @Test(\"W3C {test_id} settles in its {pass_state} state\")\n\
+             func w3c_{test_id}() throws {{\n\
+             \x20   let policy = {machine_name}Policy()\n\
+             \x20   let run = try w3cSettled(policy)\n\
+             \x20   #expect(run.completed, \"W3C {test_id} did not run to a final state\")\n\
+             \x20   #expect(\n\
+             \x20       w3cIsState(policy.getStateName(run.engine.getCurrentState()), named: \"{pass_state}\"),\n\
+             \x20       \"W3C {test_id} settled in another state\")\n\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("Test{}Tests.swift", to_pascal_case(test_id))
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            remove_generated(&self.sm_base);
+            outln!("Cleaned: {}", self.sm_base.display());
+        }
+        // The generated tests are the files named for a test; `W3cSupport.swift`, which the
+        // tests call and nobody generates, is not among them.
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test") && name.ends_with("Tests.swift") {
+                remove_generated(&entry.path());
+            }
+        }
+        outln!("Cleaned tests in: {}", self.test_dir.display());
+    }
+
+    fn clean_stale(&self, valid_ids: &BTreeSet<String>) -> usize {
+        let mut removed = 0;
+        if self.sm_base.exists() {
+            for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let Some(id) = name.strip_prefix("test") else {
+                    continue;
+                };
+                if !valid_ids.contains(id) && remove_generated(&entry.path()) {
+                    outln!("  Removed stale machines: {name}");
+                    removed += 1;
+                }
+            }
+        }
+        let valid_files: BTreeSet<String> = valid_ids
+            .iter()
+            .map(|id| self.test_filename(id, ""))
+            .collect();
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test")
+                && name.ends_with("Tests.swift")
+                && !valid_files.contains(&name)
+                && remove_generated(&entry.path())
+            {
+                outln!("  Removed stale test: {name}");
+                removed += 1;
+            }
+        }
+        removed
+    }
+}
+
+// ── KotlinBackend ──────────────────────────────────────────────
+
+struct KotlinBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+    /// Package root the generated machines and JUnit classes sit under.
+    suite: SuiteIdentity,
+    /// Set when the emitted project has to stand on its own.
+    standalone: Option<StandaloneSuite>,
+    /// The language the emitted machines hand their script engine.
+    ///
+    /// Carried on the backend rather than read per machine so every file in
+    /// one run is emitted for one engine: a suite mixing the two would hand
+    /// one session two languages, which is the state
+    /// `supports_script_engine_target` refuses for a single document and has
+    /// no reason to allow for 202 of them.
+    script_engine: crate::generator::ScriptEngineTarget,
+}
+
+impl KotlinBackend {
+    /// The module that holds the W3C suite and nothing else
+    /// (`:sce-kotlin-w3c`, backends/kotlin/w3c/build.gradle.kts). The
+    /// integration machines are `:sce-kotlin-tests`'s, written by the
+    /// `kotlin-integration` and `kotlin-static-datamodel` trees; keeping the two
+    /// populations in separate modules is what keeps either one's compile
+    /// from growing with the other's.
+    const RELATIVE_ROOT: &'static str = "backends/kotlin/w3c";
+
+    fn new(
+        output_root: &Path,
+        packaging: &SuitePackaging,
+        script_engine: crate::generator::ScriptEngineTarget,
+    ) -> Self {
+        let tests_module = output_root.join(Self::RELATIVE_ROOT);
+        let suite = packaging.identity().clone();
+        // A Kotlin source tree mirrors its package names as
+        // directories, so the package root the caller named decides
+        // where these two trees live. Deriving both from one accessor
+        // is what keeps the `package` clause and the path from becoming
+        // two answers.
+        let package_dir = suite.kotlin_package_dir();
+        Self {
+            sm_base: tests_module.join(format!("src/main/kotlin/{package_dir}/generated")),
+            test_dir: tests_module.join(format!("src/test/kotlin/{package_dir}/w3c")),
+            tmpl_dir: crate::find_template_dir_for(Language::Kotlin),
+            suite,
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
+            script_engine,
+        }
+    }
+
+    /// Gradle settings for a suite standing on its own.
+    ///
+    /// A composite build rather than a dependency on published
+    /// artifacts: SCE's Kotlin runtime is not published anywhere a
+    /// vendoring consumer could resolve it from, and the checkout that
+    /// generated the suite is by construction present. Gradle
+    /// substitutes the `com.sce:…` coordinates below for the included
+    /// build's own projects, which carry exactly those group and
+    /// artifact names.
+    fn gradle_settings(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             //\n\
+             // W3C SCXML 1.0 conformance suite. The SCE Kotlin projects are\n\
+             // reached through a composite build into the checkout this suite\n\
+             // was generated from; re-point includeBuild if that checkout moves.\n\
+             \n\
+             pluginManagement {{\n\
+             \x20   repositories {{\n\
+             \x20       gradlePluginPortal()\n\
+             \x20       mavenCentral()\n\
+             \x20   }}\n\
+             }}\n\
+             \n\
+             dependencyResolutionManagement {{\n\
+             \x20   repositories {{\n\
+             \x20       mavenCentral()\n\
+             \x20   }}\n\
+             }}\n\
+             \n\
+             rootProject.name = \"{name}\"\n\
+             \n\
+             includeBuild(\"{sce}\")\n",
+            name = self
+                .suite
+                .kotlin_package_root()
+                .rsplit('.')
+                .next()
+                .expect("a package root has at least one element"),
+        )
+    }
+
+    /// Gradle build file for a suite standing on its own.
+    ///
+    /// Restates the versions the committed build reads from the version
+    /// catalog, because a catalog is a property of the build that owns
+    /// it and an emitted suite owns none. The end-to-end gate compiles
+    /// and runs what this describes, so a version that stops resolving
+    /// fails there rather than in a consumer's tree.
+    fn gradle_build(&self) -> String {
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             \n\
+             plugins {{\n\
+             \x20   kotlin(\"jvm\") version \"2.1.20\"\n\
+             }}\n\
+             \n\
+             group = \"{root}\"\n\
+             version = \"0.0.0\"\n\
+             \n\
+             dependencies {{\n\
+             \x20   implementation(\"com.sce:sce-kotlin-runtime:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-rhino:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-lua:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-quickjs:1.0.0\")\n\
+             \x20   implementation(\"org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1\")\n\
+             \n\
+             \x20   testImplementation(kotlin(\"test\"))\n\
+             \x20   testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.2\")\n\
+             }}\n\
+             \n\
+             kotlin {{\n\
+             \x20   jvmToolchain(17)\n\
+             }}\n\
+             \n\
+             tasks.test {{\n\
+             \x20   useJUnitPlatform()\n\
+             \x20   // The default engine is Rhino, which is pure JVM. Selecting\n\
+             \x20   // lua or quickjs additionally needs their JNI libraries on\n\
+             \x20   // java.library.path, which the SCE build produces.\n\
+             \x20   systemProperty(\"junit.jupiter.execution.timeout.default\", \"10s\")\n\
+             }}\n",
+            root = self.suite.kotlin_package_root(),
+        )
+    }
+}
+
+impl W3cBackend for KotlinBackend {
+    fn language_name(&self) -> &str {
+        "Kotlin"
+    }
+    fn language(&self) -> Language {
+        Language::Kotlin
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = crate::generator::generate_kotlin_for_engine(
+            model,
+            &self.tmpl_dir,
+            None,
+            self.script_engine,
+        )?;
+        // The Kotlin templates spell this repository's package root, and
+        // the suite's own name is rewritten into it on the way out.
+        Ok(vec![(
+            format!("{input_stem}Sm.kt"),
+            self.suite.rewrite_kotlin_source(&code),
+        )])
+    }
+
+    /// The transition function's package sits under the same root as the
+    /// machine's, so a renamed suite renames both.
+    fn rewrite_beside_machine(&self, code: String) -> String {
+        self.suite.rewrite_kotlin_source(&code)
+    }
+
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        let root = self.suite.kotlin_package_root();
+        let parent_package = format!("test{test_id}");
+        let child_package = child_name.to_lowercase();
+        let code = self.suite.rewrite_kotlin_source(&code);
+        let fixed_code = code.replace(
+            &format!("package {root}.generated.{child_package}"),
+            &format!("package {root}.generated.{parent_package}"),
+        );
+        let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
+        write_if_changed_drift_aware(&child_sm_file, &fixed_code, drift_ctx);
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            metadata,
+            ..
+        } = *spec;
+        let sm_class = format!("Test{}", to_pascal_case(test_id));
+        let sm_package = format!("test{test_id}");
+
+        // §scxml-C-2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
+        let is_http = test_type == "http" && uses_http;
+        let base_class = if is_http {
+            "W3CHttpTestBase"
+        } else {
+            "W3CTestBase"
+        };
+
+        // §scxml-6.2: SCHEDULED tests need longer timeout
+        let timeout_override = if test_type == "scheduled" {
+            "    override val timeoutMs: Long = 5000L\n"
+        } else {
+            ""
+        };
+
+        let create_sm = if needs_script {
+            format!(
+                "    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n"
+            )
+        } else {
+            format!("    override fun createStateMachine() = {sm_class}StateMachine()\n")
+        };
+
+        // The suite's own package root, which the generated JUnit class
+        // and the machines it imports both sit under. Before it was an
+        // input, the literal here fixed the emitted tree to this
+        // repository's package names.
+        let root = self.suite.kotlin_package_root();
+        let marker =
+            crate::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // {marker}\n\
+             package {root}.w3c\n\
+             \n\
+             import {root}.generated.{sm_package}.{sm_class}Event\n\
+             import {root}.generated.{sm_package}.{sm_class}State\n\
+             import {root}.generated.{sm_package}.{sm_class}StateMachine\n\
+             import org.junit.jupiter.api.DisplayName\n\
+             \n\
+             // W3C SCXML {specnum}: {description}\n\
+             @DisplayName(\"Test {test_id} -- W3C SCXML {specnum}\")\n\
+             class {sm_class} : {base_class}<{sm_class}State, {sm_class}Event>() {{\n\
+             {create_sm}\
+             \x20   override val expectedPassState: {sm_class}State = {sm_class}State.{pass_state}\n\
+             {timeout_override}\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("Test{}.kt", to_pascal_case(test_id))
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        let mut files = vec![
+            (
+                root.join("settings.gradle.kts"),
+                self.gradle_settings(standalone),
+            ),
+            (root.join("build.gradle.kts"), self.gradle_build()),
+        ];
+        // The hand-authored Kotlin the suite carries: the JUnit base
+        // classes every generated test extends, and the BasicHTTP test
+        // server one of them drives. Each lands in its own source set
+        // under the package root, mirroring where it sits here — which
+        // is also why `clean_stale` already names the two in the
+        // generated test directory as files it must not remove.
+        let module_root = self
+            .standalone
+            .as_ref()
+            .map(|s| s.package_root.clone())
+            .expect("guarded above");
+        let package_dir = self.suite.kotlin_package_dir();
+        for (source_set, path, source) in crate::w3c_suite::KOTLIN_SUITE_SOURCES {
+            files.push((
+                module_root.join(source_set).join(&package_dir).join(path),
+                self.suite.rewrite_kotlin_source(source),
+            ));
+        }
+        files
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            remove_generated(&self.sm_base);
+            outln!("Cleaned: {}", self.sm_base.display());
+        }
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test") && name.ends_with(".kt") {
+                remove_generated(&entry.path());
+            }
+        }
+        outln!("Cleaned test classes in: {}", self.test_dir.display());
+    }
+
+    fn clean_stale(&self, valid_ids: &BTreeSet<String>) -> usize {
+        let mut removed = 0;
+
+        // Clean stale SM directories
+        if self.sm_base.exists() {
+            for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("test") {
+                    continue;
+                }
+                let dir_test_id = &name[4..];
+                if !valid_ids.contains(dir_test_id) && remove_generated(&entry.path()) {
+                    outln!("  Removed stale SM dir: {name}");
+                    removed += 1;
+                }
+            }
+        }
+
+        // Clean stale test classes
+        if self.test_dir.exists() {
+            let valid_lower: BTreeSet<String> =
+                valid_ids.iter().map(|s| s.to_lowercase()).collect();
+            for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("Test") || !name.ends_with(".kt") {
+                    continue;
+                }
+                if name == "W3CTestBase.kt" || name == "W3CHttpTestBase.kt" {
+                    continue;
+                }
+                let stem = &name[..name.len() - 3];
+                let file_test_id = &stem[4..];
+                if !valid_ids.contains(file_test_id)
+                    && !valid_lower.contains(&file_test_id.to_lowercase())
+                    && remove_generated(&entry.path())
+                {
+                    outln!("  Removed stale test: {name}");
+                    removed += 1;
+                }
+            }
+        }
+
+        removed
+    }
+}
+
+// ── CppBackend ─────────────────────────────────────────────────
+
+struct CppBackend {
+    output_dir: PathBuf,
+    tmpl_dir: PathBuf,
+    /// The language the emitted machines hand their script engine. Same
+    /// reason it is per-run rather than per-machine as on `KotlinBackend`.
+    script_engine: crate::generator::ScriptEngineTarget,
+}
+
+impl CppBackend {
+    fn new(output_root: &Path, script_engine: crate::generator::ScriptEngineTarget) -> Self {
+        Self {
+            output_dir: output_root.join("build/tests/w3c_static_generated"),
+            tmpl_dir: crate::find_template_dir_for(Language::Cpp),
+            script_engine,
+        }
+    }
+}
+
+impl W3cBackend for CppBackend {
+    fn language_name(&self) -> &str {
+        "C++"
+    }
+    fn language(&self) -> Language {
+        Language::Cpp
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.output_dir
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.output_dir
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let output = crate::generator::generate_cpp_for_engine(
+            model,
+            &self.tmpl_dir,
+            input_stem,
+            None,
+            self.script_engine,
+        )?;
+        Ok(output.files)
+    }
+
+    fn uses_per_test_subdirs(&self) -> bool {
+        false
+    }
+    fn generates_test_files(&self) -> bool {
+        false
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        _child_name: &str,
+        _code: String,
+        _test_mod_dir: &Path,
+        _drift_ctx: &DriftContext,
+    ) {
+        // C++ children are generated by the commands
+        // cmake/SCEStaticW3CTest.cmake declares from what `--plan generate`
+        // answers for the fixture: a child document by its own `generate
+        // --as-child`, an in-line child by its parent's `generate`, which
+        // writes it. This route writes no C++ child, and `uses_per_test_subdirs`
+        // keeps it from being asked to.
+    }
+
+    fn clean(&self) {
+        if self.output_dir.exists() {
+            remove_generated(&self.output_dir);
+            outln!("Cleaned: {}", self.output_dir.display());
+        }
+    }
+}
+
+// ── PythonBackend ──────────────────────────────────────────────
+//
+// Emits AOT Python statechart modules through the existing
+// `crate::generator::generate_python` pipeline.
+// `<invoke>` is still reject-walled by `reject_python_unsupported_features`
+// so any W3C fixture exercising invoke surfaces a clean InvalidConfig
+// at this layer and is reported as a generation failure rather than a
+// silent skip. Tests that pass the codegen filter land at
+// `backends/python/tests/generated/test{id}/test{id}_sm.py` and can be
+// driven by an external pytest harness. SCE emits the tests, not the
+// runner: a wrapper would pin one invocation style for a backend
+// whose users already have one.
+
+struct PythonBackend {
+    sm_base: PathBuf,
+    tmpl_dir: PathBuf,
+    /// Set when the emitted tree has to stand on its own.
+    standalone: Option<StandaloneSuite>,
+}
+
+impl PythonBackend {
+    const RELATIVE_ROOT: &'static str = "backends/python/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        Self {
+            sm_base: output_root.join(Self::RELATIVE_ROOT).join("generated"),
+            tmpl_dir: crate::find_template_dir_for(Language::Python),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
+        }
+    }
+}
+
+impl W3cBackend for PythonBackend {
+    fn language_name(&self) -> &str {
+        "Python"
+    }
+    fn language(&self) -> Language {
+        Language::Python
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.sm_base
+    }
+
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let code =
+            crate::generator::generate_python(model, &self.tmpl_dir).map_err(ForgeError::from)?;
+        Ok(vec![(format!("{input_stem}_sm.py"), code)])
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.py"));
+        write_if_changed_drift_aware(&child_file, &code, drift_ctx);
+    }
+
+    // The pytest wrapper lives alongside the generated `*_sm.py`
+    // in `backends/python/tests/generated/test{N}/test_w3c_{N}.py`. The
+    // wrapper imports the SM module by relative path (using sys.path
+    // insertion at the test's own parent), instantiates an engine via
+    // the generated `create_engine()` factory, drives time forward
+    // until `reached_final` (matching the Go / Rust harness's
+    // `RunUntilCompletion` contract), and asserts the final state is
+    // the W3C `pass` final. SCHEDULED tests advance virtual time up
+    // to 6 s in 50 ms ticks so 5 s `<send delay>` fixtures resolve;
+    // SIMPLE tests reach final on the macrostep right after
+    // initialize, so the time-advance loop completes in zero ticks.
+    fn generates_test_files(&self) -> bool {
+        true
+    }
+
+    fn test_in_sm_dir(&self) -> bool {
+        true
+    }
+
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            pass_state,
+            uses_http,
+            test_type,
+            metadata,
+            ..
+        } = *spec;
+        // §scxml-6.2 — `<send delay="…">` fixtures arm scheduled
+        // events the engine drains only via `advance_time(ms)`. We
+        // advance in 50 ms ticks (the tightest of the spec's
+        // canonical delays — 5 s timeouts split into 100 slots of
+        // 50 ms each) so the loop never overshoots a fired event
+        // by more than one tick; the SIMPLE path exits immediately
+        // because `engine.initialize()` already drove every eventless
+        // transition to a stable configuration.
+        let (max_ms, tick_ms) = if test_type == "scheduled" {
+            (6_000_i64, 50_i64)
+        } else {
+            (50_i64, 50_i64)
+        };
+        // `detect_pass_state` returns the variant name in PascalCase
+        // ("Pass" / "Final") for the Rust / Kotlin / Go backends that
+        // dispatch on enum variants. Python's generated State enum
+        // overrides `__str__` to return the SCXML `<final id="…">`
+        // text verbatim (so `str(State.PASS)` → `"pass"`); the
+        // wrapper compares on that string, so we lowercase here.
+        let pass_literal = pass_state.to_ascii_lowercase();
+        let pass_literal = pass_literal.as_str();
+        // The runtime is reached through the suite's conftest, which
+        // pytest imports before it collects anything beneath it. The
+        // wrapper used to insert that path itself, computing it from
+        // its own depth below `backends/python/` — a second answer to
+        // the same question, and one that named a directory an emitted
+        // suite does not have.
+        //
+        // §scxml-C-2 — documents that use BasicHTTP transport take
+        // the `setup_http` fixture from backends/python/tests/conftest.py,
+        // which spawns the W3C echo server (on a port the kernel assigns,
+        // unless SCE_W3C_HTTP_PORT names one) and registers
+        // the HTTP dispatch callback on the engine. Non-HTTP fixtures
+        // omit the parameter so the server only starts when actually
+        // needed.
+        let test_signature = if uses_http {
+            "test_w3c_{test_id}(setup_http) -> None:".to_string()
+        } else {
+            "test_w3c_{test_id}() -> None:".to_string()
+        };
+        let test_signature = test_signature.replace("{test_id}", test_id);
+        let setup_call = if uses_http {
+            "    setup_http(engine)\n"
+        } else {
+            ""
+        };
+        let marker =
+            crate::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
+        format!(
+            "# GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             # W3C SCXML {specnum}: {description}\n\
+             # {marker}\n\
+             \"\"\"pytest wrapper for W3C SCXML test {test_id} (Python AOT).\n\n\
+             Imports the sibling `{input_stem}_sm.py` generated by\n\
+             `sce-codegen generate-w3c --language python`, instantiates\n\
+             an engine, and drives it until the W3C `<final id=\"pass\">`\n\
+             is reached (or `<final id=\"fail\">` for negative fixtures).\n\
+             \"\"\"\n\
+             from __future__ import annotations\n\
+             \n\
+             import sys\n\
+             from pathlib import Path\n\
+             \n\
+             _HERE = Path(__file__).resolve().parent\n\
+             sys.path.insert(0, str(_HERE))\n\
+             \n\
+             import {input_stem}_sm as _sm  # noqa: E402 — path inserted above\n\
+             \n\
+             \n\
+             def {test_signature}\n\
+             \x20   engine = _sm.create_engine()\n\
+             {setup_call}\
+             \x20   engine.initialize()\n\
+             \x20   elapsed = 0\n\
+             \x20   while not engine.reached_final and elapsed < {max_ms}:\n\
+             \x20       engine.advance_time({tick_ms})\n\
+             \x20       elapsed += {tick_ms}\n\
+             \x20   assert engine.reached_final, (\n\
+             \x20       f\"test {test_id} did not reach a top-level <final> within {max_ms} ms; \"\n\
+             \x20       f\"last leaf={{engine.current_state}}\"\n\
+             \x20   )\n\
+             \x20   actual = str(engine.terminal_state)\n\
+             \x20   assert actual == \"{pass_literal}\", (\n\
+             \x20       f\"test {test_id} reached <final id={{actual!r}}>; W3C expected \\\"{pass_literal}\\\"\"\n\
+             \x20   )\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("test_w3c_{test_id}.py")
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        // The committed conftest, with the one line that assumes SCE's
+        // directory layout re-pointed at the checkout this suite was
+        // generated from. Everything else in it — the W3C echo server,
+        // the `setup_http` fixture — is layout-independent and travels
+        // verbatim.
+        let conftest = crate::w3c_suite::rewrite_python_conftest(
+            crate::w3c_suite::PYTHON_CONFTEST_SOURCE,
+            &standalone.sce_root,
+        )
+        .unwrap_or_else(|detail| cli_exit(CliError::InvalidSuitePackage { detail }));
+        vec![(standalone.package_root.join("conftest.py"), conftest)]
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            remove_generated(&self.sm_base);
+            outln!("Cleaned: {}", self.sm_base.display());
+        }
+    }
+}
+
+// ── Subcommand: read-metadata ───────────────────────────────────
+
+fn cmd_read_metadata(metadata_file: &str) {
+    let content = fs::read_to_string(metadata_file).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: metadata_file.to_string(),
+            source: e,
+        })
+    });
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("description:") {
+            let description = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+            outln!("{description}");
+            return;
+        }
+    }
+
+    cli_exit(CliError::MissingMetadataField {
+        path: metadata_file.to_string(),
+    });
+}
+
+// ── Subcommand: manifest ───────────────────────────────────────
+
+fn cmd_manifest(dir: &str) {
+    let dir_path = Path::new(dir);
+    if !dir_path.is_dir() {
+        cli_exit(CliError::NotADirectory {
+            path: dir.to_string(),
+        });
+    }
+
+    let manifest = crate::build_forge_manifest(dir_path)
+        .unwrap_or_else(|e| current_error_format().emit_and_exit(&e, "Forge codegen error: "));
+
+    let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|e| {
+        cli_exit(CliError::JsonSerialization {
+            detail: e.to_string(),
+        })
+    });
+
+    outln!("{json}");
+}
+
+// ── Subcommand: requirements ──────────────────────────────────
+//
+// Emit per-IR-node `sce:req` + `sce:provenance`
+// NDJSON. Routes through the same parser SCE uses for codegen so
+// the report sees exactly the same node walk the build does —
+// drift between "what compiles" and "what the report claims is
+// annotated" is structurally impossible.
+
+// ── Subcommand: transition-table ───────────────────────────────
+//
+// Same architecture as `requirements`: parse through the production
+// parser and walk the model, so what the table shows and what the
+// build compiles cannot drift.
+
+/// `header` is `Some((input_root, deploy))` under `--header`. The hash is
+/// the one `generate` embeds for the same document, the closure of the
+/// document ([`DriftContext::of_documents`]), refused on the same terms: a
+/// document that cannot be read is not a hash to publish. The hash covers the
+/// files and not the selection, so the table of a variant carries the hash
+/// every build of the document does.
+fn cmd_transition_table(
+    scxml: &str,
+    header: Option<(Option<&str>, Option<&str>)>,
+    features: Option<Vec<String>>,
+    error_format: ErrorFormat,
+) {
+    let mut parser = select_variant(crate::parser::SCXMLParser::new(), &features);
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let header = header.map(|(input_root, deploy)| {
+        let ctx = DriftContext::of_documents(
+            &[Path::new(scxml)],
+            drift::ClosureOptions {
+                include_dirs: &[],
+                input_root: input_root.map(Path::new),
+                deploy_yaml: deploy.map(Path::new),
+            },
+        );
+        crate::transition_table::TransitionTableHeader::new(&model.name, ctx.header.source_hex())
+    });
+    out_stream(|w| {
+        crate::transition_table::emit_transition_table_ndjson(&model, header.as_ref(), w)
+    });
+}
+
+// ── Subcommand: annotation-overlay ─────────────────────────────
+//
+// Same architecture as `transition-table`, and for a sharper version of
+// the same reason: what the DIAGRAM shows and what the acceptance report
+// derives must not drift, and a diagram is the one artefact no test can
+// compare byte for byte. So the closure is computed here, by the report's
+// own function, and handed over as data.
+
+/// Emit the annotation overlay as one JSON object.
+fn cmd_annotation_overlay(scxml: &str, error_format: ErrorFormat) {
+    let mut parser = crate::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let overlay = crate::annotation_overlay::overlay(&model);
+    out_stream(|w| {
+        let line = serde_json::to_string(&overlay)
+            .expect("AnnotationOverlay serialises; every field is owned or 'static");
+        writeln!(w, "{line}")
+    });
+}
+
+// ── Subcommand: review-table ───────────────────────────────────
+//
+// The statechart family's `transition-table`, for the other kinds.
+// Parses through the production forge parser for that command's reason:
+// what the table shows and what the build compiles must not drift.
+
+/// Read and preprocess a document a review artefact was handed.
+///
+/// Through the preprocessor first, for the reason the AST export gives:
+/// an artefact built from the unexpanded text would describe a document
+/// the author never wrote, because every node a `<sce:use>` carries would
+/// simply be absent from it. A read failure is a diagnostic in the run's
+/// error format, as it is for `check` and `generate`.
+///
+/// The expanded text comes back with its map to the authored one, which
+/// every refusal of it passes through on its way out.
+fn read_review_input(document: &str, error_format: ErrorFormat) -> crate::model::AuthoredPositions {
+    let path = std::path::Path::new(document);
+    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: document.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    match crate::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
+        Ok((expanded, map, _deps)) => crate::model::AuthoredPositions::new(document, expanded, map),
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    }
+}
+
+/// Read, preprocess and parse a non-statechart forge document.
+///
+/// Shared by every review artefact that reads one, so two of them cannot
+/// disagree about which document they were handed: same preprocessor
+/// pass, same label, same refusal for a statechart.
+fn parse_forge_review_input(
+    document: &str,
+    error_format: ErrorFormat,
+) -> crate::forge::model::ParsedForge {
+    let positions = read_review_input(document, error_format);
+
+    // The label every other caller builds, so a review artefact and a
+    // codegen run name the same document the same way — and agree on
+    // every diagnostic's `id`, which hashes `location.file`.
+    let label = crate::DocumentLabel::for_input_path(document);
+
+    match crate::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+        Ok(Some(p)) => p,
+        // A statechart reaches the shared kind/pipeline refusal rather
+        // than an empty artefact. It is the one kind that already HAS a
+        // review artefact — `transition-table`, with the columns the
+        // review table deliberately does not carry — so the answer here
+        // is "wrong command", not "nothing to review".
+        Ok(None) => error_format.emit_forge_and_exit(&crate::forge::error::Located::new(
+            crate::forge::error::ValidationError::WrongPipeline {
+                kind: crate::forge::model::ForgeKind::Statechart,
+                pipeline: crate::Pipeline::Forge,
+            }
+            .into(),
+            document,
+            None,
+            None,
+        )),
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+    }
+}
+
+/// Emit the review table of a non-statechart forge document.
+fn cmd_review_table(document: &str, error_format: ErrorFormat) {
+    let parsed = parse_forge_review_input(document, error_format);
+    let rows = crate::forge::review_table::review_table(&parsed);
+    out_stream(|w| crate::forge::review_table::emit_review_table_ndjson(&rows, w))
+}
+
+// ── Subcommand: pseudo ─────────────────────────────────────────
+//
+// The surface a specification author reads instead of the XML. Reads the
+// document through `parse_forge_review_input` rather than a parser of
+// its own, for the reason that function states: what a reviewer approves
+// and what the build compiles must not drift.
+
+/// Render a forge document, of any kind, as pseudocode on stdout.
+///
+/// ⚠ BOTH pipelines, unlike `review-table` beside it. That command
+/// refuses a statechart because its columns are a non-statechart
+/// vocabulary; this one renders every kind, so routing through the
+/// forge entry point alone would refuse exactly the documents that
+/// carry executable content. Measured: the renderer covered statecharts
+/// for a while before this function reached them.
+/// The shape names `--shape` accepts, taken from the registry.
+///
+/// ⚠ Built from `page::SHAPES` rather than listed here, so `--help`
+/// names a shape on the day it is registered and an unregistered name
+/// is refused by clap with the real list. A hand-written list would
+/// have to be the third place the same set is stated.
+fn registered_shapes() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(crate::forge::page::shape_names())
+}
+
+/// The kind names `kinds --kind` accepts: the parser's own list, for the
+/// same reason.
+fn registered_kinds() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(crate::forge::model::ForgeKind::ALL_ATTR_NAMES)
+}
+
+/// The lexicon names `--lexicon` accepts, for the same reason.
+fn registered_lexicons() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(crate::forge::page::lexicon_names())
+}
+
+/// The page names `diagram --page` accepts: the diagram's own list, and
+/// `fit` for the smallest of its ladder that holds the set.
+fn registered_pages() -> clap::builder::PossibleValuesParser {
+    clap::builder::PossibleValuesParser::new(
+        crate::diagram::fit::PAGES
+            .iter()
+            .map(|(name, _, _)| *name)
+            .chain(std::iter::once(crate::diagram::fit::FIT)),
+    )
+}
+
+/// Write `files` — a file name and the SVG it holds — into `out` and name
+/// each path on stdout. Every name is decided by the caller before this is
+/// called, so a refusal leaves no partial set behind.
+fn write_diagram_files(out: &str, files: &[(String, String)]) {
+    let dir = Path::new(out);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out.to_string(),
+            source: e,
+        })
+    });
+    let mut written = Vec::new();
+    for (name, svg) in files {
+        let path = dir.join(name);
+        emit_generated(&path, svg.as_bytes(), WritePolicy::IfChanged);
+        written.push(path);
+    }
+    finish_generated_output();
+    out_stream(|w| {
+        for path in &written {
+            writeln!(w, "{}", path.display())?;
+        }
+        Ok(())
+    });
+}
+
+/// The sheet every figure of one `diagram` run is set on: which page, the
+/// smallest type the figures may be shrunk to, and the paper kept around
+/// each figure.
+struct SheetOptions<'a> {
+    page: &'a str,
+    min_pt: f64,
+    margin_pt: f64,
+}
+
+/// Draw `document` as print figures, one SVG per figure, into `out` — and,
+/// given the specification's manifest, the requirement checklist beside
+/// them, on as many `checklist-<n>.svg` pages as it takes.
+///
+/// A document of any other kind is not boxes and arrows, so it is set as
+/// the table of every value it states, on as many `fields-<n>.svg` pages as
+/// it takes.
+///
+/// Refused whole — nothing written — when any figure or checklist page
+/// cannot be drawn or does not fit: a set of figures missing one reads
+/// like a complete set.
+fn cmd_diagram(
+    document: &str,
+    out: &str,
+    sheet: SheetOptions<'_>,
+    lexicon: &str,
+    manifest: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use crate::diagram::fit::{self, Page, Refusal};
+
+    let SheetOptions {
+        page,
+        min_pt,
+        margin_pt,
+    } = sheet;
+
+    if !(min_pt.is_finite() && min_pt > 0.0) {
+        cli_exit(CliError::Usage {
+            detail: format!("--min-pt must be a positive number of points, got {min_pt}"),
+        });
+    }
+    if !(margin_pt.is_finite() && margin_pt >= 0.0) {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "--margin must be zero or a positive number of points, got {margin_pt}"
+            ),
+        });
+    }
+    let design = read_design(document, error_format);
+    // Clap has refused names neither registry carries; a miss here is the
+    // parser and a registry disagreeing, and says which.
+    let lexicon = crate::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
+        cli_exit(CliError::DiagramUnavailable {
+            feature: format!("the '{lexicon}' lexicon is not in this build's registry"),
+        })
+    });
+    // The pages to try, in order: the one named, or for `fit` the ladder from
+    // the default page up, so that only the paper grows and never the type
+    // shrinks (see `fit::FIT`).
+    let names: &[&str] = if page == fit::FIT {
+        fit::FIT_LADDER
+    } else {
+        std::slice::from_ref(&page)
+    };
+    let pages: Vec<Page> = names
+        .iter()
+        .map(|name| {
+            let page = Page::named(name, min_pt)
+                .unwrap_or_else(|| {
+                    cli_exit(CliError::DiagramUnavailable {
+                        feature: format!("the '{name}' page is not in the diagram's page list"),
+                    })
+                })
+                .with_figure_margin(margin_pt);
+            let (area_w, area_h) = page.area_pt();
+            if area_w <= 0.0 || area_h <= 0.0 {
+                cli_exit(CliError::Usage {
+                    detail: format!(
+                        "--margin {margin_pt} leaves the '{name}' page no printable area"
+                    ),
+                });
+            }
+            page
+        })
+        .collect();
+
+    let refuse = |refusal: Refusal| -> ! {
+        use crate::diagram::words::{self, Phrase};
+        let does_not_fit = |figure: String, need_pt: (f64, f64), area_pt: (f64, f64)| {
+            CliError::DiagramDoesNotFit {
+                figure,
+                min_pt,
+                need_w: need_pt.0,
+                need_h: need_pt.1,
+                area_w: area_pt.0,
+                area_h: area_pt.1,
+            }
+        };
+        cli_exit(match refusal {
+            Refusal::Box(e) => CliError::DiagramUnavailable {
+                feature: e.to_string(),
+            },
+            Refusal::DoesNotFit {
+                figure,
+                need_pt,
+                area_pt,
+            } => does_not_fit(
+                words::figure_title(lexicon, &figure).unwrap_or_else(|| format!("{figure:?}")),
+                need_pt,
+                area_pt,
+            ),
+            Refusal::ChecklistDoesNotFit { need_pt, area_pt } => does_not_fit(
+                words::phrase(lexicon, Phrase::Checklist)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{:?}", Phrase::Checklist)),
+                need_pt,
+                area_pt,
+            ),
+            Refusal::SheetDoesNotFit {
+                what,
+                need_pt,
+                area_pt,
+            } => does_not_fit(what, need_pt, area_pt),
+            unread @ (Refusal::NotATree(_) | Refusal::Unreadable(_)) => {
+                CliError::DiagramUnavailable {
+                    feature: unread.to_string(),
+                }
+            }
+        })
+    };
+
+    // The paper a figure keeps around itself is written into each SVG after
+    // the figure is drawn and fitted: the fit already counted it (see
+    // `Page::with_figure_margin`), and a margin of zero changes no byte.
+    let framed = |files: Vec<(String, String)>| -> Vec<(String, String)> {
+        files
+            .into_iter()
+            .map(|(name, svg)| {
+                let svg = crate::diagram::svg::with_margin(&svg, margin_pt).unwrap_or_else(|why| {
+                    cli_exit(CliError::DiagramUnavailable {
+                        feature: format!("{name}: {why}"),
+                    })
+                });
+                (name, svg)
+            })
+            .collect()
+    };
+
+    // A figure of boxes and arrows is of a statechart: states, and the
+    // transitions between them. A document of any other kind is a table, a
+    // formula or a byte layout, and what is drawn of it is the table of
+    // every value it states (Requirement-closure RFC §7: the review
+    // artefact follows the kind's shape).
+    if let (Design::Forge(parsed), Some(_)) = (&design, manifest) {
+        let kind = parsed.document.kind().as_attr();
+        cli_exit(CliError::DiagramUnavailable {
+            feature: format!(
+                "the requirement checklist names a statechart's boxes and table rows, \
+                 and this is a {kind} document; its requirements are in \
+                 sce-codegen acceptance-report"
+            ),
+        });
+    }
+
+    // Every file of the set, on one page. A refusal is returned rather than
+    // exited on, so that `fit` can try the next page when it is of a size.
+    let draw = |page: Page| -> Result<Vec<(String, String)>, Refusal> {
+        let model = match &design {
+            Design::Statechart(model) => model.as_ref(),
+            Design::Forge(parsed) => {
+                let pictures = crate::diagram::kinds::pictures(parsed, lexicon, page)?;
+                // A kind whose picture is a statechart figure (a procedure's
+                // states) is drawn by the print pipeline and named as its
+                // figures are.
+                let figures = crate::diagram::kinds::figures(parsed, lexicon, page)?;
+                let sheets = crate::diagram::fields::pages(parsed, lexicon, page)?;
+                let mut files: Vec<(String, String)> = figures
+                    .iter()
+                    .map(|p| {
+                        let stem = p.laid.name.file_stem().unwrap_or_else(|| {
+                            cli_exit(CliError::DiagramUnavailable {
+                                feature: format!(
+                                    "the figure {:?} has no file name: its state id carries a \
+                                     path separator or a control character",
+                                    p.laid.name
+                                ),
+                            })
+                        });
+                        (format!("{stem}.svg"), crate::diagram::svg::render(p))
+                    })
+                    .collect();
+                files.extend(pictures.iter().map(|p| {
+                    (
+                        format!("{}.svg", p.stem),
+                        crate::diagram::svg::render_sheet(&p.sheet),
+                    )
+                }));
+                files.extend(sheets.iter().enumerate().map(|(n, sheet)| {
+                    (
+                        format!("fields-{}.svg", n + 1),
+                        crate::diagram::svg::render_sheet(sheet),
+                    )
+                }));
+                return Ok(files);
+            }
+        };
+        let printed = fit::print(model, lexicon, page)?;
+
+        // The checklist, when the specification's list was given: every
+        // requirement, its outcome, and where these figures show it.
+        let checklist = manifest
+            .map(|path| {
+                let loaded = load_requirement_manifest(path);
+                let classification = crate::requirement_manifest::classify(model, &loaded);
+                let diagram = crate::diagram::split(model, 1);
+                let items =
+                    crate::diagram::checklist::items(model, &classification, &diagram, &printed);
+                crate::diagram::checklist::pages(&items, lexicon, page)
+            })
+            .transpose()?;
+
+        // Every name is decided before anything is written, so a refusal
+        // leaves no partial set behind.
+        let stems: Vec<String> = printed
+            .iter()
+            .map(|p| {
+                p.laid.name.file_stem().unwrap_or_else(|| {
+                    cli_exit(CliError::DiagramUnavailable {
+                        feature: format!(
+                            "the figure {:?} has no file name: its state id carries a path \
+                             separator or a control character",
+                            p.laid.name
+                        ),
+                    })
+                })
+            })
+            .collect();
+        let mut files: Vec<(String, String)> = printed
+            .iter()
+            .zip(&stems)
+            .map(|(p, stem)| (format!("{stem}.svg"), crate::diagram::svg::render(p)))
+            .collect();
+        files.extend(checklist.iter().flatten().enumerate().map(|(n, sheet)| {
+            (
+                format!("checklist-{}.svg", n + 1),
+                crate::diagram::svg::render_checklist(sheet),
+            )
+        }));
+        Ok(files)
+    };
+
+    // The first page that holds the whole set is the one it is drawn on. A
+    // refusal of what the document is ends the run at once; one of a size is
+    // kept, and the largest page's is the one said when no page holds it.
+    let mut too_large = None;
+    for page in pages {
+        match draw(page) {
+            Ok(files) => {
+                write_diagram_files(out, &framed(files));
+                return;
+            }
+            Err(refusal) if refusal.is_too_large() => too_large = Some(refusal),
+            Err(refusal) => refuse(refusal),
+        }
+    }
+    refuse(too_large.expect("at least one page is tried"))
+}
+
+fn cmd_pseudo(
+    document: &str,
+    deploy: Option<&str>,
+    shape: &str,
+    lexicon: &str,
+    error_format: ErrorFormat,
+) {
+    let positions = read_review_input(document, error_format);
+    let label = crate::DocumentLabel::for_input_path(document);
+
+    let (doc, kind_basis, claims) =
+        match crate::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+            Ok(Some(p)) => (p.document, p.kind_basis, p.requirements),
+            // The statechart reads the file the way `check` reads it: the
+            // same label, and positions mapped back through the preprocessor
+            // to the text the author wrote rather than the expanded text, so
+            // both commands report one defect with one record.
+            Ok(None) => match crate::parser::SCXMLParser::new().parse_file(document) {
+                Ok(model) => {
+                    let basis = model.kind_basis.clone();
+                    (
+                        crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
+                        basis,
+                        // A statechart's claims are its nodes', on its page.
+                        Vec::new(),
+                    )
+                }
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            },
+            Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+        };
+
+    // A deployment is resolved against the model the document holds,
+    // and the rendering is of that same model — the pipeline runs on a
+    // copy so the sends it injects never reach the page as if an author
+    // had written them. See `crate::mesh::review`.
+    let deployment = match (deploy, &doc) {
+        (None, _) => crate::forge::pseudo::Deployment::default(),
+        (Some(path), crate::forge::model::ForgeDocument::Statechart(model)) => {
+            match crate::mesh::review::deployment_for(
+                model,
+                std::path::Path::new(path),
+                crate::generator::Language::Cpp,
+            ) {
+                Ok(d) => d,
+                Err(e) => cli_exit(CliError::PseudoUnavailable {
+                    kind: "statechart".to_string(),
+                    feature: format!("a deployment this deploy.yaml cannot resolve: {e}"),
+                }),
+            }
+        }
+        // Refused rather than rendered without the facts: a caller who
+        // asked what the deployment does must not be handed a text that
+        // looks complete and answers a different question.
+        (Some(_), other) => cli_exit(CliError::PseudoUnavailable {
+            kind: other.kind().as_attr().to_string(),
+            feature: "a deployment, which binds the <send> targets only a statechart has"
+                .to_string(),
+        }),
+    };
+
+    // ⚠ Clap has already refused a name no registry carries, so these
+    // two cannot fail here — and they are still not unwrapped blind:
+    // the message names the registry, because the one way this breaks
+    // is a parser and a registry that stopped agreeing.
+    let kind = doc.kind().as_attr().to_string();
+    let shape = crate::forge::page::shape_named(shape).unwrap_or_else(|| {
+        cli_exit(CliError::PseudoUnavailable {
+            kind: kind.clone(),
+            feature: format!("the '{shape}' shape, which is not in this build's registry"),
+        })
+    });
+    let lexicon = crate::forge::page::lexicon_named(lexicon).unwrap_or_else(|| {
+        cli_exit(CliError::PseudoUnavailable {
+            kind: kind.clone(),
+            feature: format!("the '{lexicon}' lexicon, which is not in this build's registry"),
+        })
+    });
+
+    let nodes = match crate::forge::pseudo::render_nodes(&doc, &deployment)
+        .and_then(|nodes| {
+            crate::forge::pseudo::with_kind_basis(nodes, doc.kind().as_attr(), kind_basis.as_ref())
+        })
+        .and_then(|nodes| {
+            crate::forge::pseudo::with_root_claims(nodes, doc.kind().as_attr(), &claims)
+        }) {
+        Ok(nodes) => nodes,
+        // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
+        Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
+            kind: unsupported.kind.to_string(),
+            feature: unsupported.feature.to_string(),
+        }),
+    };
+
+    // The page carries its own declaration when the pair is not the
+    // default one, so the text written here can be filed and handed on
+    // without whoever reads it next having to be told what was asked
+    // for. See `page::write_page`.
+    match crate::forge::page::write_page(&nodes, shape, lexicon) {
+        Ok(text) => out_stream(|w| w.write_all(text.as_bytes())),
+        // A shape refusing a page it cannot write is the same kind of
+        // answer as a renderer refusing a document: by name, and with
+        // no text, because a page missing a block's close reads like a
+        // page that had no block.
+        Err(refusal) => cli_exit(CliError::PseudoUnavailable {
+            kind,
+            feature: refusal.to_string(),
+        }),
+    }
+}
+
+/// Render RFC §7a's acceptance report.
+///
+/// The manifest is required here, unlike `requirements`: a report is
+/// what a person accepts against, and without the closed set it could
+/// only show what the document claims about itself — which is the one
+/// question acceptance is not allowed to ask.
+fn cmd_acceptance_report(
+    scxml: &str,
+    manifest: &str,
+    variant: &str,
+    sidecar: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let design = read_design(scxml, error_format);
+
+    let manifest = load_requirement_manifest(manifest);
+
+    // A sidecar that was asked for and cannot be used is fatal. Falling
+    // back to a report without sentences would answer a weaker question
+    // than the one asked while looking exactly like the answer.
+    let sidecar = sidecar.map(|path| load_requirement_sidecar(path, &manifest));
+
+    let page = match &design {
+        Design::Statechart(model) => {
+            crate::acceptance_report::render(model, &manifest, sidecar.as_ref(), variant)
+        }
+        Design::Forge(parsed) => {
+            // A forge kind has no sends to itself or a parent, so what it
+            // leaves open is its markers: read where the manifest and
+            // `sce-codegen unresolved` read them.
+            //
+            // ⚠ Named `expanded`, not `positions`: the mutation casefile that
+            // anchors on `cmd_unresolved`'s own `let positions = …` line
+            // matches by text, and a second identical line in this file makes
+            // it ambiguous, which it reports as a stale case.
+            let expanded = read_review_input(scxml, error_format);
+            let markers = crate::unresolved_check::unresolved_records_forge(&expanded)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+            let open = crate::open_matters::of(&markers, &[], &[], &[], &[]);
+            crate::acceptance_report::render_forge(
+                parsed,
+                &manifest,
+                sidecar.as_ref(),
+                variant,
+                &open,
+            )
+        }
+    };
+    print!("{page}");
+}
+
+/// Pin what a person accepted — Requirement-closure RFC §8.3.
+/// `--source`, `--decisions`, `--profile` and `--scenarios`, as the roles the
+/// acceptance record pins them under.
+fn authored_from(
+    sources: &[String],
+    decisions: Option<&str>,
+    profile: Option<&str>,
+    scenarios: Option<&str>,
+) -> Vec<(crate::acceptance_record::SourceRole, PathBuf)> {
+    use crate::acceptance_record::SourceRole;
+    sources
+        .iter()
+        .map(|s| (SourceRole::Specification, PathBuf::from(s)))
+        .chain(decisions.map(|d| (SourceRole::Decisions, PathBuf::from(d))))
+        .chain(profile.map(|p| (SourceRole::Profile, PathBuf::from(p))))
+        .chain(scenarios.map(|s| (SourceRole::Examples, PathBuf::from(s))))
+        .collect()
+}
+
+/// The scenario set among `sources`, read through its own door: a file that is
+/// no scenario set is refused as unusable and not pinned as the examples a design
+/// was held to. Its problems are findings and are not refused here: a set that
+/// cannot close a requirement is still what the design was held to.
+fn check_scenario_set(sources: &[(crate::acceptance_record::SourceRole, PathBuf)]) {
+    let Some((_, path)) = sources
+        .iter()
+        .find(|(role, _)| *role == crate::acceptance_record::SourceRole::Examples)
+    else {
+        return;
+    };
+    if let Err(e) = crate::scenario_set::ScenarioSet::load(path) {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: path.to_string_lossy().into_owned(),
+            what: "scenario set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        });
+    }
+}
+
+/// What `accept` is asked to pin, and where it writes the record.
+struct AcceptRequest<'a> {
+    scxml: &'a str,
+    manifest: &'a str,
+    /// The manifest's sidecar, whose digest is pinned beside the manifest's.
+    sidecar: Option<&'a str>,
+    variant: &'a str,
+    root: &'a str,
+    out: &'a str,
+    /// Which surface says the owner accepted, when the caller said.
+    channel: Option<crate::acceptance_record::Channel>,
+    /// The record this acceptance replaces, when the caller said.
+    succeeds: Option<&'a str>,
+}
+
+fn cmd_accept(
+    request: &AcceptRequest<'_>,
+    sources: &[(crate::acceptance_record::SourceRole, PathBuf)],
+    error_format: ErrorFormat,
+) {
+    let AcceptRequest {
+        scxml,
+        manifest,
+        sidecar,
+        variant,
+        root,
+        out,
+        channel,
+        succeeds,
+    } = *request;
+    // Each input is refused through its own door first, so a document that
+    // does not parse reports its `xml/*` code and a manifest that does not
+    // load reports the loader's refusal. Taking the record would refuse both
+    // as one opaque failure to pin a design, which tells the caller which
+    // command failed and nothing about why.
+    let design = read_design(scxml, error_format);
+    let loaded_manifest = load_requirement_manifest(manifest);
+    if let Some(sidecar) = sidecar {
+        let _ = load_requirement_sidecar(sidecar, &loaded_manifest);
+    }
+    check_scenario_set(sources);
+
+    // A design is accepted under the profile it is held to. The profile is
+    // read through its own door, and a document that departs from it is
+    // refused here: the record would say the owner accepted a design under a
+    // profile that design breaks. A forge document the profile does not reach
+    // is judged by nothing, and is pinned all the same, so the record still
+    // answers for this profile and no other.
+    let profile_path = sources
+        .iter()
+        .find(|(role, _)| *role == crate::acceptance_record::SourceRole::Profile)
+        .map(|(_, path)| path.to_string_lossy().into_owned());
+    if let Some(profile) = load_profile(profile_path.as_deref()) {
+        let judged = match &design {
+            Design::Statechart(model) => Judged::Statechart(model.as_ref(), scxml),
+            Design::Forge(parsed) => Judged::Forge(parsed.as_ref(), scxml),
+        };
+        judge_under_profile(&profile, &[judged], error_format);
+    }
+
+    let sources: Vec<_> = sources
+        .iter()
+        .map(|(role, path)| (*role, path.as_path()))
+        .collect();
+    let record = crate::acceptance_record::AcceptanceRecord::take_authored(
+        Path::new(root),
+        Path::new(scxml),
+        Path::new(manifest),
+        variant,
+        &sources,
+    )
+    .unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: scxml.to_string(),
+            what: "acceptance record",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    })
+    .stated_by(channel);
+    let record = match sidecar {
+        Some(sidecar) => record
+            .with_words(Path::new(manifest), Path::new(sidecar))
+            .unwrap_or_else(|e| {
+                cli_exit(CliError::ClosureInputUnusable {
+                    path: sidecar.to_string(),
+                    what: "requirement sidecar",
+                    kind: e.kind(),
+                    detail: e.to_string(),
+                })
+            }),
+        None => record,
+    };
+    // The record this one replaces is read through the same door the record
+    // itself is, so a file that is not a record, or is another specification's,
+    // is refused with the loader's own sentence.
+    let record = match succeeds {
+        Some(previous) => record
+            .succeeding(Path::new(root), Path::new(previous))
+            .unwrap_or_else(|e| {
+                cli_exit(CliError::ClosureInputUnusable {
+                    path: previous.to_string(),
+                    what: "acceptance record to replace",
+                    kind: e.kind(),
+                    detail: e.to_string(),
+                })
+            }),
+        None => record,
+    };
+    fs::write(out, record.to_json()).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: out.to_string(),
+            source,
+        })
+    });
+}
+
+/// `--document`: each path filed as `--scxml` or `--forge` by the rule
+/// every route reads a document by (`classify_document`), after the ones
+/// whose pipeline was stated. One function for `check` and `orchestrate`,
+/// so the two routes cannot file one document two ways.
+fn file_documents(
+    documents: Vec<String>,
+    scxml: &mut Vec<String>,
+    forge: &mut Vec<String>,
+    error_format: ErrorFormat,
+) {
+    for path in documents {
+        // An `sce:std/...` name is filed as `generate` reads it, from the
+        // library this generator embeds.
+        let content = read_named_document(&path).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::ReadInput {
+                    path: path.clone(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        match crate::classify_document(&content) {
+            crate::Pipeline::Scxml => scxml.push(path),
+            crate::Pipeline::Forge => forge.push(path),
+        }
+    }
+}
+
+/// A design of either kind, as the requirement and acceptance commands
+/// read it.
+enum Design {
+    Statechart(Box<crate::model::SCXMLModel>),
+    Forge(Box<crate::forge::model::ParsedForge>),
+}
+
+/// Read `document` through the door of its own pipeline, so a document
+/// that does not parse reports its own code: a statechart through the
+/// SCXML parser, a forge document through the forge parse — the dispatch
+/// `pseudo` makes. The requirement and acceptance commands answer for
+/// designs of every kind (Requirement-closure RFC §7).
+fn read_design(document: &str, error_format: ErrorFormat) -> Design {
+    let positions = read_review_input(document, error_format);
+    let label = crate::DocumentLabel::for_input_path(document);
+    match crate::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+        Ok(Some(parsed)) => Design::Forge(Box::new(parsed)),
+        Ok(None) => match crate::parser::SCXMLParser::new().parse_file(document) {
+            Ok(model) => Design::Statechart(Box::new(model)),
+            Err(e) => error_format.emit_and_exit(&e, "SCXML parse error: "),
+        },
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+    }
+}
+
+/// Re-check an acceptance record against the tree — Requirement-closure
+/// RFC §8.3.
+fn cmd_acceptance_check(
+    record: &str,
+    variant: &str,
+    root: &str,
+    asked: &[(crate::acceptance_record::SourceRole, PathBuf)],
+) {
+    let unusable = |kind: &'static str, detail: String| -> ! {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: record.to_string(),
+            what: "acceptance record",
+            kind,
+            detail,
+        })
+    };
+    // The profile a question is about is read through its own door, as
+    // `accept` reads it: a file that is no profile is refused as unusable
+    // rather than answered as a profile the design was not held to, so a
+    // specification handed over in its place is not reported as a lapse.
+    let profile_path = asked
+        .iter()
+        .find(|(role, _)| *role == crate::acceptance_record::SourceRole::Profile)
+        .map(|(_, path)| path.to_string_lossy().into_owned());
+    let _ = load_profile(profile_path.as_deref());
+    check_scenario_set(asked);
+    let text =
+        fs::read_to_string(record).unwrap_or_else(|e| unusable("read", format!("{record}: {e}")));
+    let loaded = crate::acceptance_record::AcceptanceRecord::from_json(&text)
+        .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
+    let asked: Vec<_> = asked
+        .iter()
+        .map(|(role, path)| (*role, path.as_path()))
+        .collect();
+    let lapses = loaded
+        .recheck_for(Path::new(root), variant, &asked)
+        .unwrap_or_else(|e| unusable(e.kind(), e.to_string()));
+
+    // Silence when it still holds, for the reason `verify-generator` gives:
+    // this runs on every commit, and a line each time trains its reader to
+    // skip it.
+    if !lapses.is_empty() {
+        cli_exit(CliError::AcceptanceLapsed {
+            record: record.to_string(),
+            lapses: lapses.iter().map(ToString::to_string).collect(),
+        });
+    }
+}
+
+/// Subcommand: acceptance-impact.
+///
+/// Every record is asked the question `acceptance-check` asks of one, for the
+/// variant the record itself was taken for (the question here is what MOVED, not
+/// whether somebody asked about another variant), and the answer is a line each:
+///
+/// ```text
+/// {"v":1,"kind":"acceptance-impact","record":P,"variant":V,"holds":true|false,
+///  "lapses":[{"kind":"rule","id":"H2","places":3,"recorded":"…","current":"…",
+///             "message":"house rule H2, which …"}, …]}
+/// {"v":1,"kind":"acceptance-impact","record":P,"unusable":{"kind":K,"detail":D}}
+/// {"v":1,"kind":"acceptance-impact-summary","records":N,"holding":a,"lapsed":b,
+///  "unusable":c}
+/// ```
+///
+/// ⚠ A report, so the exit status is 0 whenever it ran: a record that cannot be
+/// read is `unusable` on its own line and the rest are still asked, since a scan
+/// that stops at the first bad record answers for nothing after it.
+fn cmd_acceptance_impact(records: &[String], root: &str) {
+    use crate::acceptance_record::AcceptanceRecord;
+
+    let (mut holding, mut lapsed, mut unusable) = (0usize, 0usize, 0usize);
+    let mut lines: Vec<serde_json::Value> = Vec::new();
+    for record in records {
+        let refused = |kind: &str, detail: String| {
+            serde_json::json!({
+                "v": 1, "kind": "acceptance-impact", "record": record,
+                "unusable": {"kind": kind, "detail": detail},
+            })
+        };
+        let text = match fs::read_to_string(record) {
+            Ok(text) => text,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused("read", format!("{record}: {e}")));
+                continue;
+            }
+        };
+        let loaded = match AcceptanceRecord::from_json(&text) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused(e.kind(), e.to_string()));
+                continue;
+            }
+        };
+        let found = match loaded.recheck(Path::new(root), &loaded.variant) {
+            Ok(found) => found,
+            Err(e) => {
+                unusable += 1;
+                lines.push(refused(e.kind(), e.to_string()));
+                continue;
+            }
+        };
+        if found.is_empty() {
+            holding += 1;
+        } else {
+            lapsed += 1;
+        }
+        let lapses: Vec<serde_json::Value> = found
+            .iter()
+            .map(|lapse| {
+                let mut one = serde_json::to_value(lapse).expect("a lapse serialises");
+                one["message"] = serde_json::Value::String(lapse.to_string());
+                one
+            })
+            .collect();
+        lines.push(serde_json::json!({
+            "v": 1, "kind": "acceptance-impact", "record": record,
+            "variant": loaded.variant, "holds": found.is_empty(), "lapses": lapses,
+        }));
+    }
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-impact-summary", "records": records.len(),
+        "holding": holding, "lapsed": lapsed, "unusable": unusable,
+    }));
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// Subcommand: acceptance-delta.
+///
+/// What moved in a design since a record was taken, a line each:
+///
+/// ```text
+/// {"v":1,"kind":"acceptance-delta","requirement":"R3","evidence":"unchanged"}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R3","evidence":"changed",
+///  "moved":["states.alarm.on_entry_blocks[0][0]"],"gone":1}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R4","evidence":"new","at":["…"]}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R7","evidence":"dropped","gone":2}
+/// {"v":1,"kind":"acceptance-delta-unclaimed","added":["…"],"gone":0}
+/// {"v":1,"kind":"acceptance-delta-summary","record":P,"requirements":N,
+///  "unchanged":a,"changed":b,"new":c,"dropped":d}
+/// ```
+///
+/// ⚠ A report, so the exit status is 0 whenever it ran. What it cannot answer is a
+/// refusal through the same door `acceptance-check` uses: a record that does not
+/// read, a record from before evidence was kept, a design that does not parse.
+fn cmd_acceptance_delta(record: &str, root: &str, design: Option<&str>) {
+    use crate::acceptance_record::{AcceptanceRecord, RequirementChange};
+
+    let unusable = |path: &str, what: &'static str, kind: &'static str, detail: String| -> ! {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: path.to_string(),
+            what,
+            kind,
+            detail,
+        })
+    };
+    let text = fs::read_to_string(record).unwrap_or_else(|e| {
+        unusable(
+            record,
+            "acceptance record",
+            "read",
+            format!("{record}: {e}"),
+        )
+    });
+    let loaded = AcceptanceRecord::from_json(&text)
+        .unwrap_or_else(|e| unusable(record, "acceptance record", e.kind(), e.to_string()));
+    let document = match design {
+        Some(path) => PathBuf::from(path),
+        None => Path::new(root).join(&loaded.document),
+    };
+    let delta = loaded.evidence_delta(&document).unwrap_or_else(|e| {
+        unusable(
+            &document.display().to_string(),
+            "design to compare",
+            e.kind(),
+            e.to_string(),
+        )
+    });
+
+    let (mut unchanged, mut changed, mut new, mut dropped) = (0usize, 0usize, 0usize, 0usize);
+    let mut lines: Vec<serde_json::Value> = Vec::new();
+    for (id, change) in &delta.requirements {
+        match change {
+            RequirementChange::Unchanged => unchanged += 1,
+            RequirementChange::Changed { .. } => changed += 1,
+            RequirementChange::New { .. } => new += 1,
+            RequirementChange::Dropped { .. } => dropped += 1,
+        }
+        let mut line = serde_json::to_value(change).expect("a change serialises");
+        line["v"] = serde_json::json!(1);
+        line["kind"] = serde_json::json!("acceptance-delta");
+        line["requirement"] = serde_json::json!(id);
+        lines.push(line);
+    }
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-delta-unclaimed",
+        "added": delta.unclaimed_added, "gone": delta.unclaimed_gone,
+    }));
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-delta-summary", "record": record,
+        "requirements": delta.requirements.len(),
+        "unchanged": unchanged, "changed": changed, "new": new, "dropped": dropped,
+    }));
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// Judge every claim pointing out of a document — Requirement-closure
+/// RFC §5.2e/§5.2f.
+fn cmd_requirement_closure(manifests: &[String]) {
+    // Each manifest through the shared loader first, so a broken one
+    // reports the loader's own refusal naming the file. Building the set
+    // from an unusable manifest would report "the closure does not close"
+    // about a document that never loaded.
+    let loaded: Vec<_> = manifests
+        .iter()
+        .map(|path| load_requirement_manifest(path))
+        .collect();
+
+    let set = crate::requirement_set::RequirementSet::new(loaded).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            // The duplicate is a property of the set, not of one file, and
+            // naming either member would point a reader at the innocent
+            // one half the time. The whole invocation is the input here.
+            path: manifests.join(", "),
+            what: "requirement manifest set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+
+    let report = set.report();
+    let unresolved: Vec<String> = report
+        .verdicts
+        .iter()
+        .filter(|v| !matches!(v.arrival, crate::requirement_set::Arrival::Arrived { .. }))
+        .map(ToString::to_string)
+        .collect();
+    if !unresolved.is_empty() {
+        cli_exit(CliError::RequirementClosureBroken { claims: unresolved });
+    }
+
+    // Silent on success, for the reason `acceptance-check` gives: this is
+    // meant to run on every commit, and a line each time trains its reader
+    // to skip it. ⚠ The count goes to stderr rather than stdout so a
+    // caller piping the verdict is not handed prose; it is here at all
+    // because "0 defects" and "0 questions" look identical otherwise.
+    eprintln!(
+        "requirement-closure: {} claim(s) across {} manifest(s) all land",
+        report.answered(),
+        set.len()
+    );
+}
+
+/// Load a requirement manifest, or end the run with a record saying why.
+///
+/// One loader for every subcommand that reads a manifest, so a manifest
+/// that does not load reaches the caller the same way whichever door it
+/// came through. The doors used to print the loader's sentence and exit
+/// 1 each on their own, which is how all of them came to break
+/// `SCE_ERROR_CONTRACT.md` §6 together.
+fn load_requirement_manifest(path: &str) -> crate::requirement_manifest::RequirementManifest {
+    crate::requirement_manifest::RequirementManifest::load(Path::new(path)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: path.to_string(),
+            what: "requirement manifest",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    })
+}
+
+/// Load the sidecar for `manifest`, or end the run with a record saying
+/// why. See [`load_requirement_manifest`].
+fn load_requirement_sidecar(
+    path: &str,
+    manifest: &crate::requirement_manifest::RequirementManifest,
+) -> crate::requirement_sidecar::RequirementSidecar {
+    crate::requirement_sidecar::RequirementSidecar::load(Path::new(path), manifest).unwrap_or_else(
+        |e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: path.to_string(),
+                what: "requirement sidecar",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        },
+    )
+}
+
+/// Judge the examples in `set_file` from the trace in `trace_file` and hold
+/// the classification against them (`scenario_closure::close`).
+///
+/// Judged here, from the trace, and not read from a verdict file: a verdict
+/// somebody typed would close a requirement on a claim. A set or a trace that
+/// does not load ends the run through the door a requirement list uses.
+fn hold_scenarios(
+    classification: &mut crate::requirement_manifest::Classification,
+    manifest: &crate::requirement_manifest::RequirementManifest,
+    (set_file, trace_file): (&str, &str),
+) {
+    let (set, digest) = crate::scenario_set::ScenarioSet::load_with_digest(Path::new(set_file))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: set_file.to_string(),
+                what: "scenario set",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        });
+    let trace = crate::scenario_judge::Trace::load(Path::new(trace_file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: trace_file.to_string(),
+            what: "observation trace",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let judgement = crate::scenario_judge::judge(&set, &digest, &trace);
+    crate::scenario_closure::close(
+        classification,
+        manifest,
+        &set,
+        &digest,
+        &trace.engine,
+        &judgement,
+    );
+}
+
+fn cmd_requirements(
+    scxml: &[String],
+    manifest: Option<&str>,
+    scenarios: Option<(&str, &str)>,
+    error_format: ErrorFormat,
+) {
+    if scxml.len() > 1 {
+        cmd_requirements_of_design(scxml, manifest, scenarios, error_format);
+        return;
+    }
+    let scxml = scxml[0].as_str();
+    let design = read_design(scxml, error_format);
+    let Some(manifest_path) = manifest else {
+        match &design {
+            Design::Statechart(model) => {
+                out_stream(|w| crate::requirements_report::emit_requirements_ndjson(model, w))
+            }
+            Design::Forge(parsed) => out_stream(|w| {
+                crate::requirements_report::emit_forge_requirements_ndjson(parsed, w)
+            }),
+        }
+        return;
+    };
+
+    // A manifest that cannot be loaded is fatal rather than skipped.
+    // Falling back to the annotation-only report would answer a
+    // different question than the one asked, print a clean-looking
+    // result, and never mention that the denominator was dropped.
+    let loaded = load_requirement_manifest(manifest_path);
+    let mut classification = match &design {
+        Design::Statechart(model) => crate::requirement_manifest::classify(model, &loaded),
+        Design::Forge(parsed) => crate::requirement_manifest::classify_document(parsed, &loaded),
+    };
+    if let Some(examples) = scenarios {
+        hold_scenarios(&mut classification, &loaded, examples);
+    }
+    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));
+}
+
+/// `requirements` over the documents of one design, together.
+///
+/// A statechart that closes its interface is checked WITH the event schemas it
+/// imports, and the owner's question is whether the design carries each
+/// requirement, not whether each file does: measured one file at a time every
+/// schema that claims nothing reads every requirement `missing`. So the claims
+/// of every document are pooled and classified once against the one manifest.
+///
+/// ⚠ A manifest is required. Without one the command reports what a document
+/// claims, one record per node with no document named, and the claims of
+/// several documents in one stream would not say which file a node is in.
+fn cmd_requirements_of_design(
+    documents: &[String],
+    manifest: Option<&str>,
+    scenarios: Option<(&str, &str)>,
+    error_format: ErrorFormat,
+) {
+    let Some(manifest_path) = manifest else {
+        cli_exit(CliError::Usage {
+            detail: "several documents are read as one design and measured against a \
+                     requirement set: give `--manifest`"
+                .to_string(),
+        })
+    };
+    let loaded = load_requirement_manifest(manifest_path);
+    let members: Vec<(String, Vec<crate::requirement_manifest::OwnedCitation>)> = documents
+        .iter()
+        .map(|path| {
+            let claims = match read_design(path, error_format) {
+                Design::Statechart(model) => {
+                    crate::requirement_manifest::citations_of_model(&model)
+                }
+                Design::Forge(parsed) => {
+                    crate::requirement_manifest::citations_of_document(&parsed)
+                }
+            };
+            (path.clone(), claims)
+        })
+        .collect();
+    let mut classification = crate::requirement_manifest::classify_documents(&members, &loaded);
+    if let Some(examples) = scenarios {
+        hold_scenarios(&mut classification, &loaded, examples);
+    }
+    out_stream(|w| crate::requirement_manifest::emit_classification_ndjson(&classification, w));
+}
+
+/// `scenarios` — read a scenario set and report it.
+///
+/// One summary record, one record per scenario, then one record per problem.
+/// The problems are findings and the command exits 0 with them; `usable` in
+/// the summary is the answer. Only a file that is not a scenario set at all
+/// ends the run, through the same door a requirement list uses
+/// (`cli/closure-input-unusable`), so a probe on one loader says nothing about
+/// the next.
+fn cmd_scenarios(
+    file: &str,
+    specification: Option<&str>,
+    machine: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    // A replay scenario is told from a scenario set by what it carries: a set names
+    // its `record`, and a replay scenario names its `machine` and lists its `steps`.
+    // Anything else goes on to the set's reader, which refuses it by kind.
+    if let Some(scenario) = replay_scenario(file) {
+        if specification.is_some() {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: file.to_string(),
+                what: "replay scenario",
+                kind: "specification-for-a-replay",
+                detail: "--specification is the text a scenario set quotes, and this file is a \
+                         replay scenario, which quotes none: name the machine it drives with \
+                         --machine"
+                    .to_string(),
+            });
+        }
+        return cmd_replay_scenario(file, &scenario, machine, error_format);
+    }
+    if machine.is_some() {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: file.to_string(),
+            what: "scenario set",
+            kind: "machine-for-a-set",
+            detail: "--machine names the statechart a replay scenario drives, and this file is \
+                     no replay scenario (one names its `machine` and lists its `steps`, and \
+                     carries no `record`)"
+                .to_string(),
+        });
+    }
+    let set = crate::scenario_set::ScenarioSet::load(Path::new(file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: file.to_string(),
+            what: "scenario set",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let mut problems = set.problems();
+    if let Some(path) = specification {
+        let text = fs::read_to_string(path).unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: path.to_string(),
+                source,
+            })
+        });
+        problems.extend(set.quote_problems(&text));
+    }
+    let (runnable, awaiting, blocked) = set.counts();
+    let mut lines = vec![serde_json::json!({
+        "kind": "scenario-set",
+        "doc_id": set.specification.doc_id,
+        "rev": set.specification.rev,
+        "origin": set.origin.as_str(),
+        "scenarios": set.scenarios.len(),
+        "runnable": runnable,
+        "awaiting-decision": awaiting,
+        "blocked": blocked,
+        "quotes_checked": specification.is_some(),
+        "problems": problems.len(),
+        "usable": problems.is_empty(),
+    })];
+    for scenario in &set.scenarios {
+        let quote_found = specification.map(|_| {
+            !problems.iter().any(|p| {
+                p.code == "quote-not-found" && p.scenario.as_deref() == Some(scenario.id.as_str())
+            })
+        });
+        lines.push(serde_json::json!({
+            "kind": "scenario",
+            "id": scenario.id,
+            "status": scenario.status.as_str(),
+            "steps": scenario.steps.len(),
+            "expectations": scenario.expectations(),
+            "requirements": scenario.requirements,
+            "quote_found": quote_found,
+        }));
+    }
+    for found in &problems {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "scenario": found.scenario,
+            "path": found.path,
+            "code": found.code,
+            "detail": found.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// The replay scenario `file` holds: a JSON object that names its `machine` or
+/// lists its `steps`, and carries no `record`. `None` for anything else, which the
+/// scenario set's reader then answers, by kind — a file that cannot be read or is
+/// not JSON included, so that one door says why such a file is unusable.
+fn replay_scenario(file: &str) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(file).ok()?;
+    // A key written twice is read differently by the drivers, as it is by the
+    // set's reader, so it is no scenario either.
+    let value: serde_json::Value = crate::strict_json::from_str(&text).ok()?;
+    let object = value.as_object()?;
+    let replay = !object.contains_key("record")
+        && (object.contains_key("machine") || object.contains_key("steps"));
+    replay.then_some(value)
+}
+
+/// `scenarios` on a replay scenario: one summary record, then one record per
+/// problem, each with the JSON pointer it is at and its code
+/// (`crate::scenario_replay::PROBLEM_CODES`). The problems are findings, as a
+/// scenario set's are: the command exits 0 with them and the summary's `usable` is
+/// the answer.
+///
+/// The names the scenario uses are held to the machine it drives when that is
+/// known: the document `--machine` names, or the standard statechart the scenario
+/// names by its library name (`sce:std/...`), which is read from the library.
+fn cmd_replay_scenario(
+    file: &str,
+    scenario: &serde_json::Value,
+    machine: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use crate::scenario_replay::{machine_problems, problems, Dialect, MachineFacts};
+    let named = scenario.get("machine").and_then(serde_json::Value::as_str);
+    let document = machine.map(str::to_string).or_else(|| {
+        named
+            .filter(|name| crate::forge::stdlib::names_standard(Path::new(name)))
+            .map(|name| format!("{name}.scxml"))
+    });
+    let facts = document.as_deref().map(|document| {
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(document)
+            .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+        let stem = Path::new(document)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default();
+        // A type the judge cannot read is the judge's failure, not a finding of
+        // the scenario: no `null` under it could be held to anything.
+        MachineFacts::of(&model, stem).unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: document.to_string(),
+                what: "machine",
+                kind: "type-unread",
+                detail: e.to_string(),
+            })
+        })
+    });
+    let mut found = problems(scenario);
+    if let Some(facts) = &facts {
+        found.extend(machine_problems(scenario, facts));
+    }
+    let steps = scenario
+        .get("steps")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let mut lines = vec![serde_json::json!({
+        "kind": "replay-scenario",
+        "file": file,
+        "dialect": Dialect::of(scenario).as_str(),
+        "machine": named,
+        "steps": steps,
+        "checked_against": document,
+        "problems": found.len(),
+        "usable": found.is_empty(),
+    })];
+    for problem in &found {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "path": problem.path,
+            "code": problem.code,
+            "detail": problem.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// `judge-scenarios` — judge an observation trace against a scenario set.
+///
+/// One summary record, one record per scenario, then a record for each failed
+/// check, each gap and each problem. Findings, not refusals: the command exits
+/// 0 whatever it finds, and ends the run only for a file that is not a
+/// scenario set or not an observation trace, through the door a requirement
+/// list uses (`cli/closure-input-unusable`).
+fn cmd_judge_scenarios(set_file: &str, trace_file: &str) {
+    use crate::scenario_judge::{judge, Trace, Verdict};
+
+    let (set, digest) = crate::scenario_set::ScenarioSet::load_with_digest(Path::new(set_file))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: set_file.to_string(),
+                what: "scenario set",
+                kind: e.kind(),
+                detail: e.to_string(),
+            })
+        });
+    let trace = Trace::load(Path::new(trace_file)).unwrap_or_else(|e| {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: trace_file.to_string(),
+            what: "observation trace",
+            kind: e.kind(),
+            detail: e.to_string(),
+        })
+    });
+    let judgement = judge(&set, &digest, &trace);
+    let bounded: Vec<&str> = judgement
+        .verdicts
+        .iter()
+        .filter(|v| v.verdict == Verdict::Pass && v.bound.is_some())
+        .map(|v| v.id.as_str())
+        .collect();
+    let problems = judgement.set_problems.len() + judgement.trace_problems.len();
+    let mut summary = serde_json::json!({
+        "kind": "judgement",
+        "doc_id": set.specification.doc_id,
+        "rev": set.specification.rev,
+        "origin": set.origin.as_str(),
+        "engine": { "name": trace.engine.name, "detail": trace.engine.detail },
+        "set_sha256": digest,
+        "judged": judgement.judged,
+        "scenarios": set.scenarios.len(),
+        "pass": judgement.count(Verdict::Pass),
+        "fail": judgement.count(Verdict::Fail),
+        "not-judged": judgement.count(Verdict::NotJudged),
+        "blocked": judgement.count(Verdict::Blocked),
+        "awaiting-decision": judgement.count(Verdict::AwaitingDecision),
+        "bounded": bounded,
+        "problems": problems,
+        "means": "a pass says the machine behaved as these examples say, on this engine, over \
+                  these inputs; it does not say the design is right, or that the examples are \
+                  the owner's, and a bounded scenario passed only up to its bound",
+    });
+    // The bounds and the isolation the driver ran under are the trace's to say
+    // and the judgement's to repeat, so a verdict states what it was made under.
+    if let Some(limits) = &trace.limits {
+        summary["limits"] = serde_json::json!(limits);
+    }
+    if let Some(isolation) = &trace.isolation {
+        summary["isolation"] = serde_json::json!(isolation.0);
+    }
+    let mut lines = vec![summary];
+    // Where the interface the set proposes and the design's own surface part. A
+    // trace that carried no surface made no comparison, and says so: silence
+    // would read as a match.
+    if judgement.judged {
+        lines.push(match &judgement.interface {
+            Some(report) => {
+                let mut record = serde_json::json!(report);
+                record["kind"] = serde_json::json!("interface");
+                record["checked"] = serde_json::json!(true);
+                record
+            }
+            None => serde_json::json!({
+                "kind": "interface",
+                "checked": false,
+                "why": "the trace carries no design surface, so the interface the set proposes \
+                        was not held to the design",
+            }),
+        });
+    }
+    for verdict in &judgement.verdicts {
+        let mut record = serde_json::json!({
+            "kind": "verdict",
+            "id": verdict.id,
+            "verdict": verdict.verdict.as_str(),
+            "requirements": verdict.requirements,
+            "bound": verdict.bound,
+            "reason": verdict.reason,
+        });
+        if let Some(cause) = verdict.cause {
+            record["cause"] = serde_json::json!(cause.as_str());
+        }
+        lines.push(record);
+    }
+    for failure in &judgement.failures {
+        lines.push(serde_json::json!({
+            "kind": "failure",
+            "scenario": failure.scenario,
+            "step": failure.step,
+            "check": failure.check,
+            "expected": failure.expected,
+            "observed": failure.observed,
+        }));
+    }
+    for gap in &judgement.gaps {
+        let mut record = serde_json::json!({
+            "kind": "gap",
+            "scenario": gap.scenario,
+            "step": gap.step,
+            "check": gap.check,
+            "why": gap.why,
+        });
+        if let Some(cause) = gap.cause {
+            record["cause"] = serde_json::json!(cause.as_str());
+        }
+        lines.push(record);
+    }
+    for (source, found) in judgement
+        .set_problems
+        .iter()
+        .map(|p| ("set", p))
+        .chain(judgement.trace_problems.iter().map(|p| ("trace", p)))
+    {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "source": source,
+            "scenario": found.scenario,
+            "path": found.path,
+            "code": found.code,
+            "detail": found.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+// ── Subcommand: unresolved ─────────────────────────────────────
+//
+// Emit per-marker `<sce:unresolved>`
+// NDJSON. Same architecture as the `requirements` subcommand — parse
+// through the production parser, walk the model, emit one record per
+// detected marker.
+
+/// `sce-codegen coverage` — value-space coverage for a forge document.
+///
+/// ⚠ Exit 0 whether or not anything is uncovered, and that is the
+/// design. A non-zero exit would make a CI lane treat "the author has
+/// not named every variant" as a failure, and the first response to
+/// that is to name them with a rule that does nothing — which is worse
+/// than the fall-through it replaced, because it looks decided.
+fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
+    let positions = read_review_input(scxml, error_format);
+    let base_dir = std::path::Path::new(scxml)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let label = crate::DocumentLabel::for_input_path(scxml);
+    let parsed = match crate::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+        Ok(Some(p)) => p,
+        // Not a forge document — the SCXML pipeline owns it and has no
+        // declared value spaces to report on. Empty output, exit 0: a
+        // consumer that asked every file in a tree must not have to
+        // pre-filter by kind.
+        Ok(None) => return,
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+    };
+    let rows = match crate::forge::coverage::report(&parsed, base_dir, scxml) {
+        Ok(r) => r,
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+    };
+    out_stream(|w| crate::forge::coverage::emit_ndjson(&rows, w));
+}
+
+fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat) {
+    // The profile first, as every route that takes one reads it: an unusable
+    // profile is the first thing said.
+    let profile = load_profile(profile);
+    let house_rule_ids: Vec<&str> = profile
+        .as_ref()
+        .map(|profile| profile.house_rule_ids())
+        .unwrap_or_default();
+    // ⚠ A forge document is READ HERE TOO, and did not used to be.
+    // Measured 2026-09-18: this command answered a `sce:kind="transform"`
+    // file with "transform kind cannot be processed by the SCXML
+    // pipeline" and exit 3. The one command whose whole job is to list
+    // what an author could not resolve refused the kinds most likely to
+    // carry such a marker, so the answer a consumer got was an error
+    // rather than a list — and an empty list and an error read the same
+    // way to anything that only checks for output.
+    let content = std::fs::read_to_string(scxml).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: scxml.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    match crate::forge::parser::detect_kind(&content) {
+        Ok(Some(kind)) if !kind.reads_as_statechart() => {
+            // Expanded, as every other forge route reads a document: a
+            // marker a template or an included fragment carries is one the
+            // build refuses under `--strict-unresolved`, so it is one this
+            // list names.
+            let positions = read_review_input(scxml, error_format);
+            out_stream(|w| {
+                match crate::unresolved_check::emit_unresolved_ndjson_forge_under(
+                    &positions,
+                    &house_rule_ids,
+                    w,
+                ) {
+                    Ok(()) => Ok(()),
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                }
+            });
+            return;
+        }
+        // A statechart, or a document whose kind could not be detected —
+        // the SCXML parser below is the authority on both, and its
+        // diagnostic is better than one invented here.
+        _ => {}
+    }
+    let mut parser = crate::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    out_stream(|w| {
+        crate::unresolved_check::emit_unresolved_ndjson_under(&model, &house_rule_ids, w)
+    });
+}
+
+// ── Subcommand: generate-conformance ───────────────────────────
+
+fn cmd_generate_conformance(
+    language: &str,
+    manifest_path: &str,
+    output_dir: &str,
+    depfile_path: Option<&str>,
+) {
+    let lang = parse_served_language(LanguageRoute::GenerateConformance, language);
+
+    let manifest =
+        crate::conformance::Manifest::load(Path::new(manifest_path)).unwrap_or_else(|e| {
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+            })
+        });
+
+    let template_base = crate::find_template_base();
+    let resource_dir = sibling_of_containing_dir(Path::new(manifest_path), "resources");
+    let rendered =
+        crate::conformance::render_harness(&manifest, lang, &template_base, &resource_dir)
+            .unwrap_or_else(|e| {
+                cli_exit(CliError::ScxmlGenerate {
+                    stage: "conformance",
+                    detail: e.to_string(),
+                })
+            });
+
+    let out_dir = Path::new(output_dir);
+    ensure_output_dir(out_dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out_dir.display().to_string(),
+            source: e,
+        })
+    });
+    let out_path = out_dir.join(crate::conformance::harness_filename(lang));
+
+    // Spec §synth-6.2.6: input root for the conformance harness is the
+    // sibling `resources/` of the manifest (mirrors
+    // `cmd_list_fixtures`'s resolution), so the embedded source-hash
+    // covers exactly the SCXML inputs the harness asserts against. It
+    // is the directory `render_harness` just read from, so the two
+    // cannot disagree about which fixtures the header describes. The harness
+    // is generated from every fixture of it, so it takes the set form
+    // (ADR 0094 section 4).
+    let drift_ctx = DriftContext::of_directory(&resource_dir, drift::ClosureOptions::default());
+    write_drift_aware(&out_path, &rendered.source, &drift_ctx);
+
+    // Same depfile contract the statechart and forge routes carry. This
+    // subcommand had none, so its two CMake steps declared their inputs
+    // with `DEPENDS` plus a `file(GLOB ... CONFIGURE_DEPENDS)` over the
+    // per-kind fragments — which names what the scaffold includes
+    // directly and not what those fragments pull in, and named no
+    // fixture document at all even though the harness asserts against
+    // them and folds every one into its `source-hash`.
+    //
+    // The template scope is the one `render_harness` loads, taken from
+    // the same `harness_layout` rather than spelled again here: a second
+    // spelling is free to drift into declaring a directory the render
+    // does not read, or missing the one it does.
+    //
+    // A plan of the harness (`--reads`) lists the same prerequisites,
+    // from the same entry, so a build keeps its answer exactly while the
+    // depfile would not re-run the step.
+    if records_reads(depfile_path) {
+        let harness_template_dir =
+            template_base.join(crate::conformance::harness_layout(lang).template_subdir);
+        let entry = depfile_entry(DepfileInputs {
+            output_paths: std::slice::from_ref(&out_path),
+            template_dir: &harness_template_dir,
+            lang,
+            scxml_input: Path::new(manifest_path),
+            preprocessor_deps: &rendered.extra_inputs,
+            source_set: &drift_ctx.sources,
+            self_written: &[],
+        });
+        if let Some(dep_path) = depfile_path {
+            write_depfile_entry(dep_path, &entry);
+        }
+        write_reads(Some(&entry));
+    }
+    // A plan's stdout is its answer and nothing else.
+    if output_mode() != OutputMode::Plan {
+        outln!("Generated conformance harness: {}", out_path.display());
+    }
+}
+
+// ── Subcommand: expand ─────────────────────────────────────────
+
+/// Publish the anchor roster, one line per code.
+///
+/// `<code>\t<carries|never>\t<reason>` — tab-separated for the same
+/// reason `list-fixtures` emits bare names: a consumer with no JSON
+/// parser (a shell, a build system) can read it, and a consumer that
+/// wants structure can split on the tab.
+///
+/// The verdict is asked on the STATECHART pipeline, because that is
+/// the only kind that carries `sce:provenance` at all and so the only
+/// one where the question has two possible answers. A Forge document
+/// holds no anchors, so every code's empty field there is already the
+/// true answer rather than a pending one — asking per code would
+/// publish 360 identical rows that decided nothing.
+fn cmd_kinds(kind: Option<&str>) {
+    use crate::forge::kind_catalog::KindCatalog;
+    use crate::forge::model::ForgeKind;
+    // clap has already refused a name outside `ALL_ATTR_NAMES`, which is
+    // the set `from_attr` accepts.
+    let only = kind.map(|name| ForgeKind::from_attr(name).expect("clap admits only kind names"));
+    outln!("{}", KindCatalog::new(only).to_line());
+}
+
+fn cmd_provenance_roster() {
+    use crate::forge::diagnostic::{
+        anchor_carriage, AnchorCarriage, NoAnchor, Pipeline, ALL_DIAGNOSTIC_CODES,
+    };
+    for &code in ALL_DIAGNOSTIC_CODES {
+        let (verdict, reason) = match anchor_carriage(code, Pipeline::Statechart) {
+            AnchorCarriage::Carries => ("carries", String::new()),
+            // ⚠ THREE verdicts, not two. `NotYetMeasured` means nobody
+            // has run this code, which is not the same claim as "it
+            // cannot carry" — and publishing both as `never` told a
+            // consumer the stronger one. That was this command's own
+            // defect on the day it landed: the roster distinguishes
+            // ignorance from impossibility internally and the wire
+            // flattened them, which is the exact shape §2.1.2 exists
+            // to refuse one field over.
+            // ⚠ Exhaustive over `NoAnchor`, with no `_` arm and no
+            // binding that swallows the rest. That is the whole
+            // mechanism, and it is the same one `anchor_carriage`
+            // relies on one layer down. This match read
+            // `Registered(why) => ("never", …)` until 2026-09-15: a
+            // catch-all that published EVERY reason but one as
+            // impossibility, so a reason meaning "owed" went out as
+            // "can never carry" and a reason added later would do the
+            // same silently. A wire verdict is a claim about the
+            // code; defaulting to the strongest one is how §6b.1's
+            // defect happened, and a catch-all is what made it
+            // possible to happen twice.
+            AnchorCarriage::Registered(why) => {
+                let verdict = match why {
+                    NoAnchor::NotYetMeasured => "unknown",
+                    NoAnchor::CoordinateNotThreaded => "pending",
+                    NoAnchor::TheAnchorIsTheSubject
+                    | NoAnchor::NoAuthoredArtefact
+                    | NoAnchor::RaisedBeforeAnyResolvingStage => "never",
+                };
+                (verdict, why.why().to_string())
+            }
+            // Unreachable by construction and asserted so by
+            // `every_code_carries_the_enclosing_anchor_or_is_registered`:
+            // a statechart carries provenance, so this case cannot
+            // apply to it. Printed rather than panicked so a roster
+            // reader is never left with no line for a code.
+            AnchorCarriage::SatisfiedByAnchorlessKind => (
+                "never",
+                "this document kind holds no anchors at all".to_string(),
+            ),
+        };
+        println!("{}\t{}\t{}", code.as_str(), verdict, reason);
+    }
+}
+
+fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
+    let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    let base_dir = Path::new(scxml_path).parent();
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let (expanded, _map, _deps) =
+        crate::parser::expand_preprocessors(&content, scxml_path, base_dir, &extra_dirs)
+            .unwrap_or_else(|err| {
+                current_error_format().emit_and_exit(&err, "Preprocessor error: ")
+            });
+    // Write raw bytes to stdout without trailing newline so the
+    // template parity harness can byte-compare against the C++
+    // pugixml canonicalisation without newline handling quirks.
+    out_bytes(expanded.as_bytes());
+}
+
+// ── Subcommand: project ────────────────────────────────────────
+//
+// The variant of a statechart a selection of features denotes (ADR 0057 §6),
+// through `SCXMLParser::project_file`: the derivation `generate --features`
+// reads, printed only when its parse accepts it.
+
+fn cmd_project(scxml_path: &str, features: Vec<String>, include_dirs: &[String]) {
+    let features = selected_features(Some(features)).unwrap_or_default();
+    let mut parser =
+        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
+    let variant = parser
+        .project_file(scxml_path, features)
+        .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, ""));
+    out_bytes(variant.as_bytes());
+}
+
+// ── Subcommand: codec-roles ────────────────────────────────────
+//
+// The table of which elements of a codec a value presents and which the encoding
+// derives (docs/adr/0058 §1). Reads each document as `generate` reads a codec,
+// imports resolved, so the carrier bits an import's `variant-dispatch` fills are
+// in it. A document that is not a codec is said so and refused, as every
+// document of a run is held to the verb.
+
+fn cmd_codec_roles(scxml_paths: &[String], include_dirs: &[String], error_format: ErrorFormat) {
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let mut out = String::new();
+    for path in scxml_paths {
+        let roles = crate::codec_roles_file(
+            Path::new(path),
+            &extra_dirs,
+            &crate::ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err));
+        match roles {
+            Some(roles) => out.push_str(&roles.table()),
+            None => cli_exit(CliError::Usage {
+                detail: format!("codec-roles reads codecs, and {path} is not one"),
+            }),
+        }
+    }
+    out_bytes(out.as_bytes());
+}
+
+// ── Subcommand: deployment ─────────────────────────────────────
+//
+// A Rust deployment's file (docs/adr/0077 §7), from the codec set the tree is
+// generated from and the deploy input that gives its capacities. It carries the
+// §synth-6.2.6 header over both, since either changes what it holds.
+
+fn cmd_deployment(
+    scxml_paths: &[String],
+    deploy_path: &str,
+    name: String,
+    gates: &[String],
+    output_dir: &str,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let deploy = load_deploy_config(deploy_path, error_format);
+    let gates = gates
+        .iter()
+        .map(|gate| match gate.split_once('=') {
+            Some((codec, predicate)) if !codec.is_empty() && !predicate.trim().is_empty() => {
+                (codec.to_string(), predicate.trim().to_string())
+            }
+            _ => cli_exit(CliError::Usage {
+                detail: format!(
+                    "--gate {gate}: a gate is `<codec>=<cfg predicate>`, as \
+                     `serial_envelope=feature = \"serial\"`"
+                ),
+            }),
+        })
+        .collect();
+    let deployment = crate::forge::deployment::RustDeployment {
+        name,
+        capacities: deploy.codec_capacities(),
+        storage: deploy.codec_storage,
+        gates,
+        source: deploy_path.to_string(),
+    };
+    let documents: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
+    let document_refs: Vec<&Path> = documents.iter().map(PathBuf::as_path).collect();
+    let options = crate::ForgeCompileOptions {
+        include_dirs: include_dirs.iter().map(PathBuf::from).collect(),
+        ..Default::default()
+    };
+    let output = crate::compile_rust_deployment(&document_refs, &deployment, &options)
+        .unwrap_or_else(|refused| match refused {
+            crate::forge::deployment::RustDeploymentError::Refused(e) => {
+                error_format.emit_forge_and_exit(&e)
+            }
+            crate::forge::deployment::RustDeploymentError::Usage(detail) => {
+                cli_exit(CliError::Usage { detail })
+            }
+        });
+    let drift = document_set_drift_context(
+        None,
+        Some(deploy_path),
+        &options.include_dirs,
+        &document_refs,
+    );
+    let dir = Path::new(output_dir);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: output_dir.to_string(),
+            source: e,
+        })
+    });
+    for (file, text) in &output.files {
+        write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(text), &drift);
+    }
+    finish_generated_output();
+}
+
+// ── Subcommand: codec-format ───────────────────────────────────
+//
+// A CBOR or content-line codec document in codec format 2 (docs/adr/0055,
+// section 8): the rewrite `validation/codec-format-superseded` names, applied to
+// the text so that the author replaces the document with what is printed. Reads
+// the document as `generate` reads its input and as written, without imports or
+// preprocessing, since the rewrite is of its own text; a document that holds a
+// directive the preprocessor expands is refused by the rewrite, and one that is
+// no codec of these encodings has no format and is said so.
+
+fn cmd_codec_format(scxml_path: &str, error_format: ErrorFormat) {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    match crate::forge::codec_format::rewritten_document(&content, scxml_path)
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err))
+    {
+        Some(rewritten) => out_bytes(rewritten.as_bytes()),
+        None => cli_exit(CliError::Usage {
+            detail: format!(
+                "codec-format rewrites a CBOR or content-line codec, and {scxml_path} is not one"
+            ),
+        }),
+    }
+}
+
+// ── Subcommand: bound-spelling ─────────────────────────────────
+//
+// A document with every bound it writes as an attribute moved into the type of
+// its declaration (docs/adr/0086, section 1.3): the rewrite
+// `validation/bound-attribute-superseded` names, applied to the text so that
+// the author replaces the document with what is printed. Reads the document as
+// written, without imports or preprocessing, since the rewrite is of its own
+// text.
+
+fn cmd_bound_spelling(scxml_path: &str, error_format: ErrorFormat) {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    let rewritten = crate::forge::bound_spelling::rewritten_document(&content, scxml_path)
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err));
+    out_bytes(rewritten.as_bytes());
+}
+
+// ── Subcommand: payload-schema ─────────────────────────────────
+//
+// The text a schema unit declares, for a host that has no unit: read as
+// `generate` reads the document (expanded, parsed, its import graph
+// checked), its scope the one the unit's sizes are read in, its hash the one
+// `generate` stamps for the same source set.
+
+/// Which spelling of a payload schema `payload-schema` prints (`--format`).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum PayloadSchemaFormat {
+    JsonSchema,
+    Gbnf,
+}
+
+fn cmd_payload_schema(
+    scxml_path: &str,
+    format: PayloadSchemaFormat,
+    input_root: Option<&str>,
+    deploy: Option<&str>,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    // The closure `generate` hashes for the same document.
+    let closure_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let drift_ctx = DriftContext::of_documents(
+        &[Path::new(scxml_path)],
+        drift::ClosureOptions {
+            include_dirs: &closure_include_dirs,
+            input_root: input_root.map(Path::new),
+            deploy_yaml: deploy.map(Path::new),
+        },
+    );
+    let doc_label = crate::DocumentLabel::for_input_path(scxml_path);
+    let base_dir = Path::new(scxml_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let (positions, _) = crate::parser::expand_preprocessors(
+        &content,
+        scxml_path,
+        Some(base_dir),
+        &include_dirs.iter().map(PathBuf::from).collect::<Vec<_>>(),
+    )
+    .map(|(expanded, map, deps)| {
+        (
+            crate::model::AuthoredPositions::new(scxml_path, expanded, map),
+            deps,
+        )
+    })
+    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+    let parsed =
+        match crate::forge::parser::parse_forge_with_imports(&positions.expanded, doc_label) {
+            Ok(Some(parsed)) => parsed,
+            Ok(None) => cli_exit(CliError::Usage {
+                detail: format!("{PAYLOAD_SCHEMA_READS}; {scxml_path} is a statechart"),
+            }),
+            Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+        };
+    // The two kinds whose value has a payload schema: an event schema's
+    // payload, and a value of a union (docs/adr/0092, section 3.1, item 4).
+    enum Reads<'a> {
+        EventSchema(&'a crate::forge::model::EventSchemaModel),
+        Union(&'a crate::forge::model::UnionModel),
+    }
+    let (reads, name) = match &parsed.document {
+        crate::forge::model::ForgeDocument::EventSchema(schema) => {
+            (Reads::EventSchema(schema), schema.name.clone())
+        }
+        crate::forge::model::ForgeDocument::Union(union) => {
+            (Reads::Union(union), union.name.clone())
+        }
+        other => cli_exit(CliError::Usage {
+            detail: format!(
+                "{PAYLOAD_SCHEMA_READS}; {scxml_path} is a document of sce:kind=\"{}\"",
+                other.kind()
+            ),
+        }),
+    };
+    // The import graph is held to what `generate` holds it to before anything
+    // reads an import, and a union's cases to its tag enum's variants, which
+    // only the imports can answer (docs/adr/0092, section 1.1).
+    if let Err(e) =
+        crate::forge::cross_kind_check::check(&parsed, base_dir, doc_label.diagnostic_label)
+    {
+        error_format.emit_forge_and_exit(&positions.authored(e));
+    }
+    if let Err(e) = crate::forge::union_check::check(&parsed, base_dir, doc_label.diagnostic_label)
+    {
+        error_format.emit_forge_and_exit(&positions.authored(e));
+    }
+    let format = match format {
+        PayloadSchemaFormat::JsonSchema => crate::forge::payload_schema::PayloadFormat::JsonSchema,
+        PayloadSchemaFormat::Gbnf => crate::forge::payload_schema::PayloadFormat::Gbnf,
+    };
+    let source_hash = drift_ctx.header.source_hex();
+    let text = match reads {
+        Reads::EventSchema(schema) => crate::forge::payload_schema::text_of_event_schema(
+            schema,
+            &parsed.imports,
+            base_dir,
+            format,
+            Some(&source_hash),
+        ),
+        Reads::Union(union) => crate::forge::payload_schema::text_of_union(
+            union,
+            &parsed.imports,
+            Path::new(scxml_path),
+            format,
+            Some(&source_hash),
+        ),
+    }
+    .unwrap_or_else(|why| {
+        error_format.emit_forge_and_exit(&crate::forge::error::Located::in_file(
+            crate::forge::error::GenerateError::unsupported(format!(
+                "the payload of `{name}` has no grammar: {why}"
+            ))
+            .into(),
+            doc_label.diagnostic_label,
+        ))
+    });
+    out_bytes(text.as_bytes());
+}
+
+/// What `payload-schema` reads, as its refusal of every other document says
+/// it.
+const PAYLOAD_SCHEMA_READS: &str = "payload-schema reads an event schema \
+                                    (sce:kind=\"event-schema\") or a union (sce:kind=\"union\")";
+
+// ── Subcommand: export-ttcn3 ───────────────────────────────────
+//
+// A test suite exported to TTCN-3 (docs/SCE_TEST_PROFILE.md §9.5): the types
+// module, its manifest, the behaviour module and the witness of the two,
+// computed whole by the library before any file is written, so a refused
+// suite leaves no file behind. Each module carries the §synth-6.2.6 header
+// over the suite's source set, as every generated source does; the manifest
+// and the witness, JSON, carry none.
+
+fn cmd_export_ttcn3(
+    scxml_path: &str,
+    output_dir: &str,
+    input_root: Option<&str>,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let suite = Path::new(scxml_path);
+    let include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let export =
+        crate::ttcn3_export::export_suite(suite, &include_dirs).unwrap_or_else(|refused| {
+            match refused {
+                crate::ttcn3_export::ExportError::Refused(e) => {
+                    error_format.emit_forge_and_exit(&e)
+                }
+                crate::ttcn3_export::ExportError::NotASuite(what) => cli_exit(CliError::Usage {
+                    detail: format!(
+                        "export-ttcn3 reads a test suite (sce:kind=\"test-suite\"); {what}"
+                    ),
+                }),
+            }
+        });
+    let drift = document_set_drift_context(input_root, None, &[suite]);
+    let dir = Path::new(output_dir);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: output_dir.to_string(),
+            source: e,
+        })
+    });
+    for (file, text) in export.files() {
+        write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(&text), &drift);
+    }
+    finish_generated_output();
+}
+
+// ── Subcommand: check-trace ────────────────────────────────────
+//
+// A recorded input trace against the suite it is of, without running it
+// (docs/SCE_TTCN3_LANE.md §4, §10.2). Writes nothing when the trace fits;
+// reports every refusal of it and exits with the status SCE_ERROR_CONTRACT.md
+// §6 gives `test-profile/trace-*` when it does not. An input that is not read
+// (the trace file, the suite) is the record of why, with its own status.
+
+fn cmd_check_trace(suite: &str, trace: &str, include_dirs: &[String], error_format: ErrorFormat) {
+    // Read as the runner reads a trace, whole and as UTF-8: a file that is not
+    // is an input not read, as it is to the runner.
+    let text = crate::confine::read_to_string(Path::new(trace)).unwrap_or_else(|source| {
+        cli_exit(CliError::ReadInput {
+            path: trace.to_string(),
+            source,
+        })
+    });
+    let include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let refusals = crate::ttcn3_export::trace_check::check_trace(
+        Path::new(suite),
+        &include_dirs,
+        trace,
+        &text,
+    )
+    .unwrap_or_else(|refused| match refused {
+        crate::ttcn3_export::ExportError::Refused(e) => error_format.emit_forge_and_exit(&e),
+        crate::ttcn3_export::ExportError::NotASuite(what) => cli_exit(CliError::Usage {
+            detail: format!("check-trace reads a test suite (sce:kind=\"test-suite\"); {what}"),
+        }),
+    });
+    error_format.emit_all_and_exit(&refusals, "");
+}
+
+/// Report every bound `content` writes as an attribute
+/// (`validation/bound-attribute-superseded`, docs/adr/0086 section 1.3), and let
+/// `--lint` decide whether they end the run.
+///
+/// The attribute is read as the bracket it is a synonym of, so a document that
+/// writes one is built; the record tells its author the rewrite, which
+/// `sce-codegen bound-spelling` prints. `--lint` is the flag that separates the
+/// author who has no reason to carry one, as for a refused expression
+/// ([`report_refused_expressions`]). Called by `check` and `generate` where a
+/// run that succeeds reaches its manifest, on both pipelines, so a refused run
+/// carries its refusal alone and a run that succeeds carries these records and
+/// its manifest (SCE_ERROR_CONTRACT.md section 1).
+fn report_superseded_bounds(content: &str, document: &str, lint: bool, error_format: ErrorFormat) {
+    let superseded = crate::forge::bound_spelling::superseded(content, document);
+    if superseded.is_empty() {
+        return;
+    }
+    for record in &superseded {
+        error_format.report(record, "");
+    }
+    if lint {
+        std::process::exit(superseded[0].error.exit_code());
+    }
+}
+
+// ── Subcommand: lower ──────────────────────────────────────────
+//
+// A `sce-static` statechart as the ECMAScript one the Interpreter runs
+// (docs/SCE_ACCEPTED_SUBSET.md §2.15). Reads through `parse_file`, so the
+// judge that holds the document to its types has already run, and refuses
+// through the same error format as `generate` does.
+
+fn cmd_lower(
+    scxml_path: &str,
+    include_dirs: &[String],
+    out_dir: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let Some(out_dir) = out_dir else {
+        let lowered = crate::forge::static_js::lower_file(scxml_path, extra_dirs)
+            .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+        out_bytes(lowered.as_bytes());
+        return;
+    };
+    // An `<invoke>` that names its child by `src`, or a hybrid one, starts a
+    // document of its own, which the Interpreter loads from beside the invoking
+    // one: the set is written together, each under the name the lowered
+    // document starts it by.
+    let documents = crate::forge::static_js::lower_file_set(scxml_path, extra_dirs)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+    let dir = Path::new(out_dir);
+    fs::create_dir_all(dir).unwrap_or_else(|source| {
+        cli_exit(CliError::CreateOutputDir {
+            path: out_dir.to_string(),
+            source,
+        })
+    });
+    let mut written = Vec::new();
+    for document in &documents {
+        let path = dir.join(&document.file_name);
+        fs::write(&path, document.text.as_bytes()).unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.display().to_string(),
+                source,
+            })
+        });
+        written.push(serde_json::json!({ "path": path.display().to_string() }));
+    }
+    let line = serde_json::json!({ "v": 1, "kind": "lower", "documents": written });
+    outln!("{line}");
+}
+
+// ── Subcommand: lower-algorithm ────────────────────────────────
+//
+// One algorithm document as what a script engine installs and calls, for the
+// caller that runs an algorithm without a statechart (E11's check of the
+// Interpreter). Refuses through the same error format as `lower`.
+
+fn cmd_lower_algorithm(document: &str, error_format: ErrorFormat) {
+    let lowered = crate::forge::static_js::lower_algorithm_document(document)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
+    let line = serde_json::json!({
+        "v": 1,
+        "kind": "lower-algorithm",
+        "symbol": lowered.symbol,
+        "install": lowered.install,
+    });
+    outln!("{line}");
+}
+
+// ── Subcommand: shape ──────────────────────────────────────────
+//
+// docs/adr/0109, D11: the shape file of one statechart, the writer's schema of
+// every state its machine saves, which an author commits for a released
+// version and a later version's `<sce:migration>` names.
+
+fn cmd_shape(
+    scxml_path: &str,
+    include_dirs: &[String],
+    host_invoker: &[String],
+    output: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    let mut parser =
+        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
+    let mut model = parser
+        .parse_file(scxml_path)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    analyzer::analyze(&mut model, scxml_path);
+    // A host-run `<invoke>` is part of the shape only where the host serves its
+    // type, so the types are declared as a build declares them before the shape
+    // is taken.
+    if let Err(refused) =
+        crate::host_processor_analyzer::declare_host_surfaces(&mut model, &[], host_invoker)
+    {
+        cli_exit(refused.into());
+    }
+    let Some(text) = crate::forge::static_lowering::saved_shape_text(&model) else {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "shape",
+            detail: format!(
+                "{scxml_path}: the machine has no saved state, so it has no shape: a document \
+                 of another data model, or one that waits on a session outside its tree, is \
+                 generated without the save API (SCE Accepted Subset §2.15)"
+            ),
+        });
+    };
+    match output {
+        Some(path) => fs::write(path, text.as_bytes()).unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.to_string(),
+                source,
+            })
+        }),
+        None => out_bytes(text.as_bytes()),
+    }
+}
+
+// ── Subcommand: verify ─────────────────────────────────────────
+//
+// Spec §synth-6.2.6: were these files generated from the current inputs?
+// Answered per file, without generating (ADR 0094 section 5): each file's
+// `source:` lines name the documents it was generated from, relative to a
+// directory at or below a given root; the input closure of those documents
+// is recomputed there and compared with the file's `source-hash`. A file of
+// an untouched document passes whatever else moved. First mismatch wins
+// (deterministic ordering via BTreeMap-sorted file walk) and exits non-zero
+// with `forge/source-hash-mismatch`, whose `expected` is the digest of that
+// file's own closure.
+//
+// Whether the files hold what the current generator produces from those
+// inputs is a different question, answered on content by
+// `--assert-unchanged`; no header value can answer it.
+
+fn cmd_verify(
+    out_dir: &str,
+    input_roots: &[String],
+    deploy: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use crate::forge::drift::parse_embedded_header;
+
+    let out_path = Path::new(out_dir);
+    let roots: Vec<PathBuf> = input_roots.iter().map(PathBuf::from).collect();
+    let options = drift::ClosureOptions {
+        include_dirs: &[],
+        input_root: None,
+        deploy_yaml: deploy.map(Path::new),
+    };
+    let documents = VerifyDocuments::under(&roots);
+    // One closure per seed list: the files of one document share it.
+    let mut recomputed: BTreeMap<Vec<String>, Vec<String>> = BTreeMap::new();
+
+    let files = collect_generated_files(out_path);
+    let mut headerless: Vec<std::path::PathBuf> = Vec::new();
+    for file in &files {
+        let Ok(content) = fs::read_to_string(file) else {
+            continue;
+        };
+        let Some(embedded) = parse_embedded_header(&content) else {
+            headerless.push(file.clone());
+            continue;
+        };
+        // A header of the shape before ADR 0094 names no document, so there
+        // is no closure to recompute: a tree that missed the migration does
+        // not pass.
+        if embedded.seeds.is_empty() {
+            verify_mismatch(
+                file,
+                "a header naming its documents on `source:` lines".to_string(),
+                embedded.source_hash_hex,
+                error_format,
+            );
+        }
+        let candidates = recomputed
+            .entry(embedded.seeds.clone())
+            .or_insert_with(|| documents.closure_digests(&embedded.seeds, options));
+        if !candidates.contains(&embedded.source_hash_hex) {
+            let expected = candidates.first().cloned().unwrap_or_default();
+            verify_mismatch(file, expected, embedded.source_hash_hex, error_format);
+        }
+    }
+    // Files without an SCE-GENERATED header are reported but do not
+    // fail the verify pass on their own — the spec invariant is
+    // `every emitted file carries a header`, but the verifier's job is
+    // drift detection on files that DO have headers. Headerless files
+    // surface as an informational note on stderr so authors notice
+    // partial migration windows.
+    if !headerless.is_empty() {
+        eprintln!(
+            "sce-codegen verify: {} headerless file(s) skipped (no SCE-GENERATED block); first: {}",
+            headerless.len(),
+            headerless[0].display()
+        );
+    }
+}
+
+/// `verify`'s refusal of `path`, whose header states `actual_hex` where its
+/// closure's digest is `expected`.
+fn verify_mismatch(
+    path: &Path,
+    expected: String,
+    actual_hex: String,
+    error_format: ErrorFormat,
+) -> ! {
+    error_format.emit_and_exit(
+        &CliError::VerifySourceHashMismatch {
+            path: path.display().to_string(),
+            expected_hex: expected,
+            actual_hex,
+        },
+        "",
+    )
+}
+
+/// The documents `verify` finds a header's `source:` lines among: every file
+/// under the roots it is given.
+struct VerifyDocuments<'r> {
+    roots: &'r [PathBuf],
+    files: BTreeSet<PathBuf>,
+}
+
+impl<'r> VerifyDocuments<'r> {
+    fn under(roots: &'r [PathBuf]) -> Self {
+        let files = roots
+            .iter()
+            .flat_map(|root| drift::OnDisk.files_under(root))
+            .collect();
+        Self { roots, files }
+    }
+
+    /// The digest of the closure of `seeds`, as a header names them: one
+    /// per root for the set form (a file generated from every document of a
+    /// directory, which the root names), and otherwise the one closure of
+    /// the seeds found together in one directory at or below a root.
+    ///
+    /// A seed found nowhere, or in more than one place, cannot be
+    /// recomputed and is refused as `forge/source-hash-input-uncovered`.
+    fn closure_digests(&self, seeds: &[String], options: drift::ClosureOptions<'_>) -> Vec<String> {
+        let hex = |closure: drift::InputClosure| drift::DriftHeader::of(&closure).source_hex();
+        if seeds.iter().any(|seed| seed == drift::SET_FORM_SEED) {
+            return self
+                .roots
+                .iter()
+                .map(|root| {
+                    drift::InputClosure::of_directory(root, options)
+                        .map(hex)
+                        .unwrap_or_else(|e| cli_exit(drift_hash_failure(root, e)))
+                })
+                .collect();
+        }
+        let anchor = self.anchor_of(seeds);
+        let paths: Vec<PathBuf> = seeds
+            .iter()
+            .map(|seed| {
+                if crate::forge::stdlib::names_standard(Path::new(seed)) {
+                    PathBuf::from(seed)
+                } else {
+                    anchor.join(seed)
+                }
+            })
+            .collect();
+        let refs: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+        let closure = drift::InputClosure::of(&refs, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(&anchor, e)));
+        vec![hex(closure)]
+    }
+
+    /// The one directory every seed on disk lies in at the path its key
+    /// spells; an empty path when every seed is a standard document.
+    fn anchor_of(&self, seeds: &[String]) -> PathBuf {
+        let on_disk: Vec<&Path> = seeds
+            .iter()
+            .map(|seed| Path::new(seed.as_str()))
+            .filter(|seed| !crate::forge::stdlib::names_standard(seed))
+            .collect();
+        let Some(first) = on_disk.first() else {
+            return PathBuf::new();
+        };
+        let depth = first.components().count();
+        let anchors: BTreeSet<PathBuf> = self
+            .files
+            .iter()
+            .filter(|file| file.ends_with(first))
+            .filter_map(|file| file.ancestors().nth(depth))
+            .filter(|dir| on_disk.iter().all(|seed| dir.join(seed).is_file()))
+            .map(Path::to_path_buf)
+            .collect();
+        let shown = self
+            .roots
+            .iter()
+            .map(|root| root.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        match anchors.len() {
+            1 => anchors.into_iter().next().unwrap_or_default(),
+            0 => cli_exit(CliError::SourceHashInputUncovered {
+                input: first.display().to_string(),
+                root: shown,
+                hashed: 0,
+            }),
+            _ => cli_exit(CliError::SourceHashInputUncovered {
+                input: format!(
+                    "{} (found under {})",
+                    first.display(),
+                    anchors
+                        .iter()
+                        .map(|dir| dir.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                root: shown,
+                hashed: anchors.len(),
+            }),
+        }
+    }
+}
+
+/// Answer whether this binary was built from the sources under `root`.
+///
+/// Both halves of the comparison come from one function — `build.rs`
+/// called [`crate::generator_witness::digest_hex`] at compile time and
+/// this calls it again now. A build system asking the question from the
+/// outside would have to reimplement the digest, and a reimplementation
+/// that drifted would refuse correct builds rather than stale ones, which
+/// is how the previous attempt at this check failed.
+///
+/// Silence on success is deliberate: this runs on every CMake configure,
+/// and a line of output per configure trains the reader to skip it.
+fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
+    // An explicit `--root` is taken verbatim rather than run through
+    // `locate_workspace_root`. That chain validates a candidate by looking
+    // for `tools/codegen/templates/` and falls through to the next layer
+    // when it is absent — sensible for a hash that needs a template tree,
+    // and wrong here: it would answer about a *different* tree than the
+    // operator named, and report the answer as if it were about theirs.
+    // The witness set does not include the template tree anyway
+    // (`crate::generator_witness` says why), so there is nothing for
+    // that validation to establish.
+    let workspace_root = match root {
+        Some(explicit) => PathBuf::from(explicit),
+        None => locate_workspace_root(current_workspace_root_override().as_deref()).unwrap_or_else(
+            || std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        ),
+    };
+    let shown = workspace_root.display().to_string();
+
+    // The binary's half first. A binary with no witness cannot be judged
+    // against any tree, so reading the tree to compare against it would
+    // only produce a second fact about a comparison that is not happening.
+    if crate::GENERATOR_SOURCE_DIGEST == crate::generator_witness::DIGEST_UNAVAILABLE {
+        error_format.emit_and_exit(
+            &CliError::GeneratorSourceUnverifiable {
+                root: shown,
+                reason: "this binary carries no source witness".to_string(),
+            },
+            "",
+        );
+    }
+
+    let recomputed = match crate::generator_witness::digest_hex(&workspace_root) {
+        Ok(digest) => digest,
+        // The tree, not the binary, is the half that is missing. Reported
+        // as "cannot establish" rather than as drift: a tree that cannot
+        // be read has not disagreed with anything.
+        Err(e) => error_format.emit_and_exit(
+            &CliError::GeneratorSourceUnverifiable {
+                root: shown,
+                reason: e.to_string(),
+            },
+            "",
+        ),
+    };
+
+    if recomputed != crate::GENERATOR_SOURCE_DIGEST {
+        error_format.emit_and_exit(
+            &CliError::GeneratorSourceDrift {
+                root: shown,
+                embedded_hex: crate::GENERATOR_SOURCE_DIGEST.to_string(),
+                recomputed_hex: recomputed,
+            },
+            "",
+        );
+    }
+}
+
+// ── Subcommand: materialize ─────────────────────────────────────
+
+/// `materialize`: write the tree `tree` declares into `into` from its actions
+/// (ADR 0097), through this machine's action cache, and say on stderr how
+/// many actions the cache answered and how many ran. With `replace`, also
+/// remove the generated files under the tree's roots that it did not write.
+fn cmd_materialize(
+    tree: &str,
+    into: &Path,
+    replace: bool,
+    script_engine: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use crate::action::{generation, identity, materialize, store, tree as trees};
+    let fail = |detail: String| -> ! {
+        error_format.emit_and_exit(
+            &CliError::ScxmlGenerate {
+                stage: "materialize",
+                detail,
+            },
+            "",
+        )
+    };
+    let root = locate_workspace_root(current_workspace_root_override().as_deref())
+        .unwrap_or_else(|| cli_exit(CliError::ProjectRootNotFound));
+    let identity =
+        identity::GeneratorIdentity::of_checkout(&root).unwrap_or_else(|e| fail(e.to_string()));
+    let binary = std::env::current_exe()
+        .unwrap_or_else(|e| fail(format!("this program cannot name its own binary: {e}")));
+    let generator =
+        generation::Generator::new(&root, &binary, crate::GENERATOR_SOURCE_DIGEST, identity)
+            .unwrap_or_else(|e| fail(e.to_string()));
+    let store = store::LocalStore::for_this_machine().unwrap_or_else(|| {
+        fail(
+            "no action cache: none of SCE_ACTION_CACHE, XDG_CACHE_HOME and HOME is set".to_string(),
+        )
+    });
+    let expanded = trees::tree(&root, tree)
+        .and_then(|manifest| manifest.expand(&root))
+        .map(|expanded| match script_engine {
+            Some(language) => expanded.for_script_engine(language),
+            None => expanded,
+        })
+        .unwrap_or_else(|e| fail(e.to_string()));
+    let report = materialize::materialize(&generator, &store, &expanded, into)
+        .unwrap_or_else(|e| fail(e.to_string()));
+    if replace {
+        let removed = materialize::remove_unproduced(&expanded, into, &report)
+            .unwrap_or_else(|e| fail(e.to_string()));
+        for file in &removed {
+            eprintln!("materialize {tree}: removed {file}, which the tree no longer writes");
+        }
+    }
+    eprintln!(
+        "materialize {tree}: {} file(s) into {}; {} action(s) from the cache, {} run",
+        report.files.len(),
+        into.display(),
+        report.hits,
+        report.runs
+    );
+}
+
+/// Walks `out_dir` recursively and returns every file whose extension
+/// matches the set SCE backends emit. Ordering is BTreeMap-sorted so
+/// the first-mismatch-wins diagnostic is deterministic across
+/// filesystem-readdir reorderings.
+fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
+    use std::collections::BTreeSet;
+    fn walk(dir: &Path, out: &mut BTreeSet<std::path::PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c" | "swift") {
+                    out.insert(path);
+                }
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    walk(out_dir, &mut out);
+    out.into_iter().collect()
+}
+
+/// Locate the SCE workspace root — the checkout carrying
+/// `tools/codegen/templates/` and the generator sources
+/// `verify-generator` compares this binary against. Resolution priority
+/// (each layer must validate the `tools/codegen/templates/` shape —
+/// paths failing the check fall through to the next layer rather than
+/// silently answering about the wrong root):
+///
+///   1. `explicit` argument — surfaced as `--workspace-root <PATH>`
+///      on the CLI; takes precedence so vendored consumers can pin
+///      the location from a build.rs / Makefile without relying on
+///      env vars or process layout.
+///   2. `SCE_WORKSPACE_ROOT` env var — mirrors the `SCE_TEMPLATE_DIR`
+///      escape hatch already documented for [`crate::find_template_base`].
+///   3. `CARGO_MANIFEST_DIR`'s parent — baked at compile time to the
+///      `sce-build/` crate root inside whichever workspace built this
+///      binary. For both in-repo and `path = "vendor/sce/sce-build"`
+///      consumer builds this resolves to the SCE workspace that
+///      shipped the matching template tree. This is the layer the
+///      walk-up-from-cwd path (used pre-2026-05) missed for vendored
+///      binaries — cwd lives in the consumer workspace while the
+///      vendored SCE tree sits *below* it under `vendor/sce/`.
+///   4. Walk upward from the current directory looking for a
+///      `tools/codegen/templates/` directory. Last-resort path for
+///      ad-hoc invocations from inside the SCE workspace tree.
+///
+/// Returns `None` only if every layer fails; `verify-generator` then
+/// falls back to the current directory, and says so if that tree
+/// cannot be read.
+fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> {
+    fn validates(candidate: &Path) -> bool {
+        candidate
+            .join("tools")
+            .join("codegen")
+            .join("templates")
+            .exists()
+    }
+
+    if let Some(p) = explicit {
+        if validates(p) {
+            return Some(p.to_path_buf());
+        }
+        // Explicit override that does not validate is a user mistake
+        // worth surfacing, even though a later layer may still resolve.
+        eprintln!(
+            "sce-codegen: --workspace-root '{}' does not contain tools/codegen/templates/",
+            p.display(),
+        );
+    }
+
+    if let Ok(env_root) = std::env::var("SCE_WORKSPACE_ROOT") {
+        let candidate = std::path::PathBuf::from(env_root);
+        if validates(&candidate) {
+            return Some(candidate);
+        }
+        eprintln!(
+            "sce-codegen: SCE_WORKSPACE_ROOT '{}' does not contain tools/codegen/templates/",
+            candidate.display(),
+        );
+    }
+
+    // `CARGO_MANIFEST_DIR` is baked at compile time to the sce-build
+    // crate's directory inside the workspace that built the binary —
+    // including vendored builds where the consumer's
+    // `path = "vendor/sce/sce-build"` dependency makes the parent
+    // (`vendor/sce/`) the canonical SCE workspace root.
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if let Some(parent) = crate_dir.parent() {
+        if validates(parent) {
+            return Some(parent.to_path_buf());
+        }
+    }
+
+    // Last resort: walk upward from cwd. Kept for ad-hoc invocations
+    // from inside the SCE workspace; vendored binaries normally hit
+    // the `CARGO_MANIFEST_DIR` layer above before reaching here.
+    let mut cursor = std::env::current_dir().ok()?;
+    loop {
+        if validates(&cursor) {
+            return Some(cursor);
+        }
+        if !cursor.pop() {
+            return None;
+        }
+    }
+}
+
+// ── Subcommand: plan-batch ─────────────────────────────────────
+
+/// One request of a `plan-batch` run: the name its answer is kept under, the
+/// arguments of the plan it asks, and its line as the requests gave it.
+struct PlanRequest {
+    name: String,
+    arguments: Vec<String>,
+    line: String,
+}
+
+/// `plan-batch`: answer every request of `requests_path`, up to `jobs` at a
+/// time, each by a run of this program with the request's arguments
+/// ([`answer_plan_request`]), and keep each answer under `results`.
+///
+/// A run of its own per plan, and not a thread of this one: a generation
+/// keeps its output mode ([`OUTPUT_MODE`], [`PLAN_CHILDREN`],
+/// [`READS`]) and the tree it holds in memory ([`PENDING_TREE`]) for
+/// the whole process, holds the documents it wrote on its thread
+/// (`crate::confine::hold`), and ends the process when it refuses a
+/// document ([`cli_exit`]). Two plans in one process would share all of it,
+/// and a refused one would end the others. A run of its own is also the run
+/// a build makes for one plan, so the answer is that run's, byte for byte.
+fn cmd_plan_batch(requests_path: &str, results: &str, jobs: Option<usize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let text = fs::read_to_string(requests_path).unwrap_or_else(|source| {
+        cli_exit(CliError::ReadInput {
+            path: requests_path.to_string(),
+            source,
+        })
+    });
+    let requests = plan_requests(&text, requests_path);
+    let results = PathBuf::from(results);
+    fs::create_dir_all(&results).unwrap_or_else(|source| {
+        cli_exit(CliError::CreateOutputDir {
+            path: results.display().to_string(),
+            source,
+        })
+    });
+    let program = std::env::current_exe().unwrap_or_else(|source| {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "plan-batch",
+            detail: format!("cannot find this program to run each plan with: {source}"),
+        })
+    });
+    let jobs = match jobs {
+        Some(0) => cli_exit(CliError::Usage {
+            detail: "plan-batch --jobs 0 would run no plan; give at least 1".to_string(),
+        }),
+        Some(jobs) => jobs,
+        None => std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+    };
+    // Every answer of the batch is dated once, before any plan reads a file.
+    let dated = a_date_past_every_earlier_one(&results.join("batch.stamp"));
+
+    let next = AtomicUsize::new(0);
+    let refused = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(requests.len()) {
+            scope.spawn(|| {
+                while let Some(request) = requests.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    if !answer_plan_request(&program, &results, request, dated) {
+                        refused.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+    });
+    let refused = refused.into_inner();
+    outln!(
+        "plan-batch: {} request(s), {} answered, {refused} refused",
+        requests.len(),
+        requests.len() - refused
+    );
+}
+
+/// The requests of a `plan-batch` run, one per non-empty line of `text`:
+/// `<name>\t<argument>\t<argument>...`. A request that asks anything but one
+/// plan of a generation is refused before any is run, as is a name two
+/// requests with different arguments share; one given twice alike is
+/// answered once.
+fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
+    fn refuse(requests_path: &str, number: usize, why: &str) -> ! {
+        cli_exit(CliError::Usage {
+            detail: format!("plan-batch: line {number} of {requests_path}: {why}"),
+        })
+    }
+    let mut requests: Vec<PlanRequest> = Vec::new();
+    let mut named: BTreeMap<String, usize> = BTreeMap::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let number = index + 1;
+        let mut fields = line.split('\t');
+        let name = fields.next().unwrap_or_default().to_string();
+        let arguments: Vec<String> = fields.map(str::to_string).collect();
+        if !is_kept_name(&name) {
+            refuse(
+                requests_path,
+                number,
+                &format!(
+                    "`{name}` cannot name an answer: a name is letters, digits, `_`, `-` and \
+                     `.`, and does not start with `.`"
+                ),
+            );
+        }
+        if let Some(&first) = named.get(&name) {
+            if requests[first].arguments == arguments {
+                continue;
+            }
+            refuse(
+                requests_path,
+                number,
+                &format!("`{name}` names two requests with different arguments"),
+            );
+        }
+        let program = std::iter::once("sce-codegen");
+        match Cli::try_parse_from(program.chain(arguments.iter().map(String::as_str))) {
+            Ok(cli)
+                if cli.plan
+                    && cli.reads.is_none()
+                    && plan_refusal(&cli.command, cli.plan_children).is_none() => {}
+            Ok(_) => refuse(
+                requests_path,
+                number,
+                "a request asks one plan of a build step (`--plan [--plan-children] \
+                 [--plan-machines] [--plan-requires] generate <document> ...`, or `--plan \
+                 [--plan-machines] [--plan-requires]` with `orchestrate` or \
+                 `generate-conformance`), and the file it reads into is the batch's to name \
+                 (`--reads`)",
+            ),
+            Err(error) => refuse(
+                requests_path,
+                number,
+                &format!(
+                    "its arguments do not parse: {}",
+                    error.render().to_string().trim_end()
+                ),
+            ),
+        }
+        named.insert(name.clone(), requests.len());
+        requests.push(PlanRequest {
+            name,
+            arguments,
+            line: line.to_string(),
+        });
+    }
+    requests
+}
+
+/// Whether `name` can name the files an answer is kept in, in the results
+/// directory and nowhere else.
+fn is_kept_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+/// The date the file system gives a file it writes now, past every date it
+/// gave before this call: the date `plan-batch` gives its answers.
+///
+/// The file system dates a file by a clock coarser than a process's, often
+/// by milliseconds and on some file systems by seconds, so a document staged
+/// just before the batch starts can carry the very date a request written
+/// just after it does. A reader that takes a tie for "newer", as it must
+/// (a file written while a plan ran can tie with the answer too), would then
+/// plan that document again on every configure. So the batch writes a stamp
+/// until the file system's date for it moves on, and dates every answer by
+/// that: any file written before the batch began is strictly older, and any
+/// written after it is not. Waiting is bounded: a file system whose dates do
+/// not move within three seconds gets the last one, and ties are planned again.
+fn a_date_past_every_earlier_one(stamp: &Path) -> std::time::SystemTime {
+    let first = date_written_now(stamp);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let now = date_written_now(stamp);
+        if now > first || std::time::Instant::now() >= deadline {
+            return now;
+        }
+    }
+}
+
+/// Write `stamp` and give back the date the file system gave it.
+fn date_written_now(stamp: &Path) -> std::time::SystemTime {
+    write_kept(stamp, b"plan-batch\n");
+    fs::metadata(stamp)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: stamp.display().to_string(),
+                source,
+            })
+        })
+}
+
+/// Answer one request of a `plan-batch` run, by a run of `program` with the
+/// request's arguments and `--reads`, and keep the answer under
+/// `results`: `<name>.request` holds the request's line; then `<name>.plan`
+/// what the plan printed and `<name>.reads` what it read, or `<name>.error`
+/// what the refused run wrote on stderr. Returns whether the plan answered.
+///
+/// The `.plan` is dated `dated`, which the batch took before any plan began
+/// ([`a_date_past_every_earlier_one`]): a file the plan read that changed
+/// after the plan began is at least as new as the answer, so a reader that
+/// reuses an answer only when every file it read is older never reuses that
+/// one. What was kept from an earlier answer is removed before the run, so a
+/// batch stopped halfway leaves no answer that is not its own.
+fn answer_plan_request(
+    program: &Path,
+    results: &Path,
+    request: &PlanRequest,
+    dated: std::time::SystemTime,
+) -> bool {
+    let kept = |extension: &str| results.join(format!("{}.{extension}", request.name));
+    let (plan, reads, error) = (kept("plan"), kept("reads"), kept("error"));
+    let (plan_part, reads_part) = (kept("plan.part"), kept("reads.part"));
+    for stale in [&plan, &plan_part, &reads_part] {
+        remove_kept(stale);
+    }
+    write_kept(&kept("request"), format!("{}\n", request.line).as_bytes());
+
+    let run = std::process::Command::new(program)
+        .arg("--reads")
+        .arg(&reads_part)
+        .args(&request.arguments)
+        .output()
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "plan-batch",
+                detail: format!(
+                    "cannot run {} for the request {}: {source}",
+                    program.display(),
+                    request.name
+                ),
+            })
+        });
+    if !run.status.success() {
+        remove_kept(&reads_part);
+        remove_kept(&reads);
+        write_kept(&error, &run.stderr);
+        return false;
+    }
+    remove_kept(&error);
+    match fs::rename(&reads_part, &reads) {
+        Ok(()) => {}
+        // A plan whose generations did not all record what they read wrote
+        // no list, and its answer is not one to reuse.
+        Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => remove_kept(&reads),
+        Err(source) => cli_exit(CliError::WriteOutput {
+            path: reads.display().to_string(),
+            source,
+        }),
+    }
+    write_kept_dated(&plan_part, &run.stdout, dated);
+    fs::rename(&plan_part, &plan).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: plan.display().to_string(),
+            source,
+        })
+    });
+    true
+}
+
+/// Remove a file a `plan-batch` run keeps, when it is there.
+fn remove_kept(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source,
+        }),
+    }
+}
+
+/// Write a file a `plan-batch` run keeps.
+fn write_kept(path: &Path, bytes: &[u8]) {
+    fs::write(path, bytes).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source,
+        })
+    });
+}
+
+/// [`write_kept`], dated `dated` rather than when it was written.
+fn write_kept_dated(path: &Path, bytes: &[u8], dated: std::time::SystemTime) {
+    use std::io::Write as _;
+    fs::File::create(path)
+        .and_then(|mut file| {
+            file.write_all(bytes)?;
+            file.set_modified(dated)
+        })
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.display().to_string(),
+                source,
+            })
+        });
+}
+
+// ── Subcommand: list-fixtures ──────────────────────────────────
+
+/// Emit `names` in the requested shape.
+///
+/// Shared by both catalogs so a build system reading one reads the other
+/// the same way: the format flag is about how the caller parses the
+/// output, not about which catalog produced it.
+fn emit_fixture_names(names: &[&str], format: &str) {
+    match format {
+        "plain" => {
+            for n in names {
+                outln!("{n}");
+            }
+        }
+        "cmake" => outln!("{}", names.join(";")),
+        "space" => outln!("{}", names.join(" ")),
+        other => cli_exit(CliError::InvalidFormatOption {
+            value: other.to_string(),
+            expected: "plain|cmake|space".into(),
+        }),
+    }
+}
+
+/// Refuse a registered fixture whose AOT test header's brief states the
+/// spec section the fixture targets. See `Commands::CheckAotBriefs`.
+///
+/// The count printed on success is the number of headers read, so a run
+/// that read none cannot pass for one that checked every fixture.
+fn cmd_check_aot_briefs(manifest_path: &str, header_dir: &str) {
+    let registry =
+        crate::w3c_registry::W3cRegistry::load(Path::new(manifest_path)).unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "w3c-registry",
+                detail: e.to_string(),
+            })
+        });
+    registry
+        .check_aot_header_briefs(Path::new(header_dir))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "check-aot-briefs",
+                detail: e.to_string(),
+            })
+        });
+    outln!(
+        "{} AOT test header brief(s) read; none states a spec section",
+        registry.fixtures().len()
+    );
+}
+
+/// Judge recorded queue histories. See `Commands::CheckQueueHistory`.
+///
+/// Every file is judged and a line printed for each before the command fails,
+/// so a run that wrote six histories and broke two says which two.
+fn cmd_check_queue_history(files: &[String]) {
+    use crate::queue_history::{check, History};
+
+    judge_history_files("check-queue-history", files, |text| {
+        let history = History::from_json(text).map_err(|e| e.to_string())?;
+        let operations = history.participants.iter().map(Vec::len).sum();
+        Ok((operations, check(&history), None))
+    });
+}
+
+/// Which checker `check-broadcast-history` asks (`--method`).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum HistoryMethod {
+    Auto,
+    General,
+    Specialised,
+}
+
+/// Judge recorded broadcast-log histories (RFC §synth-5-S). See
+/// `Commands::CheckBroadcastHistory`.
+fn cmd_check_broadcast_history(files: &[String], method: HistoryMethod) {
+    use crate::broadcast_history::{judge, Ask, Declined, History};
+    use crate::history_common::Verdict;
+
+    let ask = match method {
+        HistoryMethod::Auto => Ask::Auto,
+        HistoryMethod::General => Ask::General,
+        HistoryMethod::Specialised => Ask::Specialised,
+    };
+    judge_history_files("check-broadcast-history", files, |text| {
+        let history = History::from_json(text).map_err(|e| e.to_string())?;
+        let operations =
+            history.publisher.len() + history.readers.iter().map(Vec::len).sum::<usize>();
+        let judgement = match judge(&history, ask) {
+            Ok(judgement) => judgement,
+            // A history that cannot have come from a run is that under every
+            // method: the specialised checker declines it only because the
+            // one check of well-formedness is its hypothesis.
+            Err(Declined::NotWellFormed(why)) => {
+                return Ok((operations, Verdict::Malformed(why), None));
+            }
+            Err(declined) => {
+                return Err(format!(
+                    "the specialised checker declines this history ({declined}); `--method \
+                     auto` leaves it to the general search"
+                ));
+            }
+        };
+        let why_not = judgement
+            .unplaceable
+            .map(|unplaceable| unplaceable.to_string());
+        Ok((operations, judgement.verdict, why_not))
+    });
+}
+
+/// What the judge of one history file reports: how many operations it records,
+/// what the checker made of them, and, when a checker that does not search
+/// found it not linearizable, the operation it could not place and why.
+type HistoryJudged = Result<(usize, crate::history_common::Verdict, Option<String>), String>;
+
+/// Judge the history files of one kind: read each, let `judge` parse it and
+/// say how many operations it records and what the checker made of them, and
+/// print a line per file. Every file is judged before the command fails.
+fn judge_history_files(
+    stage: &'static str,
+    files: &[String],
+    judge: impl Fn(&str) -> HistoryJudged,
+) {
+    use crate::history_common::Verdict;
+
+    let mut refused = 0usize;
+    for path in files {
+        let verdict = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot be read: {e}"))
+            .and_then(|text| judge(&text))
+            .and_then(|(operations, verdict, why_not)| {
+                if operations == 0 {
+                    return Err("records no operation, which proves nothing".to_string());
+                }
+                match verdict {
+                    Verdict::Linearizable => Ok(operations),
+                    Verdict::NotLinearizable { explored, deepest } => Err(match why_not {
+                        Some(why_not) => format!("is not linearizable: {why_not}"),
+                        None => format!(
+                            "is not linearizable: the search explored {explored} states and got \
+                             no further than {deepest:?} operations placed per participant"
+                        ),
+                    }),
+                    Verdict::Malformed(why) => Err(format!("cannot have come from a run: {why}")),
+                }
+            });
+        match verdict {
+            Ok(operations) => outln!("ok   {path}: linearizable ({operations} operations)"),
+            Err(why) => {
+                refused += 1;
+                outln!("FAIL {path}: {why}");
+            }
+        }
+    }
+    if refused != 0 {
+        cli_exit(CliError::ScxmlGenerate {
+            stage,
+            detail: format!("{refused} of {} histories refused", files.len()),
+        });
+    }
+}
+
+/// List the W3C statechart conformance registry.
+///
+/// This is the enumeration path a build system uses when it has no JSON
+/// parser — the same role `list-fixtures` has always played for the
+/// forge catalog, and what lets `tests/CMakeLists.txt` derive its
+/// per-test registrations from the registry instead of being the
+/// registry.
+fn list_w3c_fixtures(
+    manifest_path: &str,
+    format: &str,
+    harness: Option<&str>,
+    language: Option<&str>,
+    has_test_vectors_only: bool,
+) {
+    // The forge-only selectors are refused rather than accepted and
+    // ignored: this catalog has no per-language product gate and no
+    // test-vector sidecar, so honouring them would answer a question
+    // the registry cannot express.
+    if language.is_some() || has_test_vectors_only {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--language and --has-test-vectors do not apply to --catalog w3c: \
+                     the statechart registry has no per-language product gate and no \
+                     test-vector sidecar. Filter with --harness instead."
+                .to_string(),
+        });
+    }
+    let registry =
+        crate::w3c_registry::W3cRegistry::load(Path::new(manifest_path)).unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "w3c-registry",
+                detail: e.to_string(),
+            })
+        });
+    if let Some(h) = harness {
+        // An unknown harness lists nothing, and "nothing" is
+        // indistinguishable from "no fixture uses it" — so refuse
+        // instead, or a typo in a build script would silently drop a
+        // whole registration group.
+        if !registry.harnesses.contains_key(h) {
+            let known: Vec<&str> = registry.harnesses.keys().map(String::as_str).collect();
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "list-fixtures",
+                detail: format!(
+                    "unknown --harness `{h}`; the registry declares {}",
+                    known.join(", ")
+                ),
+            });
+        }
+    }
+    let names: Vec<&str> = match harness {
+        Some(h) => registry.ids_with_harness(h),
+        None => registry.fixtures().iter().map(|f| f.id.as_str()).collect(),
+    };
+    emit_fixture_names(&names, format);
+}
+
+fn cmd_list_fixtures(args: &ListFixturesArgs) {
+    let manifest_path = args.manifest.as_str();
+    let format = args.format.as_str();
+    let language = args.language.as_deref();
+    let has_test_vectors_only = args.has_test_vectors;
+    let resource_dir = args.resource_dir.as_deref();
+    let catalog = args.catalog.as_str();
+    let harness = args.harness.as_deref();
+    let documents = args.documents;
+    match catalog {
+        "forge" => {}
+        "w3c" if documents => cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--documents applies to --catalog forge only; a W3C fixture's \
+                     document is its registered id's."
+                .to_string(),
+        }),
+        "w3c" => {
+            return list_w3c_fixtures(
+                manifest_path,
+                format,
+                harness,
+                language,
+                has_test_vectors_only,
+            )
+        }
+        other => cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: format!("unknown --catalog `{other}`; expected forge or w3c"),
+        }),
+    }
+    if harness.is_some() {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--harness applies to --catalog w3c only; the forge catalog has \
+                     no harness axis."
+                .to_string(),
+        });
+    }
+    let mut manifest =
+        crate::conformance::Manifest::load(Path::new(manifest_path)).unwrap_or_else(|e| {
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+            })
+        });
+    // RFC §synth-5-B B2-test-vector: enrich algorithm fixtures with their
+    // derived `has_test_vectors` flag so `--has-test-vectors` filtering
+    // (used by cmake harnesses to enumerate per-fixture sidecar
+    // OUTPUTs) reads off the fixture spec without re-scanning each
+    // SCXML at the call site. The flag is SCXML-derived rather than
+    // carried in fixtures.json (manifest-side override is rejected by
+    // `Manifest::validate`), so this enrichment requires the
+    // per-fixture `<name>.scxml` to live under `--resource-dir`.
+    // `--has-test-vectors` callers always need the flag; the
+    // `--language` short-form invocation triggers enrichment too
+    // because language harness scaffolds may emerge that read it.
+    // The unset default skips enrichment to preserve the cheap path
+    // for tools that do not want a per-fixture SCXML scan.
+    if language.is_some() || has_test_vectors_only {
+        // Resource directory resolution: explicit `--resource-dir`
+        // wins; otherwise fall back to `<manifest_dir>/../resources/`
+        // which mirrors the in-repo layout (`tests/forge/conformance/
+        // fixtures.json` → `tests/forge/resources/`). The fallback
+        // keeps short-form invocations like `--language cpp` working
+        // without forcing every caller to pass the resource path.
+        let resource_root: std::path::PathBuf = match resource_dir {
+            Some(rd) => std::path::PathBuf::from(rd),
+            None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
+        };
+        // Pre-resolve `--language` so the per-kind sidecar gate
+        // (codec sidecar = Rust + C11 only) can be applied
+        // alongside the SCXML scan in one pass. When `--language`
+        // is unset the per-kind gate stays open for every backend
+        // (matches the manifest-as-source-of-truth contract; the
+        // listing is then a superset that downstream cmake configs
+        // narrow with their own --language filter).
+        let lang_for_enrich: Option<crate::generator::Language> =
+            language.and_then(|s| s.parse::<crate::generator::Language>().ok());
+        for f in manifest.fixtures.iter_mut() {
+            let scxml_path = f.document_path(&resource_root);
+            let (has_tv_slot, kind_supports_sidecar) = match &mut f.spec {
+                crate::conformance::FixtureSpec::Algorithm {
+                    has_test_vectors, ..
+                } => (Some(has_test_vectors), true),
+                crate::conformance::FixtureSpec::Codec {
+                    has_test_vectors, ..
+                } => {
+                    // RFC §synth-5-B codec test-vector sidecar: Rust +
+                    // C11 only. Force the flag false on the
+                    // 4 gated backends so the cmake `--has-test-
+                    // vectors` listing matches what `render_codec_
+                    // test_vector_sidecar` actually emits — otherwise
+                    // those backends would declare a sidecar OUTPUT
+                    // file that never gets generated. A backend
+                    // joins this gate only together with its own
+                    // sidecar template + golden.
+                    let supports = match lang_for_enrich {
+                        Some(crate::generator::Language::Rust)
+                        | Some(crate::generator::Language::C11)
+                        | None => true,
+                        Some(_) => false,
+                    };
+                    (Some(has_test_vectors), supports)
+                }
+                _ => (None, false),
+            };
+            if let Some(slot) = has_tv_slot {
+                if !kind_supports_sidecar {
+                    *slot = false;
+                    continue;
+                }
+                if crate::conformance::document_exists(&scxml_path) {
+                    *slot = crate::conformance::has_test_vectors(&scxml_path).unwrap_or(false);
+                }
+            }
+        }
+    }
+    // When `--language c11` is passed, mirror the per-kind
+    // filter `generate-conformance` applies before harness rendering so
+    // the c11 cmake harness sees identically-shaped fixture sets from
+    // both subcommands. Unrecognised languages and the unset default
+    // pass every manifest fixture through untouched, matching the prior
+    // (filterless) contract every other backend already relies on.
+    let lang_filter = language.map(|s| {
+        s.parse::<Language>().unwrap_or_else(|_| {
+            cli_exit(CliError::UnknownLanguage {
+                lang: s.to_string(),
+                route: LanguageRoute::ListFixtures,
+            })
+        })
+    });
+    // RFC §synth-5-B B2-test-vector: when `--has-test-vectors` is passed,
+    // restrict the listing to algorithm fixtures whose SCXML carries at
+    // least one `<sce:test-vector>` element. The cmake harness uses
+    // this to declare the per-fixture sidecar header as an additional
+    // OUTPUT of the generate custom_command without speculating which
+    // fixtures emit a sidecar. The enrichment block above already
+    // populated `has_test_vectors` on each algorithm fixture (using
+    // `--resource-dir` or the in-repo fallback), so the filter below
+    // can read the flag straight off the fixture spec.
+    // Resolve the resource-dir for the per-fixture MCU-only SCXML scan
+    // that `lang_supports_fixture` performs. Same fallback as the
+    // earlier sidecar enrichment block above.
+    let resource_root_for_filter: std::path::PathBuf = match resource_dir {
+        Some(rd) => std::path::PathBuf::from(rd),
+        None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
+    };
+    let listed: Vec<&crate::conformance::Fixture> = manifest
+        .fixtures
+        .iter()
+        .filter(|f| match lang_filter {
+            // RFC §synth-5-J-4 single-source-of-truth gate: skip any fixture
+            // whose product template hasn't shipped on the requested
+            // language, or whose SCXML carries MCU-only features
+            // (`<sce:dma-aligned>`) that the four non-MCU backends
+            // reject at codegen time. Both checks live in
+            // `lang_supports_fixture` so `cargo test` and `cmake --build`
+            // see identical fixture sets — drift here would silently
+            // schedule a per-fixture `add_custom_command` for a
+            // generation that fails with `MCU-class kind`.
+            Some(lang) => {
+                crate::conformance::lang_supports_fixture(f, lang, &resource_root_for_filter)
+                    .unwrap_or(false)
+            }
+            None => true,
+        })
+        .filter(|f| {
+            if !has_test_vectors_only {
+                return true;
+            }
+            matches!(
+                &f.spec,
+                crate::conformance::FixtureSpec::Algorithm {
+                    has_test_vectors: true,
+                    ..
+                } | crate::conformance::FixtureSpec::Codec {
+                    has_test_vectors: true,
+                    ..
+                }
+            )
+        })
+        .collect();
+    if documents {
+        let paths: Vec<String> = listed
+            .iter()
+            .map(|f| {
+                f.document_path(&resource_root_for_filter)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        emit_fixture_names(&paths, format);
+    } else {
+        let names: Vec<&str> = listed.iter().map(|f| f.name.as_str()).collect();
+        emit_fixture_names(&names, format);
+    }
+}
+
+// ── Utility functions ───────────────────────────────────────────
+
+/// Record the `// From:` provenance path against the invocation's
+/// [`SOURCE_ROOT`] (delegates to lib). Reading the root here rather than
+/// threading it keeps every emit site on one source of truth, matching how
+/// the error format and workspace-root override are already handled.
+fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
+    // Whichever declared root actually contains the input wins. The
+    // output root is tried first because it is the narrower claim: it is
+    // set only when the caller named one, and an input under it is one
+    // this run wrote, which the project root may not be able to spell
+    // relatively at all.
+    let root = OUTPUT_ROOT
+        .get()
+        .filter(|r| path_is_under(scxml_path, r))
+        .cloned()
+        .or_else(current_source_root);
+    crate::resolve_source_path(model, scxml_path.to_str().unwrap_or(""), root.as_deref());
+}
+
+/// The C++ formatter a run uses: `None` for a run that emits no C++ or that
+/// passed `--no-format`, and otherwise a clang-format of
+/// [`CLANG_FORMAT_MAJOR`](crate::formatter::CLANG_FORMAT_MAJOR) — or the
+/// run stops.
+///
+/// Formatting is on by default and its tool is a declared input of the
+/// bytes. There is no quiet fallback to unformatted output: that fallback,
+/// and a second major on another host, made one document produce different
+/// bytes on different machines (docs/SCE_CODEGEN_DETERMINISM.md §9).
+fn create_cpp_formatter(
+    lang: Language,
+    format_style: Option<&str>,
+    no_format: bool,
+) -> Option<crate::formatter::CppFormatter> {
+    if lang != Language::Cpp || no_format {
+        return None;
+    }
+    match crate::formatter::CppFormatter::new(format_style.map(Path::new)) {
+        Ok(f) => {
+            // What the formatter makes of the C++ is a function of its version
+            // and its style, so a run that formats says so (`--reads`).
+            record_tool_used(crate::formatter::CLANG_FORMAT);
+            if let Some(style) = format_style {
+                record_also_read(Path::new(style));
+            }
+            Some(f)
+        }
+        Err(crate::formatter::FormatError::StyleNotFound(p)) => {
+            cli_exit(CliError::FormatStyleNotFound { path: p });
+        }
+        Err(e) => cli_exit(CliError::FormatterUnavailable {
+            reason: e.to_string(),
+        }),
+    }
+}
+
+/// The C++ formatter a run uses, resolved the first time the run has C++
+/// bytes to shape.
+///
+/// Lazily, for two reasons. A document that fails validation must be refused
+/// with its own diagnostic rather than with "no clang-format 19" — the mesh
+/// `expect_*_failure` tests assert exactly that diagnostic. And a run that
+/// writes no C++ (a rejected document's stubs, `--list`, `--clean`) needs no
+/// formatter at all. The manifest names the formatter only when it shaped
+/// something ([`Self::used`]).
+struct CppFormatterSlot<'a> {
+    lang: Language,
+    format_style: Option<&'a str>,
+    no_format: bool,
+    formatter: std::cell::OnceCell<Option<crate::formatter::CppFormatter>>,
+}
+
+impl<'a> CppFormatterSlot<'a> {
+    fn new(lang: Language, format_style: Option<&'a str>, no_format: bool) -> Self {
+        Self {
+            lang,
+            format_style,
+            no_format,
+            formatter: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// The formatter, resolved now if this is the run's first C++ to shape.
+    /// Exits with the run's refusal when clang-format 19 cannot serve.
+    fn get(&self) -> Option<&crate::formatter::CppFormatter> {
+        self.formatter
+            .get_or_init(|| create_cpp_formatter(self.lang, self.format_style, self.no_format))
+            .as_ref()
+    }
+
+    /// What the manifest records: the formatter, if it shaped anything.
+    fn used(&self) -> Option<crate::manifest::FormatterInfo> {
+        self.formatter
+            .get()
+            .and_then(Option::as_ref)
+            .map(formatter_info)
+    }
+}
+
+/// What the run manifest records for `formatter`.
+fn formatter_info(formatter: &crate::formatter::CppFormatter) -> crate::manifest::FormatterInfo {
+    crate::manifest::FormatterInfo {
+        tool: crate::formatter::CLANG_FORMAT,
+        version: formatter.clang_format().version.clone(),
+    }
+}
+
+/// Format generated file contents through the C++ formatter, when the run has
+/// one. Non-C++ files (by extension) pass through unchanged. A file
+/// clang-format refuses stops the run instead of being written unformatted.
+fn maybe_format_files(
+    files: Vec<(String, String)>,
+    slot: &CppFormatterSlot<'_>,
+) -> Vec<(String, String)> {
+    let Some(fmt) = slot.get() else {
+        return files;
+    };
+    fmt.format_output(files).unwrap_or_else(|failure| {
+        cli_exit(CliError::FormatFailed {
+            file: failure.file,
+            detail: failure.detail,
+        })
+    })
+}
+
+/// Write file only if content differs (preserves timestamps).
+///
+/// Normalisation runs before the comparison so a rerun that changes
+/// nothing stays a no-op, preserving the mtime contract this function
+/// exists for.
+fn write_if_changed(path: &Path, content: &str) {
+    let content = with_trailing_newline(content);
+    emit_generated(path, content.as_bytes(), WritePolicy::IfChanged);
+}
+
+impl TestInfo {
+    fn type_str(&self) -> &str {
+        &self.test_type
+    }
+}
+
+// ── Subcommand: addr2sce ───────────────────────────────────────
+//
+// SCE Protocol-Synthesis RFC §synth-5-O. Reverse-lookup from a mangled
+// symbol or PC address back to SCXML coordinates (file + state path +
+// line range).
+//
+// Three modes (spec lines 3253-3278):
+//   `--symbol <NAME>` — direct sourcemap key lookup.
+//   `--pc <ADDR>`     — resolve the address to the function symbol
+//                        containing it, then look that symbol up.
+//   `--hardfault`     — the same resolution for every newline-separated
+//                        address on stdin, one record per frame in the
+//                        order the dump lists them.
+//
+// The address->symbol hop reads the ELF **symbol table**, not a DWARF
+// line program. The spec's contract is PC -> symbol -> sourcemap ->
+// SCXML file:line, and the SCXML coordinates live in the sourcemap, so
+// the line program would only re-derive the generated-language line the
+// sourcemap already supersedes. `.symtab` carries `st_value` / `st_size`
+// for every emitted function, which is exactly the containment test this
+// needs, and it survives a `--strip-debug` image — the shape an MCU
+// build ships.
+//
+// ARM Thumb: a PC harvested from a Cortex-M exception frame carries the
+// Thumb bit in bit 0, and Thumb function symbols carry it in `st_value`
+// too. Both sides are normalised on ARM so an odd address resolves to
+// the same function as its even neighbour; without that, every frame in
+// a hardfault dump misses.
+
+fn cmd_addr2sce(
+    sourcemap_dir: &str,
+    symbol: Option<&str>,
+    pc: Option<u64>,
+    elf: Option<&str>,
+    hardfault: bool,
+    error_format: ErrorFormat,
+) {
+    let _ = error_format;
+    let (map, map_path) = load_sourcemap(sourcemap_dir);
+
+    // Mode dispatch. Exactly one of the three arrived: the
+    // `addr2sce_mode` group on the subcommand makes any other
+    // combination a parse failure, reported as `cli/usage`.
+    match (symbol, pc, hardfault) {
+        (Some(name), None, false) => addr2sce_resolve_symbol(&map, name, &map_path),
+        (None, Some(addr), false) => {
+            let symbols = addr2sce_load_symbol_table(elf);
+            if !addr2sce_resolve_pc(&map, &symbols, addr, &map_path) {
+                cli_exit(CliError::QueryNoMatch {
+                    tool: "addr2sce",
+                    query: format!("pc {addr:#x}"),
+                    searched: map_path.display().to_string(),
+                });
+            }
+        }
+        (None, None, true) => {
+            let symbols = addr2sce_load_symbol_table(elf);
+            let mut frames = 0usize;
+            let mut unresolved = 0usize;
+            for line in std::io::stdin().lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(e) => cli_exit(CliError::ReadInput {
+                        path: "<stdin>".to_string(),
+                        source: e,
+                    }),
+                };
+                let trimmed = line.trim();
+                // Blank lines keep a pasted dump usable verbatim.
+                if trimmed.is_empty() {
+                    continue;
+                }
+                frames += 1;
+                let pc = addr2sce_parse_stdin_pc(trimmed);
+                if !addr2sce_resolve_pc(&map, &symbols, pc, &map_path) {
+                    unresolved += 1;
+                }
+            }
+            if frames == 0 {
+                cli_exit(CliError::ReadInput {
+                    path: "<stdin>".to_string(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "--hardfault read no addresses",
+                    ),
+                });
+            }
+            // A partially-resolved stack is a narrative with a hole in
+            // it; the frames that did resolve stay on stdout so the
+            // operator sees how far the walk got.
+            if unresolved > 0 {
+                cli_exit(CliError::QueryNoMatch {
+                    tool: "addr2sce",
+                    query: format!("{unresolved} of {frames} frame(s)"),
+                    searched: map_path.display().to_string(),
+                });
+            }
+        }
+        // Unreachable by construction: `addr2sce_mode` is
+        // `required(true).multiple(false)`, so clap rejects zero modes
+        // and two modes alike before this function is entered.
+        _ => unreachable!("clap group `addr2sce_mode` admits exactly one mode"),
+    }
+}
+
+/// A function symbol's address range, normalised for the target's
+/// address convention.
+struct FunctionSymbol {
+    name: String,
+    addr: u64,
+    size: u64,
+}
+
+/// Every sized function symbol in `elf`, address-sorted.
+///
+/// `elf` is `Some` whenever this is reached: `--pc` and `--hardfault`
+/// both carry `requires = "elf"`, so the parser refuses the invocation
+/// that would leave it absent. The argument stays optional in the
+/// struct because the third mode, `--symbol`, does not take one.
+fn addr2sce_load_symbol_table(elf: Option<&str>) -> Vec<FunctionSymbol> {
+    use object::{Object, ObjectSymbol};
+
+    let Some(path) = elf else {
+        unreachable!("`--pc` / `--hardfault` declare `requires = \"elf\"`")
+    };
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: e,
+        }),
+    };
+    let file = match object::File::parse(&*bytes) {
+        Ok(f) => f,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }),
+    };
+    // On ARM the Thumb bit lives in bit 0 of a function symbol's value
+    // and of any PC that reached the CPU in Thumb state. Clearing it on
+    // both sides is what makes the two comparable.
+    let thumb = matches!(file.architecture(), object::Architecture::Arm);
+
+    let mut symbols: Vec<FunctionSymbol> = file
+        .symbols()
+        .filter(|s| s.kind() == object::SymbolKind::Text)
+        .filter_map(|s| {
+            let name = s.name().ok()?;
+            if name.is_empty() {
+                return None;
+            }
+            Some(FunctionSymbol {
+                name: name.to_string(),
+                addr: if thumb { s.address() & !1 } else { s.address() },
+                size: s.size(),
+            })
+        })
+        .collect();
+    if symbols.is_empty() {
+        cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "carries no function symbols — a fully stripped image cannot \
+                 be attributed; keep `.symtab` in the artifact used for triage",
+            ),
+        });
+    }
+    symbols.sort_by_key(|s| s.addr);
+    symbols
+}
+
+/// Parse a PC written with or without the `0x` prefix.
+///
+/// One parser, two callers with different failure meanings: as a
+/// `value_parser` on `--pc` a bad value is a malformed command line
+/// (`cli/usage`, via clap), and on a `--hardfault` stdin line it is
+/// unusable input (`cli/read-input`). Sharing the function keeps the
+/// two spellings of "what counts as an address" from drifting.
+fn parse_pc_address(raw: &str) -> Result<u64, String> {
+    let text = raw.trim();
+    let digits = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => hex,
+        // Bare digits are hex too: every tool that prints a stack dump
+        // (gdb, a Cortex-M fault handler, objdump) writes hex, and
+        // reading `1024` as decimal would resolve the wrong function
+        // silently.
+        None => text,
+    };
+    u64::from_str_radix(digits, 16)
+        .map_err(|_| format!("'{raw}' is not a hexadecimal program-counter address"))
+}
+
+/// Parse one address off a `--hardfault` stdin line.
+fn addr2sce_parse_stdin_pc(raw: &str) -> u64 {
+    match parse_pc_address(raw) {
+        Ok(v) => v,
+        Err(detail) => cli_exit(CliError::ReadInput {
+            path: "<stdin>".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, detail),
+        }),
+    }
+}
+
+/// Resolve one PC and print its record. Returns false when the address
+/// belongs to no function or the function is absent from the sourcemap.
+///
+/// Containment is `[addr, addr + size)` on the greatest symbol at or
+/// below the PC. A symbol with no size (hand-written assembly labels,
+/// linker-script anchors) cannot bound anything, so an address past a
+/// sized function's end is reported as a miss rather than attributed to
+/// whatever came before it — a crash triage that names the wrong state
+/// is worse than one that says it cannot tell.
+fn addr2sce_resolve_pc(
+    map: &crate::forge::sourcemap::Sourcemap,
+    symbols: &[FunctionSymbol],
+    pc: u64,
+    map_path: &Path,
+) -> bool {
+    // No normalisation here. The symbol side already dropped the Thumb
+    // bit, so a function begins at its even address and an odd PC
+    // inside it lands in the same range; masking the query as well
+    // changed no outcome, which a mutation confirmed before the branch
+    // was removed.
+    let addr = pc;
+    let hit = symbols
+        .partition_point(|s| s.addr <= addr)
+        .checked_sub(1)
+        .map(|i| &symbols[i])
+        .filter(|s| s.size > 0 && addr - s.addr < s.size);
+    let Some(symbol) = hit else {
+        eprintln!("addr2sce: pc {pc:#x} is inside no function symbol");
+        return false;
+    };
+    let Some(entry) = map.symbols.get(&symbol.name) else {
+        eprintln!(
+            "addr2sce: pc {pc:#x} resolved to symbol '{}' which is absent from {}",
+            symbol.name,
+            map_path.display()
+        );
+        return false;
+    };
+    print_lookup_record(
+        crate::forge::sourcemap::LookupKind::Addr2Sce,
+        map_path,
+        &symbol.name,
+        entry,
+    );
+    true
+}
+
+/// Read and parse the `sce_sourcemap.json` under `dir`.
+///
+/// The single load path for both lookup directions. Typed through
+/// `sourcemap::from_json` rather than `serde_json::Value`: the shape
+/// has a struct, and re-stating its field names at each consumer is
+/// how one direction ends up understanding a row the other does not.
+fn load_sourcemap(dir: &str) -> (crate::forge::sourcemap::Sourcemap, PathBuf) {
+    let map_path = Path::new(dir).join("sce_sourcemap.json");
+    let raw = match fs::read_to_string(&map_path) {
+        Ok(s) => s,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: e,
+        }),
+    };
+    match crate::forge::sourcemap::from_json(&raw) {
+        Ok(m) => (m, map_path),
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }),
+    }
+}
+
+/// Emit one lookup hit as an NDJSON line on stdout.
+fn print_lookup_record(
+    kind: crate::forge::sourcemap::LookupKind,
+    map_path: &Path,
+    symbol: &str,
+    entry: &crate::forge::sourcemap::SourceSymbol,
+) {
+    let record = crate::forge::sourcemap::SymbolLookupRecord {
+        v: crate::forge::sourcemap::SYMBOL_LOOKUP_SCHEMA_VERSION,
+        kind: kind.as_str(),
+        generator: crate::GENERATOR_COMMIT,
+        sourcemap: map_path.display().to_string(),
+        symbol,
+        entry,
+    };
+    outln!("{}", record.to_line());
+}
+
+/// Look `symbol` up in the loaded sourcemap and print the resolved
+/// SCXML coordinates as a single JSON line on stdout. Returns
+/// process exit 0 on a hit, 1 on a miss (so a CI gate using addr2sce
+/// to verify symbol presence can fail loudly).
+fn addr2sce_resolve_symbol(
+    map: &crate::forge::sourcemap::Sourcemap,
+    symbol: &str,
+    map_path: &Path,
+) {
+    let Some(entry) = map.symbols.get(symbol) else {
+        cli_exit(CliError::QueryNoMatch {
+            tool: "addr2sce",
+            query: format!("symbol '{symbol}'"),
+            searched: map_path.display().to_string(),
+        })
+    };
+    print_lookup_record(
+        crate::forge::sourcemap::LookupKind::Addr2Sce,
+        map_path,
+        symbol,
+        entry,
+    );
+}
+
+/// `sce-codegen sce2sym` — resolve SCXML coordinates to the symbols
+/// they lowered to, across one or more backends' sidecars.
+///
+/// Exit 0 on at least one hit, 1 when the query matched nothing in any
+/// sourcemap. A miss is a failure rather than an empty success for the
+/// same reason `addr2sce`'s is: the caller asked where something went,
+/// and "nowhere" is an answer a build gate must be able to fail on.
+fn cmd_sce2sym(sourcemap_dirs: &[String], query: crate::forge::sourcemap::SymbolQuery<'_>) {
+    let mut hits = 0usize;
+    for dir in sourcemap_dirs {
+        let (map, map_path) = load_sourcemap(dir);
+        for (symbol, entry) in crate::forge::sourcemap::find_symbols(&map, &query) {
+            print_lookup_record(
+                crate::forge::sourcemap::LookupKind::Sce2Sym,
+                &map_path,
+                symbol,
+                entry,
+            );
+            hits += 1;
+        }
+    }
+    if hits == 0 {
+        cli_exit(CliError::QueryNoMatch {
+            tool: "sce2sym",
+            query: "the query".to_string(),
+            searched: format!("{} sourcemap(s)", sourcemap_dirs.len()),
+        });
+    }
+}
