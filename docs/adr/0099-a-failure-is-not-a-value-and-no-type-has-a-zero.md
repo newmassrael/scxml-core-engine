@@ -301,6 +301,50 @@ ADR's:
    and a fixed array field of the value it answers is not addressable, so Go needs the element held in a local before
    its field is sliced. The fixture is a second index read in `static_union`, in range and out of range at each level.
 
+### Landed of the open items (2026-11-16)
+
+Item 1, every generated lane's slice of ADR 0087 "Landing order" item 8, and item 3 have landed; item 2 and the
+rest of item 1 stand as written above.
+
+1. **Each generated lane holds a variable of a record that holds a composition.** The rows of Go, Python, C++, C11
+   and Swift in `ComposedLowering::of` hold `records`, beside Rust's and Kotlin's, and each lane replays
+   `scenarios/static_lift_list.json` and is off `NOT_YET_LOWERED`. No lane needed a lowering of its own: the
+   composed walk each lane already spelled for a union read the record whole through the runtime's whole-value lift
+   (`Lifted::Whole`), and wrote and read back the records a union's cases hold, a list held to its lower count, by
+   the saved form beside the record's type (`ComposedSpelling::saved_record_ext`). Two things were decided while
+   landing it:
+   - **The optional value of such a record is declared beside the record**, as a union's is: a lane that declares a
+     type per shape of a composition (C11) answers it from `take_declared` once the variable's type is named, and the
+     variable is read by the view a union variable is (`StaticTarget::whole_value_view`, which C11's plain data reads
+     by value).
+   - **A C scenario may read each variable out of the machine's saved text.** The C11 replay compared a variable
+     through a reader per field, which walks no record that holds a list of records; a driver that gives the harness
+     its machine's saved text (`sce_scenario_driver_t`'s `saved`) has each variable a step states compared, as any
+     JSON value, with the value that text holds it as, which is the one spelling of a composed value every lane
+     shares and the one the Go and C++ replays already read.
+
+   What is left of item 1: `static_union`'s record variable whose record holds a union, narrowed after the lift writes
+   it, which reads a field of a composed record variable in a guard (ADR 0087 "Landing order" item 8, its last
+   bullet, which no lane lowers yet), the non-optional record variable of decision 1 of that item, and the
+   Interpreter's row (`ComposedLowering::ECMASCRIPT`), which holds no `records` yet. A record that holds a union
+   field is lifted and saved by the walk above on every generated lane already; the fixture that holds one waits on
+   the field read, so its variable is narrowed as step 4 asks.
+3. **A union is taken whole through an index of a list itself reached through an index**, on every generated lane.
+   The text is read as the place it starts at and each element on the way, with the fields after each that reach the
+   next list (`expr::written_elements`), and each index is read by the lane's checked read in turn, the outer first
+   (`StaticTarget::element_within`), so an index outside either list fails the copy, writes nothing and ends the
+   block. `static_union` picks a shape through a group's list (`shapes.grouped`) and through a row of a list of rows
+   (`shapes.rowed`), in range and past the range at each level. Decided while landing it:
+   - **The reads nest as written on Go too.** The premise above was wrong: a Go list, a statechart's or a payload's,
+     is a slice (`ComposedSpelling::list_type`, `[]T`), and a slice expression takes a slice whether or not it is
+     addressable (the Go Programming Language Specification, "Slice expressions": only an array must be), so
+     `scealgorithm.At(&f, scealgorithm.At(&f, xs[:], i).us[:], j)` is Go as written, and no local is needed.
+   - **Rust reads through the outer reference.** Rust's element read answers a reference (`at_ref`), so a list of
+     lists is read through it as it is and a field's list through a borrow of the field
+     (`RustTarget::element_within`).
+   - **A field of a union on the way is refused by name**: it is a member of no proven case, since an element at an
+     index is no narrowing subject (section 5.2); the repair is to copy the element whole and test its tag.
+
 ## Consequences
 
 - Swift needs no value nobody wrote, for any type. The two refusals go, and so does the reason any later type

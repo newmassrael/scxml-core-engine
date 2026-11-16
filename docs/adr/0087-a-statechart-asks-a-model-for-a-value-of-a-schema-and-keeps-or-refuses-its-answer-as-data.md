@@ -30,6 +30,9 @@
   Slice 2 has landed: 91a041cfd7 (the Kotlin row of `records`, the runtime's `liftValue`, the saved form of such a
   record beside its data class and a saved list held to its lower count), 954a0ae697 (`static_lift_list.json`
   replayed on Kotlin, and the record restored by its type).
+  Slices 3 to 7 have landed (2026-11-16, docs/adr/0099, "Landed of the open items"): the Go, Python, C++, Swift and
+  C11 rows of `records`, each lane replaying `static_lift_list.json`, and a C scenario's reading of a variable out of
+  the machine's saved text.
   What it still needs is recorded under "Landing order", item 8, and
   what was decided while landing it under "Decided while landing item 8".
 - Date: 2026-11-04
@@ -1096,7 +1099,10 @@ A feature that asks a model is tested in two layers, which answer two different 
    left, a slice each:
    - C++, C11, Go, Python and Swift: each lane's row of `records`, its saved form of a record that holds a
      composition, its lift of a value read whole (`Lifted::Whole`) where its lift reads records field by field
-     only, the replay of `static_lift_list.json` in its driver and its line off `NOT_YET_LOWERED`;
+     only, the replay of `static_lift_list.json` in its driver and its line off `NOT_YET_LOWERED`. Landed
+     2026-11-16 (slices 3 to 7): each lane's composed walk, spelled for a union, already read such a record whole
+     and saved it by its type, so each row flipped and each driver replays the scenario; the C11 replay reads each
+     variable out of the machine's saved text (docs/adr/0099, "Landed of the open items");
    - the Interpreter's lowering (`ComposedLowering::ECMASCRIPT`), whose refusal by name stands until then;
    - once every lane holds `records`: the answer schema of `static_host_model` and of the harness gains a list,
      `harness_offer.scxml` holds `list<uint32>[8]`, the outcome class table gains `tooMany`, `tooFew` and `tooDeep`
@@ -1151,8 +1157,9 @@ because the sections above do not settle it:
    the delivery's own `event_payload::check_count`, since `BoundedList<T, N>` holds the bound alone (section 15.6),
    and the generator spells that read for each field whose type states a count (`saved_field_read`); Swift's
    `SavedValues.list` takes the count as `least:`, judged by the delivery's `countShort`. Go, Python, C++ and C11
-   lower no variable of such a record and no union (`ComposedLowering`), and a variable states no lower count (ADR
-   0086 section 15.7), so the lists their restores read state none; the Interpreter saves no state.
+   read such a list through the saved form beside the record's type, which takes the lower count with the bound
+   (`SavedReadListWithin`, `saved_read_list_within`, `savedReadOwnedListWithin`, `sce_saved_list_within`, 2026-11-16);
+   the Interpreter saves no state.
 
 ## Consequences
 
