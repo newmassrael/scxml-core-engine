@@ -12,7 +12,7 @@
 # The cases break each half of the repair in turn — the suite's name, and the
 # files that make the tree a package — plus the two properties that keep the
 # repair from costing something elsewhere: that the default emission is still
-# byte-identical to the committed tree, and that a rename aimed at this
+# byte-identical to the file the tree `rust-w3c` places, and that a rename aimed at this
 # repository is refused rather than applied.
 #
 # Anchors are literal slices of the source; an edit that moves one is

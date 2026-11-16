@@ -384,7 +384,7 @@ fn a_change_to_a_declared_target_selects_exactly_its_casefiles() {
     }
     let (target, owner) = owners
         .iter()
-        .find(|(_, files)| files.len() == 1)
+        .find(|(target, files)| files.len() == 1 && !a_tree_is_made_of(target))
         .map(|(t, files)| (t.clone(), files[0].clone()))
         .expect("some declared target belongs to exactly one casefile");
 
@@ -398,6 +398,99 @@ fn a_change_to_a_declared_target_selects_exactly_its_casefiles() {
          more turns every push into a mutation sweep; selecting less leaves the \
          case that guards `{target}` unverified on the one push that could have \
          broken it."
+    );
+}
+
+/// The tree a `<tree>:<path>` target names, when it is one: a tree manifest
+/// under `tools/codegen/trees` (docs/adr/0097, answer 7).
+fn tree_of_target(target: &str) -> Option<&str> {
+    let (tree, path) = target.split_once(':')?;
+    let named = !path.is_empty()
+        && !tree.is_empty()
+        && tree
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    (named
+        && repo_root()
+            .join(format!("tools/codegen/trees/{tree}.toml"))
+            .is_file())
+    .then_some(tree)
+}
+
+/// Whether `path` is of what any tree is made of, so that a change to it
+/// rightly selects every round that mutates a tree's output as well as the
+/// rounds that name it: the generator outside its tests, the templates, the
+/// standard library, the lockfile, and every statechart and deploy file. A
+/// test that asks whether the selection is exact asks it of another path.
+fn a_tree_is_made_of(path: &str) -> bool {
+    (path.starts_with("sce-build/") && !path.starts_with("sce-build/tests/"))
+        || path.starts_with("stdlib/")
+        || path.starts_with("tools/codegen/templates/")
+        || path == "Cargo.lock"
+        || path.ends_with(".scxml")
+        || path.ends_with("deploy.yaml")
+}
+
+/// Whether a casefile mutates a file of a tree the checkout does not commit.
+fn declares_a_tree_target(casefile: &str) -> bool {
+    declared_targets(casefile)
+        .iter()
+        .any(|target| tree_of_target(target).is_some())
+}
+
+/// A file of a tree the checkout does not commit is in no change set, so a
+/// casefile that mutates one (`<tree>:<path>`) is reached by a change to what
+/// the tree is made of: its manifest here, and nothing that is not.
+///
+/// While the tree was committed, the change that moved its file put the file
+/// in the change set. Without this, a casefile whose every target is such a
+/// file would never be selected again, which is a verdict nothing re-proves.
+#[test]
+fn a_change_to_what_a_tree_is_made_of_selects_the_rounds_that_mutate_its_output() {
+    let corpus = casefiles();
+    let manifest = "tools/codegen/trees/rust-integration.toml";
+    let tree_rounds: BTreeSet<String> = corpus
+        .iter()
+        .filter(|casefile| {
+            declared_targets(casefile)
+                .iter()
+                .any(|target| tree_of_target(target) == Some("rust-integration"))
+        })
+        .cloned()
+        .collect();
+    assert!(
+        !tree_rounds.is_empty(),
+        "no casefile mutates a file of `rust-integration`, so this test asserts nothing"
+    );
+    let named_by_path: BTreeSet<String> = corpus
+        .iter()
+        .filter(|casefile| {
+            declared_targets(casefile)
+                .into_iter()
+                .chain(declared_oracles(casefile))
+                .any(|path| path == manifest)
+        })
+        .cloned()
+        .collect();
+
+    let (ok, chosen, log) = selection_for(&[manifest]);
+    assert!(ok, "the gate failed while choosing:\n{log}");
+    let chosen: BTreeSet<String> = chosen.keys().cloned().collect();
+    let expected: BTreeSet<String> = tree_rounds.union(&named_by_path).cloned().collect();
+    assert_eq!(
+        chosen, expected,
+        "⚠ a change to `{manifest}` must select every casefile that mutates a file of \
+         the tree, and only those and the ones that name the manifest itself.\n{log}"
+    );
+
+    let (ok, chosen, log) = selection_for(&["docs/nothing/at/all.md"]);
+    assert!(ok, "the gate failed while choosing:\n{log}");
+    assert!(
+        chosen
+            .keys()
+            .all(|casefile| !tree_rounds.contains(casefile)),
+        "⚠ a change to nothing a tree is made of selected a round that mutates its \
+         output: {chosen:?}\n{log}"
     );
 }
 
@@ -471,9 +564,16 @@ fn a_dry_run_answers_for_a_casefile_that_would_need_a_cmake_tree() {
         })
         .cloned()
         .collect();
+    // A casefile that mutates a tree the checkout does not commit is reached
+    // by a change to what the tree is made of, which these paths may be; that
+    // rule is held by its own test, so such a casefile is set aside here.
+    let chosen_by_path: BTreeSet<String> = chosen
+        .keys()
+        .filter(|casefile| expected.contains(*casefile) || !declares_a_tree_target(casefile))
+        .cloned()
+        .collect();
     assert_eq!(
-        chosen.keys().cloned().collect::<BTreeSet<_>>(),
-        expected,
+        chosen_by_path, expected,
         "⚠ the casefiles chosen for the first target of every ctest casefile must \
          be exactly the ones whose declarations name one of those paths. Missing \
          means the gate failed to match a casefile to its own target; extra means \
@@ -1385,7 +1485,10 @@ fn a_change_to_an_oracle_selects_the_round_it_belongs_to() {
     let (sole, owner) = owners
         .iter()
         .find(|(oracle, files)| {
-            files.len() == 1 && oracle.ends_with(".rs") && !targets.contains(*oracle)
+            files.len() == 1
+                && oracle.ends_with(".rs")
+                && !targets.contains(*oracle)
+                && !a_tree_is_made_of(oracle)
         })
         .map(|(oracle, files)| (oracle.clone(), files[0].clone()))
         .expect("some oracle belongs to exactly one casefile and is no casefile's target");

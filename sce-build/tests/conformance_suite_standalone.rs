@@ -35,6 +35,8 @@
 //! (`scripts/gates/w3c-{go,python,kotlin}.sh`), which is where a machine
 //! without a JVM stops being this test's problem.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -435,48 +437,32 @@ fn an_unspellable_suite_name_is_refused_before_anything_is_written() {
     );
 }
 
-/// The default emission is byte-identical to what the committed trees
-/// carry, so an in-repo regeneration is unaffected by any of this.
+/// The default emission is byte-identical to the file the tree `rust-w3c`
+/// places, which is what the repository's own crate compiles (docs/adr/0097),
+/// so the in-repo suite is unaffected by any of this.
 ///
-/// Asserted against the committed file rather than against a second
-/// run: comparing two runs of the same code proves only that the code
-/// is deterministic, which was never in doubt. What matters is that
-/// the suite-name substitution — which now runs on every emission — is
-/// the identity at the default.
+/// The tree's action is `generate-w3c` over the whole registry with no suite
+/// name, and this run names one fixture: the comparison holds that the
+/// suite-name substitution — which runs on every emission — is the identity
+/// at the default, whichever fixtures a run is given.
 #[test]
-fn the_default_emission_still_matches_the_committed_tree() {
+fn the_default_emission_is_the_file_the_tree_places() {
     let out = tempfile::tempdir().expect("tempdir");
     emit("rust", None, out.path());
 
-    let emitted_path = out
-        .path()
-        .join(format!("backends/rust/tests/tests/test_{FIXTURE}.rs"));
-    // The committed tree is generator output *after* rustfmt — the
-    // regeneration scripts run it — so the comparison runs the same
-    // step rather than approximating it by ignoring whitespace.
-    // Ignoring whitespace is not enough anyway: rustfmt also drops the
-    // trailing comma it introduced, which a token-level comparison
-    // reads as a real difference.
-    let rustfmt = Command::new("rustfmt")
-        .arg("--edition")
-        .arg("2021")
-        .arg(&emitted_path)
-        .output()
-        .expect("spawn rustfmt");
-    assert!(
-        rustfmt.status.success(),
-        "rustfmt must accept the emitted test; stderr: {}",
-        String::from_utf8_lossy(&rustfmt.stderr),
-    );
-
-    let emitted = read(&emitted_path);
-    let committed = read(&repo_root().join(format!("backends/rust/tests/tests/test_{FIXTURE}.rs")));
+    let relative = format!("backends/rust/tests/tests/test_{FIXTURE}.rs");
+    let emitted = read(&out.path().join(&relative));
+    let placed = read(&common::materialized::file(
+        env!("CARGO_BIN_EXE_sce-codegen"),
+        "rust-w3c",
+        &relative,
+    ));
     assert_eq!(
-        emitted, committed,
-        "the default emission must still be the committed one — the \
+        emitted, placed,
+        "the default emission must be the file the tree places — the \
          suite-name substitution has to be the identity at the default, or \
-         every in-repo regeneration rewrites the whole tree. (The header \
-         carries no timestamp, so this is a byte comparison.)",
+         the repository's own crate compiles a suite no default run writes. \
+         (The header carries no timestamp, so this is a byte comparison.)",
     );
     assert!(
         emitted.contains("sce_rust_tests::generated::"),

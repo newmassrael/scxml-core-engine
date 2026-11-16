@@ -261,6 +261,24 @@ mutation_rounds_shards_for() {
     printf '%s\n' "$(( (cases + per_job - 1) / per_job ))"
 }
 
+# Whether the changed path `$2` moves the `<tree>:<path>` target `$1` (see the
+# selection below for why these paths); false for a target that is a path.
+mutation_rounds_moves_tree_target() {
+    local target="$1" changed="$2" tree
+    [[ "$target" =~ ^([a-z0-9][a-z0-9-]*):. ]] || return 1
+    tree="${BASH_REMATCH[1]}"
+    [[ -f "tools/codegen/trees/$tree.toml" ]] || return 1
+    case "$changed" in
+        "tools/codegen/trees/$tree.toml" | Cargo.lock | stdlib/* | tools/codegen/templates/*) return 0 ;;
+        sce-build/tests/*) ;;
+        sce-build/*) return 0 ;;
+    esac
+    case "$changed" in
+        *.scxml | */deploy.yaml | deploy.yaml) return 0 ;;
+    esac
+    return 1
+}
+
 # ── Choose the casefiles to run ───────────────────────────────────
 SELECTED=()
 reason=""
@@ -304,11 +322,23 @@ else
         # The change set is paths and a casefile's declaration is paths, so
         # the intersection is exact rather than glob-matched: both sides are
         # repository-relative and written by the same tooling.
+        #
+        # One declaration is not a path: `<tree>:<path>`, a file of a tree the
+        # checkout does not commit (docs/adr/0097), which no change set holds.
+        # While the tree was committed, a change that moved the file put it in
+        # the change set; now what moves it is a change to what the tree is
+        # made of, so that is what reaches it: the tree's manifest, the
+        # generator and what it compiles in (`sce-build/` outside its tests,
+        # the templates, the standard library, `Cargo.lock`), and any
+        # statechart or deploy file, since which documents a generation reads
+        # is known only by running it. Wider than the file, never narrower: an
+        # unknown is not an empty set.
         for casefile in "${CASEFILES[@]}"; do
             while IFS= read -r target; do
                 [[ -n "$target" ]] || continue
                 for changed in ${CHANGED[@]+"${CHANGED[@]}"}; do
-                    if [[ "$changed" == "$target" ]]; then
+                    if [[ "$changed" == "$target" ]] \
+                        || mutation_rounds_moves_tree_target "$target" "$changed"; then
                         SELECTED+=("$casefile")
                         break 2
                     fi

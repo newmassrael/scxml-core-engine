@@ -45,7 +45,7 @@ edit(".github/workflows/regen-reproduces.yml",
      "  push:\n    branches: [ main ]\n  pull_request:",
      "  push:\n    branches: [ main ]\n    paths:\n"
      "      - 'sce-build/**'\n"
-     "      - 'backends/rust/tests/src/generated/**'\n"
+     "      - 'backends/go/tests/integration/**'\n"
      "      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'\n"
      "  pull_request:")
 PY

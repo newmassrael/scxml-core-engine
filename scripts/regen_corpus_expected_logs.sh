@@ -15,9 +15,9 @@
 #   scripts/regen_corpus_expected_logs.sh           write every expected log
 #   scripts/regen_corpus_expected_logs.sh --check   exit 1 where one differs
 #
-# Requires:
-#   the generated Rust trees of the suites (scripts/materialize.sh rust-static-datamodel),
-#   which the runner programs of sce-rust-tests are built from.
+# Requires nothing beyond cargo: the runner programs of sce-rust-tests are built
+# from the tree `rust-static-datamodel`, which the crate's build script writes
+# into its OUT_DIR (docs/adr/0097).
 
 set -euo pipefail
 

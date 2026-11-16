@@ -1262,8 +1262,8 @@ SPDLOG_LEVEL=off PYTHONPATH=build_python/backends/python/bindings:backends/pytho
 # Run W3C conformance tests (202/202)
 cargo test --release -p sce-rust-tests
 
-# Run specific test
-cargo test --release -p sce-rust-tests test144
+# Run specific test (the W3C tests are modules of the one target `w3c`)
+cargo test --release -p sce-rust-tests --test w3c test_144::
 ```
 
 ### Kotlin/JVM Tests

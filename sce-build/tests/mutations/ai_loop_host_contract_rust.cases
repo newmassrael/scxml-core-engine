@@ -16,17 +16,20 @@
 # So the two cases below attack the two things that were then added: that a
 # guard which could not be evaluated is REPORTED, and that the restart budget
 # is spent where the document says it is. Both are engine behaviour inlined
-# into the generated policy, which is why the committed tree is the target —
+# into the generated policy, which is why the generated machine is the target —
 # the template is not compiled into this binary, so an edit there would leave
 # every artifact hash unchanged and the round INCONCLUSIVE. Its sibling
 # `ai_loop_history_rust.cases` targets the same file for the same reason.
 #
-# Anchors are literal slices of the generated source. `scripts/materialize.sh
-# rust-integration` rewrites that file from the example, so an anchor moved by a document edit is
-# reported INCONCLUSIVE with the anchor quoted rather than as a pass.
+# Anchors are literal slices of the generated source, as the generator writes
+# it (the tree is not formatted, docs/adr/0097). The tree `rust-integration`
+# writes that file from the example, and the target names it in the tree
+# (`<tree>:<path>`), so the round mutates the copy its build compiles; an
+# anchor moved by a document edit is reported INCONCLUSIVE with the anchor
+# quoted rather than as a pass.
 
 mutation_tests -p sce-rust-tests --test ai_loop
-mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+mutation_targets rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 
 # ── A guard that could not be evaluated says nothing ────────────────
 #
@@ -48,14 +51,9 @@ mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
 # the same one, so the anchor is the raise inside the helper: delete it and
 # every failed guard still answers `false`, and nothing anywhere counted it.
 mutation_case "a guard that could not be evaluated is swallowed" <<'PY'
-edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
-     """                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                    AiLoopEvent::ErrorExecution,
-                    reason,
-                ));
-                None""",
-     """                let _ = reason;
-                None""")
+edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, reason));",
+     "let _ = reason;")
 PY
 
 # ── The restart budget is spent one replacement early ───────────────
@@ -71,7 +69,7 @@ PY
 # boundary itself the claim rather than the terminal.
 
 mutation_case "the restart budget is spent one replacement early" <<'PY'
-edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+edit("rust-integration:backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
      'self.safe_evaluate_guard("(restarts > max_restarts)", engine)',
      'self.safe_evaluate_guard("(restarts >= max_restarts)", engine)')
 PY

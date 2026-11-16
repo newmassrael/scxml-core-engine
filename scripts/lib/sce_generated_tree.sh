@@ -144,6 +144,9 @@ sce_generated_tree_clear() {
 # generator is built from is among them, so each is set aside and settled like
 # any other tree; they are steps of their own because each runtime is a library
 # of its own, which no other step writes into.
+#
+# The Rust test trees have no step: they are build outputs of the crates that
+# compile them (`build.rs`, docs/adr/0097 landing 1), and no checkout holds them.
 sce_regen_steps() {
     printf '%s\n' \
         runtime-rust \
@@ -152,7 +155,6 @@ sce_regen_steps() {
         runtime-python \
         runtime-swift \
         runtime-c \
-        rust-tests \
         kotlin-tests \
         kotlin-method-size \
         go-w3c \
@@ -223,12 +225,6 @@ sce_generated_trees() {
             ;;
         runtime-c)
             printf '%s\n' backends/c/runtime/include/sce/generated
-            ;;
-        rust-tests)
-            printf '%s\n' \
-                backends/rust/tests/src/generated \
-                backends/rust/tests/src/integration \
-                backends/rust/tests/tests
             ;;
         kotlin-tests)
             printf '%s\n' \

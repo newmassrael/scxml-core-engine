@@ -18,9 +18,12 @@ name: sce-forge codec no_std no-alloc build
 # bounded text (sce:std/text), whose string field is the fixed-capacity
 # `SceString<N>` of sce-portable-bytes.
 #
-# Trigger: changes to the codec generator/template, the committed codec and
-# text-algorithm goldens the gate compiles, the forge runtime, the portable
-# bytes crate, the gate script itself, or the cargo lockfile.
+# Trigger: changes to the codec generator/template, the committed codec
+# goldens the gate compiles, what the text algorithms are generated from (the
+# generator, its templates, the standard library and the tree
+# `rust-static-datamodel`, which the gate materializes, docs/adr/0097), the
+# forge runtime, the portable bytes crate, the gate script itself, or the cargo
+# lockfile.
 
 on:
   push:
@@ -36,8 +39,10 @@ on:
       - 'sce-build/src/forge/generator/**'
       - 'tests/forge/expected/codec_*.rs'
       - 'tests/forge/expected/views/*.rs'
-      - 'backends/rust/tests/src/integration/static_datamodel/text_slot*.rs'
-      - 'backends/rust/tests/src/integration/static_datamodel/mv_value*.rs'
+      - 'sce-build/**'
+      - 'stdlib/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/codegen/trees/rust-static-datamodel.toml'
       - 'scripts/check_noalloc_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
@@ -56,8 +61,10 @@ on:
       - 'sce-build/src/forge/generator/**'
       - 'tests/forge/expected/codec_*.rs'
       - 'tests/forge/expected/views/*.rs'
-      - 'backends/rust/tests/src/integration/static_datamodel/text_slot*.rs'
-      - 'backends/rust/tests/src/integration/static_datamodel/mv_value*.rs'
+      - 'sce-build/**'
+      - 'stdlib/**'
+      - 'tools/codegen/templates/**'
+      - 'tools/codegen/trees/rust-static-datamodel.toml'
       - 'scripts/check_noalloc_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
@@ -73,11 +80,19 @@ jobs:
   codec-no-alloc:
     name: Compile scalar + list codecs --no-default-features
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # The text algorithms are materialized by sce-codegen, which the gate
+    # builds first.
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+    # sce-codegen's default `xsd` feature binds libxml2 through pkg-config.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev pkg-config
 
     - name: Install Rust Toolchain
       uses: ./.github/actions/install-rust

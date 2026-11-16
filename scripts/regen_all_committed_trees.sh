@@ -147,21 +147,9 @@ step_runtime_c() {
     "$CODEGEN" materialize runtime-c --into "$REPO_ROOT" --replace
 }
 
-# ── rust-tests: the committed trees of backends/rust/tests ──────────────
-#
-# Every tree of the step is declared (ADR 0097): every document, flag and
-# module index of them is in tools/codegen/trees/rust-w3c.toml,
-# rust-integration.toml and rust-static-datamodel.toml, and `materialize`
-# writes each as its actions produce it, rustfmt included, removing a
-# generated file no action produces any more.
-step_rust_tests() {
-    require_codegen
-
-    stage "W3C, integration and static datamodel Rust trees"
-    "$CODEGEN" materialize rust-w3c --into "$REPO_ROOT" --replace
-    "$CODEGEN" materialize rust-integration --into "$REPO_ROOT" --replace
-    "$CODEGEN" materialize rust-static-datamodel --into "$REPO_ROOT" --replace
-}
+# The Rust test trees (tools/codegen/trees/rust-w3c.toml, rust-integration.toml,
+# rust-static-datamodel.toml) have no step: the build scripts of the crates
+# that compile them write them into OUT_DIR (ADR 0097, landing 1).
 
 # ── kotlin-tests: the committed trees of the Kotlin test modules ────────
 #
