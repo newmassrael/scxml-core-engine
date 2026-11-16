@@ -7409,27 +7409,24 @@ BigInt are ordered as BigInts, and `BigInt.asUintN` gives a negative result for
 a width of 32 or 64 whose top bit is set, so a result is masked instead.
 
 An event's data reaches the Interpreter as untyped JSON, which a generated
-machine reads through the event's schema. So a read of a schema field is a call
-of the library's `field`, at the type the schema declares, and it refuses what
-the generated machines' lift of a payload refuses — no data, a bare value, a
-missing field, a value of another type, a value beyond the field's width — by
-throwing, so the expression that read it fails as an overflow does. A field a
-later revision of the schema added is read with its default as a fourth
-argument, which `field` reads where the data lacks the field, as the generated
-lifts do (EventSchema kind, "An event schema that grows"). Four
-differences stand, all for a malformed delivery only: a generated machine
-lifts the payload once when the event is dequeued and raises `error.execution`
-once, where the Interpreter raises one for each expression that reads a field;
-a generated machine refuses a delivery that lacks a field of the schema that no
-expression reads, where the Interpreter, which reads a field only when an
-expression does, runs the transition; a transition that writes one field
-before it reads another that does not fit has written the first in the
-Interpreter, where a generated machine refused the delivery before any write;
-and JSON reaches the Interpreter already parsed, so `5.0` and `5` are one value
-there, where the generated lift refuses the first as not a whole number. A
-scenario that a malformed delivery is part of reads every field it lacks, and
-reads the one that does not fit before it writes any, so that the engines
-answer it alike (`static_send_params`, `static_record_real32`).
+machine reads through the event's schema. So the lowering installs, beside the
+library, a door for each event whose payload the document reads,
+`SceStatic.door(<event>, <record>)`, the record its schema declares with the
+defaults of the fields a later revision added (docs/adr/0086, section 4.4). When
+the Interpreter takes the event, before it selects a transition, it asks the
+door, which reads every field of the record as the library's `field` reads one,
+at the type the schema declares, a field a later revision added as its default
+where the data lacks it (EventSchema kind, "An event schema that grows"), and
+refuses what the generated machines' lift of a payload refuses: no data, a bare
+value, a missing field, a value of another type, a value beyond the field's
+width or bound. A delivery so refused is replaced by the one `error.execution`
+that carries the refusal, as on every generated backend, so no transition is
+selected for it, a field no expression reads refuses it too, and no statement of
+a transition has run before the refusal. An expression that reads a field then
+reads it through `field` again, at the same type. One difference stands, for a
+malformed delivery only: JSON reaches the Interpreter already parsed, so `5.0`
+and `5` are one value there, where the generated lift refuses the first as not a
+whole number.
 
 The data of an event whose schema holds a composed value (docs/adr/0086) is
 read whole at the event's door, `SceStatic.door(<event>, <type>, true)`, by the

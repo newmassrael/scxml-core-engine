@@ -640,8 +640,9 @@
      section 6), read whole as type, the record of its schema, describes: each
      field as field() reads it, and a field a later revision added as its
      default where the delivery lacks it. So a delivery outside its type is
-     refused whole, at the first place that is not one, by any expression that
-     reads any part of it, before anything of it is kept. The parts are walked
+     refused whole, at the first place that is not one, before anything of it
+     is kept: by its event's door when the event is taken, or by taken() for
+     one no door of that name took. The parts are walked
      into the data model, as a foreach binds an element of a list to its item,
      and the data model holds no integer past 2^53 - 1: one is refused at its
      pointer (held()), as a lift refuses it, rather than lost on the way. */
