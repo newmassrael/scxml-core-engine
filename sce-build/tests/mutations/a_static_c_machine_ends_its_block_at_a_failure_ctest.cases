@@ -101,8 +101,8 @@ PY
 
 mutation_case "a variable is not given its initial value" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    sm->policy.{{ field.name }} = {{ field.init }};",
-     "    (void)sm;")
+     "    sm->policy.{{ field.name }} = {{ field.init }};\n{% endif %}\n{% endfor %}\n    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm, session_id);",
+     "    (void)sm;\n{% endif %}\n{% endfor %}\n    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm, session_id);")
 PY
 
 # ── A list holds what its capacity says and no more ────────────────

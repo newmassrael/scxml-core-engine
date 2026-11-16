@@ -70,8 +70,8 @@ PY
 
 mutation_case "a variable is not given its declared value" <<'PY'
 edit("tools/codegen/templates/python/state_machine.py.jinja2",
-     "        {{ field.name }}: {{ field.ty }} = {{ field.init }}\n",
-     "        {{ field.name }}: {{ field.ty }} = None\n")
+     "{{ module_parameter_starts[field.id] }}\n{% else %}\n        {{ field.name }}: {{ field.ty }} = {{ field.init }}\n",
+     "{{ module_parameter_starts[field.id] }}\n{% else %}\n        {{ field.name }}: {{ field.ty }} = None\n")
 PY
 
 # ── A donedata pair that failed is left out ────────────────────────
