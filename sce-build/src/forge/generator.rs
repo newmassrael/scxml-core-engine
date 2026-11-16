@@ -14817,15 +14817,16 @@ fn render_codec(
                     );
                     obj.insert(
                         "embed_decode_stmt".into(),
-                        embed_streaming_decode_stmt(
-                            f,
-                            &stored_body(lang, imports, alias, &body_type),
-                            &body_decoder,
-                            &embed_thread.decode_arg,
-                            &m.fields,
-                            EmbedDecodeInto::Value { c11_over },
+                        embed_streaming_decode_stmt(EmbedDecode {
+                            field: f,
+                            body_type: &stored_body(lang, imports, alias, &body_type),
+                            body_decoder: &body_decoder,
+                            thread_arg: &embed_thread.decode_arg,
+                            fields: &m.fields,
+                            into: EmbedDecodeInto::Value { c11_over },
+                            derived: &c11_derived_numbers,
                             lang,
-                        )
+                        })
                         .into(),
                     );
                     if emit_views {
@@ -14851,15 +14852,16 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_embed_decode_stmt".into(),
-                            embed_streaming_decode_stmt(
-                                f,
-                                &format!("{body_type}View"),
-                                &body_decoder,
-                                &embed_thread.decode_arg,
-                                &m.fields,
-                                EmbedDecodeInto::View,
+                            embed_streaming_decode_stmt(EmbedDecode {
+                                field: f,
+                                body_type: &format!("{body_type}View"),
+                                body_decoder: &body_decoder,
+                                thread_arg: &embed_thread.decode_arg,
+                                fields: &m.fields,
+                                into: EmbedDecodeInto::View,
+                                derived: &c11_derived_numbers,
                                 lang,
-                            )
+                            })
                             .into(),
                         );
                     }
@@ -19314,6 +19316,29 @@ fn repeat_streaming_encode_block(
     }
 }
 
+/// Codec-emit inputs for [`embed_streaming_decode_stmt`], bundled as
+/// [`RepeatDecode`] bundles a list's: the numbers a C11 value holds no member
+/// of took the loose-argument form over the `too_many_arguments` bound.
+struct EmbedDecode<'a> {
+    /// The embedded field.
+    field: &'a CodecField,
+    /// The type the body is decoded as.
+    body_type: &'a str,
+    /// The decode of the body's codec.
+    body_decoder: &'a str,
+    /// The parent-flag arguments the body's decode is handed.
+    thread_arg: &'a str,
+    /// The codec's fields.
+    fields: &'a [CodecField],
+    /// Where the decode puts the body.
+    into: EmbedDecodeInto,
+    /// The numbers a C11 value holds no member of, read off their locals
+    /// (docs/adr/0081 §3): a length the body is bounded by among them.
+    derived: &'a c11_source::Derived,
+    /// The language.
+    lang: crate::generator::Language,
+}
+
 /// Where an embed's streaming decode puts the body it reads.
 #[derive(Clone, Copy)]
 enum EmbedDecodeInto {
@@ -19338,16 +19363,18 @@ enum EmbedDecodeInto {
 /// Both attributes compose: gated+bounded wraps the bounded body in
 /// the predicate's True branch, and the optional is None when the
 /// gate is off.
-fn embed_streaming_decode_stmt(
-    field: &CodecField,
-    body_type: &str,
-    body_decoder: &str,
-    thread_arg: &str,
-    fields: &[CodecField],
-    into: EmbedDecodeInto,
-    lang: crate::generator::Language,
-) -> String {
+fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
     use crate::generator::Language;
+    let EmbedDecode {
+        field,
+        body_type,
+        body_decoder,
+        thread_arg,
+        fields,
+        into,
+        derived,
+        lang,
+    } = ctx;
     let stores = matches!(into, EmbedDecodeInto::Value { .. });
     let c11_over = matches!(into, EmbedDecodeInto::Value { c11_over: true });
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -19376,6 +19403,9 @@ fn embed_streaming_decode_stmt(
             Language::Rust => filters::to_snake_case(sibling.to_string()),
             Language::Cpp | Language::Kotlin => sibling.to_string(),
             Language::Go => filters::to_pascal_case(sibling.to_string()),
+            // The local a number the encode derives is read into, or the
+            // member that holds it.
+            Language::C11 if derived.contains(sibling) => c11_source::derived_local(sibling),
             Language::C11 => format!("out->{}", filters::to_snake_case(sibling.to_string())),
             Language::Python => python_field_local(sibling),
             Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),

@@ -420,6 +420,40 @@ fn a_body_is_presented_as_its_codecs_source_and_written_by_its_encode() {
     );
 }
 
+/// The encoded length of a body is what its codec's encode over the source the
+/// value presents writes into the runtime's counting sink, which stores
+/// nothing; the value holds no member of it, and the decode bounds the body by
+/// the local it read the length into.
+///
+/// Turns red where `c11_source::encode_source` takes the length off the value
+/// rather than counting the body, or where `embed_streaming_decode_stmt` reads
+/// a derived length off the struct.
+#[test]
+fn an_encoded_length_is_counted_by_the_bodys_encode_into_a_counting_sink() {
+    assert!(unlowered("codec_zenoh_timestamp_ext").is_empty());
+    let text = resource_header("codec_zenoh_timestamp_ext");
+    holds(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &[
+            "    sce_forge_writer_t _k_ts = sce_forge_writer_init_counting();\n    \
+             SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode_source(_e_ts.table, _e_ts.ctx, \
+             &_k_ts));\n    \
+             const uint64_t _d_ext_size = (uint64_t)sce_forge_writer_position(&_k_ts);\n",
+            "uint64_t _d_ext_size;\n",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &[
+            "out->ext_size",
+            "self->ext_size",
+            "    uint64_t ext_size;\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// neither has an encode over a source.
@@ -513,6 +547,7 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_present_if_string",
         "codec_present_if_tail",
         "codec_embed_basic",
+        "codec_zenoh_timestamp_ext",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
