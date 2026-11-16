@@ -1174,6 +1174,22 @@ because the sections above do not settle it:
    read such a list through the saved form beside the record's type, which takes the lower count with the bound
    (`SavedReadListWithin`, `saved_read_list_within`, `savedReadOwnedListWithin`, `sce_saved_list_within`, 2026-11-16);
    the Interpreter saves no state.
+10. **A `record:R` variable of a record that holds a composition is built where it is declared by definite
+    assignment, and refused by name where a field has no value a declaration can write** (2026-11-16, the rule
+    decision 1 waits on). Each field that holds no composition is given by one `<sce:set>`, judged as a field of a
+    record of entries is (`record_starts`). A composed field starts at the one value its type has without a writer
+    and is given by no `<sce:set>`: an optional field starts absent, and a list whose type states no lower count
+    (or a lower count of 0) starts empty. A field with no such value, a list with a lower count above 0, a union or
+    a record, makes the variable refused by name, naming the field and the repair (`optional<record:R>`, which
+    starts absent and a lift writes whole). A `<sce:set>` of a composed field is refused by name: no expression of
+    the language builds a list, a union or a record. The variable is saved and restored by its type as the
+    optional one is (decision 7), and each lane spells its start by the composed walk: the record built whole from
+    its fields (`ComposedSpelling::record_of`), an empty list of the field's list type, and the absent value of
+    its optional type (`absent_value`). Rejected: a zero for a union, a record or a list that states a lower
+    count, which docs/adr/0099 rules out ("no type has a zero"); a literal of a list or of a union in an
+    expression, a growth of the language this item does not need, since an optional record and a lift already
+    write any value whole. Lowering it on the seven lanes and the Interpreter, with a fixture and its scenario on
+    every driver, is what is left of docs/adr/0099's item 1.
 
 ## Consequences
 
