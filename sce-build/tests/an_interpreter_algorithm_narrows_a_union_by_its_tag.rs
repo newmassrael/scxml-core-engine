@@ -76,6 +76,24 @@ fn an_interpreter_algorithm_reads_each_case_of_its_union_where_its_tag_is_tested
     );
 }
 
+/// A list of unions (docs/adr/0099, "Still open" item 2) is an array of the
+/// plain objects of their wire form: an element a union local copies is read by
+/// the library's checked read, which throws `out-of-range` for an index outside
+/// it, a loop's item is read by its tag as a parameter is, and the list the
+/// body builds is appended each item by its name. Pinned by the `UnionCopied`
+/// arm and `BufferElement::Union` in `sce-build/src/forge/static_js_algorithm.rs`.
+#[test]
+fn an_interpreter_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let at = installed("algorithm_shape_at.scxml");
+    holds(&at, "var picked = SceStatic.at(shapes, at);");
+    holds(&at, "picked.radius");
+    let widest = installed("algorithm_shapes_widest.scxml");
+    holds(&widest, "var shape = shapes[__i0];");
+    holds(&widest, "if (shape.kind === 'rect')");
+    let kept = installed("algorithm_shapes_kept.scxml");
+    holds(&kept, "kept = SceStatic.append(kept, 8, shape);");
+}
+
 /// Pinned by the `UnionVar` arm of `Body::statement` and the union names
 /// `lower` returns whole (`sce-build/src/forge/static_js_algorithm.rs`).
 #[test]

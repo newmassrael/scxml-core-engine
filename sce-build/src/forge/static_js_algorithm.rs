@@ -390,6 +390,9 @@ enum BufferElement<'a> {
     Scalar(&'a SceType),
     /// A record, appended by name.
     Record,
+    /// A union, appended by the name of the parameter, local or loop item that
+    /// holds it (docs/adr/0099, "Still open" item 2).
+    Union,
 }
 
 /// A `bytes` or `list<T>` local: it starts empty, is appended to forward-only,
@@ -414,6 +417,7 @@ fn collect_buffers<'a>(stmts: &'a [AlgorithmStmt], out: &mut HashMap<&'a str, Bu
                     AlgorithmValueType::List { elem, .. } => match &**elem {
                         AlgorithmValueType::Scalar(elem) => Some(BufferElement::Scalar(elem)),
                         AlgorithmValueType::Record { .. } => Some(BufferElement::Record),
+                        AlgorithmValueType::Union { .. } => Some(BufferElement::Union),
                         _ => None,
                     },
                     _ => None,
@@ -869,6 +873,22 @@ impl Body<'_> {
                         }
                         name.to_string()
                     }
+                    // A union is appended by the name that holds it, the object
+                    // no algorithm writes, which the judge held to the list's
+                    // union where the append was lowered on every backend.
+                    BufferElement::Union => {
+                        let name = expr.trim();
+                        if !self.unions.holds(name) {
+                            return Err(refusal(
+                                self.algorithm,
+                                format!(
+                                    "<sce:append target=\"{target}\"> of `{name}`, which is not a \
+                                     union parameter, local or foreach item"
+                                ),
+                            ));
+                        }
+                        name.to_string()
+                    }
                 };
                 format!(
                     "{target} = {RUNTIME_GLOBAL}.append({target}, {}, {element});",
@@ -995,7 +1015,10 @@ fn holds(ty: &AlgorithmValueType) -> bool {
         AlgorithmValueType::Bytes { .. } => true,
         AlgorithmValueType::List { elem, .. } => match &**elem {
             AlgorithmValueType::Scalar(elem) => has_a_value_form(elem),
-            AlgorithmValueType::Record { .. } => true,
+            // A list of unions is an array of the plain objects of their wire
+            // form (docs/adr/0099, "Still open" item 2), as a list of records is
+            // an array of theirs.
+            AlgorithmValueType::Record { .. } | AlgorithmValueType::Union { .. } => true,
             _ => false,
         },
         AlgorithmValueType::Record { .. } => true,
