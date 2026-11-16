@@ -474,6 +474,32 @@ comment, free text an XML processor may drop, does not give. It shares the first
 the row it was. A recorded origin found in neither place leaves the child its own seed: sound, since its bytes are a
 function of its origin's, but nothing under a root names it for `verify`.
 
+## Amendment (2026-11-16): judged against ADR 0097
+
+ADR 0097 (accepted 2026-11-09, a day after this one) makes a generated tree a build output keyed by the digest of
+what its generation reads, and takes the trees out of version control landing by landing. Each part of this ADR
+was judged against it before it landed, and every part stands:
+
+- **The motivation that moves is SCE's own churn.** The 753 re-stamped files of "Context" are committed trees;
+  once a tree leaves version control (ADR 0097 section 1), a re-stamp of it costs no diff and no conflict. That
+  reason weakens tree by tree and is not what this ADR lands for.
+- **The header is still a contract.** ADR 0097 section 5 keeps `source-hash`, `verify` and `--assert-unchanged`
+  for a consumer that commits its own generated code, and section 7's provenance names the inputs a package was
+  made from. For that consumer the directory rule is still unsound (an import outside the root, an
+  `<xi:include>` fragment) and still not minimal, so the per-file closure is the right header under ADR 0097 as
+  it was before it.
+- **The recorded read is ADR 0097's cache key.** A generation's action is keyed by the files it reports reading
+  (`--reads`, the dependency-file scheme of ADR 0097 section 2). The parser did not record the static `src` child it
+  reads for its interface, so an action keyed by that report could be answered from the cache after the child
+  changed. Recording it (landing step 1) is a soundness fix of the action key as much as of the header.
+- **The closure and the import walk are one walk.** The walk `generate --with-imports` uses, which ADR 0097's
+  static datamodel trees are declared by, keeps each unit's reads, and the closure is built on it, so the walk that
+  says which documents a tree generates and the one that says what each of them read are the same code.
+
+Nothing is superseded. `generate-integration`, which landing step 2 names among the routes, left with ADR 0097's
+integration trees before this landed. The regeneration of section 11 is the one regeneration of the landing that
+brings both ADRs to `main`, and test 16 holds the trees still committed.
+
 ## Consequences
 
 - An edit to a document re-stamps the files whose closure holds it, in every tree, and no other file. A landing's
