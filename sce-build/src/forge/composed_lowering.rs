@@ -576,6 +576,16 @@ pub trait ComposedSpelling {
     fn unit_entry_bytes(&self, _max: u32, held: &Held) -> String {
         self.copy_whole(held, false)
     }
+    /// Whether the part `unit`, a list or a value that may be absent that
+    /// names no record, enum or union, is made part by part, as one that names
+    /// one is ([`Self::unit_list`], [`Self::unit_optional`]): false, the
+    /// default, for a backend whose unit and machine hold such a value in one
+    /// type, which [`Self::unit_whole`] copies. A backend whose unit holds it
+    /// in a type of its own the machine's is not (C11's composite structs)
+    /// answers true for it.
+    fn unit_made_by_parts(&self, _unit: &UnitPart<'_>) -> bool {
+        false
+    }
     /// The machine's list held in `list_ty` made from `held`, a list of the
     /// type `unit` names as a record's unit declares it, `elem` the machine's
     /// value of an element, made from the one bound to
@@ -1715,7 +1725,9 @@ fn unmade(what: &str) -> String {
 /// a value that names none of them is one type in the unit and the machine
 /// ([`ComposedSpelling::unit_field`]) and is copied whole, but a byte string
 /// that is one entry of a record, which the record's own walk makes
-/// ([`field_from_unit`]). `documents` is the
+/// ([`field_from_unit`]), and a list or a value that may be absent the
+/// backend's unit holds in a type of its own, which is made part by part
+/// ([`ComposedSpelling::unit_made_by_parts`]). `documents` is the
 /// name of the document of each enum, by the alias the machine holds it by,
 /// which the enum's unit is named by. `Err` names a part the backend makes no
 /// value of.
@@ -1761,18 +1773,26 @@ fn part_from_unit(
         from_unit(part, within, records, enums, documents, spelling, held)
     };
     match ty {
-        ValueType::Optional { elem } if names_a_declared_type(elem) => spelling
-            .unit_optional(held, unit, &part(elem, &element)?, &typed(elem)?)
-            .ok_or_else(|| unmade(&format!("`{ty}`"))),
-        ValueType::List { elem, .. } if names_a_declared_type(elem) => spelling
-            .unit_list(
-                held,
-                unit,
-                &part(elem, &element)?,
-                &typed(elem)?,
-                &typed(ty)?,
-            )
-            .ok_or_else(|| unmade(&format!("`{ty}`"))),
+        ValueType::Optional { elem }
+            if names_a_declared_type(elem) || spelling.unit_made_by_parts(unit) =>
+        {
+            spelling
+                .unit_optional(held, unit, &part(elem, &element)?, &typed(elem)?)
+                .ok_or_else(|| unmade(&format!("`{ty}`")))
+        }
+        ValueType::List { elem, .. }
+            if names_a_declared_type(elem) || spelling.unit_made_by_parts(unit) =>
+        {
+            spelling
+                .unit_list(
+                    held,
+                    unit,
+                    &part(elem, &element)?,
+                    &typed(elem)?,
+                    &typed(ty)?,
+                )
+                .ok_or_else(|| unmade(&format!("`{ty}`")))
+        }
         ValueType::Scalar(SceType::Enum(reference)) => {
             let machine = machine_enum(enums, &reference.alias)?;
             let document = documents.get(&reference.alias).ok_or_else(|| {

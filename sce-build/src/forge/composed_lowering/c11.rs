@@ -1033,9 +1033,9 @@ impl ComposedSpelling for C11Composed<'_> {
     // the view of the unit's, and a list of numbers, `bool`s or texts into
     // the machine's list of its bound from the unit's elements, which are of
     // the machine's element type, the unit's list being a struct of its own
-    // whose elements are `items`. Every other part, an optional list, a list
-    // of byte strings and a list of lists among them, has no conversion here,
-    // and the walk refuses it by name.
+    // whose elements are `items`. Every other list and value that may be
+    // absent is made part by part ([`Self::unit_made_by_parts`]), and reaches
+    // no copy here.
     fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
         match ty {
             ValueType::Scalar(_) | ValueType::Text { .. } => Some(value_of(held)),
@@ -1056,6 +1056,28 @@ impl ComposedSpelling for C11Composed<'_> {
                 Some(format!("{}_of({value}.items, {value}.len)", stem(&list)))
             }
             _ => None,
+        }
+    }
+    // A unit holds a list or a value that may be absent inside a composition
+    // in a composite struct of its own (`schema_unit_type`, `{ uint32_t len;
+    // T items[N]; }`, `{ bool present; T value; }`): a list's elements are the
+    // machine's only for a number, a `bool` and a text, and a composite value
+    // that may be absent is never the machine's optional, which the runtime
+    // names (`sce_optional_<element>_t`). Only a field of one entry that may be
+    // absent, of a number, a `bool` or a text, is held in the machine's own
+    // optional, and copied whole. Every other one is made by a function of the
+    // machine, element by element: a list of byte strings, of lists or of
+    // values that may be absent, and a value that may be absent inside a
+    // composition.
+    fn unit_made_by_parts(&self, unit: &UnitPart<'_>) -> bool {
+        match unit.ty {
+            ValueType::List { elem, .. } => {
+                !matches!(**elem, ValueType::Scalar(_) | ValueType::Text { .. })
+            }
+            ValueType::Optional { elem } => {
+                !(unit.entry && matches!(**elem, ValueType::Scalar(_) | ValueType::Text { .. }))
+            }
+            _ => false,
         }
     }
     // A C11 machine holds an enum in the type its document's own header
@@ -2509,8 +2531,9 @@ mod tests {
     #[test]
     fn a_c11_message_is_made_from_its_units_value_where_its_parts_convert() {
         let c11 = c11();
+        // Each a field of its record, as the walk of a record makes it.
         let made = |text: &str, read: &str| {
-            from_unit(
+            field_from_unit(
                 &ty(text),
                 None,
                 &held(),
@@ -2544,20 +2567,16 @@ mod tests {
         );
     }
 
-    /// A part C11 has no conversion of, an optional list, a list of lists or
-    /// a list of byte strings, whose unit's type is a struct of its own the
-    /// machine's is not, is refused by name, so no message is half made: a
-    /// record whose records and enums all convert is refused at the one field
-    /// that does not.
+    /// A list of byte strings, a list of lists and a value that may be absent
+    /// inside a composition, each of which the unit holds in a composite
+    /// struct of its own the machine's is not, are made by a function of the
+    /// machine over the unit's type, element by element, each element made
+    /// from a pointer to the unit's, so a record that holds them is made whole.
     #[test]
-    fn a_c11_message_with_a_part_it_does_not_convert_is_refused_by_name() {
+    fn a_c11_composite_the_machine_holds_apart_is_made_by_a_function_of_the_machine() {
         let c11 = c11();
-        for text in [
-            "optional<list<uint8>[2]>",
-            "list<list<uint8>[2]>[2]",
-            "list<bytes[4]>[2]",
-        ] {
-            let refused = from_unit(
+        let made = |text: &str| {
+            from_unit(
                 &ty(text),
                 None,
                 &held(),
@@ -2566,28 +2585,103 @@ mod tests {
                 &c11,
                 &Held::place("(*r).part"),
             )
-            .expect_err("no conversion");
-            assert!(
-                refused.contains("has no machine's value made from its unit's on this backend"),
-                "{text}: {refused}"
-            );
+            .unwrap_or_else(|why| panic!("{text} converts: {why}"))
+        };
+        let cases = [
+            (
+                "list<bytes[4]>[2]",
+                "sce_static_bytes_4_list_2_from_sce_list_2_bytes_4",
+                "static inline sce_static_bytes_4_list_2_t \
+                 sce_static_bytes_4_list_2_from_sce_list_2_bytes_4(sce_list_2_bytes_4_t value) {\n",
+                "        made.data[i] = sce_static_bytes_4_of((sce_forge_bytes_view_t){ \
+                 (*sce_copied).data, (*sce_copied).len });\n",
+            ),
+            (
+                "list<list<uint8>[2]>[2]",
+                "sce_static_list_uint8_2_list_2_from_sce_list_2_list_2_uint8",
+                "static inline sce_static_list_uint8_2_list_2_t \
+                 sce_static_list_uint8_2_list_2_from_sce_list_2_list_2_uint8(\
+                 sce_list_2_list_2_uint8_t value) {\n",
+                "        made.data[i] = sce_static_list_uint8_2_of((*sce_copied).items, \
+                 (*sce_copied).len);\n",
+            ),
+            (
+                "optional<list<uint8>[2]>",
+                "sce_optional_record_sce_static_list_uint8_2_from_sce_opt_list_2_uint8",
+                "static inline sce_optional_record_sce_static_list_uint8_2_t \
+                 sce_optional_record_sce_static_list_uint8_2_from_sce_opt_list_2_uint8(\
+                 sce_opt_list_2_uint8_t value) {\n    if (!value.present) {\n        \
+                 return sce_optional_record_sce_static_list_uint8_2_none();\n    }\n",
+                "    return sce_optional_record_sce_static_list_uint8_2_some(\
+                 sce_static_list_uint8_2_of((*sce_copied).items, (*sce_copied).len));\n",
+            ),
+            (
+                "list<optional<uint16>>[2]",
+                "sce_optional_uint16_list_2_from_sce_list_2_opt_uint16",
+                "static inline sce_optional_uint16_list_2_t \
+                 sce_optional_uint16_list_2_from_sce_list_2_opt_uint16(sce_list_2_opt_uint16_t \
+                 value) {\n",
+                "        made.data[i] = sce_optional_uint16_from_sce_opt_uint16((*sce_copied));\n",
+            ),
+        ];
+        for (text, function, head, element) in cases {
+            assert_eq!(made(text), format!("{function}(((*r).part))"), "{text}");
+            let functions = c11.take_functions().join("\n");
+            for fragment in [head, element] {
+                assert!(
+                    functions.contains(fragment),
+                    "{text}: `{fragment}` in:\n{functions}"
+                );
+            }
         }
+        // A record that holds a list of records with an enum of the machine's
+        // own type, a list of lists and a list of numbers is made field by
+        // field, the list of lists by its function.
         let documents: BTreeMap<String, String> =
             [("Level".to_string(), "level".to_string())].into();
         let held = held();
         let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &c11,
+            &Held::reference("r"),
+        )
+        .expect("every field of the record is made");
+        let ids: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["items", "grid", "late"]);
         assert_eq!(
-            fields_from_unit(
-                batch,
-                &held,
+            fields[1].1,
+            "sce_static_list_uint8_2_list_2_from_sce_list_2_list_2_uint8(((*r).grid))"
+        );
+    }
+
+    /// A field of one entry that may be absent is held in the machine's own
+    /// optional, a number's or a text's copied whole; a byte string that may be
+    /// absent no unit holds (the record's unit refuses it by name), so the walk
+    /// refuses it too, rather than make half a message.
+    #[test]
+    fn a_c11_entry_that_may_be_absent_is_copied_whole_but_for_a_byte_string() {
+        let c11 = c11();
+        let field = |text: &str| {
+            field_from_unit(
+                &ty(text),
+                None,
+                &held(),
                 &enums(),
-                &documents,
+                &BTreeMap::new(),
                 &c11,
-                &Held::reference("r")
-            ),
+                &Held::place("(*r).part"),
+            )
+        };
+        assert_eq!(field("optional<uint16>"), Ok("((*r).part)".to_string()));
+        assert_eq!(field("optional<string[8]>"), Ok("((*r).part)".to_string()));
+        assert_eq!(
+            field("optional<bytes[4]>"),
             Err(
-                "`list<list<uint8>[2]>[2]` has no machine's value made from its unit's on this \
-                 backend"
+                "`optional<bytes[4]>` has no machine's value made from its unit's on this backend"
                     .to_string()
             )
         );
