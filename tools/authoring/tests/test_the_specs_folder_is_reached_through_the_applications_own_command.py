@@ -135,6 +135,17 @@ class TheSpecsFolder(unittest.TestCase):
         self.assertEqual(self.revision, read["model"]["written_for"])
         self.assertIn("base = model.revision", read["next"])
 
+    def test_a_model_checked_here_says_which_tools_did_not_run_without_a_pack(self):
+        # Nothing is checked before a model is saved, so a read of a spec with none
+        # says nothing of it.
+        self.assertNotIn("without_a_pack", data(call("specs_read", spec=self.spec)))
+        saved = data(call("specs_save_model", spec=self.spec, model_text=DOOR,
+                          source_revision=self.revision))
+        read = data(call("specs_read", spec=self.spec))
+        for answer in (saved, read):
+            self.assertEqual(mcp.WITHOUT_A_PACK, answer["without_a_pack"]["not_run"])
+            self.assertIn("sce:unresolved", answer["without_a_pack"]["reason"])
+
     def test_a_model_saved_without_the_text_it_was_written_for_is_unstated_not_current(self):
         call("specs_save_model", spec=self.spec, model_text=DOOR)
         read = data(call("specs_read", spec=self.spec))
@@ -609,6 +620,8 @@ class TheClientTakesTheOwnersRequestForAModel(unittest.TestCase):
 
         self.assertEqual("completed", done["request"]["state"])
         self.assertRegex(done["bundle"], r"^[0-9a-f]{64}$")
+        # Published in this flow, and so checked without a pack: the answer says so.
+        self.assertEqual(mcp.WITHOUT_A_PACK, done["without_a_pack"]["not_run"])
         read = data(call("specs_read", spec=self.spec))
         self.assertEqual(DOOR, read["model"]["text"])
         self.assertEqual("current", read["model"]["standing"])

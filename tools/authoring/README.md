@@ -1285,6 +1285,29 @@ the specification owner compares the page and the figures with the prose. The
 pack-based `check` and `pseudo` tools below serve the separate
 interface-integration workflow.
 
+**The flow without a pack says what it did not run.** Every tool whose input
+requires a pack (`brief`, `questions`, `review`, `check-pack`, `scaffold`,
+`check`, `coverage`, `verify`, `gaps` today) is one this flow never runs, and
+two of them change what a reader may conclude: `questions` is what finds, by
+comparing the specification with the pack, what the specification leaves open,
+so here what is open is only what the model marks `sce:unresolved`; and `check`
+is what holds a document's names and values to a platform's interface model.
+The list is derived from the tool table (`mcp.without_a_pack`), never kept
+beside it, and is said in two places from that one derivation: the server's
+instructions name every tool on it, and the answers that report a model
+checked in the workbench flow (`specs_read` of a spec that holds a model,
+`specs_save_model`, `specs_finish_generation`) carry it as `without_a_pack`,
+with `not_run` (each tool and the first sentence of what it does) and
+`reason`. Decided 2026-11-16, by the rule that a fact is stated where the
+result it qualifies is read, and from one source: the answers are where a
+client reads a model checked, and the instructions are where it learns the
+flow. The application's screen shows what the core's review of a model says
+and reads no answer of this server, so it states the same fact in its own
+vocabulary, keyed by the tool names `without_a_pack` gives; that half lives
+with the application. Until 2026-11-16 the instructions said only that no
+pack was needed, and a model with nothing `open` read as one about which
+nothing was open.
+
     python3 -m sce_author check-pack --pack <dir>
     python3 -m sce_author brief     --pack <dir> --prose <file>...
     python3 -m sce_author picture   --prose <file>... --name <NAME> --out <file> [--json]

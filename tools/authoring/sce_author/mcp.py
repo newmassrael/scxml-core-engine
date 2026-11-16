@@ -124,7 +124,9 @@ PROTOCOL_VERSION = "2024-11-05"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 SERVER_NAME = "sce-author"
 SERVER_VERSION = "1"
-SERVER_INSTRUCTIONS = (
+# The instructions this server gives its client are `SERVER_INSTRUCTIONS`, assembled
+# below the tool table from this, the flow without a pack, and the workbench half.
+_INSTRUCTIONS_FLOW = (
     "When a specification owner asks for pseudocode from a prose specification, "
     "let them use a short natural-language request. Read the source they supplied. "
     "A picture in it is marked `[picture: NAME]` where it sits: look at each one "
@@ -260,8 +262,13 @@ SERVER_INSTRUCTIONS = (
     "reviews the pseudocode against the source. Never call scxml_accept "
     "without the owner's explicit acceptance, and when you do, give it the "
     "specification and the decision record the design was written from as "
-    "its sources, and the profile it is held to. No pack or binding is "
-    "needed for this flow. "
+    "its sources, and the profile it is held to. "
+)
+
+# The workbench half of the instructions. The sentence between the two halves says what
+# this flow does not do because it has no pack, and is written from the tool table
+# (`WITHOUT_A_PACK`), so it is assembled after the table is.
+_INSTRUCTIONS_WORKBENCH = (
     "When the owner keeps the specification in the workbench application, "
     "read it from there: specs_list names their specs and specs_read gives "
     "the text as it is now with its revision. Write and check the model as "
@@ -305,12 +312,6 @@ SERVER_INSTRUCTIONS = (
     "begin a generation. If you cannot finish, say specs_fail_generation "
     "with the reason, so the owner is told."
 )
-
-# What a result is told to have been made to: named by the instructions this server gives its
-# client, so that the bundle of a model records them and one made to other wording is told apart.
-# Changes with the wording and with nobody remembering to say so.
-INSTRUCTIONS_VERSION = ("sce-author-mcp/"
-                        + hashlib.sha256(SERVER_INSTRUCTIONS.encode("utf-8")).hexdigest()[:12])
 
 _PACK_ARG = {
     "type": "string",
@@ -2093,6 +2094,67 @@ TOOLS = [
 ]
 
 
+def _first_sentence(text: str) -> str:
+    """The first sentence of a tool's description: up to its first full stop that ends a
+    sentence, or the whole text when it has none."""
+    match = re.search(r"\.(\s|$)", text)
+    return text[:match.start() + 1] if match else text
+
+
+def without_a_pack(tools: list[dict]) -> list[dict]:
+    """What the flow without a pack does not do: every tool that cannot run without one,
+    because its input requires a `pack`, with the first sentence of what it does.
+
+    ⚠ Derived from the tool table rather than kept beside it, so a tool that comes to
+    require a pack is named here the moment it does, and the instructions, the answers
+    of the specs tools and anything that reads them say the same. Two of these are what
+    a person reading a model most needs to hear are absent: `questions` is what finds,
+    by comparing the specification with the pack, what the specification leaves open
+    (without a pack, what is open is only what the model marks `sce:unresolved`), and
+    `check` is what holds the names and values of a document to a platform's interface
+    model."""
+    return [{"tool": tool["name"], "does": _first_sentence(tool["description"])}
+            for tool in tools
+            if "pack" in tool["inputSchema"].get("required", ())]
+
+
+WITHOUT_A_PACK = without_a_pack(TOOLS)
+
+# What every answer that reports a model checked in the workbench flow carries, so the
+# owner is told what was not done as plainly as what was.
+_WITHOUT_A_PACK_ANSWER = {
+    "reason": ("this flow has no pack, the platform data the tools below compare a "
+               "specification and a document with, so none of them ran: what the model "
+               "leaves open is only what it marks sce:unresolved, and its names and values "
+               "were not held to a platform's interface model"),
+    "not_run": WITHOUT_A_PACK,
+}
+
+
+def _without_a_pack_sentence(not_run: list[dict]) -> str:
+    """The instruction that says what the flow without a pack does not do, naming every tool
+    `without_a_pack` names."""
+    names = ", ".join(entry["tool"] for entry in not_run)
+    return (
+        "No pack or binding is needed for this flow, and without one these tools do not "
+        f"run: {names}. Nothing in this flow stands in for them: what a model leaves open "
+        "is only what it marks sce:unresolved (nothing compared the specification with a "
+        "platform's interface model to find more), and its names and values were not held "
+        "to a platform's. The workbench answers carry this as `without_a_pack`: when you "
+        "report a model checked, tell the owner which of these did not run. "
+    )
+
+
+SERVER_INSTRUCTIONS = (_INSTRUCTIONS_FLOW + _without_a_pack_sentence(WITHOUT_A_PACK)
+                       + _INSTRUCTIONS_WORKBENCH)
+
+# What a result is told to have been made to: named by the instructions this server gives its
+# client, so that the bundle of a model records them and one made to other wording is told apart.
+# Changes with the wording and with nobody remembering to say so.
+INSTRUCTIONS_VERSION = ("sce-author-mcp/"
+                        + hashlib.sha256(SERVER_INSTRUCTIONS.encode("utf-8")).hexdigest()[:12])
+
+
 def verification_payload(result) -> dict:
     """What a run of the examples looks like on the wire.
 
@@ -3623,6 +3685,8 @@ def _spec_reading(spec: str, staging: _Staging,
         markers, refusal = _markers_of(staged[entry], staging)
         if refusal:
             read["decisions_refusal"] = json.loads(refusal)
+        # A model the spec holds was checked in this flow, and so without a pack.
+        read["without_a_pack"] = _WITHOUT_A_PACK_ANSWER
     if answers or markers:
         # The record the owner's answers make, for validate_scxml and decisions to
         # hold a draft to. Written here, by this package, from the plain map the
@@ -3775,7 +3839,7 @@ def _specs_save_model_tool(args: dict, staging: _Staging) -> dict:
             _note_decisions(generation, held)
     except specs.SpecsError as exc:
         return _specs_refused(exc)
-    answer = {"version": 1, "spec": spec, **saved}
+    answer = {"version": 1, "spec": spec, **saved, "without_a_pack": _WITHOUT_A_PACK_ANSWER}
     if held is not None:
         answer["decisions"] = held
     matters = json.loads(report).get("open")
@@ -4024,8 +4088,10 @@ def _specs_finish_generation_tool(args: dict, staging: _Staging) -> dict:
     except specs.SpecsError as exc:
         return _specs_refused(exc)
     answer = {"version": 1, "spec": spec, **done,
+              "without_a_pack": _WITHOUT_A_PACK_ANSWER,
               "next": "published: the model and the requirement list are the spec's now. Tell "
-                      "the owner; the acceptance of the design is theirs, in the application"}
+                      "the owner, and which checks `without_a_pack` names did not run; the "
+                      "acceptance of the design is theirs, in the application"}
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
