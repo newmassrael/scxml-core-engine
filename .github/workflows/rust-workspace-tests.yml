@@ -216,6 +216,11 @@ on:
       # `a_change_shows_what_it_does_to_the_generated_code` runs.
       - 'scripts/generated_diff.sh'
       - 'scripts/lib/sce_codegen.sh'
+      # The release pipeline's declaration of its packages and its reader,
+      # which `a_release_declares_its_packages_by_their_trees` holds to the
+      # tree manifests.
+      - 'scripts/release.py'
+      - 'tools/codegen/release.toml'
   pull_request:
     branches: [ main ]
     paths:
@@ -378,6 +383,11 @@ on:
       # `a_change_shows_what_it_does_to_the_generated_code` runs.
       - 'scripts/generated_diff.sh'
       - 'scripts/lib/sce_codegen.sh'
+      # The release pipeline's declaration of its packages and its reader,
+      # which `a_release_declares_its_packages_by_their_trees` holds to the
+      # tree manifests.
+      - 'scripts/release.py'
+      - 'tools/codegen/release.toml'
 
 # This lane is not superseded by the push that follows it.
 #

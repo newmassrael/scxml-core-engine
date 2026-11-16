@@ -341,6 +341,12 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // so the cost of being wrong is a row filed under the wrong population, not a missing guard.
     // Replace it after 25 runs of its own and delete this paragraph.
     ("generated-diff.yml", 13.9, 0, 0, 0),
+    // ⚠ STAND-IN, borrowed 2026-11-17 for a lane of no history: it builds `sce-codegen` and
+    // materializes the consumer packages' trees, a subset of what `regen-reproduces.yml` does
+    // (13.9), then packs and publishes them. It runs only on a release tag, so its population is
+    // a handful of runs a year and no push ever waits on it. Replace it after 25 runs of its own
+    // and delete this paragraph.
+    ("release.yml", 13.9, 0, 0, 0),
     // Landed 2026-10-10 with the GenMC gate it runs, and reached this table by
     // failing `every_workflow_is_classified` on the push that added it.
     //

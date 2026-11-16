@@ -1061,6 +1061,11 @@ GATES: dict[str, dict] = {
             # a repository of its own and runs.
             "scripts/generated_diff.sh",
             "scripts/lib/sce_codegen.sh",
+            # The release pipeline's declaration of its packages and its
+            # reader, which `a_release_declares_its_packages_by_their_trees`
+            # holds to the tree manifests.
+            "scripts/release.py",
+            "tools/codegen/release.toml",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
@@ -2630,6 +2635,11 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
     # generated code (ADR 0097, section 6) and judges nothing a push could
     # reproduce. The same diff is one `scripts/generated_diff.sh` away.
     "generated-diff.yml": "publication: scripts/generated_diff.sh renders it",
+    # A publication too: on a release tag it packs the consumer packages with
+    # their generated trees and provenance and pushes the release commit's
+    # tags (ADR 0097, section 7). Its declaration is read by
+    # `scripts/release.py --check`, which the workspace suite runs.
+    "release.yml": "publication: scripts/release.py makes the release",
 }
 
 
