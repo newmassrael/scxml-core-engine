@@ -14,8 +14,7 @@ verified independently.
 Fixture: ``integration_resources/donedata_local_invoke/donedata_local_invoke.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_donedata_local_invoke_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem donedata_local_invoke`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

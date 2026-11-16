@@ -14,7 +14,7 @@ is taken as it always was.
 
 The Go and Kotlin halves are ``a_host_states_whether_it_performs_test.go`` and
 ``StaticDatamodelTest.kt``. The machines are the ones
-``scripts/regen_static_datamodel_python.sh`` generates.
+``scripts/materialize.sh python-static-datamodel`` generates.
 """
 from __future__ import annotations
 

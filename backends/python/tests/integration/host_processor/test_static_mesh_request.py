@@ -12,7 +12,7 @@ and ``label`` before the request reads them, so a copy taken at start-up
 8 and "busy".
 
 Fixture: ``sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml``,
-generated with NO host declaration by ``scripts/regen_host_processor_python.sh``: the
+generated with NO host declaration by ``tools/codegen/trees/python-integration.toml``: the
 build names the request's type itself.
 """
 from __future__ import annotations

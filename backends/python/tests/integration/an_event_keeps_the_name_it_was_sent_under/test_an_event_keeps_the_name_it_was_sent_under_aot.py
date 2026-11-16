@@ -11,8 +11,7 @@ not write, so a machine that is told the shorter one passes all of it.
 Fixture: ``integration_resources/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_event_keeps_the_name_it_was_sent_under_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem an_event_keeps_the_name_it_was_sent_under`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

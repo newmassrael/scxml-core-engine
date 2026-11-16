@@ -9,7 +9,7 @@ scheduled the message whose ``delayexpr`` failed, under some default delay,
 delivers it within that minute and moves ``sent``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_bad_send_argument_discards_its_message_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

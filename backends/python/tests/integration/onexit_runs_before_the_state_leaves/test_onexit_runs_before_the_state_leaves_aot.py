@@ -12,7 +12,7 @@ records are the verdict.
 Fixture: ``integration_resources/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_onexit_runs_before_the_state_leaves_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

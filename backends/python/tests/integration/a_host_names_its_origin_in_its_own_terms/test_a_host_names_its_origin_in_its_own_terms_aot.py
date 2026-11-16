@@ -12,7 +12,7 @@ Fixture: ``integration_resources/a_host_names_its_origin_in_its_own_terms/a_host
 generated with ``--host-invoker x-sce-host``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_host_names_its_origin_in_its_own_terms_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -14,7 +14,7 @@ location included, which reaches the parent as ``#_parent`` does.
 Fixture: ``integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_origin_is_the_address_its_sender_published_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

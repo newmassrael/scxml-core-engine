@@ -15,7 +15,7 @@ can already read::
 Fixture: ``integration_resources/unseen_event_is_reported/unseen_event_is_reported.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_unseen_event_is_reported_python.sh``
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

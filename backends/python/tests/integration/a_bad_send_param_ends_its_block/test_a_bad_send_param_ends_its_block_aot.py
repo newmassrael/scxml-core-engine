@@ -8,7 +8,7 @@ a `location`: a valid one arrived as null.
 Fixture: ``integration_resources/a_bad_send_param_ends_its_block/a_bad_send_param_ends_its_block.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_bad_send_param_ends_its_block_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

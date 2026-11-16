@@ -18,8 +18,7 @@ same clause from the ``<donedata>`` side; no IRP document asks it of
 Fixture: ``integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_invoke_param_error_starts_the_child_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem invoke_param_error_starts_the_child`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

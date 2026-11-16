@@ -15,8 +15,7 @@ without the raise reproduces the AOT form, and the machine then rests in
 Fixture: ``integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_invoke_unsupported_type_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem invoke_unsupported_type`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

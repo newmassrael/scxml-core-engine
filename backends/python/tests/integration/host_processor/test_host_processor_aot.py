@@ -26,7 +26,7 @@ A gate holding only the first would pass on an engine that dispatched to
 nothing and called it delivered, which is the silence being repaid.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_host_processor_python.sh``
+  ``tools/codegen/trees/python-integration.toml``
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from sce_runtime import HostSendRequest, HostSendResponse  # noqa: E402
 
 import statechart_host_processor_sm as _sm  # noqa: E402 — path inserted above
 
-# The type the fixture was compiled for. ``scripts/regen_host_processor_python.sh``
+# The type the fixture was compiled for. ``tools/codegen/trees/python-integration.toml``
 # passes this same string to ``--host-processor``; a test registering a
 # different one would measure nothing and pass, so the ``refused`` counter is
 # asserted rather than the registration trusted.

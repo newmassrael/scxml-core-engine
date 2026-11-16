@@ -29,7 +29,7 @@ codegen emits the refusal and every case below would measure the refusal
 instead of the feature.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_host_processor_python.sh``
+  ``tools/codegen/trees/python-integration.toml``
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ from sce_runtime import (  # noqa: E402
 import statechart_host_invoker_sm as _sm  # noqa: E402 — path inserted above
 
 # The type the fixture was compiled for.
-# ``scripts/regen_host_processor_python.sh`` passes this same string to
+# ``tools/codegen/trees/python-integration.toml`` passes this same string to
 # ``--host-invoker``; a test registering a different one would measure nothing
 # and pass, so the ``refused`` counter is asserted rather than the registration
 # trusted.

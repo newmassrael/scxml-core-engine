@@ -27,7 +27,7 @@ the rule:
   later in the same macrostep (docs/adr/0084, D2 as amended at step 10).
 
 The last case drives `static_invoke_ending_order.scxml`, the machine
-`scripts/regen_static_datamodel_python.sh` generates from
+`scripts/materialize.sh python-static-datamodel` generates from
 `sce-build/tests/fixtures/static_datamodel/`, imported when the case runs.
 
 The machine of the other cases is written by hand, as the smallest one with a

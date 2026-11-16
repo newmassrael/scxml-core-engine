@@ -7,7 +7,7 @@ Fixture: ``integration_resources/a_mesh_request_reaches_the_router/
 a_mesh_request_reaches_the_router.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_mesh_request_reaches_the_router_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

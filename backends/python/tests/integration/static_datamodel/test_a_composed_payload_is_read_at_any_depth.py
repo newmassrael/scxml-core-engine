@@ -5,7 +5,7 @@ section 6), run with no script engine, as the Rust and Kotlin machines do
 (``backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs``,
 ``AComposedPayloadIsReadAtAnyDepthTest.kt``). The machine is generated from
 ``sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`` by
-``scripts/regen_static_datamodel_python.sh``, into this directory and out of
+``scripts/materialize.sh python-static-datamodel``, into this directory and out of
 version control.
 
 A delivery whose every list is full is lifted into the machine's own types, and

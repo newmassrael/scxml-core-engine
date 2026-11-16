@@ -23,7 +23,7 @@ running its actions.
 Fixture: ``integration_resources/discarded_event_is_observable/discarded_event_is_observable.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_discarded_event_is_observable_python.sh``
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -17,7 +17,7 @@ for a region that moved without executing its transition content.
 Fixture: ``integration_resources/parallel_regions_take_own_transitions/parallel_regions_take_own_transitions.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_parallel_regions_take_own_transitions_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

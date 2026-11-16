@@ -5,7 +5,7 @@
 (``backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs``,
 ``AComposedValueIsSentByItsNameTest.kt``). The machine is generated from
 ``sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`` by
-``scripts/regen_static_datamodel_python.sh``, into this directory and out of
+``scripts/materialize.sh python-static-datamodel``, into this directory and out of
 version control.
 
 The first delivery of ``batch.sent`` is forwarded to the machine itself: four

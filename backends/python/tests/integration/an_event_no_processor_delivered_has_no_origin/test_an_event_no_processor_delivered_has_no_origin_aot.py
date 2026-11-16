@@ -15,7 +15,7 @@ Fixture: ``integration_resources/an_event_no_processor_delivered_has_no_origin/a
 generated with ``--host-processor x-sce-host``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_event_no_processor_delivered_has_no_origin_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

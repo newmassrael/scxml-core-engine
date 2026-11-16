@@ -17,7 +17,7 @@ being right does not say a document reaches it.
 Fixture: ``integration_resources/xml_data_is_a_dom_tree/xml_data_is_a_dom_tree.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_xml_data_is_a_dom_tree_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

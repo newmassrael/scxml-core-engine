@@ -20,7 +20,7 @@ These two deliveries are what no pre-existing accessor separates::
 Fixture: ``integration_resources/undecodable_payload_is_reported/undecodable_payload_is_reported.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_undecodable_payload_is_reported_python.sh``
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

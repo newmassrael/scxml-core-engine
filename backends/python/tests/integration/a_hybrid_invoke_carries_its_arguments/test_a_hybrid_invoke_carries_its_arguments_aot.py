@@ -11,8 +11,7 @@ the test has to infer.
 Fixture: ``integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml``.
 
 Regeneration:
-  ``scripts/regen_a_hybrid_invoke_carries_its_arguments_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem a_hybrid_invoke_carries_its_arguments`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

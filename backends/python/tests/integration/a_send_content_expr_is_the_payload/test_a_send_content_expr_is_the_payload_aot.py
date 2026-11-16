@@ -9,7 +9,7 @@ the empty string, and the rest of the block does not run.
 Fixture: ``integration_resources/a_send_content_expr_is_the_payload/a_send_content_expr_is_the_payload.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_send_content_expr_is_the_payload_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

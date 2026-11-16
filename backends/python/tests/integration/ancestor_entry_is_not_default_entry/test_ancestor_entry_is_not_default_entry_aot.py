@@ -20,7 +20,7 @@ entered. Those are different branches of the generated entry walk.
 Fixture: ``integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_ancestor_entry_is_not_default_entry_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

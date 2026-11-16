@@ -16,7 +16,7 @@
 # Fixture: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
 #
 # Regeneration (after fixture or template edit):
-#   scripts/regen_internal_chain_is_bounded_python.sh
+#   scripts/materialize.sh python-integration
 
 from __future__ import annotations
 

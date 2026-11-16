@@ -10,7 +10,7 @@ own queue; and a `<content expr>` crosses to the child and back as a value.
 Fixture: ``integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_send_reaches_only_what_its_target_names_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

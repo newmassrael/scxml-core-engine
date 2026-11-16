@@ -12,7 +12,7 @@ backend -- so the engines are held to one answer. A scenario is a list of steps,
 each an external event with its payload and what the machine must hold after it
 runs to quiescence: its current state and any of its published variables.
 
-The machines are the ones ``scripts/regen_static_datamodel_python.sh`` generates,
+The machines are the ones ``scripts/materialize.sh python-static-datamodel`` generates,
 into this directory and out of version control, with the algorithms they call as
 modules beside them: the directory is a package, and a machine is imported as
 one of its members so that its ``from . import <algorithm>`` resolves. Those
@@ -20,7 +20,7 @@ with no scenario here are generated for their effect: a machine nobody built is
 a machine nobody type-checked.
 
 Regeneration (after a fixture or template edit):
-  ``scripts/regen_static_datamodel_python.sh`` (local)
+  ``scripts/materialize.sh python-static-datamodel``
 """
 from __future__ import annotations
 

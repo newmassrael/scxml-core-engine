@@ -14,8 +14,7 @@ name — or one carrying the payload but not ``_event.origin`` /
 Fixture: ``integration_resources/autoforward_event_fields/autoforward_event_fields.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_autoforward_event_fields_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem autoforward_event_fields`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

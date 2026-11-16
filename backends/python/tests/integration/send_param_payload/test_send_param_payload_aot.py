@@ -21,8 +21,7 @@ The two reach distinct final states, so a failure names the path.
 Fixture: ``integration_resources/send_param_payload/send_param_payload.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_send_param_payload_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem send_param_payload`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

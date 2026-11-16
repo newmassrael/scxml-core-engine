@@ -23,8 +23,7 @@ bare ``except: continue`` — no error, no discard, and the rest posted.
 Fixture: ``integration_resources/send_namelist_over_http/send_namelist_over_http.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_send_namelist_over_http_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem send_namelist_over_http`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

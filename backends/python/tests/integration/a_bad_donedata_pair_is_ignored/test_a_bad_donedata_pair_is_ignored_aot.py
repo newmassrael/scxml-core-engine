@@ -9,7 +9,7 @@ dropping the pairs that had evaluated.
 Fixture: ``integration_resources/a_bad_donedata_pair_is_ignored/a_bad_donedata_pair_is_ignored.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_bad_donedata_pair_is_ignored_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

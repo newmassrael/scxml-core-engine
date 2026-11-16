@@ -6,7 +6,7 @@ form carries (docs/adr/0005, decision 4) -- Python. The request is observed wher
 the engine hands it to its transport, so no listener is involved.
 
 Fixture: ``sce-build/tests/fixtures/static_datamodel/static_send_http.scxml``.
-The machine is the one ``scripts/regen_static_datamodel_python.sh`` generates.
+The machine is the one ``scripts/materialize.sh python-static-datamodel`` generates.
 """
 from __future__ import annotations
 

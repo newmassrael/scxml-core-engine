@@ -13,7 +13,7 @@ variable before the send and the invoke read it, so a copy taken at start-up
 
 Fixture: ``sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml``,
 generated WITH both ``--host-processor x-sce-host`` and ``--host-invoker x-sce-host``
-by ``scripts/regen_host_processor_python.sh``. The declarations are load-bearing:
+by ``tools/codegen/trees/python-integration.toml``. The declarations are load-bearing:
 without them codegen emits the refusal and every case would measure it.
 """
 from __future__ import annotations

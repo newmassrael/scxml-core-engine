@@ -9,7 +9,7 @@ not never — and `<cancel>` reaches it while it waits.
 Fixture: ``integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_delayed_http_send_is_posted_when_due_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -13,7 +13,7 @@ configuration afterwards, and ran no ``<onexit>`` on ``stop()``.
 Fixture: ``integration_resources/the_run_ends_by_exiting_every_state/the_run_ends_by_exiting_every_state.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_the_run_ends_by_exiting_every_state_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -16,8 +16,7 @@ a right and a wrong predicate agree.
 Fixture: ``integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_nested_final_not_terminal_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem nested_final_not_terminal`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -16,8 +16,7 @@ Together they leave no room for a name-based filter: one fails if
 Fixture: ``integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_autoforward_internal_queue_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem autoforward_internal_queue`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

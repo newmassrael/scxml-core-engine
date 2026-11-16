@@ -16,8 +16,7 @@ pins the position and nothing else.
 Fixture: ``integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_autoforward_dequeue_point_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem autoforward_dequeue_point`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
-"""The machines ``scripts/regen_static_datamodel_python.sh`` generates, and the
+"""The machines ``scripts/materialize.sh python-static-datamodel`` generates, and the
 algorithms they call, as one package.
 
 A ``datamodel="sce-static"`` machine imports each algorithm it calls as a

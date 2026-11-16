@@ -7,7 +7,7 @@ configurations are the tables sce-codegen writes from the fixtures under
 ``sce-build/tests/fixtures/test_profile/runtime/`` into a module each beside
 this file, and the components are the machines it writes from the components
 there, each the ``<machine>_sm`` module its configuration's table imports
-(regen: ``scripts/regen_static_datamodel_python.sh``; the modules are not
+(regen: ``scripts/materialize.sh python-static-datamodel``; the modules are not
 committed). Only the system adapter, which plays the system under test, is
 written here.
 

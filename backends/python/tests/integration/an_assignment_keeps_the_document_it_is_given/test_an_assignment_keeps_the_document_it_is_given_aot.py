@@ -11,8 +11,7 @@ bare-name location's value out and wrote it back, which lost the document.
 Fixture: ``integration_resources/an_assignment_keeps_the_document_it_is_given/an_assignment_keeps_the_document_it_is_given.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_assignment_keeps_the_document_it_is_given_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem an_assignment_keeps_the_document_it_is_given`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

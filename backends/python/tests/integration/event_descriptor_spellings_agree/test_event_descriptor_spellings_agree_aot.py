@@ -15,8 +15,7 @@ take. This fixture puts every case in positive polarity instead.
 Fixture: ``integration_resources/event_descriptor_spellings_agree/event_descriptor_spellings_agree.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_event_descriptor_spellings_agree_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem event_descriptor_spellings_agree`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

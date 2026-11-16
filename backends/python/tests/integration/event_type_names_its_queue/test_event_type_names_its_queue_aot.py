@@ -10,7 +10,7 @@ dataclass default, and the internal queue never corrected it.
 Fixture: ``integration_resources/event_type_names_its_queue/event_type_names_its_queue.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_event_type_names_its_queue_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

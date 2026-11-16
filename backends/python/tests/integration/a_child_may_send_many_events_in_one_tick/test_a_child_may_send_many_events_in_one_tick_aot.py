@@ -5,7 +5,7 @@
 Fixture: ``integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_child_may_send_many_events_in_one_tick_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

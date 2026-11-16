@@ -23,7 +23,7 @@ not under ``integration_resources/``, because a stem there is a seven-channel
 contract and C11 and the C++ Interpreter expose no next-deadline query to ask.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

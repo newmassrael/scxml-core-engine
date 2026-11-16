@@ -30,8 +30,7 @@ Fixture: ``integration_resources/event_origin_is_a_location/event_origin_is_a_lo
 (canonical, shared with the C++ / Rust / Go / Kotlin / C11 channels).
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_event_origin_is_a_location_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem event_origin_is_a_location`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

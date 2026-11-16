@@ -8,7 +8,7 @@ package, the Kotlin ``EventSchemaLiftedTest``, the C11
 
 The committed SM (``statechart_lifted_sm.py``) is generated from
 ``sce-build/tests/fixtures/event_schema/statechart_lifted.scxml``
-(regen: ``scripts/regen_event_schema_native_python.sh``).
+(regen: ``scripts/materialize.sh python-integration``).
 
 A schema'd event's typed payload is filled by ONE producer: the generated
 ``raise_job_completed`` seam. Every other producer — ``<send>`` with
