@@ -146,3 +146,25 @@ fn a_python_algorithm_returns_a_union_it_was_given_or_built() {
     // Its last statement returns, so the body needs nothing after it.
     assert!(!text.contains("raise AssertionError"), "{text}");
 }
+
+/// A list of unions (docs/adr/0099, "Still open" item 2) is a `list` of the
+/// union's class: an element a union local copies is read by the runtime's
+/// `at`, which raises `out-of-range` for an index outside it, a loop walks the
+/// list as it is, and the list the body builds is a `list` each item is
+/// appended to as it is, since no algorithm writes a union.
+#[test]
+fn a_python_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("shapes: list[{SHAPE}]"));
+    holds(
+        &at,
+        &format!("picked: {SHAPE} = sce_algorithm.at(shapes, at)\n"),
+    );
+    holds(&at, "picked.proven_circle().radius");
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, "for shape in shapes:\n");
+    holds(&widest, "shape.proven_rect().width");
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("kept: list[{SHAPE}] = []\n"));
+    holds(&kept, "kept.append(shape)\n");
+}
