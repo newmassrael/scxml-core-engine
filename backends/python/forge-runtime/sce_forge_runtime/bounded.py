@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-"""The bound a codec's byte string is held to, as a type (docs/adr/0077 §3).
+"""The bound a codec's byte string or text is held to, as a type (docs/adr/0077
+§3).
 
 A codec's encode printed from its plan (docs/adr/0081 §2) reads each byte
-string of a source as a value of a subclass of :class:`BoundedBytes` that names
-the element's bound. Such a value is made only by its constructor, which checks
+string of a source as a value of a subclass of :class:`BoundedBytes`, and each
+text as one of :class:`BoundedText`, that names the element's bound. Such a value is made only by its constructor, which checks
 the bound, and ``bytes`` cannot change after it is made, so a value of it holds
 its bound for as long as it lives. The encode over it then has nothing of the
 bound to refuse, as the Rust and C++ encodes have nothing over their bounded
@@ -17,7 +18,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Union
 
-from .codec import LengthOutOfRange
+from .codec import InvalidUtf8, LengthOutOfRange
 
 
 class BoundedBytes(bytes):
@@ -43,3 +44,29 @@ class BoundedBytes(bytes):
         if len(held) < cls.LEAST or (cls.MOST is not None and len(held) > cls.MOST):
             raise LengthOutOfRange(cls.__name__)
         return held
+
+
+class BoundedText(str):
+    """A text held to a bound counted in the UTF-8 bytes it encodes to, as
+    every backend counts a text's length on the wire: at least ``LEAST`` of
+    them and at most ``MOST``, ``MOST`` being ``None`` where the protocol
+    states no most (docs/adr/0077 §3, §7). A subclass names the bound of one
+    element by its two class attributes.
+
+    Raises :class:`InvalidUtf8`, naming the class, for a text no UTF-8 holds (a
+    lone surrogate), and :class:`LengthOutOfRange` for one outside the bound.
+    Mirrors ``SCE::Forge::Text`` of the C++ runtime."""
+
+    LEAST: int = 0
+    MOST: Optional[int] = None
+
+    def __new__(cls, text: str = "") -> "BoundedText":
+        if not isinstance(text, str):
+            raise TypeError(f"{cls.__name__} is made of a text")
+        try:
+            size = len(text.encode("utf-8"))
+        except UnicodeEncodeError as error:
+            raise InvalidUtf8(cls.__name__) from error
+        if size < cls.LEAST or (cls.MOST is not None and size > cls.MOST):
+            raise LengthOutOfRange(cls.__name__)
+        return super().__new__(cls, text)

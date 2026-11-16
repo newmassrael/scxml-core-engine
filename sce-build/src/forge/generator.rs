@@ -14859,7 +14859,7 @@ fn render_codec(
                     "derived".into(),
                     python_source::derived_field(plan, &f.id).into(),
                 );
-                if let Some((class, default)) = printed.bytes.get(&f.id) {
+                if let Some((class, default)) = printed.bounded.get(&f.id) {
                     obj.insert(type_key.into(), class.clone().into());
                     obj.insert("default_value".into(), default.clone().into());
                 }
@@ -14926,7 +14926,7 @@ fn render_codec(
             serde_json::json!({
                 "before": printed.before,
                 "hold": printed.hold,
-                "bounded": printed.bounded,
+                "runtime": printed.runtime,
             }),
         );
     }

@@ -1820,3 +1820,17 @@ codecs `sce_build::python_codec_printed_file` answers `Some(true)` for). Every o
   `{Codec}Source`, a `typing.Protocol`, names: the dataclass is one, and so is any object of yours with those
   attributes. A byte string of such a source is a value of the element's class.
 
+## A printed Python codec holds text to its bound and derives the flag of a gated element (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that also hold a text, an element a flag of the codec's own gates, or a length gated beside its content.
+
+- A text element is a value of `{Codec}{Element}Text`, a subclass of `sce_forge_runtime.bounded.BoundedText` and so
+  of `str`, held to its bound in UTF-8 bytes. The value makes it of whatever `str` you hand it and raises
+  `LengthOutOfRange` past the bound, or `InvalidUtf8` for a text no UTF-8 holds (a lone surrogate). A length
+  derived from a text is gone from the value, as one derived from a byte string is.
+- An element a gate decides is `None` where it is absent, as before. The flag that gates it is now derived: the
+  encode sets it exactly where the element is there and clears it where it is not, whatever bit the carrier you
+  hand it holds. Stop setting the flag before you encode; a value whose flag disagreed with its element, which the
+  encode refused or wrote as it stood, is now written as the element says.
+

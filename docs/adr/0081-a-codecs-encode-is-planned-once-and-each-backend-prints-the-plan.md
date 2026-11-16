@@ -946,6 +946,15 @@ old encode, the old encode and its templates are removed in the same landing.
    refuses, whose runtime then names each refusal (`EncodeFailure::symbol`). `a_python_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a
    printed codec's module, that every codec of the resources is printed exactly where the printer lowers every form
    of it, and that the others keep the template's encode.
+
+   *The second Python landing, 2026-11-16:* text of a stated bound, an element one flag of the codec's own decides,
+   and the flags the encode derives from it. A text is a value of `{Codec}{Element}Text`, a subclass of the runtime's
+   `BoundedText` (a `str` held to its bound in the UTF-8 bytes every backend counts, refused as `InvalidUtf8` where no
+   UTF-8 holds it), and a length of it is derived from those bytes. A gated element is `None` where it is absent; the
+   encode folds the flag that gates it into its carrier from whether it is there, in place of the bit the value
+   presents, and writes it only where it is there; a length gated beside it is derived as zero where it is absent
+   and written where its gate holds, tested on the carrier as the encode writes it. A length the value states where
+   its content is absent (§4.6 R4b), a group, and a gate on an input or a chain's entries stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

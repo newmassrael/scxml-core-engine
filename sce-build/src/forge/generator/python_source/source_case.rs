@@ -121,8 +121,8 @@ pub(crate) fn source_case(
 
 /// One value of the abstract type `value` of the codec at `path`, as a Python
 /// expression the dataclass's constructor takes: a number as a literal, a byte
-/// string as `bytes`, and a value of an enum as the variant of the type the
-/// codec's module imports it as.
+/// string as `bytes`, a text as a string literal, and a value of an enum as the
+/// variant of the type the codec's module imports it as.
 fn member_literal(
     value: &Value<'_>,
     path: &CodecPath,
@@ -157,10 +157,18 @@ fn member_literal(
                 variant,
             ))
         }
+        // A JSON string is a Python string literal of the same text: its
+        // escapes are ones Python reads alike.
+        Value::Text(_) => {
+            let text = json
+                .as_str()
+                .ok_or_else(|| "text is a JSON string".to_string())?;
+            serde_json::to_string(text).map_err(|e| e.to_string())
+        }
         Value::Scalar(_) => Err("a float or a bool is not spelled as a Python literal yet".into()),
-        Value::Text(_) | Value::Body { .. } | Value::List { .. } => Err(
-            "a text, a body or a list is not spelled as a Python literal yet: the Python \
-             printer prints no codec that holds one"
+        Value::Body { .. } | Value::List { .. } => Err(
+            "a body or a list is not spelled as a Python literal yet: the Python printer \
+             prints no codec that holds one"
                 .into(),
         ),
     }

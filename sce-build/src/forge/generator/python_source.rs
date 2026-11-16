@@ -8,11 +8,12 @@
 //! is a function over any source, `encode_source` of the codec's module: it
 //! reads each element the source presents and derives every other element of
 //! the frame from them, as the plan says, never from the value (docs/adr/0058
-//! §1). A byte
-//! string is presented as a subclass of the runtime's `BoundedBytes` that names
-//! its bound, the abstract type of §2 for Python: a class whose constructor
-//! checks, of immutable bytes, so a value of it holds its bound for as long as
-//! it lives and the encode over it refuses nothing the bound decides.
+//! §1). A byte string or a text is presented as a subclass of the runtime's
+//! `BoundedBytes` or `BoundedText` that names its bound, the abstract type of
+//! §2 for Python: a class whose constructor checks, of an immutable value, so a
+//! value of it holds its bound for as long as it lives and the encode over it
+//! refuses nothing the bound decides. An element a gate decides is `None` where
+//! it is absent, and the flag that says so is derived from it.
 //!
 //! The printer reads the model only through the plan and lowers its forms one
 //! landing at a time (§6): [`unlowered`] names the first form a codec's plan
@@ -22,8 +23,8 @@
 use super::*;
 use crate::forge::codec_roles::ElementId;
 use crate::forge::encode_plan::{
-    Absent, CodecPlan, Derive, EncodePlan, Guard, Measured, Narrow, Number, NumberInto, Offset,
-    Presence, Value, Write,
+    Absent, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, Measured, Narrow, Number,
+    NumberInto, Offset, Presence, PresenceFlag, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,11 +39,13 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
 /// Every form of `plan` the Python printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
-/// It prints a positional codec whose elements are integers, flag sets, enums
-/// and byte strings, each always there, whose every derived element is the
-/// length of one byte string always there, held in a field of its own that the
-/// length fits, and whose encode refuses nothing. A CBOR map and a
-/// content-line component keep their own templates' encodes.
+/// It prints a positional codec whose elements are integers, flag sets, enums,
+/// byte strings and texts, each always there or decided by a gate on a flag of
+/// the codec's own; whose every derived element is either the length of one
+/// byte string or text, held in a field of its own that the length fits and
+/// gated beside its content where its content is, or a flag set exactly where
+/// the one field it gates is there; and whose encode refuses nothing. A CBOR
+/// map and a content-line component keep their own templates' encodes.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan),
@@ -67,17 +70,14 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             Value::Scalar(t) if t.int_bit_width().is_some() => {}
             Value::Scalar(SceType::Enum(_)) => {}
             Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
-            Value::Bytes(_) => {}
-            Value::Text(_) => forms.push(format!("field '{id}': a text")),
+            Value::Bytes(_) | Value::Text(_) => {}
             Value::Body { .. } => forms.push(format!("field '{id}': an embedded body")),
             Value::List { .. } => forms.push(format!("field '{id}': a list of entries")),
         }
-        match element.presence {
-            Presence::Always => {}
-            Presence::Gated => forms.push(format!("field '{id}': an element a gate decides")),
-            Presence::Stated => forms.push(format!(
+        if element.presence == Presence::Stated {
+            forms.push(format!(
                 "field '{id}': a length the value states where its content is absent"
-            )),
+            ));
         }
     }
     if !plan.groups().is_empty() {
@@ -88,8 +88,12 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             (ElementId::Field(_), Derive::Number(number)) => {
                 forms.extend(number_form(&derived.element, number));
             }
+            (ElementId::Flag { .. }, Derive::Presence(presence)) => {
+                forms.extend(presence_form(&derived.element, presence));
+            }
             (element, _) => forms.push(format!(
-                "element '{element}': an element the encode derives other than a length"
+                "element '{element}': an element the encode derives other than a length \
+                 or a presence flag"
             )),
         }
     }
@@ -109,11 +113,11 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             }
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                if *guard != Guard::Always || list.is_some() {
-                    forms.push(format!(
-                        "field '{}': a write a gate or a walk decides",
-                        field.id
-                    ));
+                if list.is_some() {
+                    forms.push(format!("field '{}': a walk of a list", field.id));
+                }
+                if *guard == Guard::Gate {
+                    forms.extend(gate_form(plan, field));
                 }
                 match &field.bit_size {
                     BitSize::Fixed { .. } => {
@@ -148,41 +152,36 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
 }
 
 /// What of the derived number of `element` the printer does not print: it
-/// prints the length of one byte string always there, its `sce:length-arith`
-/// never taking the number below zero, into a field the number fits, which
-/// holds nothing else.
+/// prints the length of one byte string or text, its `sce:length-arith` never
+/// taking the number below zero, into a field the number fits that holds
+/// nothing else, written where the content is (zero where a gate leaves the
+/// content out, beside which the field is gated too).
 fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
     let mut forms = Vec::new();
     match number.measures.as_slice() {
-        [one] => {
-            if one.gated {
-                forms.push(format!(
-                    "element '{element}': a length of content a gate decides"
-                ));
+        [one] => match &one.of {
+            Measured::Bytes {
+                offset: Offset::Less { held: false, .. },
+                ..
+            } => forms.push(format!(
+                "element '{element}': a length its arithmetic may take below zero"
+            )),
+            Measured::Bytes { .. } => {}
+            Measured::Entries { .. } => {
+                forms.push(format!("element '{element}': a count of entries"));
             }
-            match &one.of {
-                Measured::Bytes {
-                    offset: Offset::Less { held: false, .. },
-                    ..
-                } => forms.push(format!(
-                    "element '{element}': a length its arithmetic may take below zero"
-                )),
-                Measured::Bytes { .. } => {}
-                Measured::Entries { .. } => {
-                    forms.push(format!("element '{element}': a count of entries"));
-                }
-                Measured::Encoded { .. } => {
-                    forms.push(format!("element '{element}': the encoded length of a body"));
-                }
-                Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
-                    forms.push(format!("element '{element}': a flag a held codec says"));
-                }
+            Measured::Encoded { .. } => {
+                forms.push(format!("element '{element}': the encoded length of a body"));
             }
-        }
+            Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
+                forms.push(format!("element '{element}': a flag a held codec says"));
+            }
+        },
         _ => forms.push(format!(
             "element '{element}': a number that measures other than one element"
         )),
     }
+    let gated = number.measures.iter().any(|m| m.gated);
     match &number.into {
         NumberInto::Field { narrow, absent, .. } => {
             if *narrow == Narrow::Checked {
@@ -190,7 +189,10 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
                     "element '{element}': a length that may not fit its field"
                 ));
             }
-            if *absent != Absent::Never {
+            if !matches!(
+                (absent, gated),
+                (Absent::Never, false) | (Absent::Zero, true)
+            ) {
                 forms.push(format!(
                     "element '{element}': a length the value states where its content is absent"
                 ));
@@ -201,6 +203,28 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
         )),
     }
     forms
+}
+
+/// What of the presence flag `element` the printer does not print: it prints
+/// a flag the presence of one field decides, or of fields one group holds.
+fn presence_form(element: &ElementId, presence: &PresenceFlag<'_>) -> Option<String> {
+    (presence.of.len() != 1 && !presence.together)
+        .then(|| format!("element '{element}': a flag the presence of several fields decides"))
+}
+
+/// What of the gate of `field`, a field written where its gate holds, the
+/// printer does not print: it tests a flag of the codec's own carriers.
+fn gate_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
+    let gate = field.present_if.as_ref()?;
+    plan.clauses(gate)
+        .iter()
+        .any(|clause| !matches!(clause, Clause::Flag { .. }))
+        .then(|| {
+            format!(
+                "field '{}': a gate on an input or on a chain's entries",
+                field.id
+            )
+        })
 }
 
 /// The fields of `plan` whose value the encode derives as a number.
@@ -222,13 +246,17 @@ fn unread_form(
     numbers: &BTreeSet<String>,
     field: &CodecField,
 ) -> Option<String> {
-    let presented = plan.elements.iter().any(|e| e.field.id == field.id);
-    (!presented && !numbers.contains(&field.id)).then(|| {
+    (element_of(plan, &field.id).is_none() && !numbers.contains(&field.id)).then(|| {
         format!(
             "field '{}': a field the value neither presents nor the encode derives as a number",
             field.id
         )
     })
+}
+
+/// The element of `plan` the value presents as `id`, if it presents one.
+fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<'m>> {
+    plan.elements.iter().find(|e| e.field.id == id)
 }
 
 /// Whether the Python value of `plan`, a plan [`unlowered`] answers `None` for,
@@ -237,31 +265,48 @@ pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
     derived_numbers(plan).contains(id)
 }
 
-/// The class the element `id` of the codec `struct_name` is presented as where
-/// it is a byte string: a subclass of the runtime's `BoundedBytes` that names
-/// its bound.
-pub(super) fn bytes_class(struct_name: &str, id: &str) -> String {
-    format!(
-        "{struct_name}{}Bytes",
-        filters::to_pascal_case(id.to_string())
-    )
-}
-
 /// The Python text the printer gives a codec's module.
 pub(super) struct PythonSource {
-    /// Before the value's class: the class of each byte string's bound, the
-    /// `Protocol` a source of the codec satisfies, and the encode over any
-    /// source, `encode_source`.
+    /// Before the value's class: the class of each byte string's and text's
+    /// bound, the `Protocol` a source of the codec satisfies, and the encode
+    /// over any source, `encode_source`.
     pub(super) before: String,
-    /// The value's `__setattr__`, which holds each byte string to its bound
-    /// wherever it is set, where the value is made and after; empty where it
-    /// presents none.
+    /// The value's `__setattr__`, which holds each byte string and text to its
+    /// bound wherever it is set, where the value is made and after; empty
+    /// where it presents none.
     pub(super) hold: String,
-    /// For each byte string the value presents, by field id, its class and the
-    /// default the value's field takes.
-    pub(super) bytes: BTreeMap<String, (String, String)>,
-    /// Whether the module names the runtime's `BoundedBytes`.
-    pub(super) bounded: bool,
+    /// For each byte string and text the value presents, by field id, the type
+    /// the value's field is declared as and the default it takes.
+    pub(super) bounded: BTreeMap<String, (String, String)>,
+    /// The runtime's classes the module names, joined for its import; empty
+    /// where it names none.
+    pub(super) runtime: String,
+}
+
+/// The class a byte string or a text of `struct_name` is held in, the runtime
+/// class it is a subclass of, and a literal of its fewest `least` units.
+fn bounded_class(
+    struct_name: &str,
+    id: &str,
+    value: &Value<'_>,
+    least: u64,
+) -> (String, &'static str, String) {
+    let pascal = filters::to_pascal_case(id.to_string());
+    // The fewest units the class holds, zeros, spelled as a literal: the
+    // default is evaluated in the class body, where a field named `bytes`
+    // declared before it would hide the builtin.
+    match value {
+        Value::Text(_) => (
+            format!("{struct_name}{pascal}Text"),
+            "BoundedText",
+            format!("\"\\x00\" * {least}"),
+        ),
+        _ => (
+            format!("{struct_name}{pascal}Bytes"),
+            "BoundedBytes",
+            format!("b\"\\x00\" * {least}"),
+        ),
+    }
 }
 
 /// The Python text of the codec `plan`, whose value's class is `struct_name`;
@@ -269,26 +314,41 @@ pub(super) struct PythonSource {
 pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> PythonSource {
     let mut before = String::new();
     let mut hold = String::new();
-    let mut bytes = BTreeMap::new();
+    let mut bounded = BTreeMap::new();
+    let mut runtime: BTreeSet<&'static str> = BTreeSet::new();
+    // The type the source presents each element as.
+    let mut presented: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
-        let Value::Bytes(bound) = &element.value else {
+        let id = &element.field.id;
+        let gated = element.presence == Presence::Gated;
+        let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
+            let ty = l.type_name(&element.field.sce_type).into_owned();
+            presented.insert(
+                id.clone(),
+                if gated { format!("Optional[{ty}]") } else { ty },
+            );
             continue;
         };
-        let id = &element.field.id;
-        let class = bytes_class(struct_name, id);
-        let most = bound
-            .most
-            .map_or_else(|| "None".to_string(), |most| most.to_string());
+        let (class, base, fewest) = bounded_class(struct_name, id, &element.value, bound.least);
+        runtime.insert(base);
+        let unit = if base == "BoundedText" {
+            "UTF-8 bytes"
+        } else {
+            "bytes"
+        };
         let held = match bound.most {
-            Some(most) => format!("{} to {most} of them", bound.least),
+            Some(most) => format!("{} to {most} {unit}", bound.least),
             None => format!(
-                "{} or more of them, the protocol stating no most",
+                "{} or more {unit}, the protocol stating no most",
                 bound.least
             ),
         };
+        let most = bound
+            .most
+            .map_or_else(|| "None".to_string(), |most| most.to_string());
         before.push_str(&format!(
-            "class {class}(BoundedBytes):\n\
-             \x20   \"\"\"The bytes of the ``{id}`` element of :class:`{struct_name}`, {held},\n\
+            "class {class}({base}):\n\
+             \x20   \"\"\"The ``{id}`` element of :class:`{struct_name}`, {held},\n\
              \x20   held to that bound where a value of it is made (docs/adr/0077 §3).\"\"\"\n\
              \n\
              \x20   LEAST = {least}\n\
@@ -296,24 +356,28 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> P
             least = bound.least
         ));
         let keyword = if hold.is_empty() { "if" } else { "elif" };
+        let made = if gated {
+            format!("None if value is None else {class}(value)")
+        } else {
+            format!("{class}(value)")
+        };
         hold.push_str(&format!(
-            "        {keyword} name == \"{}\":\n            value = {class}(value)\n",
+            "        {keyword} name == \"{}\":\n            value = {made}\n",
             l.codec_field_id(id)
         ));
-        // The fewest bytes the class holds, zeros, spelled as a literal: the
-        // default is evaluated in the class body, where a field named `bytes`
-        // declared before it would hide the builtin.
-        let default = if bound.least == 0 {
-            format!("{class}()")
+        let (ty, default) = if gated {
+            (format!("Optional[{class}]"), "None".to_string())
+        } else if bound.least == 0 {
+            (class.clone(), format!("{class}()"))
         } else {
-            format!("{class}(b\"\\x00\" * {})", bound.least)
+            (class.clone(), format!("{class}({fewest})"))
         };
-        bytes.insert(id.clone(), (class, default));
+        presented.insert(id.clone(), ty.clone());
+        bounded.insert(id.clone(), (ty, default));
     }
-    let bounded = !bytes.is_empty();
 
     // The source: what the encode reads, each element by the attribute a value
-    // holds it in.
+    // holds it in, `None` where a gate leaves it out.
     before.push_str(&format!(
         "class {struct_name}Source(Protocol):\n\
          \x20   \"\"\"The elements a value of :class:`{struct_name}` presents, which its encode\n\
@@ -322,27 +386,24 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> P
     ));
     for element in &plan.elements {
         let id = &element.field.id;
-        let ty = match bytes.get(id) {
-            Some((class, _)) => class.clone(),
-            None => l.type_name(&element.field.sce_type).into_owned(),
-        };
         before.push_str(&format!(
-            "\n    @property\n    def {}(self) -> {ty}: ...\n",
-            l.codec_field_id(id)
+            "\n    @property\n    def {}(self) -> {}: ...\n",
+            l.codec_field_id(id),
+            presented[id]
         ));
     }
 
     // A dataclass's constructor sets each field as an attribute, so one
-    // `__setattr__` holds a byte string to its bound where the value is made
-    // and wherever it is set after.
+    // `__setattr__` holds a byte string or a text to its bound where the value
+    // is made and wherever it is set after.
     let hold = if hold.is_empty() {
         hold
     } else {
         format!(
             "    def __setattr__(self, name: str, value: object) -> None:\n\
-             \x20       # Each byte string is held to its bound wherever it is set, where\n\
-             \x20       # the value is made and after (docs/adr/0081 §2), whatever bytes\n\
-             \x20       # it was handed.\n\
+             \x20       # Each byte string and text is held to its bound wherever it is\n\
+             \x20       # set, where the value is made and after (docs/adr/0081 §2),\n\
+             \x20       # whatever it was handed.\n\
              {hold}\
              \x20       object.__setattr__(self, name, value)\n"
         )
@@ -355,17 +416,31 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> P
             encode_source(plan, l, struct_name)
         ),
         hold: hold.trim_end_matches('\n').to_string(),
-        bytes,
         bounded,
+        runtime: runtime.into_iter().collect::<Vec<_>>().join(", "),
     }
+}
+
+/// `value`, the bytes or text `field` holds, as the bytes it is written as.
+fn wire_bytes(field: &CodecField, value: &str) -> String {
+    if field.sce_type == SceType::String {
+        format!("{value}.encode(\"utf-8\")")
+    } else {
+        value.to_string()
+    }
+}
+
+/// Each line of `body` one level deeper.
+fn indented(body: &str) -> String {
+    body.lines().map(|line| format!("    {line}\n")).collect()
 }
 
 /// The encode of `struct_name` over any source of it, a function of the
 /// module, which is the codec's namespace as a C++ codec's namespace is: each
-/// derived number made from what it measures, then the writes in wire order,
-/// each element read off the source. A function of the module and not a
-/// method of the value's class, so no field of the value, a class attribute,
-/// can take its name.
+/// derived number made from what it measures and each derived flag folded into
+/// its carrier, then the writes in wire order, each element read off the
+/// source. A function of the module and not a method of the value's class, so
+/// no field of the value, a class attribute, can take its name.
 fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
     let numbers = derived_numbers(plan);
     let derived: Vec<String> = numbers.iter().map(|id| format!("``{id}``")).collect();
@@ -384,35 +459,102 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
          \x20   (docs/adr/0081).{derives} It refuses no value; a bounded sink raises\n\
          \x20   :class:`BufferOverflow` where it has no room left.\"\"\"\n"
     );
-    // Each derived number, from the one byte string it measures.
+    let source = |id: &str| format!("src.{}", l.codec_field_id(id));
+    // Each flag the presence of the fields it gates sets, by its carrier: the
+    // flag's mask and the test that sets it.
+    let mut folds: BTreeMap<String, Vec<(u64, String)>> = BTreeMap::new();
     for derived in &plan.derivations {
-        let (ElementId::Field(id), Derive::Number(number)) = (&derived.element, &derived.by) else {
-            unreachable!("`unlowered` prints no derivation but a number into a field");
-        };
-        let [measure] = number.measures.as_slice() else {
-            unreachable!("`unlowered` prints a number of one measure only");
-        };
-        let Measured::Bytes { field, offset } = &measure.of else {
-            unreachable!("`unlowered` prints a length of a byte string only");
-        };
-        let arith = match offset {
-            Offset::None => String::new(),
-            Offset::More { by } => format!(" + {by}"),
-            Offset::Less { by, .. } => format!(" - {by}"),
-        };
-        out.push_str(&format!(
-            "    _d_{} = len(src.{}){arith}\n",
-            l.codec_field_id(id),
-            l.codec_field_id(&field.id)
-        ));
+        match (&derived.element, &derived.by) {
+            (ElementId::Field(id), Derive::Number(number)) => {
+                let [measure] = number.measures.as_slice() else {
+                    unreachable!("`unlowered` prints a number of one measure only");
+                };
+                let Measured::Bytes { field, offset } = &measure.of else {
+                    unreachable!("`unlowered` prints a length of a byte string or a text only");
+                };
+                let arith = match offset {
+                    Offset::None => String::new(),
+                    Offset::More { by } => format!(" + {by}"),
+                    Offset::Less { by, .. } => format!(" - {by}"),
+                };
+                let content = source(&field.id);
+                let length = format!("len({}){arith}", wire_bytes(field, &content));
+                // Zero where a gate leaves the content out, beside which the
+                // length is gated too and not written.
+                let number = if measure.gated {
+                    format!("({length}) if {content} is not None else 0")
+                } else {
+                    length
+                };
+                out.push_str(&format!("    _d_{} = {number}\n", l.codec_field_id(id)));
+            }
+            (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
+                let (gated, when_clear) =
+                    presence.of.first().expect("a presence flag gates a field");
+                let def = plan
+                    .model
+                    .fields
+                    .iter()
+                    .find(|f| f.id == *field)
+                    .and_then(|carrier| carrier.flags.iter().find(|d| d.name == *flag))
+                    .expect("the parser found the flag a gate reads");
+                let mask = ((1u64 << def.width) - 1) << def.bit;
+                let test = if *when_clear {
+                    "is None"
+                } else {
+                    "is not None"
+                };
+                folds
+                    .entry(field.clone())
+                    .or_default()
+                    .push((mask, format!("{} {test}", source(&gated.id))));
+            }
+            _ => unreachable!("`unlowered` prints no other derivation"),
+        }
+    }
+    // Each carrier as the encode writes it: its flags the value presents, and
+    // those the presence of a field sets folded in, in place of the value's.
+    for (carrier, carried) in &folds {
+        let name = l.codec_field_id(carrier);
+        out.push_str(&format!("    _c_{name} = {}\n", source(carrier)));
+        for (mask, test) in carried {
+            out.push_str(&format!(
+                "    _c_{name} = (_c_{name} & ~0x{mask:X}) | (0x{mask:X} if {test} else 0)\n"
+            ));
+        }
     }
     let read = |f: &CodecField| -> String {
         let name = l.codec_field_id(&f.id);
         if numbers.contains(&f.id) {
             format!("_d_{name}")
+        } else if folds.contains_key(&f.id) {
+            format!("_c_{name}")
         } else {
             format!("src.{name}")
         }
+    };
+    // A gate, tested on the carriers as the encode writes them.
+    let gate_test = |f: &CodecField| -> String {
+        let gate = f
+            .present_if
+            .as_ref()
+            .expect("a field written where its gate holds is gated");
+        plan.clauses(gate)
+            .iter()
+            .map(|clause| match clause {
+                Clause::Flag {
+                    carrier,
+                    bit,
+                    negate,
+                } => format!(
+                    "(({} >> {bit}) & 1) {} 0",
+                    read(carrier),
+                    if *negate { "==" } else { "!=" }
+                ),
+                _ => unreachable!("`unlowered` prints a gate on a carrier's flags only"),
+            })
+            .collect::<Vec<_>>()
+            .join(" or ")
     };
     let endian = plan.model.default_endian;
     for write in &plan.program {
@@ -436,30 +578,46 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                         field.byte_offset
                     ));
                 }
-                out.push_str(&format!("    w.write_bytes({})\n", read(field)));
+                out.push_str(&format!(
+                    "    w.write_bytes({})\n",
+                    wire_bytes(field, &read(field))
+                ));
             }
-            Write::Streamed { field, .. } => match &field.bit_size {
-                BitSize::Fixed { .. } => {
-                    for byte in encode_whole_field_read_as(field, endian, &read(field), l) {
-                        out.push_str(&format!("    w.write_u8({byte})\n"));
+            Write::Streamed { field, guard, .. } => {
+                let body = match &field.bit_size {
+                    BitSize::Fixed { .. } => {
+                        encode_whole_field_read_as(field, endian, &read(field), l)
+                            .iter()
+                            .map(|byte| format!("    w.write_u8({byte})\n"))
+                            .collect::<String>()
                     }
-                }
-                // The runtime's writer, as the template's encode calls it,
-                // at the body's indentation of a function of the module.
-                BitSize::Vle { width_bits } => {
-                    let value = l.codec_carrier_expr(&field.sce_type, &read(field));
-                    out.push_str(&format!(
-                        "    {}\n",
-                        vle_encode_block(&value, *width_bits, l.lang).trim()
-                    ));
-                }
-                BitSize::Tail | BitSize::LengthRef => {
-                    out.push_str(&format!("    w.write_bytes({})\n", read(field)));
-                }
-                BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                    unreachable!("`unlowered` prints no body and no list")
-                }
-            },
+                    // The runtime's writer, as the template's encode calls it,
+                    // at the body's indentation of a function of the module.
+                    BitSize::Vle { width_bits } => {
+                        let value = l.codec_carrier_expr(&field.sce_type, &read(field));
+                        format!(
+                            "    {}\n",
+                            vle_encode_block(&value, *width_bits, l.lang).trim()
+                        )
+                    }
+                    BitSize::Tail | BitSize::LengthRef => {
+                        format!("    w.write_bytes({})\n", wire_bytes(field, &read(field)))
+                    }
+                    BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        unreachable!("`unlowered` prints no body and no list")
+                    }
+                };
+                out.push_str(&match guard {
+                    Guard::Always => body,
+                    // Where the value holds it.
+                    Guard::Present => {
+                        format!("    if {} is not None:\n{}", read(field), indented(&body))
+                    }
+                    // Derived whole and gated: where its gate holds, as the
+                    // carriers the encode writes say.
+                    Guard::Gate => format!("    if {}:\n{}", gate_test(field), indented(&body)),
+                });
+            }
             Write::Variant => unreachable!("`unlowered` prints no variant"),
         }
     }

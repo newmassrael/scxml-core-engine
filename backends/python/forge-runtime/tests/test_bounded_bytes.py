@@ -6,8 +6,8 @@ so the encode over it has nothing of the bound to refuse."""
 
 import pytest
 
-from sce_forge_runtime.bounded import BoundedBytes
-from sce_forge_runtime.codec import LengthOutOfRange
+from sce_forge_runtime.bounded import BoundedBytes, BoundedText
+from sce_forge_runtime.codec import InvalidUtf8, LengthOutOfRange
 
 
 class _AtMostThree(BoundedBytes):
@@ -57,3 +57,27 @@ def test_a_value_made_again_of_a_value_of_its_class_is_equal_to_it():
     held = _AtMostThree(b"ab")
     assert _AtMostThree(held) == held
     assert type(_AtMostThree(held)) is _AtMostThree
+
+
+class _TextOfFour(BoundedText):
+    LEAST = 0
+    MOST = 4
+
+
+def test_a_text_is_counted_in_the_utf8_bytes_it_encodes_to():
+    assert _TextOfFour("abcd") == "abcd"
+    assert _TextOfFour("éé") == "éé"
+    with pytest.raises(LengthOutOfRange):
+        _TextOfFour("é€")
+    with pytest.raises(LengthOutOfRange):
+        _TextOfFour("abcde")
+
+
+def test_a_text_no_utf8_holds_is_refused_as_invalid():
+    with pytest.raises(InvalidUtf8):
+        _TextOfFour("\ud800")
+
+
+def test_a_text_is_made_of_a_text_alone():
+    with pytest.raises(TypeError):
+        _TextOfFour(b"ab")

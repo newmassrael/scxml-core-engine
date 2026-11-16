@@ -183,15 +183,44 @@ fn a_codec_of_integers_is_printed_with_no_class_of_a_bound() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a gate, a body and a CBOR map each name their form.
+/// An element a gate decides is `None` where it is absent, written only where
+/// it is there, and the flag that gates it is derived from it and folded into
+/// its carrier in place of the value's bit.
 ///
-/// Turns red where `python_source::positional_forms` stops naming a gated
-/// element or an embedded body, or `unlowered_forms` a CBOR map.
+/// Turns red where `python_source::encode_source` reads the presence flag off
+/// the value rather than folding it from the gated element, or writes the
+/// gated element whether or not it is there.
+#[test]
+fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
+    assert!(unlowered("codec_present_if_basic").is_empty());
+    let text = resource_module("codec_present_if_basic");
+    holds(
+        "codec_present_if_basic",
+        &text,
+        &[
+            "    @property\n    def seq(self) -> Optional[int]: ...\n",
+            "    _c_flags = src.flags\n",
+            "    _c_flags = (_c_flags & ~0x1) | (0x1 if src.seq is not None else 0)\n",
+            "    w.write_u8(_c_flags & 0xFF)\n",
+            "    if src.seq is not None:\n        w.write_u8((src.seq >> 8) & 0xFF)\n        \
+             w.write_u8(src.seq & 0xFF)\n",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole: a body and a CBOR map each name their form, and a
+/// length the value states where its gated content is absent names one.
+///
+/// Turns red where `python_source::positional_forms` stops naming an embedded
+/// body or a stated length, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
+    assert!(
+        !unlowered("codec_present_if_length_ref").is_empty(),
+        "a length the value states beside gated content is not printed yet"
+    );
     for (name, form) in [
-        ("codec_present_if_basic", "an element a gate decides"),
         ("codec_embed_basic", "an embedded body"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
