@@ -5866,14 +5866,39 @@ mod tests {
         let bound = value["sources"][0]["bindings"][0]
             .as_str()
             .expect("a byte string is bound first");
+        // Numbered by its place among the bindings, as a held codec's are beside its holder's.
         assert!(
             bound.starts_with(
-                "let bound_payload = try #require(BoundedBytes<CodecLengthRef.PayloadBound>(["
+                "let bound0 = try #require(BoundedBytes<CodecLengthRef.PayloadBound>(["
             ),
             "{bound}"
         );
-        // An embedded body is a form the printer does not lower yet.
-        let template = fixture("codec_zenoh_timestamp_ext");
+        // A list is made of its entries, each by its own codec's initializer, through its count
+        // bound's door (docs/adr/0065 §6 R2), and the count it says is derived.
+        let list = fixture("codec_until_eof_basic");
+        let mut value = serde_json::to_value(list).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            list,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a list of entries");
+        assert!(folded, "the sources of a printed codec are folded");
+        assert_eq!(
+            value["sources"][1]["bindings"][0],
+            serde_json::json!(
+                "let bound0 = try #require(BoundedList<CodecRepeatElem, CodecUntilEofBasic.MsgsBound>([CodecRepeatElem(seq: 7), CodecRepeatElem(seq: 8), CodecRepeatElem(seq: 65535)]))"
+            )
+        );
+        assert_eq!(
+            value["sources"][1]["literal"],
+            serde_json::json!("CodecUntilEofBasic(msgs: bound0)")
+        );
+        // A variant is a form the printer does not lower yet.
+        let template = fixture("codec_variant_dispatch");
         let mut value = serde_json::to_value(template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
