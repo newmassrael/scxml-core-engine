@@ -1934,6 +1934,22 @@ old encode, the old encode and its templates are removed in the same landing.
    `sce_forge_length_within_bound` for its most, as the value's encode does, and compares no bound where it is
    written: a bound of 2^32 - 1 bytes is a comparison a 32-bit `size_t` decides, a warning under `-Wtype-limits` on
    the MCU targets of docs/adr/0057.
+
+   *The fourth C11 landing, 2026-11-16:* elements a gate of a carrier's flags decides, the presence flag that says
+   whether one is there, and the length of gated content gated beside it. A source presents a gated number as the
+   optional type `sce/forge/optional.h` holds it in, the type the value's struct already holds it in, and a gated
+   byte string or text as the optional value of its view, `{codec}_{element}_bytes_optional_t`, which the header
+   declares by the runtime's `SCE_OPTIONAL_DECLARE_NAMED` beside the view: the one shape of a C value that may be
+   absent, `{ present, value }`, and no pointer that a source could leave dangling. The encode folds each derived
+   flag into the carrier the source presents, its bit-range replaced (`_c_<carrier>`, as the C++ printer folds it):
+   a presence flag from whether the element it gates is there, and a length a flag holds from the view it measures.
+   A length of gated content is zero where the gate leaves the content out (`Absent::Zero`), and is written where
+   its gate holds over the carriers the encode writes (`Guard::Gate`); a gated element is written where the source
+   holds it (`Guard::Present`). The decode reads a gated length into its local, zero where the gate is clear. The
+   value's encode holds a gated array to its bound only where it is present. A flag that several fields gated
+   apart say, a length a group or the value states where its content is absent (`Absent::Group`,
+   `Presence::Stated`), and a gate of a flag input or of a chain's membership, each an encode that can refuse or
+   reads what this printer does not yet hold, stay unlowered and name their form.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
