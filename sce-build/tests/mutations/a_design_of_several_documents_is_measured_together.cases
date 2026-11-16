@@ -54,8 +54,8 @@ PY
 
 mutation_case "a document of another kind contributes no claims" <<'PY'
 edit("sce-build/src/requirement_manifest.rs",
-     "                requirement_ids: node.requirements.clone(),",
-     "                requirement_ids: Vec::new(),")
+     "            requirement_ids: node.requirements,",
+     "            requirement_ids: Vec::new(),")
 PY
 
 # ── The open question and the answer are confused ───────────────────

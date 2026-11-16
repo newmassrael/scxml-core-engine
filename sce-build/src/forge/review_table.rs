@@ -29,18 +29,17 @@
 //! reads as missing data rather than as an inapplicable question.
 //! `detail` is the kind's own terms instead.
 //!
-//! ⚠ The rows come from [`crate::forge::requirement_nodes`], which is
-//! also what answers whether the kind has an annotation site at all.
-//! This module must not turn [`ReviewScope::NoAnnotationSite`] into an
-//! empty table: a document of a kind SCE cannot annotate would then
-//! render exactly like a fully reviewed one with nothing to report.
+//! The rows come from [`crate::forge::requirement_nodes`], whose first
+//! row is the document's root: every kind can claim a requirement there
+//! (docs/adr/0106, item G3), so every document has a table, and a table
+//! with only `(none)` rows is a finding about the document.
 
 use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::forge::model::ForgeDocument;
-use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
+use crate::forge::model::ParsedForge;
+use crate::forge::requirement_nodes::requirement_nodes;
 
 /// The literal printed in `source` for a node claiming no requirement.
 ///
@@ -70,43 +69,21 @@ impl ReviewRow {
     }
 }
 
-/// Why a document has no review table, as opposed to an empty one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NoTable {
-    /// `sce:kind` as authored.
-    pub kind: &'static str,
-}
-
-impl std::fmt::Display for NoTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SCE reads sce:req on no node of the '{}' kind, so it cannot \
-             say what this document claims — an empty table here would be \
-             a statement about SCE, not about the document",
-            self.kind
-        )
-    }
-}
-
-/// The review table for this document, or why there is none.
-pub fn review_table(doc: &ForgeDocument) -> Result<Vec<ReviewRow>, NoTable> {
-    match requirement_nodes(doc) {
-        ReviewScope::NoAnnotationSite { kind } => Err(NoTable { kind }),
-        ReviewScope::Annotatable(nodes) => Ok(nodes
-            .into_iter()
-            .map(|node| ReviewRow {
-                source: if node.requirements.is_empty() {
-                    NO_SOURCE.to_string()
-                } else {
-                    node.requirements.join(" ")
-                },
-                node: node.node_path,
-                node_type: node.node_type,
-                detail: node.detail,
-            })
-            .collect()),
-    }
+/// The review table for this document: its root's row first.
+pub fn review_table(parsed: &ParsedForge) -> Vec<ReviewRow> {
+    requirement_nodes(parsed)
+        .into_iter()
+        .map(|node| ReviewRow {
+            source: if node.requirements.is_empty() {
+                NO_SOURCE.to_string()
+            } else {
+                node.requirements.join(" ")
+            },
+            node: node.node_path,
+            node_type: node.node_type,
+            detail: node.detail,
+        })
+        .collect()
 }
 
 /// Requirement ids the manifest declares that no row claims — the

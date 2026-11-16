@@ -390,7 +390,6 @@
         "cli/acceptance-lapsed",
         "cli/reserved-host-type",
         "cli/requirement-closure-broken",
-        "cli/review-table-unavailable",
         "cli/pseudo-unavailable",
         "cli/diagram-unavailable",
         "cli/diagram-does-not-fit",

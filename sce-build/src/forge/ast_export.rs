@@ -199,6 +199,9 @@ pub fn statechart_parsed_forge(mut model: crate::model::SCXMLModel) -> ParsedFor
         // from a forge root, and `parse_forge` returns before it for the
         // statechart kind.
         cycles: Vec::new(),
+        // A statechart's claims are its nodes', its root's among them, and
+        // stay in its model, where its own walk reads them.
+        requirements: Vec::new(),
     }
 }
 

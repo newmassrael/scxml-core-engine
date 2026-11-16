@@ -404,12 +404,10 @@ fn push_kind_basis(out: &mut String, basis: Option<&crate::forge::kind_basis::Ki
 /// review table — `entries[key=3]  3 -> DRIVE` — which is everything that
 /// node decides.
 ///
-/// ⚠ Most kinds do not carry `sce:req` on any node yet
-/// ([`crate::forge::requirement_nodes::ReviewScope::NoAnnotationSite`]).
-/// Their every implemented requirement reads `missing`, which is true of
-/// the document, and the page says at its top that this is a property of
-/// the kind rather than of the author's work — the owner then judges each
-/// requirement against the pseudocode page, which is total for every kind.
+/// Every kind can claim a requirement on its root (docs/adr/0106, item
+/// G3), so a requirement the document claims as a whole has the root's
+/// row as its evidence, and one it claims nowhere reads `missing` because
+/// the document does not claim it.
 pub fn render_forge(
     parsed: &crate::forge::model::ParsedForge,
     manifest: &RequirementManifest,
@@ -417,14 +415,10 @@ pub fn render_forge(
     variant: &str,
     open: &[crate::open_matters::OpenMatter],
 ) -> String {
-    use crate::forge::requirement_nodes::ReviewScope;
-
     let doc = &parsed.document;
-    let (classification, scope) = crate::requirement_manifest::classify_document(doc, manifest);
-    let rows: Vec<&crate::forge::requirement_nodes::ForgeReqNode> = match &scope {
-        ReviewScope::Annotatable(nodes) => nodes.iter().collect(),
-        ReviewScope::NoAnnotationSite { .. } => Vec::new(),
-    };
+    let classification = crate::requirement_manifest::classify_document(parsed, manifest);
+    let nodes = crate::forge::requirement_nodes::requirement_nodes(parsed);
+    let rows: Vec<&crate::forge::requirement_nodes::ForgeReqNode> = nodes.iter().collect();
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -441,14 +435,6 @@ pub fn render_forge(
             "⚠ carries verbatim text from the source document. A local artefact \
              for one sitting: do not commit it.\n",
         );
-    }
-    if let ReviewScope::NoAnnotationSite { kind } = &scope {
-        out.push_str(&format!(
-            "⚠ SCE reads sce:req on no node of a {kind} document yet, so every \
-             implemented requirement below reads missing: judge each one against \
-             the pseudocode page (sce-codegen pseudo), which shows the whole \
-             document.\n"
-        ));
     }
     if let Some(note) = &classification.revision_note {
         out.push_str(&format!("⚠ {note}\n"));

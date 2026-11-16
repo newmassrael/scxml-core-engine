@@ -3059,10 +3059,8 @@ enum Commands {
     /// `source` against a manifest and a requirement with no row is
     /// `missing`.
     ///
-    /// ⚠ Exits with `cli/review-table-unavailable` for a kind SCE
-    /// declares no annotation site for. That is NOT an empty table: a
-    /// document nobody can annotate would otherwise render exactly like
-    /// a reviewed one with nothing to report.
+    /// The first row is the document's root, where every kind claims a
+    /// requirement for the document as a whole; a lookup's entries follow.
     ReviewTable {
         /// Forge document path (`sce:kind` other than `statechart`)
         document: String,
@@ -12519,16 +12517,8 @@ fn parse_forge_review_input(
 /// Emit the review table of a non-statechart forge document.
 fn cmd_review_table(document: &str, error_format: ErrorFormat) {
     let parsed = parse_forge_review_input(document, error_format);
-
-    match sce_build::forge::review_table::review_table(&parsed.document) {
-        Ok(rows) => {
-            out_stream(|w| sce_build::forge::review_table::emit_review_table_ndjson(&rows, w))
-        }
-        // ⚠ Not an empty table. See `CliError::ReviewTableUnavailable`.
-        Err(no_table) => cli_exit(CliError::ReviewTableUnavailable {
-            kind: no_table.kind.to_string(),
-        }),
-    }
+    let rows = sce_build::forge::review_table::review_table(&parsed);
+    out_stream(|w| sce_build::forge::review_table::emit_review_table_ndjson(&rows, w))
 }
 
 // ── Subcommand: pseudo ─────────────────────────────────────────
@@ -12887,9 +12877,9 @@ fn cmd_pseudo(
     let positions = read_review_input(document, error_format);
     let label = sce_build::DocumentLabel::for_input_path(document);
 
-    let (doc, kind_basis) =
+    let (doc, kind_basis, claims) =
         match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
-            Ok(Some(p)) => (p.document, p.kind_basis),
+            Ok(Some(p)) => (p.document, p.kind_basis, p.requirements),
             // The statechart reads the file the way `check` reads it: the
             // same label, and positions mapped back through the preprocessor
             // to the text the author wrote rather than the expanded text, so
@@ -12900,6 +12890,8 @@ fn cmd_pseudo(
                     (
                         sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
                         basis,
+                        // A statechart's claims are its nodes', on its page.
+                        Vec::new(),
                     )
                 }
                 Err(e) => error_format.emit_forge_and_exit(&e),
@@ -12954,9 +12946,17 @@ fn cmd_pseudo(
         })
     });
 
-    let nodes = match sce_build::forge::pseudo::render_nodes(&doc, &deployment).and_then(|nodes| {
-        sce_build::forge::pseudo::with_kind_basis(nodes, doc.kind().as_attr(), kind_basis.as_ref())
-    }) {
+    let nodes = match sce_build::forge::pseudo::render_nodes(&doc, &deployment)
+        .and_then(|nodes| {
+            sce_build::forge::pseudo::with_kind_basis(
+                nodes,
+                doc.kind().as_attr(),
+                kind_basis.as_ref(),
+            )
+        })
+        .and_then(|nodes| {
+            sce_build::forge::pseudo::with_root_claims(nodes, doc.kind().as_attr(), &claims)
+        }) {
         Ok(nodes) => nodes,
         // ⚠ Not a partial rendering. See `CliError::PseudoUnavailable`.
         Err(unsupported) => cli_exit(CliError::PseudoUnavailable {
@@ -13607,7 +13607,7 @@ fn cmd_requirements(
                 out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(model, w))
             }
             Design::Forge(parsed) => out_stream(|w| {
-                sce_build::requirements_report::emit_forge_requirements_ndjson(&parsed.document, w)
+                sce_build::requirements_report::emit_forge_requirements_ndjson(parsed, w)
             }),
         }
         return;
@@ -13621,7 +13621,7 @@ fn cmd_requirements(
     let mut classification = match &design {
         Design::Statechart(model) => sce_build::requirement_manifest::classify(model, &loaded),
         Design::Forge(parsed) => {
-            sce_build::requirement_manifest::classify_document(&parsed.document, &loaded).0
+            sce_build::requirement_manifest::classify_document(parsed, &loaded)
         }
     };
     if let Some(examples) = scenarios {
@@ -13663,7 +13663,7 @@ fn cmd_requirements_of_design(
                     sce_build::requirement_manifest::citations_of_model(&model)
                 }
                 Design::Forge(parsed) => {
-                    sce_build::requirement_manifest::citations_of_document(&parsed.document)
+                    sce_build::requirement_manifest::citations_of_document(&parsed)
                 }
             };
             (path.clone(), claims)

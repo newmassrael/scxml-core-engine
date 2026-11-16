@@ -431,9 +431,11 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
         }
         fields.push(parse_schema_field(l)?);
     }
-    // The document has no place for a requirement or a provenance anchor on
-    // an event-schema (`ReviewScope::NoAnnotationSite`), so a line naming one
-    // is not something the renderer wrote — refused rather than dropped.
+    // An event-schema's model has no place for a requirement or a provenance
+    // anchor, so a line naming one is not something `render` wrote — refused
+    // rather than dropped. The document's own claims are its root's
+    // (`ParsedForge::requirements`), written on a page beside the kind basis
+    // by `pseudo::with_root_claims`, which `render` does not write either.
     if !traced.req.is_empty() || !traced.provenance.is_empty() {
         return Err(ParseError {
             line: head.number,

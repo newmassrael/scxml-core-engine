@@ -8156,6 +8156,11 @@ pub struct ParsedForge {
     /// field answers for every kind.
     #[serde(default)]
     pub kind_basis: Option<crate::forge::kind_basis::KindBasis>,
+    /// `sce:req` on the document's root: the requirement ids the document
+    /// as a whole claims, verbatim and in document order (docs/adr/0106,
+    /// item G3). Always emitted, even empty, for the reason `externs` gives.
+    #[serde(default)]
+    pub requirements: Vec<crate::provenance::RequirementId>,
 }
 
 /// One `<sce:extern>` declaration after parse-time validation has

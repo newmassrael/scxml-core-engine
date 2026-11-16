@@ -43,7 +43,17 @@ root is read for every forge kind and `forge::requirement_nodes` answers every k
 fact of `ParsedForge` (as `kind_basis` is), so `requirement_nodes` and its four callers (`review_table`,
 `requirement_manifest`, `requirements_report`, `acceptance_report`) take it; the pseudocode page writes the root's
 `req` lines and `unpseudo` reads them back (the page is total by contract); the forge AST export and its schema gain
-the field. Left for a round of its own, because none of it can be checked without building.
+the field.
+
+Implemented (2026-11-16): the forge parse reads the root's `sce:req` through `collect_sce_req` into
+`ParsedForge::requirements` (empty for an inline kind, whose claims are its statechart's, and for a statechart, whose
+claims stay in its model); `requirement_nodes` takes the `ParsedForge` and answers every kind with the root's row
+(`document`, the detail `<kind> '<name>'`) before a lookup's entries; `review_table`, `classify_document`,
+`citations_of_document`, `emit_forge_requirements_ndjson` and the acceptance record's evidence take the
+`ParsedForge` too; the pseudocode page writes the root's `req` lines under its head line
+(`pseudo::with_root_claims`, beside the kind basis); the forge AST schema gains `requirements`.
+`ReviewScope`, `NoTable`, `CliError::ReviewTableUnavailable` and `cli/review-table-unavailable` are removed (538
+codes).
 
 ### #142 — a link carries the events it declares
 

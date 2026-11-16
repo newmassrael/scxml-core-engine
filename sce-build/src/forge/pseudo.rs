@@ -347,9 +347,8 @@ use crate::model::BlockRole;
 /// Why a document has no pseudocode rendering, as opposed to an empty
 /// one.
 ///
-/// ⚠ Carries the kind's own name for the reason
-/// [`crate::forge::requirement_nodes::ReviewScope`] gives: a bare marker
-/// would make one unanswerable question look like every other.
+/// ⚠ Carries the kind's own name: a bare marker would make one
+/// unanswerable question look like every other.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unsupported {
     /// `sce:kind` as authored, e.g. `codec`.
@@ -641,6 +640,42 @@ pub fn with_kind_basis(
             provenance: &[],
             unresolved: &basis.unresolved,
         });
+    });
+    if let Some(gap) = out.refused {
+        return Err(Unsupported::feature(kind, gap));
+    }
+    let tail = nodes.split_off(1);
+    nodes.extend(out.nodes);
+    nodes.extend(tail);
+    Ok(nodes)
+}
+
+/// `nodes` with the document's own claims written under its head line, one
+/// `req <id>` line each, in the words every other claim is written in: the
+/// `sce:req` on its root (`ParsedForge::requirements`, docs/adr/0106, item
+/// G3). Like the kind basis, the claims are the document's rather than its
+/// kind model's, so every renderer writes its head line and none of them
+/// writes them. `kind` is what a refusal names.
+pub fn with_root_claims(
+    mut nodes: Vec<Node>,
+    kind: &'static str,
+    claims: &[crate::provenance::RequirementId],
+) -> Result<Vec<Node>, Unsupported> {
+    if claims.is_empty() {
+        return Ok(nodes);
+    }
+    if nodes.is_empty() {
+        return Err(Unsupported::feature(
+            kind,
+            "a document's claims on a page with no head line",
+        ));
+    }
+    let mut out = Out::new();
+    out.depth = nodes[0].depth + 1;
+    out.traceability(&Traced {
+        req: claims,
+        provenance: &[],
+        unresolved: &[],
     });
     if let Some(gap) = out.refused {
         return Err(Unsupported::feature(kind, gap));
@@ -4221,4 +4256,58 @@ fn render_lookup(m: &LookupModel) -> Vec<Node> {
         }
     });
     out.nodes
+}
+
+#[cfg(test)]
+mod root_claims_tests {
+    use super::*;
+
+    fn condition() -> crate::forge::model::ParsedForge {
+        let src = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="probe_condition" sce:req="REQ-A REQ-B">
+  <datamodel>
+    <data id="speed" sce:type="uint16" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out" expr="speed &gt; 10"/>
+  </datamodel>
+</scxml>"#;
+        crate::forge::parser::parse_forge_with_imports(
+            src,
+            crate::DocumentLabel {
+                identifier: "probe_condition",
+                diagnostic_label: "probe_condition.scxml",
+            },
+        )
+        .expect("the probe document parses")
+        .expect("a condition document is a forge document")
+    }
+
+    /// The document's claims are written under its head line, one `req`
+    /// line each, in document order, and the rest of the page follows.
+    #[test]
+    fn the_documents_claims_sit_under_its_head_line() {
+        let parsed = condition();
+        let plain = render_nodes(&parsed.document, &Deployment::default()).expect("renders");
+        let with = with_root_claims(plain.clone(), "condition", &parsed.requirements)
+            .expect("the claims are written");
+        assert_eq!(with.len(), plain.len() + 2);
+        assert_eq!(with[0], plain[0], "the head line stays first");
+        let shape = crate::forge::page::shape_named("indent").expect("the default shape");
+        let page = crate::forge::page::write_page(&with, shape, &EN).expect("the page is written");
+        let lines: Vec<&str> = page.lines().collect();
+        assert_eq!(lines[1].trim(), "req REQ-A", "{page}");
+        assert_eq!(lines[2].trim(), "req REQ-B", "{page}");
+    }
+
+    /// A document claiming nothing is the page `render` writes.
+    #[test]
+    fn no_claims_leave_the_page_as_it_is() {
+        let parsed = condition();
+        let plain = render_nodes(&parsed.document, &Deployment::default()).expect("renders");
+        assert_eq!(
+            with_root_claims(plain.clone(), "condition", &[]).expect("nothing to write"),
+            plain
+        );
+    }
 }

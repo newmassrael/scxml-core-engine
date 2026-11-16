@@ -8,11 +8,6 @@
 //! was admitted, so the column would have been `(none)` on every row for
 //! a reason that has nothing to do with the document.
 //!
-//! ⚠ The qualifier is measured, not decorative — see
-//! `forge::requirement_nodes`' header. A `sce:req` on a W3C-namespace
-//! element inside a forge document is accepted by the grammar and
-//! dropped, which is row S2's class and is filed, not fixed here.
-//!
 //! The readings asserted here, each with a non-empty example:
 //!
 //!   (a) rows whose `source` is `(none)` — a mapping row nobody
@@ -20,13 +15,13 @@
 //!       is on the statechart side;
 //!   (b) requirements a manifest declares that no row claims.
 //!
-//! # ⚠ And a third thing, which is the one this artefact could get wrong
+//! # And the root of every kind
 //!
-//! Zero rows has two causes — a document that claims nothing, and a kind
-//! SCE gives nowhere to put a claim — and rendering the second as the
-//! first would report a clean review of a document nobody can annotate.
-//! So the refusal is asserted as an assertion, not assumed: a `condition`
-//! document must be REFUSED rather than handed an empty table.
+//! Every document's first row is its root, where it claims a requirement
+//! as a whole (docs/adr/0106, item G3). A kind with no finer claim site —
+//! a `condition` — answers with that row alone, so there is no kind SCE
+//! gives nowhere to put a claim, and no empty table to mistake for a clean
+//! review.
 //!
 //! ⚠ The fixtures are written by this test rather than checked in, so
 //! the mutant and its control cannot drift apart in the tree, and so a
@@ -55,7 +50,7 @@ const LOOKUP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A kind with no annotation site in the grammar.
+/// A kind with no claim site but its root.
 const CONDITION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -114,7 +109,12 @@ fn a_lookup_row_carries_the_requirement_it_claims() {
     let rows = rows(&out);
     // Arity floor: the readings below are about WHICH rows say what, and
     // an empty or one-row table would satisfy them vacuously.
-    assert_eq!(rows.len(), 5, "one row per mapping entry, got {rows:?}");
+    assert_eq!(
+        rows.len(),
+        6,
+        "the document's root row, then one row per mapping entry, got {rows:?}"
+    );
+    assert_eq!(rows[0]["node"], "document", "the root's row comes first");
 
     let claimed: Vec<&serde_json::Value> =
         rows.iter().filter(|r| r["source"] != "(none)").collect();
@@ -134,8 +134,8 @@ fn reading_a_the_unclaimed_rows_collect_under_one_word() {
         rows.iter().filter(|r| r["source"] == "(none)").collect();
     assert_eq!(
         unclaimed.len(),
-        4,
-        "four mapping rows nobody required, got {rows:?}"
+        5,
+        "the root, which claims nothing, and four mapping rows nobody required, got {rows:?}"
     );
     // The word, not an empty cell: an empty string sorts with whatever
     // else is empty and reads as a rendering slip, while `(none)` sorts
@@ -189,25 +189,37 @@ fn reading_b_a_declared_requirement_no_row_claims_is_missing() {
     );
 }
 
+/// Every kind claims on its root (docs/adr/0106, item G3): a condition,
+/// which has no finer claim site, answers with its root's row, claimed or
+/// `(none)`. It was refused as a kind with no annotation site until
+/// 2026-11-16, and a claim written on its root was refused as unread.
 #[test]
-fn a_kind_with_no_annotation_site_is_refused_rather_than_handed_an_empty_table() {
-    let dir = tmpdir("noSite");
-    let doc = write(&dir, "condition.scxml", CONDITION);
+fn a_kind_with_no_finer_claim_site_answers_with_its_root() {
+    let dir = tmpdir("rootSite");
+    let unclaimed = write(&dir, "condition.scxml", CONDITION);
+    let out = review_table(&unclaimed);
+    assert!(
+        out.status.success(),
+        "review-table refused a condition: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let root_only = rows(&out);
+    assert_eq!(root_only.len(), 1, "{root_only:?}");
+    assert_eq!(root_only[0]["node"], "document");
+    assert_eq!(root_only[0]["source"], "(none)");
 
-    let out = review_table(&doc);
-    assert!(
-        !out.status.success(),
-        "a condition document has no sce:req site, so an EMPTY TABLE here \
-         would report a clean review of a document nobody can annotate; \
-         stdout was: {}",
-        String::from_utf8_lossy(&out.stdout)
+    let claimed = write(
+        &dir,
+        "claimed.scxml",
+        &CONDITION.replacen(
+            "sce:kind=\"condition\"",
+            "sce:kind=\"condition\" sce:req=\"REQ-GATE\"",
+            1,
+        ),
     );
-    assert!(rows(&out).is_empty(), "a refusal must not also print rows");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("condition"),
-        "the refusal must name the kind the reader asked about: {stderr}"
-    );
+    let claimed_rows = rows(&review_table(&claimed));
+    assert_eq!(claimed_rows.len(), 1, "{claimed_rows:?}");
+    assert_eq!(claimed_rows[0]["source"], "REQ-GATE");
 }
 
 #[test]

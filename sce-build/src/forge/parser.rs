@@ -495,6 +495,12 @@ pub fn parse_forge_with_imports_and_plugin(
     // Read for every kind here rather than by each kind's parser: the
     // basis is about the document's kind, not about its content.
     let kind_basis = crate::forge::kind_basis::read(&root, kind, diag)?;
+    // The document's own claims, for every kind: a forge document is one
+    // artifact and its root is the one node every kind has, so the root is
+    // where the document as a whole claims a requirement (docs/adr/0106,
+    // item G3). Read by the reader both families share, so the duplicate
+    // rule and the token split are the statechart's.
+    let requirements = crate::parser::collect_sce_req(&root, || "<scxml>".to_string(), diag)?;
     let document = parse_forge_from_node(&root, label, kind)?;
 
     // C5 auto-inject (spec §synth-5-E lines 1222-1227 + lines 1736-1740):
@@ -538,6 +544,7 @@ pub fn parse_forge_with_imports_and_plugin(
         externs,
         cycles,
         kind_basis,
+        requirements,
     }))
 }
 
@@ -589,6 +596,9 @@ pub fn parse_inline_forge(
         // basis; a `<sce:kind-basis>` inside the `<data>` is refused as
         // misplaced by the statechart's read.
         kind_basis: None,
+        // An inline kind is a node of its statechart: a claim on it is the
+        // statechart's, read by the statechart's walk, not the kind's own.
+        requirements: Vec::new(),
     })
 }
 

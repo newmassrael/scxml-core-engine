@@ -6240,6 +6240,14 @@
           ],
           "default": null,
           "description": "`<sce:kind-basis>` — why the document is the kind it declares ([`crate::forge::kind_basis`]). `null` when the document states none. A statechart's is carried here too on the AST export ([`crate::forge::ast_export::statechart_parsed_forge`]), so one field answers for every kind."
+        },
+        "requirements": {
+          "default": [],
+          "description": "`sce:req` on the document's root: the requirement ids the document as a whole claims, verbatim and in document order (docs/adr/0106, item G3). Always emitted, even empty, for the reason `externs` gives.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

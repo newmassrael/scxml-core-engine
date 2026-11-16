@@ -12,57 +12,40 @@
 //! admitted, so the column would have been empty on every row by
 //! construction.
 //!
-//! ⚠ "Refused on every `sce:`-namespace element" is the measured claim,
-//! and the qualifier is load-bearing. `schemas/sce-forge.xsd` wraps the
+//! ⚠ "Refused on every `sce:`-namespace element" was the measured claim,
+//! and the qualifier was load-bearing. `schemas/sce-forge.xsd` wraps the
 //! root's children in `<xs:any processContents="lax">`, and `lax` means
 //! *validate against a global declaration if one exists, accept silently
 //! otherwise*. So a `sce:req` on a W3C-namespace element inside a forge
-//! document — the `<scxml>` root, or a `<data>` — is ACCEPTED and
-//! dropped, and was before this module existed. Measured 2026-09-15 with
-//! `xmllint --schema` against the grammar as it then stood: `<sce:entry>`
-//! and `<sce:field>` rc 3, `<scxml>` and `<data>` rc 0. Declaring
-//! `sce:req` globally does not close that — a global attribute
-//! declaration constrains the VALUE, not where the attribute may appear.
-//! That silent drop was row S2's class, not this row's, and was closed in
-//! the parser rather than the grammar on 2026-09-28: every `sce:`
-//! attribute on a W3C element that no reader asked for is refused when the
-//! parse ends (`crate::read_ledger`, `validation/sce-attribute-unread`), so
-//! a `sce:req` where this module reads none is now refused, not dropped.
+//! document — the `<scxml>` root, or a `<data>` — was accepted and
+//! dropped (measured 2026-09-15 with `xmllint --schema`). That silent drop
+//! was closed in the parser on 2026-09-28: every `sce:` attribute on a W3C
+//! element that no reader asked for is refused when the parse ends
+//! (`crate::read_ledger`, `validation/sce-attribute-unread`).
 //!
-//! The decided next step (docs/adr/0106, item G3) is that the root of
-//! every forge document is a claim site: a forge document is one artifact,
-//! the root is the one node every kind has, and so every kind answers with
-//! at least the root's row. [`ReviewScope::NoAnnotationSite`] and
-//! `cli/review-table-unavailable` then become unreachable and retire with
-//! the change that reads it.
+//! ## The root is a claim site of every kind
 //!
-//! This module is the half that was missing between the grammar and the
-//! table: ONE definition of "the requirement-bearing nodes of this
-//! document", answered per kind.
+//! A forge document is one artifact — a codec, a condition, an enum — and
+//! its root is the one node every kind has, so the root is where the
+//! document as a whole claims a requirement (`ParsedForge::requirements`,
+//! docs/adr/0106, item G3). Every kind therefore answers with at least
+//! the root's row, and a kind with finer nodes a specification speaks
+//! about row by row (a lookup's entries) answers with those besides.
+//!
+//! Until 2026-11-16 most kinds answered "no annotation site" instead, a
+//! third value kept apart from an empty table so that a document nobody
+//! could annotate did not read as a reviewed one with nothing to report.
+//! With the root a claim site, that state cannot arise: a document whose
+//! root claims nothing prints its root row in the `(none)` block, which
+//! is the finding about the document the table exists to surface.
 //!
 //! ## Exhaustive on purpose
 //!
 //! [`requirement_nodes`] matches every [`ForgeDocument`] variant with no
 //! wildcard arm, so a kind added to the enum does not compile until
-//! somebody says what its reviewable nodes are. That is the lock-in
-//! [`crate::forge::codegen_matrix::kind_class`] already uses for the
-//! emit matrix, applied to review instead: the failure it prevents is a
-//! new kind quietly inheriting "no rows" and nobody noticing that its
-//! specification coverage is unmeasurable.
-//!
-//! ## ⚠ An empty table is two different facts, and they must not collapse
-//!
-//! A kind can print no rows because the document claims nothing, or
-//! because SCE gives that kind nowhere to put a claim. The first is a
-//! finding about the document — the `(none)` block the statechart table
-//! exists to surface. The second is a statement about SCE, and reading
-//! it as the first would report a clean review of a document nobody can
-//! annotate.
-//!
-//! So the answer is [`ReviewScope`], not a bare `Vec`. This is the same
-//! three-valued discipline [`crate::requirement_set::Arrival`] reached
-//! for a delegation whose destination was not in the set: a question the
-//! tool cannot answer must be reported, never passed.
+//! somebody says which of its nodes beside the root are reviewable. That
+//! is the lock-in [`crate::forge::codegen_matrix::kind_class`] already
+//! uses for the emit matrix, applied to review instead.
 //!
 //! ## ⚠ No second walk
 //!
@@ -73,7 +56,10 @@
 //! answers about the same node. A second traversal here would be a third
 //! reading free to disagree with both.
 
-use crate::forge::model::ForgeDocument;
+use crate::forge::model::{ForgeDocument, ParsedForge};
+
+/// The `node_path` of a document's root row.
+pub const ROOT_NODE_PATH: &str = "document";
 
 /// One reviewable node: what it is, where it is, and what it claims.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -82,7 +68,7 @@ pub struct ForgeReqNode {
     /// — the spelling [`crate::requirements_report::RequirementRecord`]
     /// uses, so a reader that already knows one form knows this one.
     pub node_path: String,
-    /// Lowercase short tag for routing — `entry`, `state`, ...
+    /// Lowercase short tag for routing — `document`, `entry`, `state`, ...
     pub node_type: &'static str,
     /// Requirement ids the node claims, verbatim and in document order.
     ///
@@ -90,149 +76,90 @@ pub struct ForgeReqNode {
     /// behaviour the specification never asked for.
     pub requirements: Vec<String>,
     /// What the node DOES, in the kind's own terms — `3 -> DRIVE` for a
-    /// lookup row. The column that makes the artefact reviewable by
-    /// somebody holding the specification rather than the IR.
+    /// lookup row, `codec 'frame'` for a codec's root. The column that
+    /// makes the artefact reviewable by somebody holding the specification
+    /// rather than the IR.
     pub detail: String,
 }
 
-/// Whether this kind has anywhere to put a claim, and the rows if so.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReviewScope {
-    /// SCE READS `sce:req` on this kind's nodes. The rows are every such
-    /// node, annotated or not — an unannotated one is the row the
-    /// artefact most needs to show.
-    Annotatable(Vec<ForgeReqNode>),
-    /// SCE reads `sce:req` nowhere in this kind yet, so it has no review
-    /// artefact rather than an empty one.
-    ///
-    /// ⚠ READS, not "the grammar refuses". The two are not the same and
-    /// the difference is measured: the grammar accepts a `sce:req` on a
-    /// W3C-namespace element of any forge document (see the module
-    /// header); the parse, not the grammar, refuses it there as an
-    /// attribute nothing reads. The sentence names what SCE reads, which
-    /// is the fact about SCE the reader is asking.
-    ///
-    /// ⚠ Carries the kind's own name so a reader is told which kind
-    /// they asked about; a bare marker would make one unanswerable
-    /// question look like every other.
-    NoAnnotationSite {
-        /// `sce:kind` as authored, e.g. `codec`.
-        kind: &'static str,
-    },
-}
-
-impl ReviewScope {
-    /// The rows, or none when the kind has no annotation site.
-    ///
-    /// ⚠ A caller that only wants rows still has to decide what an
-    /// empty answer means; this exists for callers that have already
-    /// handled [`ReviewScope::NoAnnotationSite`] explicitly.
-    pub fn rows(&self) -> &[ForgeReqNode] {
-        match self {
-            ReviewScope::Annotatable(rows) => rows,
-            ReviewScope::NoAnnotationSite { .. } => &[],
-        }
-    }
-}
-
-/// The reviewable nodes of this document.
+/// The reviewable nodes of this document: its root first, then the nodes
+/// its kind reads claims on besides; a statechart's are its own walk's.
 ///
 /// Exhaustive over [`ForgeDocument`] — see the module header.
-pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
+pub fn requirement_nodes(parsed: &ParsedForge) -> Vec<ForgeReqNode> {
+    let doc = &parsed.document;
+    let root = || ForgeReqNode {
+        node_path: ROOT_NODE_PATH.to_string(),
+        node_type: "document",
+        requirements: parsed.requirements.iter().map(|id| id.0.clone()).collect(),
+        detail: format!("{} '{}'", doc.kind().as_attr(), doc.name()),
+    };
     match doc {
-        // Delegated, not re-walked. See the module header.
-        ForgeDocument::Statechart(model) => ReviewScope::Annotatable(
-            crate::requirements_report::walk_nodes(model)
-                .into_iter()
-                .map(|node| ForgeReqNode {
-                    node_path: node.record.node_path.clone(),
-                    node_type: node.record.node_type,
-                    requirements: node
-                        .record
-                        .requirement_ids
-                        .iter()
-                        .map(|id| (*id).to_string())
-                        .collect(),
-                    // The statechart family's richer reading — event,
-                    // guard, target, delay — is the transition table's
-                    // business and stays there rather than being
-                    // flattened into one string here.
-                    detail: String::new(),
-                })
-                .collect(),
-        ),
+        // Delegated, not re-walked. See the module header. The
+        // statechart's own walk reads its root among its nodes.
+        ForgeDocument::Statechart(model) => crate::requirements_report::walk_nodes(model)
+            .into_iter()
+            .map(|node| ForgeReqNode {
+                node_path: node.record.node_path.clone(),
+                node_type: node.record.node_type,
+                requirements: node
+                    .record
+                    .requirement_ids
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect(),
+                // The statechart family's richer reading — event,
+                // guard, target, delay — is the transition table's
+                // business and stays there rather than being
+                // flattened into one string here.
+                detail: String::new(),
+            })
+            .collect(),
 
         // A mapping table is the shape a specification states row by
-        // row, so the row carries the claim.
-        ForgeDocument::Lookup(model) => ReviewScope::Annotatable(
-            model
-                .entries
-                .iter()
-                .map(|entry| ForgeReqNode {
-                    node_path: format!("entries[key={}]", entry.key),
-                    node_type: "entry",
-                    requirements: entry.requirements.iter().map(|id| id.0.clone()).collect(),
-                    detail: format!("{} -> {}", entry.key, entry.value),
-                })
-                .collect(),
-        ),
+        // row, so each row carries a claim besides the document's.
+        ForgeDocument::Lookup(model) => std::iter::once(root())
+            .chain(model.entries.iter().map(|entry| ForgeReqNode {
+                node_path: format!("entries[key={}]", entry.key),
+                node_type: "entry",
+                requirements: entry.requirements.iter().map(|id| id.0.clone()).collect(),
+                detail: format!("{} -> {}", entry.key, entry.value),
+            }))
+            .collect(),
 
-        // ⚠ No annotation site in the grammar YET — not "no rows".
-        //
-        // Each of these kinds has nodes a specification plainly speaks
-        // about (a codec field, a validator rule, an interpolation
-        // breakpoint), and giving each one its `sce:req` is the same
-        // three edits the lookup row took: admit the attribute in
-        // `schemas/sce-forge-ext.xsd`, read it through the shared
-        // `collect_sce_req`, and answer here. Listed one per line
-        // rather than collapsed behind `_`, so adding a kind to the
-        // enum stops the build until somebody decides.
-        ForgeDocument::Transform(_) => ReviewScope::NoAnnotationSite { kind: "transform" },
-        ForgeDocument::Condition(_) => ReviewScope::NoAnnotationSite { kind: "condition" },
-        ForgeDocument::Codec(_) => ReviewScope::NoAnnotationSite { kind: "codec" },
-        ForgeDocument::Validator(_) => ReviewScope::NoAnnotationSite { kind: "validator" },
-        ForgeDocument::Procedure(_) => ReviewScope::NoAnnotationSite { kind: "procedure" },
-        ForgeDocument::Filter(_) => ReviewScope::NoAnnotationSite { kind: "filter" },
-        ForgeDocument::Interpolation(_) => ReviewScope::NoAnnotationSite {
-            kind: "interpolation",
-        },
-        ForgeDocument::Timer(_) => ReviewScope::NoAnnotationSite { kind: "timer" },
-        ForgeDocument::Observer(_) => ReviewScope::NoAnnotationSite { kind: "observer" },
-        ForgeDocument::Algorithm(_) => ReviewScope::NoAnnotationSite { kind: "algorithm" },
-        ForgeDocument::Link(_) => ReviewScope::NoAnnotationSite { kind: "link" },
-        ForgeDocument::BufferPool(_) => ReviewScope::NoAnnotationSite {
-            kind: "buffer-pool",
-        },
-        ForgeDocument::Worker(_) => ReviewScope::NoAnnotationSite { kind: "worker" },
-        ForgeDocument::BoundedCollection(_) => ReviewScope::NoAnnotationSite {
-            kind: "bounded-collection",
-        },
-        ForgeDocument::Enum(_) => ReviewScope::NoAnnotationSite { kind: "enum" },
-        ForgeDocument::EventSchema(_) => ReviewScope::NoAnnotationSite {
-            kind: "event-schema",
-        },
-        ForgeDocument::Queue(_) => ReviewScope::NoAnnotationSite { kind: "queue" },
-        ForgeDocument::FeatureModel(_) => ReviewScope::NoAnnotationSite {
-            kind: "feature-model",
-        },
-        ForgeDocument::BroadcastLog(_) => ReviewScope::NoAnnotationSite {
-            kind: "broadcast-log",
-        },
-        ForgeDocument::TextTemplate(_) => ReviewScope::NoAnnotationSite {
-            kind: "text-template",
-        },
-        ForgeDocument::Union(_) => ReviewScope::NoAnnotationSite { kind: "union" },
-        ForgeDocument::TestTemplate(_) => ReviewScope::NoAnnotationSite {
-            kind: "test-template",
-        },
-        ForgeDocument::TestPortType(_) => ReviewScope::NoAnnotationSite {
-            kind: "test-port-type",
-        },
-        ForgeDocument::TestConfiguration(_) => ReviewScope::NoAnnotationSite {
-            kind: "test-configuration",
-        },
-        ForgeDocument::TestCase(_) => ReviewScope::NoAnnotationSite { kind: "test-case" },
-        ForgeDocument::TestSuite(_) => ReviewScope::NoAnnotationSite { kind: "test-suite" },
+        // The root alone. A finer node of one of these kinds (a codec
+        // field, a validator rule, an interpolation breakpoint) becomes a
+        // claim site the way a lookup's entry did: admit `sce:req` on it
+        // in `schemas/sce-forge-ext.xsd`, read it through the shared
+        // `collect_sce_req`, and answer for it here. Listed rather than
+        // collapsed behind `_`, so adding a kind to the enum stops the
+        // build until somebody decides.
+        ForgeDocument::Transform(_)
+        | ForgeDocument::Condition(_)
+        | ForgeDocument::Codec(_)
+        | ForgeDocument::Validator(_)
+        | ForgeDocument::Procedure(_)
+        | ForgeDocument::Filter(_)
+        | ForgeDocument::Interpolation(_)
+        | ForgeDocument::Timer(_)
+        | ForgeDocument::Observer(_)
+        | ForgeDocument::Algorithm(_)
+        | ForgeDocument::Link(_)
+        | ForgeDocument::BufferPool(_)
+        | ForgeDocument::Worker(_)
+        | ForgeDocument::BoundedCollection(_)
+        | ForgeDocument::Enum(_)
+        | ForgeDocument::EventSchema(_)
+        | ForgeDocument::Queue(_)
+        | ForgeDocument::FeatureModel(_)
+        | ForgeDocument::BroadcastLog(_)
+        | ForgeDocument::TextTemplate(_)
+        | ForgeDocument::Union(_)
+        | ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => vec![root()],
     }
 }
 
@@ -273,14 +200,8 @@ mod tests {
             .map(|n| (n.record.node_path.clone(), n.record.node_type))
             .collect();
 
-        let doc = ForgeDocument::Statechart(Box::new(model));
-        let rows = match requirement_nodes(&doc) {
-            ReviewScope::Annotatable(rows) => rows,
-            ReviewScope::NoAnnotationSite { kind } => {
-                panic!("statechart must be annotatable, got NoAnnotationSite({kind})")
-            }
-        };
-        let actual: Vec<(String, &'static str)> = rows
+        let parsed = crate::forge::ast_export::statechart_parsed_forge(model);
+        let actual: Vec<(String, &'static str)> = requirement_nodes(&parsed)
             .iter()
             .map(|r| (r.node_path.clone(), r.node_type))
             .collect();
@@ -297,34 +218,48 @@ mod tests {
         );
     }
 
-    /// A kind with no annotation site is not an empty table.
-    #[test]
-    fn a_kind_with_no_annotation_site_says_so_rather_than_returning_no_rows() {
-        let src = r#"<?xml version="1.0" encoding="UTF-8"?>
+    fn condition(root_attrs: &str) -> ParsedForge {
+        let src = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="condition" name="probe_condition">
+       sce:kind="condition" name="probe_condition"{root_attrs}>
   <datamodel>
     <data id="speed" sce:type="uint16" sce:direction="in"/>
     <data id="result" sce:type="bool" sce:direction="out" expr="speed &gt; 10"/>
   </datamodel>
-</scxml>"#;
-        let parsed = crate::forge::parser::parse_forge_with_imports(
-            src,
+</scxml>"#
+        );
+        crate::forge::parser::parse_forge_with_imports(
+            &src,
             crate::DocumentLabel {
                 identifier: "probe_condition",
                 diagnostic_label: "probe_condition.scxml",
             },
         )
         .expect("the probe document parses")
-        .expect("a condition document is a forge document");
+        .expect("a condition document is a forge document")
+    }
 
-        match requirement_nodes(&parsed.document) {
-            ReviewScope::NoAnnotationSite { kind } => assert_eq!(kind, "condition"),
-            ReviewScope::Annotatable(rows) => panic!(
-                "condition has no sce:req site in the grammar, so it must not report {} reviewable row(s)",
-                rows.len()
-            ),
-        }
+    /// A kind with no finer claim site answers with its root: the
+    /// document's own claims, in document order.
+    #[test]
+    fn the_root_of_any_kind_carries_the_documents_claims() {
+        let parsed = condition(r#" sce:req="REQ-A REQ-B""#);
+        let rows = requirement_nodes(&parsed);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].node_path, ROOT_NODE_PATH);
+        assert_eq!(rows[0].node_type, "document");
+        assert_eq!(rows[0].requirements, vec!["REQ-A", "REQ-B"]);
+        assert_eq!(rows[0].detail, "condition 'probe_condition'");
+    }
+
+    /// A root claiming nothing is still a row: the `(none)` row, a finding
+    /// about the document, never a table missing.
+    #[test]
+    fn a_root_claiming_nothing_is_the_none_row() {
+        let rows = requirement_nodes(&condition(""));
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert!(rows[0].requirements.is_empty());
     }
 }

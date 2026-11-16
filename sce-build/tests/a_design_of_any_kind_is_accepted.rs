@@ -16,7 +16,7 @@
 //! These cases hold the forge route on the binary: the classification is
 //! the statechart's (one coverage implementation, Requirement-closure RFC
 //! §7.1), the report shows each requirement's own review-table line, a
-//! kind that carries `sce:req` on no node says so at the top of its page,
+//! kind's root claims for the document as a whole (docs/adr/0106, item G3),
 //! the record pins what the document imports and lapses when it moves,
 //! and a figure is the kind's own picture beside the table of its values.
 
@@ -125,8 +125,8 @@ fn a_lookup_is_classified_by_the_entries_that_claim_requirements() {
     );
 }
 
-/// The report shows each requirement's own line of the review table, and
-/// a kind whose nodes carry no `sce:req` says so before anything else.
+/// The report shows each requirement's own line of the review table, the
+/// root's line among them.
 #[test]
 fn the_report_shows_what_each_requirement_rests_on() {
     let dir = scratch("any-kind-report");
@@ -149,6 +149,35 @@ fn the_report_shows_what_each_requirement_rests_on() {
     assert!(page.contains("0 -> OK"), "{page}");
     assert!(page.contains("missing        REQ-3"), "{page}");
 
+    // A transform claims on its root (docs/adr/0106, item G3): the claim
+    // is implemented and its evidence is the root's row; what it does not
+    // claim is missing because the document does not claim it.
+    let claimed = stage(
+        &dir,
+        "volts_claimed.scxml",
+        &TRANSFORM.replacen(r#"name="volts""#, r#"name="volts" sce:req="REQ-3""#, 1),
+    );
+    let page = stdout(&run(
+        &[
+            "acceptance-report",
+            &claimed,
+            "--manifest",
+            &manifest,
+            "--variant",
+            "base",
+        ],
+        &dir,
+    ));
+    assert!(page.contains("kind: transform"), "{page}");
+    assert!(page.contains("transform 'volts'"), "the root's row: {page}");
+    assert!(page.contains("missing        REQ-1"), "{page}");
+    assert!(!page.contains("missing        REQ-3"), "{page}");
+    assert!(
+        !page.contains("SCE reads sce:req on no node"),
+        "no kind is without a claim site: {page}"
+    );
+
+    // The unclaimed transform still reports, its root a row claiming nothing.
     let page = stdout(&run(
         &[
             "acceptance-report",
@@ -160,10 +189,7 @@ fn the_report_shows_what_each_requirement_rests_on() {
         ],
         &dir,
     ));
-    assert!(
-        page.contains("SCE reads sce:req on no node of a transform document yet"),
-        "{page}"
-    );
+    assert!(page.contains("missing        REQ-3"), "{page}");
 }
 
 /// A forge design is accepted, and the acceptance lapses when the

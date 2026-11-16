@@ -1543,12 +1543,9 @@ fn statechart_evidence(model: &crate::model::SCXMLModel) -> Evidence {
 }
 
 /// The evidence of a forge document: the rows of its review table that claim
-/// each id, and the rows that claim nothing. A kind with no annotation site has
-/// none, which is "nothing to say", not "nothing claimed".
-fn forge_evidence(doc: &crate::forge::model::ForgeDocument) -> Evidence {
-    let Ok(rows) = crate::forge::review_table::review_table(doc) else {
-        return Evidence::default();
-    };
+/// each id, and the rows that claim nothing, its root's among them.
+fn forge_evidence(parsed: &crate::forge::model::ParsedForge) -> Evidence {
+    let rows = crate::forge::review_table::review_table(parsed);
     let mut by_requirement: BTreeMap<String, Vec<EvidenceRow>> = BTreeMap::new();
     let mut unclaimed = Vec::new();
     for row in &rows {
@@ -1752,7 +1749,7 @@ fn design_inputs(
                 DesignReading {
                     open,
                     cited,
-                    evidence: forge_evidence(&parsed.document),
+                    evidence: forge_evidence(&parsed),
                 },
             ))
         }

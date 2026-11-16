@@ -82,19 +82,17 @@ pub fn emit_requirements_ndjson<W: Write + ?Sized>(
 /// requirement, among the nodes
 /// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
 /// on — so `sce-codegen requirements` answers for a document of any kind,
-/// in one record shape. A kind that reads `sce:req` on no node writes
-/// nothing, which is what its document claims.
+/// in one record shape. The root of every kind is among them
+/// (docs/adr/0106, item G3).
 pub fn emit_forge_requirements_ndjson<W: Write + ?Sized>(
-    doc: &crate::forge::model::ForgeDocument,
+    parsed: &crate::forge::model::ParsedForge,
     writer: &mut W,
 ) -> io::Result<()> {
-    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
-    if let crate::forge::model::ForgeDocument::Statechart(model) = doc {
+    use crate::forge::requirement_nodes::requirement_nodes;
+    if let crate::forge::model::ForgeDocument::Statechart(model) = &parsed.document {
         return emit_requirements_ndjson(model, writer);
     }
-    let ReviewScope::Annotatable(nodes) = requirement_nodes(doc) else {
-        return Ok(());
-    };
+    let nodes = requirement_nodes(parsed);
     for node in nodes.iter().filter(|node| !node.requirements.is_empty()) {
         write_record(
             writer,

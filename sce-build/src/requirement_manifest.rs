@@ -1551,38 +1551,30 @@ pub fn classify(model: &SCXMLModel, manifest: &RequirementManifest) -> Classific
 /// Compare a document of any kind against `manifest`: a statechart by
 /// [`classify`], a forge document by the nodes
 /// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
-/// on — the same nodes its review table prints.
-///
-/// ⚠ A kind whose nodes carry no `sce:req` yet classifies every
-/// implemented requirement `missing`, which is true of the document and
-/// is not a fault of the author's. The scope comes back beside the
-/// classification so a page can say which of the two it is looking at.
+/// on — the same nodes its review table prints, its root first: the root
+/// of every kind is a claim site (docs/adr/0106, item G3).
 pub fn classify_document(
-    doc: &crate::forge::model::ForgeDocument,
+    parsed: &crate::forge::model::ParsedForge,
     manifest: &RequirementManifest,
-) -> (Classification, crate::forge::requirement_nodes::ReviewScope) {
-    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
-    let scope = requirement_nodes(doc);
-    let classification = match (doc, &scope) {
-        (crate::forge::model::ForgeDocument::Statechart(model), _) => classify(model, manifest),
-        (_, ReviewScope::Annotatable(nodes)) => {
-            let citations: Vec<Citation<'_>> = nodes
-                .iter()
-                .filter(|node| !node.requirements.is_empty())
-                .map(|node| Citation {
-                    node_path: &node.node_path,
-                    requirement_ids: node.requirements.iter().map(String::as_str).collect(),
-                    // No forge node carries an anchor or a marker yet;
-                    // `requirement_nodes` is where either would arrive.
-                    spec_provenance: &[],
-                    unresolved: false,
-                })
-                .collect();
-            classify_citations(&citations, manifest)
-        }
-        (_, ReviewScope::NoAnnotationSite { .. }) => classify_citations(&[], manifest),
-    };
-    (classification, scope)
+) -> Classification {
+    use crate::forge::requirement_nodes::requirement_nodes;
+    if let crate::forge::model::ForgeDocument::Statechart(model) = &parsed.document {
+        return classify(model, manifest);
+    }
+    let nodes = requirement_nodes(parsed);
+    let citations: Vec<Citation<'_>> = nodes
+        .iter()
+        .filter(|node| !node.requirements.is_empty())
+        .map(|node| Citation {
+            node_path: &node.node_path,
+            requirement_ids: node.requirements.iter().map(String::as_str).collect(),
+            // No forge node carries an anchor or a marker yet;
+            // `requirement_nodes` is where either would arrive.
+            spec_provenance: &[],
+            unresolved: false,
+        })
+        .collect();
+    classify_citations(&citations, manifest)
 }
 
 /// One node's claim on requirements, owned, so claims read from several
@@ -1618,22 +1610,21 @@ pub fn citations_of_model(model: &SCXMLModel) -> Vec<OwnedCitation> {
 /// [`citations_of_model`], a forge document from the nodes
 /// [`crate::forge::requirement_nodes::requirement_nodes`] reads `sce:req`
 /// on, as [`classify_document`] does.
-pub fn citations_of_document(doc: &crate::forge::model::ForgeDocument) -> Vec<OwnedCitation> {
-    use crate::forge::requirement_nodes::{requirement_nodes, ReviewScope};
-    match (doc, requirement_nodes(doc)) {
-        (crate::forge::model::ForgeDocument::Statechart(model), _) => citations_of_model(model),
-        (_, ReviewScope::Annotatable(nodes)) => nodes
-            .iter()
-            .filter(|node| !node.requirements.is_empty())
-            .map(|node| OwnedCitation {
-                node_path: node.node_path.clone(),
-                requirement_ids: node.requirements.clone(),
-                spec_provenance: Vec::new(),
-                unresolved: false,
-            })
-            .collect(),
-        (_, ReviewScope::NoAnnotationSite { .. }) => Vec::new(),
+pub fn citations_of_document(parsed: &crate::forge::model::ParsedForge) -> Vec<OwnedCitation> {
+    use crate::forge::requirement_nodes::requirement_nodes;
+    if let crate::forge::model::ForgeDocument::Statechart(model) = &parsed.document {
+        return citations_of_model(model);
     }
+    requirement_nodes(parsed)
+        .into_iter()
+        .filter(|node| !node.requirements.is_empty())
+        .map(|node| OwnedCitation {
+            node_path: node.node_path,
+            requirement_ids: node.requirements,
+            spec_provenance: Vec::new(),
+            unresolved: false,
+        })
+        .collect()
 }
 
 /// Compare the documents of one design, TOGETHER, against `manifest`.
