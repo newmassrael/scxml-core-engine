@@ -2023,6 +2023,7 @@ the points of the semantics this table names:
 |---|---|---|---|
 | `test-case-started` | | as the run starts, at `NOW = 0`, before the MTC is created | P11 |
 | `component-created` | `component`, `type` | when the run creates a component, before its machine starts: the MTC as the test case starts, a PTC when the invocation that creates it starts | P9 |
+| `component-killed` | `component` | when the exit of the state that invoked a PTC removes it, whether it still runs or is already done: after that state's `<onexit>`, as the exit cancels the state's invocations (§scxml-D exitStates), and before what the macrostep does next. The kill of a PTC that is not present writes nothing. The removal of every PTC still present when the MTC terminates (P10), when the guard is reached (P11) or when the run ends in error (P13) writes none: it is the end of the test case, which `test-case-ended` records | P9 |
 | `message-sent` | `component`, `port`, `type`, `value` | when a component sends, before the message is appended to the connected port or handed to the system adapter | P6 |
 | `message-received` | `component`, `port`, `type`, `value` | when a receive branch removes the head of its port, before the branch's content runs: the message was received and matched | P4 step 1 |
 | `timer-started` | `component`, `timer`, `duration_us` | at `<sce:start-timer>`, a restart of a running timer included | P7 |
@@ -2034,7 +2035,14 @@ the points of the semantics this table names:
 | `test-case-ended` | `verdict` | when the test case verdict is computed, at the `NOW` the run ended at | P14 |
 
 The records stand in the order the round scheduler produces them (§12.4): those of one macrostep in the order its
-statements run, and the components of a round in their creation order. A test case that cannot start (§12.4) writes
+statements run, and the components of a round in their creation order.
+
+A kill is the one removal a document causes, and its record is the `kill` statement of E11 (§9.2) on the TTCN-3 side,
+which E8 writes in a branch's block after the exited state's `<onexit>` and before the transition's content, the order
+the native exit runs in; TCI names the event `tliCKill`. The removals that end a test case are no statement of the
+export: the TTCN-3 tool kills the components still present when the test case ends, and its logger writes no
+`component-killed` for them, as the native run writes none, so both sides record a kill exactly where a document's
+exit causes one. A test case that cannot start (§12.4) writes
 `test-case-started` and `test-case-ended` with `error` alone, since no component was created. The `error` of a dynamic
 error carries no reason, because its cause is the runtime's own prose, which the other side would not write alike; the
 lines of the result keep it.

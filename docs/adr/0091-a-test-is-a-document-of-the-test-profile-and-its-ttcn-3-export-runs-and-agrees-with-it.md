@@ -55,6 +55,22 @@
   a value's trailing white space, doubles the backslashes of an X- value and writes RFC 6868 carets, so it refused
   valid inputs of SCE's oracle. The downstream binding is written from RFC 5545 §3.1 and `SCE_FORGE.md` §4.6.4 alone,
   without reading SCE's codec sources. Where answer 1 and §7 below name libical, ADR 0102 §1 governs.
+  Amended 2026-11-16, under the owner's rule of 2026-11-14 to decide by the textbook structure without asking. The
+  canonical log gains the kind `component-killed` (answer 8), with the member `component`, the PTC. It is written
+  for P9's kill alone: the exit of the state that invoked a PTC removes it, whether it still runs or is already done,
+  and the record stands after that state's `<onexit>`, where §scxml-D's exitStates cancels the state's invocations
+  and where the export's E8 writes E11's `kill`. The removals that end a test case, of every PTC still present when
+  the MTC terminates (P10), at the guard (P11) or at a dynamic error (P13), write none: they are no statement of the
+  document and no `kill` of the export, and `test-case-ended` already records the end they belong to. Basis: TCI's
+  test logging interface (ES 201 873-6) has the event `tliCKill` for the `kill` operation, and the log's kinds are
+  TCI's; a kill is an observable step of the test behaviour, since it adds the PTC's local verdict to the test case
+  verdict (-4 §9.29a.2) and removes its ports, so a later send to one is a dynamic error, and a log that omits it
+  cannot show why. Leaving the kind out of the end of a test case keeps the record one for one with a statement on
+  both sides, and keeps it apart from the tool's own teardown, whose order no rule of the profile fixes. The member
+  is the PTC alone, as `component-created` names the created component and not its creator: the killer is always
+  the component that created the PTC (P9), and a verdict at the kill would be a value the TTCN-3 side's logger does
+  not receive with the event. The log stays `sce-test-log.v1`, `pre-release`, and the change is additive to its
+  schema.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -685,7 +701,9 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      are judgements of an implementation by a tester.
 8. **The canonical log of C3 is a surface of its own, `schemas/sce-test-log.v1.schema.json`, whose record kinds are
    the events of TCI's test logging interface (ES 201 873-6).** These are message sent, message received and matched,
-   timer started, stopped and timed out, verdict set, component created and done, and test case started and ended.
+   timer started, stopped and timed out, verdict set, component created, killed and done, and test case started and
+   ended. A kill is recorded for the kill of P9 alone, where a component's exit removes the PTC it invoked; the
+   removals that end a test case (P10, P11 and a dynamic error) are no event of their own (amendment of 2026-11-16).
    - The TTCN-3 side writes the log from the test logging operations of the adapter interface (answer 1). On
      Titan these are a logger plugin, Titan's interface for a user-written logger, which receives Titan's log
      events and writes the records whose TCI kinds they correspond to. Titan passes a message's value to the

@@ -495,7 +495,7 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
     `every_matcher` accepts (a value list holding a range, `ifpresent` on an absent text, a list of three codes
     matched as `3`, `?` and a complement, `*`, `omit` and a template reference); the tester tells the helper over
     the connected port, the helper passes, and the tester settles for the 500 ms its start gives and passes at
-    501 ms.
+    501 ms, leaving the state that invoked the helper, which kills the helper, done by then (`component-killed`).
   - `orders_case`: an `order_placed` at 1 ms of two lines, a VIP customer, a priority and a card, which
     `order_placed_match` accepts over its list of records, its template references, its record within the record
     and its union; the tester passes at 1 ms.
@@ -511,9 +511,12 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   inputs the tests' system adapter gives that test case (§10.2):
   - `answers_the_job`: the reply of code 0 to job 7 on `sut` at 500 (an instant in microseconds, as a trace's `at`
     is); the case passes at 500.
-  - `serves_a_ptc`: no input, since its configuration has no system port; the MTC answers its PTC and passes at 0.
-  - `keeps_a_ptc`: no input, since the idler's system port `quiet` is never sent to; the removed PTC's
-    `inconc` outweighs the MTC's `pass` at 15 ms.
+  - `serves_a_ptc`: no input, since its configuration has no system port; the MTC answers its PTC and passes at 0,
+    its done branch leaving the state that invoked the PTC, which kills the PTC, done by then
+    (`component-killed`, TP §12.5).
+  - `keeps_a_ptc`: no input, since the idler's system port `quiet` is never sent to; the MTC's timeout at 10 ms
+    leaves the invoking state, which kills the idler while it still runs (`component-killed`), and the removed
+    PTC's `inconc` outweighs the MTC's `pass` at 15 ms.
   - `answers_before_the_guard`: the same reply as `answers_the_job`, at 500; the guard of 0.1 ms ends the case in
     `error` at 100, before the reply is due, so the reply is never delivered.
 
@@ -537,7 +540,8 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
   - `never_ends`: the MTC waits for a reply on a mapped port and holds no timer, the suite gives no guard, and the
     trace holds no input, so no branch fires and no instant is pending: `error` at 0 (P13).
   - `sends_to_a_removed_ptc`: the MTC creates a PTC connected to it, leaves the invoking state at 1 ms, which
-    removes the PTC, and sends on the connected port: a dynamic error, `error` at 1000 (P6, P13).
+    kills the PTC (`component-killed`), and sends on the connected port: a dynamic error, `error` at 1000 (P6,
+    P13). The end of the test case removes no other PTC and writes no other kill.
   - `takes_before_its_exits`: a reply at 500 takes the MTC's receive branch, whose `message-received` is
     written before the state it leaves logs its exit and before the branch's content logs; the timer the next
     state starts runs out at 1500 and its `timer-timed-out` is written before that state logs its exit, and the
@@ -737,6 +741,13 @@ each held to one expected log, `sce-build/tests/fixtures/test_profile/runtime/ex
 and none of them waits on it. What remains of C3 is the TTCN-3 side, D4's logger plugin writing the same log from
 Titan's events and D5's comparison of the two logs, and the corpus they run over, S2's traces and expected logs
 replayed through S1. Step 6 stays the step that holds the law over the whole corpus, which D5 applies to S2's corpus.
+
+The log gained the kind `component-killed` on 2026-11-16 (ADR 0091's amendment of that day, TP §12.5), with the
+member `component`, written by all seven native runtimes where a component's exit kills the PTC it invoked (P9) and
+held by the expected logs of `serves_a_ptc`, `keeps_a_ptc`, `sends_to_a_removed_ptc` and `completes_in_time`. D4's
+logger writes it from the event of the export's `kill` statement (TP §9.2 E11), which TCI names `tliCKill`, and
+from no kill Titan makes when a test case ends: the native run writes none for the removals of P10 and P11 or for
+the end a dynamic error makes, so a kill the logger took from Titan's teardown would be a disagreement under C3.
 
 ## 14. What this design leaves open
 
