@@ -376,9 +376,10 @@ pub enum CliError {
     ///
     /// ⚠ READS, not "the grammar refuses". A `sce:req` on a
     /// W3C-namespace element of a forge document is accepted by
-    /// `sce-forge.xsd` and dropped unread — a separate defect, row S2's
-    /// class — so a message claiming refusal would tell an author their
-    /// claim was rejected when it was swallowed.
+    /// `sce-forge.xsd`, and the parse refuses it as an attribute nothing
+    /// reads (`validation/sce-attribute-unread`, since 2026-09-28; it was
+    /// dropped unread before). The grammar refuses nothing here, so the
+    /// sentence names what SCE reads.
     ///
     /// NL→IR closure ledger row G3. ⚠ Deliberately NOT an empty table:
     /// the rows of a document whose nodes cannot carry `sce:req` and the

@@ -23,8 +23,18 @@
 //! and `<sce:field>` rc 3, `<scxml>` and `<data>` rc 0. Declaring
 //! `sce:req` globally does not close that — a global attribute
 //! declaration constrains the VALUE, not where the attribute may appear.
-//! That silent drop is row S2's class, not this row's, and it is filed
-//! rather than fixed here.
+//! That silent drop was row S2's class, not this row's, and was closed in
+//! the parser rather than the grammar on 2026-09-28: every `sce:`
+//! attribute on a W3C element that no reader asked for is refused when the
+//! parse ends (`crate::read_ledger`, `validation/sce-attribute-unread`), so
+//! a `sce:req` where this module reads none is now refused, not dropped.
+//!
+//! The decided next step (docs/adr/0105, item G3) is that the root of
+//! every forge document is a claim site: a forge document is one artifact,
+//! the root is the one node every kind has, and so every kind answers with
+//! at least the root's row. [`ReviewScope::NoAnnotationSite`] and
+//! `cli/review-table-unavailable` then become unreachable and retire with
+//! the change that reads it.
 //!
 //! This module is the half that was missing between the grammar and the
 //! table: ONE definition of "the requirement-bearing nodes of this
@@ -98,8 +108,9 @@ pub enum ReviewScope {
     /// ⚠ READS, not "the grammar refuses". The two are not the same and
     /// the difference is measured: the grammar accepts a `sce:req` on a
     /// W3C-namespace element of any forge document (see the module
-    /// header) and nothing reads it there. Saying "refuses" would tell
-    /// an author their claim was rejected when it was in fact swallowed.
+    /// header); the parse, not the grammar, refuses it there as an
+    /// attribute nothing reads. The sentence names what SCE reads, which
+    /// is the fact about SCE the reader is asking.
     ///
     /// ⚠ Carries the kind's own name so a reader is told which kind
     /// they asked about; a bare marker would make one unanswerable
