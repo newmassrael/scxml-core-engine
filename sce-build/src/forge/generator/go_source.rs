@@ -288,6 +288,189 @@ pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
     }
 }
 
+/// What a reader in another package knows of a codec the Go backend prints:
+/// the elements its value presents, in the order `Make{Codec}` takes them, and
+/// the elements its encode derives, each from what it measures. A procedure
+/// and a validator that hold a value of the codec read and make it through
+/// this ([`GoPrinted::read`], [`GoPrinted::rebuilt`]), so neither spells a
+/// printed codec's interface of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GoPrinted {
+    /// Each element the value presents, in declaration order.
+    presented: Vec<GoPresented>,
+    /// Each element the encode derives as a number.
+    derived: Vec<GoDerived>,
+}
+
+/// One element a printed Go value presents.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GoPresented {
+    /// The field id.
+    id: String,
+    /// For a byte string or a text, the runtime constructor that makes its
+    /// bounded value (`MakeBytes` or `MakeText`) and the bound type the
+    /// codec's package names for it; `None` for any other element.
+    bounded: Option<(&'static str, String)>,
+}
+
+/// One element the encode of a printed Go codec derives, which the value
+/// holds no field for: the length of the byte string or text `content`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GoDerived {
+    /// The field id of the length.
+    id: String,
+    /// The Go type of the length's field.
+    ty: String,
+    /// The field id of the byte string or text it measures.
+    content: String,
+    /// The `sce:length-arith` the wire adds to the count of bytes, spelled as
+    /// a Go term (` + 2`, ` - 1`), empty where it adds nothing.
+    arith: String,
+}
+
+/// A rebuild of a printed Go codec's value with one element assigned: the
+/// expression that makes the value again, and, for a byte string or a text,
+/// the call that makes the bounded value of what is assigned, which can fail.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GoRebuild {
+    /// The call of `Make{Codec}`.
+    pub(crate) value: String,
+    /// The fallible call that makes the assigned element's bounded value,
+    /// which `value` reads as [`GO_REBUILT_ELEMENT`]; `None` where the element
+    /// is handed as it is.
+    pub(crate) made: Option<String>,
+}
+
+/// The local a rebuild reads a bounded element it made through
+/// [`GoRebuild::made`] from.
+pub(crate) const GO_REBUILT_ELEMENT: &str = "sceMade";
+
+impl GoPrinted {
+    /// What a reader outside its package knows of the codec `plan`, whose
+    /// value's struct is `struct_name`; the plan is one [`unlowered`]
+    /// answers `None` for.
+    pub(crate) fn of(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Self {
+        let presented = plan
+            .elements
+            .iter()
+            .map(|element| {
+                let id = element.field.id.clone();
+                let bounded = match &element.value {
+                    Value::Bytes(_) => Some(("MakeBytes", bound_type(struct_name, &id))),
+                    Value::Text(_) => Some(("MakeText", bound_type(struct_name, &id))),
+                    _ => None,
+                };
+                GoPresented { id, bounded }
+            })
+            .collect();
+        let derived = plan
+            .derivations
+            .iter()
+            .filter_map(|derived| {
+                let (ElementId::Field(id), Derive::Number(number)) =
+                    (&derived.element, &derived.by)
+                else {
+                    return None;
+                };
+                let ([measure], NumberInto::Field { field, .. }) =
+                    (number.measures.as_slice(), &number.into)
+                else {
+                    return None;
+                };
+                let Measured::Bytes {
+                    field: content,
+                    offset,
+                } = &measure.of
+                else {
+                    return None;
+                };
+                Some(GoDerived {
+                    id: id.clone(),
+                    ty: l.type_name(&field.sce_type).into_owned(),
+                    content: content.id.clone(),
+                    arith: length_arith(offset),
+                })
+            })
+            .collect();
+        GoPrinted { presented, derived }
+    }
+
+    /// The read of the element `id`, of the type `ty`, of the value `held`:
+    /// an element the value presents by its method, a byte string or a text
+    /// as the slice or the string it holds ([`element_read`]); an element the
+    /// encode derives as the encode derives it, from what it measures, since
+    /// the value holds no field for it (docs/adr/0081 §3).
+    pub(crate) fn read(&self, held: &str, id: &str, ty: &SceType) -> String {
+        match self.derived.iter().find(|d| d.id == id) {
+            Some(derived) => format!(
+                "{}({held}.{}().Len(){})",
+                derived.ty,
+                filters::to_pascal_case(derived.content.clone()),
+                derived.arith
+            ),
+            None => element_read(
+                &format!("{held}.{}()", filters::to_pascal_case(id.to_string())),
+                ty,
+            ),
+        }
+    }
+
+    /// The rebuild of the value `held`, made by `make` (the qualified
+    /// `Make{Codec}`) in the package `package` names, with the element
+    /// `element` assigned `value` and every other element the value presents
+    /// read by its method; `None` where the value presents no `element`, as
+    /// for a length the encode derives, which no value holds.
+    ///
+    /// A byte string or a text is assigned as the slice or the string the
+    /// expression gives, made into its bounded value by the runtime's
+    /// constructor, which refuses one outside the bound or a text that is not
+    /// UTF-8 ([`GoRebuild::made`]).
+    pub(crate) fn rebuilt(
+        &self,
+        held: &str,
+        make: &str,
+        package: Option<&str>,
+        element: &str,
+        value: &str,
+    ) -> Option<GoRebuild> {
+        let assigned = self.presented.iter().find(|p| p.id == element)?;
+        let made = assigned.bounded.as_ref().map(|(constructor, bound)| {
+            let bound = match package {
+                Some(package) => format!("{package}.{bound}"),
+                None => bound.clone(),
+            };
+            format!("codec.{constructor}[{bound}]({value})")
+        });
+        let arguments: Vec<String> = self
+            .presented
+            .iter()
+            .map(|p| {
+                if p.id != element {
+                    format!("{held}.{}()", filters::to_pascal_case(p.id.clone()))
+                } else if made.is_some() {
+                    GO_REBUILT_ELEMENT.to_string()
+                } else {
+                    value.to_string()
+                }
+            })
+            .collect();
+        Some(GoRebuild {
+            value: format!("{make}({})", arguments.join(", ")),
+            made,
+        })
+    }
+}
+
+/// The `sce:length-arith` of a derived length as a Go term the count of bytes
+/// is followed by: what the wire adds to it, or takes off.
+fn length_arith(offset: &Offset) -> String {
+    match offset {
+        Offset::None => String::new(),
+        Offset::More { by } => format!(" + {by}"),
+        Offset::Less { by, .. } => format!(" - {by}"),
+    }
+}
+
 /// The type a codec `struct_name` names for the bound of its byte string or
 /// text `id`.
 fn bound_type(struct_name: &str, id: &str) -> String {
@@ -498,11 +681,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
         else {
             unreachable!("`unlowered` prints the length of a byte string or a text only");
         };
-        let arith = match offset {
-            Offset::None => String::new(),
-            Offset::More { by } => format!(" + {by}"),
-            Offset::Less { by, .. } => format!(" - {by}"),
-        };
+        let arith = length_arith(offset);
         out.push_str(&format!(
             "\t_d{} := {}({}.Len(){arith})\n",
             l.codec_field_id(id),
