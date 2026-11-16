@@ -2336,3 +2336,14 @@ codecs that also hold a text, an element a flag of the codec's own gates, or a l
   element is there and clears it where it is not, whatever bit the carrier you hand it holds. Stop setting the flag
   before you encode; a value whose flag disagreed with its element is now written as the element says.
 
+## A printed Kotlin codec derives the encoded length of a body it holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that hold a body of a codec Kotlin prints, which is handed no flag input.
+
+- A field that holds the encoded length of a body (`sce:length-from`) is gone from the data class: the encode writes
+  the length of the frame it writes for the body. Drop it from your constructor calls and `copy` calls.
+- The body's property is still the body's data class, so `msg.ts.seconds` reads as before. `{Codec}Source`
+  presents it as `{Body}Source`, so a class of yours that implements the parent's interface presents the body as
+  any implementation of the body's interface, and `{Codec}.encodeSource` writes it through `{Body}.encodeSource`.
+

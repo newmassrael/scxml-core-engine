@@ -16,7 +16,8 @@
 //! the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members, HeldCodecs,
+    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members,
+    CodecPath as RustCodecPath, HeldCodecs,
 };
 use super::super::*;
 use super::refinement_class;
@@ -44,6 +45,17 @@ impl CodecPath {
     /// `name`, a declaration of the codec's file, written whole.
     fn qualified(&self, name: &str) -> String {
         format!("{}.{name}", self.package)
+    }
+}
+
+/// Where a codec held by a codec is, whose Rust path a held codec's reading
+/// names `held`: the package of its own document, which every Kotlin unit is
+/// generated under whoever imports it.
+fn held_codec(held: &RustCodecPath) -> CodecPath {
+    let snake = held.module.rsplit("::").next().unwrap_or(&held.module);
+    CodecPath {
+        package: kotlin_forge_package(snake),
+        type_name: held.type_name.clone(),
     }
 }
 
@@ -91,29 +103,67 @@ pub(crate) fn source_case(
             .to_string());
     }
     let literal = value_literal(plan, path, source, held)?;
-    let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
-    let checks = plan
-        .elements
-        .iter()
-        .map(|element| {
-            let property = l.codec_field_id(&element.field.id);
-            let (decoded, value) = (
-                format!("{DECODED}.{property}"),
-                format!("{VALUE}.{property}"),
-            );
-            // A value class over an array compares the array it holds by
-            // identity, so a byte string is compared by its content.
-            let holds = match &element.value {
-                Value::Bytes(_) if element.presence.optional() => {
-                    format!("{decoded}?.bytes.contentEquals({value}?.bytes)")
-                }
-                Value::Bytes(_) => format!("{decoded}.bytes.contentEquals({value}.bytes)"),
-                _ => format!("{decoded} == {value}"),
-            };
-            (element.field.id.clone(), holds)
-        })
-        .collect();
+    let mut checks = Vec::new();
+    for element in &plan.elements {
+        if let Some(holds) = element_holds(element, DECODED, VALUE, 0, held)? {
+            checks.push((element.field.id.clone(), holds));
+        }
+    }
     Ok(SourceCase { literal, checks })
+}
+
+/// A Kotlin `Boolean` expression that holds when `decoded` and `value`, two
+/// values of the codec that presents `element`, present the same of it, or
+/// `None` where there is nothing to compare: a body always there whose codec
+/// presents no element. `depth` names the values a body is compared through,
+/// so a body held in a body names its own.
+///
+/// A value class over an array compares the array it holds by identity, and a
+/// data class compares such a value class so, so a byte string is compared by
+/// its content and a body element by element, down into the codecs it holds.
+fn element_holds(
+    element: &crate::forge::encode_plan::Element<'_>,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<Option<String>, String> {
+    let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
+    let property = l.codec_field_id(&element.field.id);
+    let (decoded, value) = (
+        format!("{decoded}.{property}"),
+        format!("{value}.{property}"),
+    );
+    let optional = element.presence.optional();
+    Ok(Some(match &element.value {
+        Value::Bytes(_) if optional => {
+            format!("{decoded}?.bytes.contentEquals({value}?.bytes)")
+        }
+        Value::Bytes(_) => format!("{decoded}.bytes.contentEquals({value}.bytes)"),
+        Value::Body { codec } => {
+            let (d, v) = (format!("d{depth}"), format!("v{depth}"));
+            let inner = held.read(codec, &mut |plan, _, held| {
+                let mut holds = Vec::new();
+                for element in &plan.elements {
+                    holds.extend(element_holds(element, &d, &v, depth + 1, held)?);
+                }
+                Ok(holds.join(" && "))
+            })?;
+            match (inner.is_empty(), optional) {
+                // The body presents nothing: only whether it is there.
+                (true, false) => return Ok(None),
+                (true, true) => format!("({decoded} == null) == ({value} == null)"),
+                (false, false) => {
+                    format!("{decoded}.let {{ {d} -> {value}.let {{ {v} -> {inner} }} }}")
+                }
+                (false, true) => format!(
+                    "{decoded}.let {{ {d} -> {value}.let {{ {v} -> \
+                     if ({d} == null || {v} == null) {d} == null && {v} == null else {inner} }} }}"
+                ),
+            }
+        }
+        _ => format!("{decoded} == {value}"),
+    }))
 }
 
 /// The value of the codec `plan` at `path` that `source` states, made by its
@@ -212,11 +262,11 @@ fn member_literal(
                 string_literal(text)
             ))
         }
-        Value::Body { .. } => Err(
-            "a body is not spelled as a Kotlin literal yet: the Kotlin printer prints no codec \
-             that holds one"
-                .into(),
-        ),
+        // The held codec's data class, reached by its document's package, as
+        // the printed codec's encode reaches it.
+        Value::Body { codec } => held.read(codec, &mut |plan, held_path, held| {
+            value_literal(plan, &held_codec(held_path), json, held)
+        }),
         Value::List { .. } => Err(
             "a list is not spelled as a Kotlin literal yet: the Kotlin printer prints no codec \
              that holds one"

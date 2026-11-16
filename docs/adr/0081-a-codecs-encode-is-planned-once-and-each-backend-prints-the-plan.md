@@ -1339,6 +1339,18 @@ old encode, the old encode and its templates are removed in the same landing.
    gated beside it is derived as zero where it is absent and written where its gate holds, tested on the carrier as
    the encode writes it. A length the value states where its content is absent (§4.6 R4b), a group, and a gate on
    an input or a chain's entries stay unlowered.
+
+   *The third Kotlin landing, 2026-11-16:* a body of a codec Kotlin prints, handed no flag input, and its encoded
+   length, as the third Python landing. Whether an import is printed is read as the import is generated
+   (`ImportContext::kotlin_printed`). The source presents the body as the held codec's `{Body}Source`, which the
+   wildcard import of its package brings into scope, and the data class holds the held codec's data class, which
+   implements it, as an `override var` of that subtype. The encode writes the body by `{Body}.encodeSource`. A
+   length of the body's frame is measured by encoding the body once into a buffer (`MutableListSink`), which is then
+   what is written where the body is, `null` where a gate leaves the body out, as the Python printer does: the
+   Kotlin runtime has no counting sink, and the one encode both counts and writes. The case printer makes a body as
+   its codec's data class, written by that codec's own package, and compares it element by element down into the
+   codecs it holds, since a data class compares a value class over an array by identity. A body handed flag inputs,
+   or whose encode can refuse, stays unlowered, and so does a codec that holds one.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

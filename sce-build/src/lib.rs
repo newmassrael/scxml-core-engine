@@ -7544,6 +7544,14 @@ fn validate_and_enrich_imports(
                     ctx.swift_printed =
                         swift_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
                 }
+                // docs/adr/0081 step 4: whether the Kotlin backend prints the
+                // import from its plan, so a printed parent writes a body of
+                // it through its companion's `encodeSource`. Read as the import
+                // is generated, its own imports resolved.
+                if matches!(language, generator::Language::Kotlin) {
+                    ctx.kotlin_printed =
+                        kotlin_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.
                 let mut source_visited: HashSet<PathBuf> = HashSet::new();

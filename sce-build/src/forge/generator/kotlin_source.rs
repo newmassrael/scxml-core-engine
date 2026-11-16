@@ -35,8 +35,8 @@ pub(super) mod source_case;
 
 /// The first form of `plan` the Kotlin printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
-pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
-    unlowered_forms(plan).into_iter().next()
+pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
+    unlowered_forms(plan, imports).into_iter().next()
 }
 
 /// Every form of `plan` the Kotlin printer does not print, in the order
@@ -48,18 +48,29 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
 /// byte string or text, held in a field of its own that the length fits and
 /// gated beside its content where its content is, its `sce:length-arith` never
 /// taking it below zero, or a flag set exactly where the one field it gates is
-/// there; and whose encode refuses nothing. A CBOR map and a content-line
-/// component keep their own templates' encodes.
-pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
+/// there; and whose encode refuses nothing. It holds a body of a codec it
+/// prints that is handed no flag input, and derives the encoded length of one.
+/// A CBOR map and a content-line component keep their own templates' encodes.
+/// `imports` are the codec's own, which say whether a codec it holds is printed
+/// ([`ImportContext::kotlin_printed`]).
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
-        CodecPlan::Positional(plan) => positional_forms(plan),
+        CodecPlan::Positional(plan) => positional_forms(plan, imports),
         CodecPlan::Cbor(_) => vec!["a CBOR map".to_string()],
         CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
     }
 }
 
+/// The import of the codec a body of `plan` holds as `alias`, where the
+/// Kotlin backend prints it from its plan.
+fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i ImportContext> {
+    imports
+        .iter()
+        .find(|import| import.alias == alias && import.kotlin_printed)
+}
+
 /// [`unlowered_forms`] of a positional codec.
-fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
+fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
     if m.variant.is_some() {
@@ -75,7 +86,18 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             Value::Scalar(SceType::Enum(_)) => {}
             Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
             Value::Bytes(_) | Value::Text(_) => {}
-            Value::Body { codec } => forms.push(format!("field '{id}': a body of `{codec}`")),
+            // A body is written by its codec's own `encodeSource`, which a
+            // codec the Kotlin backend prints has, handed nothing.
+            Value::Body { codec } => {
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a body of `{codec}`, which the Kotlin backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!("field '{id}': a body handed flag inputs"));
+                }
+            }
             Value::List { codec, .. } => {
                 forms.push(format!("field '{id}': a list of `{codec}`"));
             }
@@ -178,9 +200,10 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             Measured::Entries { .. } => {
                 forms.push(format!("element '{element}': a count of a list's entries"));
             }
-            Measured::Encoded { .. } => {
-                forms.push(format!("element '{element}': the encoded length of a body"));
-            }
+            Measured::Encoded { refuses: true, .. } => forms.push(format!(
+                "element '{element}': the encoded length of a body whose encode can refuse"
+            )),
+            Measured::Encoded { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!("element '{element}': a flag a held codec says"));
             }
@@ -314,9 +337,21 @@ pub(super) struct KotlinSource {
     pub(super) inline: bool,
 }
 
+/// The data class of the codec a printed import names, which the wildcard
+/// import of its package (`ImportContext::include_stmt`) brings into scope with
+/// its source interface, `{Type}Source`.
+fn body_type(import: &ImportContext) -> &str {
+    &import.type_name
+}
+
 /// The Kotlin text of the codec `plan`, whose value's data class is
 /// `struct_name`; the plan is one [`unlowered`] answers `None` for.
-pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> KotlinSource {
+pub(super) fn render(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> KotlinSource {
     let mut before = String::new();
     let mut held = BTreeMap::new();
     // The type the source presents each element as.
@@ -331,6 +366,15 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> K
                 ty
             }
         };
+        // A body is any source of its codec, the interface its file declares;
+        // the value holds its codec's data class, which implements it, so the
+        // value's property overrides the interface's with a type of its own.
+        if let Value::Body { codec } = &element.value {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a body of a printed codec only");
+            presented.insert(id.clone(), optional(format!("{}Source", body_type(import))));
+            continue;
+        }
         let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
             presented.insert(
                 id.clone(),
@@ -385,7 +429,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> K
 
     KotlinSource {
         before: before.trim_end_matches('\n').to_string(),
-        encode: encode_source(plan, l, struct_name),
+        encode: encode_source(plan, l, imports, struct_name),
         held,
         inline,
     }
@@ -566,7 +610,12 @@ fn indented(body: &str) -> String {
 /// its carrier, then the writes in wire order. A function of the companion
 /// object and not a method of the value, so it writes any source, and a
 /// property of the value cannot take its name.
-fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+fn encode_source(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> String {
     let numbers = derived_numbers(plan);
     let derived: Vec<String> = numbers
         .iter()
@@ -588,6 +637,19 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
         format!("_e_{}", l.codec_field_id(id))
     };
     let is_text = |field: &CodecField| field.sce_type == SceType::String;
+    // The data class of the codec whose companion's `encodeSource` writes the
+    // body `field`.
+    let body_writer = |field: &CodecField| -> String {
+        let Some(Value::Body { codec }) = element_of(plan, &field.id).map(|e| &e.value) else {
+            unreachable!("a body is an element the value presents")
+        };
+        let import =
+            printed_import(imports, codec).expect("`unlowered` prints a body of a printed codec");
+        body_type(import).to_string()
+    };
+    // The bodies encoded into a buffer first, by field id: those whose length a
+    // number measures.
+    let mut buffered: BTreeSet<String> = BTreeSet::new();
     let mut body = String::new();
     // Each flag the presence of the fields it gates sets, by its carrier: the
     // flag's mask and the test that sets it.
@@ -600,15 +662,49 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                 else {
                     unreachable!("`unlowered` prints a number of one measure into a field only");
                 };
-                let Measured::Bytes { field, offset } = &measure.of else {
-                    unreachable!("`unlowered` prints the length of a byte string or text only");
-                };
-                let content = element(&field.id);
-                let size = format!("{}.size", wire_bytes(&content, is_text(field)));
-                let count = match offset {
-                    Offset::None => size,
-                    Offset::More { by } => format!("{size} + {by}"),
-                    Offset::Less { by, .. } => format!("{size} - {by}"),
+                let (content, count) = match &measure.of {
+                    Measured::Bytes { field, offset } => {
+                        let content = element(&field.id);
+                        let size = format!("{}.size", wire_bytes(&content, is_text(field)));
+                        let count = match offset {
+                            Offset::None => size,
+                            Offset::More { by } => format!("{size} + {by}"),
+                            Offset::Less { by, .. } => format!("{size} - {by}"),
+                        };
+                        (content, count)
+                    }
+                    // The body's frame, encoded once into a buffer the write
+                    // of the body then writes; `null` where it is absent, so
+                    // the buffer is what the number and the write test.
+                    Measured::Encoded { body: held, .. } => {
+                        let content = element(&held.id);
+                        let name = l.codec_field_id(&held.id);
+                        let (list, buffer) = (format!("_l_{name}"), format!("_b_{name}"));
+                        let encode = format!(
+                            "val {list} = mutableListOf<Byte>()\n{}",
+                            written(&format!(
+                                "{}.encodeSource({content}, MutableListSink({list}))",
+                                body_writer(held)
+                            ))
+                        );
+                        if measure.gated {
+                            body.push_str(&format!(
+                                "var {buffer}: ByteArray? = null\n\
+                                 if ({content} != null) {{\n\
+                                 {}    {buffer} = {list}.toByteArray()\n\
+                                 }}\n",
+                                indented(&encode)
+                            ));
+                        } else {
+                            body.push_str(&format!(
+                                "{encode}val {buffer} = {list}.toByteArray()\n"
+                            ));
+                        }
+                        buffered.insert(held.id.clone());
+                        let count = format!("{buffer}.size");
+                        (buffer, count)
+                    }
+                    _ => unreachable!("`unlowered` prints a length or an encoded length only"),
                 };
                 let number = int_as(&count, &into.sce_type);
                 // Zero where a gate leaves the content out, beside which the
@@ -748,16 +844,34 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                         "w.writeBytes({})",
                         wire_bytes(&read(field), is_text(field))
                     )),
-                    BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        unreachable!("`unlowered` prints no body or list")
+                    // A body: the buffer its length was measured over, or its
+                    // codec's encode over the source it is presented as.
+                    BitSize::Embed if buffered.contains(&field.id) => {
+                        written(&format!("w.writeBytes(_b_{})", l.codec_field_id(&field.id)))
                     }
+                    BitSize::Embed => written(&format!(
+                        "{}.encodeSource({}, w)",
+                        body_writer(field),
+                        read(field)
+                    )),
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        unreachable!("`unlowered` prints no list")
+                    }
+                };
+                // What says whether the value holds the field: the local it
+                // was read into, or the buffer a body was encoded into, which
+                // is `null` where the body is absent.
+                let held = if buffered.contains(&field.id) {
+                    format!("_b_{}", l.codec_field_id(&field.id))
+                } else {
+                    read(field)
                 };
                 body.push_str(&match guard {
                     Guard::Always => write,
-                    // Where the value holds it: the local it was read into is
+                    // Where the value holds it: the local it is tested by is
                     // not `null`, which narrows it for the write.
                     Guard::Present => {
-                        format!("if ({} != null) {{\n{}}}\n", read(field), indented(&write))
+                        format!("if ({held} != null) {{\n{}}}\n", indented(&write))
                     }
                     // Derived whole and gated: where its gate holds, as the
                     // carriers the encode writes say.

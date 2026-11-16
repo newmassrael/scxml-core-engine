@@ -535,6 +535,15 @@ pub struct ImportContext {
     #[serde(skip)]
     pub swift_printed: bool,
 
+    /// docs/adr/0081 step 4: `true` when the generation is for Kotlin and the
+    /// Kotlin backend prints the imported codec from its plan, so its file
+    /// declares the `{Codec}Source` interface and its companion object
+    /// `encodeSource`, which a printed parent writes a body of it through.
+    /// `false` on every other backend, for non-codec imports, and for a codec
+    /// that keeps the template's encode.
+    #[serde(skip)]
+    pub kotlin_printed: bool,
+
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
     /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
@@ -1610,6 +1619,7 @@ fn resolve_single_import(
         python_printed: false,
         python_unlowered: None,
         swift_printed: false,
+        kotlin_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -10771,14 +10781,21 @@ pub(crate) fn python_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) 
 /// encode derives, and holds each byte string in the value class of its bound;
 /// any other codec keeps the template's encode whole.
 pub(crate) fn kotlin_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
-    kotlin_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+    kotlin_source::unlowered(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
+    .is_none()
 }
 
 /// Every form of `m`'s encode plan the Kotlin printer does not lower, as the
 /// clause that names it, in the order the printer meets them; empty where
 /// [`kotlin_codec_printed`].
 pub(crate) fn kotlin_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
-    kotlin_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+    kotlin_source::unlowered_forms(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
 }
 
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
@@ -13683,10 +13700,14 @@ fn render_codec(
     // off it.
     let kotlin_printed = if matches!(lang, crate::generator::Language::Kotlin) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (kotlin_source::unlowered(&plan), plan) {
+        match (kotlin_source::unlowered(&plan, imports), plan) {
             (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-                let printed =
-                    kotlin_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                let printed = kotlin_source::render(
+                    &p,
+                    &l,
+                    imports,
+                    &filters::to_pascal_case(m.name.clone()),
+                );
                 Some((p, printed))
             }
             _ => None,
@@ -48651,6 +48672,7 @@ mod tests {
             python_printed: false,
             python_unlowered: None,
             swift_printed: false,
+            kotlin_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49582,6 +49604,7 @@ mod tests {
                 python_printed: false,
                 python_unlowered: None,
                 swift_printed: false,
+                kotlin_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49656,6 +49679,7 @@ mod tests {
                 python_printed: false,
                 python_unlowered: None,
                 swift_printed: false,
+                kotlin_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

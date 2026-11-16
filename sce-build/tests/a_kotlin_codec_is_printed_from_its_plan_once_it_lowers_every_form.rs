@@ -245,6 +245,57 @@ fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
     holds_none("codec_present_if_basic", &text, &["src.flags.toByte()"]);
 }
 
+/// A body of a printed codec is any source of that codec, the interface its
+/// file declares, and is written by that codec's companion `encodeSource`; the
+/// value holds the body's data class, which implements the interface.
+///
+/// Turns red where `kotlin_source::positional_forms` stops printing a body of a
+/// printed codec, or `encode_source` writes it other than through its codec's
+/// `encodeSource`.
+#[test]
+fn a_body_is_written_by_its_codecs_own_encode_over_a_source() {
+    assert!(unlowered("codec_embed_basic").is_empty());
+    let text = resource_file("codec_embed_basic");
+    holds(
+        "codec_embed_basic",
+        &text,
+        &[
+            "import com.sce.generated.codec_zenoh_locator.*\n",
+            "    val locator: CodecZenohLocatorSource\n",
+            "    override var locator: CodecZenohLocator = CodecZenohLocator()",
+            "CodecZenohLocator.encodeSource(_e_locator, w)?.let { return it }\n",
+        ],
+    );
+}
+
+/// The encoded length of a body is the length of its frame, encoded once into a
+/// buffer that is then written where the body is.
+///
+/// Turns red where `kotlin_source::encode_source` reads the length off the
+/// value, or writes the body by encoding it a second time.
+#[test]
+fn a_bodys_encoded_length_is_measured_over_the_frame_it_writes() {
+    assert!(unlowered("codec_zenoh_timestamp_ext").is_empty());
+    let text = resource_file("codec_zenoh_timestamp_ext");
+    holds(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &[
+            "val _l_ts = mutableListOf<Byte>()\n",
+            "CodecZenohTimestamp.encodeSource(_e_ts, MutableListSink(_l_ts))?.let { return it }\n",
+            "val _b_ts = _l_ts.toByteArray()\n",
+            "val _d_ext_size = _b_ts.size.toULong()\n",
+            "w.writeVleU64(_d_ext_size)?.let { return it }\n",
+            "w.writeBytes(_b_ts)?.let { return it }\n",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &["var ext_size: ", "src.ext_size", "this.ts.encode(w)"],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a length the value states
 /// where its gated content is absent each name their form.
