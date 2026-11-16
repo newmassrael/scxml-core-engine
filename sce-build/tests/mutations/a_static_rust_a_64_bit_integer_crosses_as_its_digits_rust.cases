@@ -19,7 +19,6 @@
 mutation_tests -p sce-rust-tests --test static_scenarios
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/runtime/src/event_payload.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
 
 mutation_case "a 64-bit param is written as a JSON number" <<'PY'

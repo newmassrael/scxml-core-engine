@@ -16,11 +16,10 @@
 #   "ignore the name and value") has no counterpart for namelist anywhere in
 #   the specification — the two clauses are complementary, not competing.
 #
-# The template reaches `cargo test` only through the committed tree the
-# regeneration below writes, so both halves are declared: the generated file
-# is compiled into the test, and `mutation_regen` is what carries a mutated
-# template into it. Without that bridge `cargo test --no-run` would rebuild
-# the same committed source and every case here would be INCONCLUSIVE.
+# The template reaches `cargo test` through the test crate's build script,
+# which generates the tree `rust-integration` into OUT_DIR and reruns when a
+# template it read changes (docs/adr/0097), so a mutated template reaches the
+# machine with nothing declared between them.
 #
 # The suite posts over a real socket, so the W3C harness server has to be up —
 # `backends/rust/tests/src/harness.rs` refuses the test without it, and a
@@ -37,8 +36,6 @@ mutation_tests -p sce-rust-tests --test send_namelist_over_http
 mutation_needs http-fixture
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
 mutation_targets backends/rust/runtime/src/helpers/event_data.rs
-mutation_targets backends/rust/tests/src/integration/send_namelist_over_http/send_namelist_over_http_sm.rs
-mutation_regen scripts/materialize.sh rust-integration
 
 mutation_oracles backends/rust/tests/tests/send_namelist_over_http.rs
 

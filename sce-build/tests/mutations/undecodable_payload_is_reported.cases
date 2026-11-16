@@ -62,9 +62,10 @@ mutation_targets backends/rust/runtime/src/scripting/i_script_engine.rs
 # to nobody for a week because the lane it runs in was already red on an
 # earlier target. Both are re-aimed here.
 mutation_targets backends/rust/runtime/src/payload_reading.rs
+# The template reaches the test through the test crate's build script, which
+# generates the tree `rust-integration` into OUT_DIR and reruns when a template
+# it read changes (docs/adr/0097).
 mutation_targets tools/codegen/templates/rust/process_transition.rs.jinja2
-mutation_targets backends/rust/tests/src/integration/undecodable_payload_is_reported/undecodable_payload_is_reported_sm.rs
-mutation_regen scripts/materialize.sh rust-integration
 
 mutation_oracles backends/rust/tests/tests/undecodable_payload_is_reported.rs
 
@@ -103,7 +104,7 @@ PY
 #
 # The failure shape this whole axis came out of: the reading is computed
 # correctly and then discarded at the binding, which no compiler objects to.
-# The bridge carries the mutated TEMPLATE into the committed tree.
+# The build script carries the mutated TEMPLATE into the machine.
 
 mutation_case "the generated binding drops the reading" <<'PY'
 edit("tools/codegen/templates/rust/process_transition.rs.jinja2",

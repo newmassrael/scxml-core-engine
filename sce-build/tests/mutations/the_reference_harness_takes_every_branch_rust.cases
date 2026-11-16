@@ -19,16 +19,16 @@
 #   the overall deadline is never armed;
 #   a lift's refusal is carried into the application's record by another number.
 #
-# The document reaches the tests only through the committed tree the regeneration
-# writes, so the tree is a declared target and the command is what carries a mutated
-# document into it.
+# The document reaches the tests through the replay crate's build script, which
+# generates the tree `rust-static-datamodel` into OUT_DIR and reruns when a document a
+# generation read changes (docs/adr/0097), so a mutated document reaches the machine
+# with nothing declared between them.
 #
 # Anchors are literal slices of the documents; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-scenarios --test host_features harness
 mutation_targets sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml sce-build/tests/fixtures/static_datamodel/enum_harness_code.scxml
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/scenarios/tests/host_features.rs tests/host_features/model_outcome_classes.json tests/host_features/scenarios/static_model_harness_accepted.json tests/host_features/scenarios/static_model_harness_exhausted.json tests/host_features/scenarios/static_model_harness_not_offered.json tests/host_features/scenarios/static_model_harness_repaired.json tests/host_features/scenarios/static_model_harness_timeout.json
 
 # The timeout case gives up at the first call's deadline, and no run enters `retry`.

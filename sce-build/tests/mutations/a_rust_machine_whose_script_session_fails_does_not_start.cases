@@ -24,13 +24,10 @@
 mutation_tests -p sce-rust-tests --test a_machine_whose_script_session_fails_does_not_start
 mutation_targets backends/rust/runtime/src/engine.rs tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2 tools/codegen/templates/rust/invoke_methods.rs.jinja2
 
-# The templates reach `cargo test` only through the committed tree the
-# regeneration below writes, so both halves are declared: the generated files
-# are compiled into the test, and the command is what carries a mutated
-# template into them.
-mutation_targets backends/rust/tests/src/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick_sm.rs
-mutation_targets backends/rust/tests/src/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty_sm.rs
-mutation_regen scripts/materialize.sh rust-integration
+# The templates reach `cargo test` through the test crate's build script,
+# which generates the tree `rust-integration` into OUT_DIR and reruns when a
+# template it read changes (docs/adr/0097), so a mutated template reaches the
+# machines, and the restore regenerates them, with nothing declared between.
 
 mutation_oracles backends/rust/tests/tests/a_machine_whose_script_session_fails_does_not_start.rs
 

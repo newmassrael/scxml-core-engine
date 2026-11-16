@@ -28,8 +28,6 @@
 mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/runtime/src/saved_state.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_record_string_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json
 
 mutation_case "a text past a record field's bound is not refused" <<'PY'

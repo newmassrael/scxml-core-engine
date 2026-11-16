@@ -19,9 +19,10 @@
 #   a saved state looks for the child in one candidate's slot only, so a child
 #     the restore started from the other candidate is saved as not running.
 #
-# The templates reach the tests only through the committed tree the regeneration
-# writes, so both halves are declared: the generated file is compiled into the
-# tests, and the command is what carries a mutated template into it.
+# The templates reach the tests through the test crate's build script, which
+# generates the tree into OUT_DIR and reruns when a template it read changes
+# (docs/adr/0097), so a mutated template reaches the machine with nothing
+# declared between them.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -29,8 +30,6 @@
 mutation_tests -p sce-rust-tests --test a_static_hybrid_invoke_is_started_again_by_a_restore
 mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
 mutation_targets tools/codegen/templates/rust/entry_exit_actions.rs.jinja2
-mutation_targets backends/rust/tests/src/integration/static_datamodel/static_invoke_hybrid_saved_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/a_static_hybrid_invoke_is_started_again_by_a_restore.rs sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid_saved.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_watcher.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_holder.scxml
 
 # ── A restore starts the invocation again ───────────────────────────

@@ -16,18 +16,16 @@
 # record_list_raise, record_list_recall, record_list_restore and record_list_verdict)
 # must turn red.
 #
-# The list reaches the Rust lane only through the committed tree its regeneration
-# writes, so the tree is a declared target and the regeneration carries a mutated
-# document into it.
+# The list reaches the Rust lane through the test crate's build script, which
+# generates the tree `rust-static-datamodel` into OUT_DIR and reruns when a
+# document a generation read changes (docs/adr/0097), so a mutated document
+# reaches the machine with nothing declared between them.
 #
 # Anchors are literal slices of the document; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test static_scenarios
 mutation_targets stdlib/shared/record_list.scxml
-mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_sm.rs
-mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_parent__sce_synth_invoke__list_sm.rs
-mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/record_list_journal.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_provisional.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_raise.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_recall.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_restore.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_verdict.json
 
 # ── The offer and its verdict ──────────────────────────────────────
