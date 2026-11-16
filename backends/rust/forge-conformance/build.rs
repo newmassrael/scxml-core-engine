@@ -397,6 +397,32 @@ fn main() {
         BROADCAST_LOG_DEPLOY,
         &out_dir,
     );
+
+    // Step 9: a link that carries the events it declares (docs/adr/0106, #142).
+    // The generator's link names the framer and the codecs its rows encode by,
+    // and the transmit pool, as sibling modules, and calls their decode, encode
+    // and slot functions; until it is compiled, nothing shows those are the
+    // names the codecs and the pool have. `forge_link_events.rs` includes each
+    // as a sibling module and drives `pump` and `send` over a driver whose wire
+    // loops back. The documents are shared with the C11 arm, in
+    // `tests/forge/conformance/link_events/`.
+    let link_fixtures = Path::new(&manifest_dir)
+        .join("../../../tests/forge/conformance/link_events")
+        .canonicalize()
+        .expect("canonicalize tests/forge/conformance/link_events");
+    println!("cargo:rerun-if-changed={}", link_fixtures.display());
+    generate_stripped_fixtures(
+        &[
+            "link_events_frame",
+            "link_events_query",
+            "link_events_tx_pool",
+            "link_events_pooled",
+            "link_events_direct",
+        ],
+        &link_fixtures,
+        &out_dir,
+        &options,
+    );
 }
 
 /// Frames a codec's document gives as its wire oracle in a comment, for a codec

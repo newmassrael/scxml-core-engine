@@ -46,6 +46,8 @@ sce-build = { path = "../../../sce-build" }
 # The queue history checker (`sce_build::queue_history`), which the queue arm's
 # tests judge their recorded runs with.
 sce-build = { path = "../../../sce-build" }
+# The `Link` trait a generated link wraps a driver of (`forge_link_events.rs`).
+sce-link-runtime = { path = "../link-runtime" }
 # `float_roundtrip` makes a JSON real parse to the nearest double. serde_json's
 # default parser is faster but can land one unit in the last place away, which
 # turns the multiplier 0.9999999999999999 of a `retry_next_backoff` case into

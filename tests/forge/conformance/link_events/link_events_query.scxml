@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A codec an outbound row names that is not the framer (docs/adr/0106, #142):
+  two bytes, so a frame of it is one the framer refuses when it comes back.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="link_events_query">
+  <datamodel>
+    <data id="query_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="window" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

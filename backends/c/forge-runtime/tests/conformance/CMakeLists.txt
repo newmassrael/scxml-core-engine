@@ -960,3 +960,35 @@ add_test(NAME broadcast_log_check_c_set
             --forge "${RESOURCE_DIR}/broadcast_log_conformance_event.scxml"
             --forge "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml"
             --language c11)
+
+# A link that carries the events it declares (docs/adr/0106, #142): the receive
+# path decodes each frame with the framer and injects the event of every row that
+# holds, the transmit path encodes an event by its row's codec into a slot of the
+# transmit pool, or into a buffer when the link names none. The link calls the
+# framer's decode, each codec's encode and the pool's slot functions by the names
+# their documents generate, which only compiling them together shows. The five
+# documents are shared with the Rust arm, in one set, in the order that puts what
+# a document imports before it.
+set(LINK_EVENTS_DIR "${REPO_ROOT}/tests/forge/conformance/link_events")
+set(LINK_EVENTS_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/link_events_headers")
+file(MAKE_DIRECTORY "${LINK_EVENTS_C_GENERATED_DIR}")
+set(LINK_EVENTS_C_DOCUMENTS "")
+foreach(_document link_events_frame link_events_query link_events_tx_pool link_events_pooled link_events_direct)
+    list(APPEND LINK_EVENTS_C_DOCUMENTS "${LINK_EVENTS_DIR}/${_document}.scxml")
+endforeach()
+sce_codegen_generation(_LINK_EVENTS_C
+    DOCUMENTS ${LINK_EVENTS_C_DOCUMENTS}
+    OUTPUT_DIR "${LINK_EVENTS_C_GENERATED_DIR}"
+    LANGUAGE c11
+    COMMENT "Generating C11 links that carry their events, with their codecs and pool")
+add_custom_target(generate_link_events_headers_c)
+target_sources(generate_link_events_headers_c PRIVATE ${_LINK_EVENTS_C_HEADERS})
+
+add_executable(link_events_test_c "${CMAKE_CURRENT_SOURCE_DIR}/link_events_test.c" ${_LINK_EVENTS_C_SOURCES})
+add_dependencies(link_events_test_c generate_link_events_headers_c)
+target_include_directories(link_events_test_c PRIVATE
+    "${LINK_EVENTS_C_GENERATED_DIR}"
+    "${RUNTIME_INCLUDE_DIR}"
+    "${CORE_RUNTIME_INCLUDE_DIR}")
+target_compile_options(link_events_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME link_events_c COMMAND link_events_test_c)

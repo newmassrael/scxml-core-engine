@@ -81,6 +81,11 @@ decode and encode are generated from its document, which only an import reads), 
 inputs (flag inputs, a caller-supplied tag), an outbound codec whose encode does, an outbound event declared twice,
 and two event names one identifier would spell. A link with no event row stays the byte endpoint it was.
 
+Held end to end (2026-11-16): the five documents of `tests/forge/conformance/link_events/` (a framer, a second codec,
+a transmit pool, a link through the pool and one without) are generated and compiled by the Rust forge arm
+(`forge_link_events.rs`, the modules as siblings) and the C11 arm (`link_events_c`, under `-Werror`), and each drives
+`pump` and `send` over a driver whose wire loops back, so a frame sent is the frame the next pump decodes.
+
 ### #127 — a deployment's refusal names the deployment's path
 
 Implemented. `DeployConfig` keeps the path it was read from (`source`, set by `parse_deploy` and by the CLI's

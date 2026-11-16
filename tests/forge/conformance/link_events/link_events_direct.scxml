@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A link that carries the events it declares with no transmit pool
+  (docs/adr/0106, #142): an outbound event is encoded into a buffer of the
+  largest encoding its rows write, three bytes here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="link_events_direct" version="1.0">
+  <sce:import as="link_events_frame" src="link_events_frame.scxml" kind="codec"/>
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="link_events_frame"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:import as="link_events_query" src="link_events_query.scxml" kind="codec"/>
+  <sce:events>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:outbound event="scout.query.send" encode="link_events_query"/>
+    <sce:outbound event="scout.frame.send" encode="link_events_frame"/>
+  </sce:events>
+</scxml>

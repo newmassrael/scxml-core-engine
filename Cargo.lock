@@ -3804,6 +3804,7 @@ version = "0.1.0"
 dependencies = [
  "sce-build",
  "sce-forge-runtime",
+ "sce-link-runtime",
  "sce-portable-bytes",
  "serde_json",
 ]

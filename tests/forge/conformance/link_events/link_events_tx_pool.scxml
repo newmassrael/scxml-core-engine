@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The transmit pool `link_events_pooled` encodes its outbound events into
+  (docs/adr/0106, #142). CPU-managed, so no cache maintenance is generated.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="link_events_tx_pool" version="1.0">
+  <sce:slot-count>2</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>

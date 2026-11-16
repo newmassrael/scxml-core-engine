@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The framer of the links in this directory (docs/adr/0106, #142): three bytes,
+  a message id and a little-endian length. Every frame a link here receives is
+  decoded by it, and `<sce:outbound event="scout.frame.send">` encodes by it.
+
+  The documents of this directory are generated and compiled by the Rust forge
+  arm (backends/rust/forge-conformance, `forge_link_events.rs`) and the C11 arm
+  (backends/c/forge-runtime/tests/conformance, `link_events_c`), which drive a
+  generated link's pump and send over a driver whose wire loops back.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="link_events_frame">
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>
