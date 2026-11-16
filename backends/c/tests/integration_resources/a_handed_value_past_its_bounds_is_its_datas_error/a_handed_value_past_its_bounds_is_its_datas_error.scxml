@@ -34,14 +34,14 @@
             <param name="within" expr="'fits'"/>
             <content>
                 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-                       datamodel="ecmascript" initial="count">
+                       datamodel="ecmascript" initial="judging">
                     <datamodel>
                         <data id="raised" expr="0"/>
                         <data id="tooDeep" expr="'own'"/>
                         <data id="tooMany" expr="'own'"/>
                         <data id="within" expr="'own'"/>
                     </datamodel>
-                    <state id="count">
+                    <state id="judging">
                         <onentry>
                             <raise event="report"/>
                         </onentry>
