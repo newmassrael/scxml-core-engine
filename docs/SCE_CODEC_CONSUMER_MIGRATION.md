@@ -2642,3 +2642,29 @@ input its value says is unchanged.
   procedure is generated, as the value holds no such element. A validator reads such a length as the encode
   derives it, from the bytes it counts.
 
+## A printed Go codec answers a derived number by a method, and holds a body as its source (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree and the Go round-trip tree are regenerated after them. They
+move the positional codecs that also hold a body of a codec the Go backend prints, handed each flag input it does not
+say from a carrier or an input of the codec's own, and a length that counts the bytes of that body
+(`codec_encoded_length_checked` among them). A codec with a group, a list, a variant or an input its value says is
+unchanged.
+
+- Every number a printed codec's encode derives into a field is answered by a method of the value, `Wire{Field}()`,
+  as the frame carries it: `frame.WireLen()` where the second landing read `uint8(frame.Payload().Len())`. A length
+  gated beside its content answers `optional.Of` of the number, absent where the content is; a length the value
+  states while its content is absent answers the number the content gives where it is there, and what the value
+  states where it is not (`frame.SpanLen()` still answers what the value states). A value whose measures disagree
+  has no frame; the method answers the first measure. A number that counts a body handed a flag input of the
+  codec's own has no such method, as the value does not hold the input.
+- A body is presented, held and made as its codec's source interface, `pkg.{Body}Source`:
+  `parent.MakeParent(tag, &body)` where `body` is a `pkg.Body`, or any other value with the body's methods. The
+  decode holds the body it read; the zero value presents the body's zero value. A copy of a value shares the body
+  its source points to, as a Go interface does.
+- An encode over a body whose encode can refuse returns that body's refusal before its first byte: the body is
+  first encoded over `codec.CountingSink` (new in `backends/go/forge-runtime/codec/codec.go`), a sink that counts
+  and keeps nothing, which also gives the length that counts the body.
+- An algorithm that this generator writes over a collection of printed elements reads each field as the element's
+  codec presents it: a gated byte string as `codec.OptionalBytes(entry.Payload())`, a derived length by its
+  `Wire{Field}()` method.
+

@@ -1713,6 +1713,39 @@ old encode, the old encode and its templates are removed in the same landing.
    value says and a gate on a chain's entries stay unlowered. The Go harness runs a printed codec's `cases` with
    `EncodeToBytes` answering an error where the codec states `sce:encode-may-fail`; its `sources` and `refused`
    wait for the Go case printer.
+
+   *Amendment of 2026-11-16: a derived number is read by a method of the value.* The rebuild of a printed Go codec
+   read a derived length of one byte string always there inline, as the encode derives it. A length of gated content,
+   a length several byte strings share, and an encoded length cannot be one Go expression, and spelling each in every
+   reader would repeat the encode's derivation in each. The codec's package now gives each number its encode derives
+   into a field a method of the value, `Wire{Field}()` (`go_source::wire_method`), which reads the elements the value
+   presents as the encode reads them off a source: the first measure always there; where every measure may be
+   absent, the first one there, and where none is, what the value states, zero, or, for a length gated beside its
+   content, the optional type of the number, absent, as the template's value held it. A value whose measures
+   disagree has no frame, and the method answers its first measure. The method is not of the field's own name: a
+   length the value states while its content is absent is presented by that name, as what the value states, and
+   the source does not present a derived number. `GoPrinted::read` reads every derived number by it, and an
+   algorithm over a collection of printed elements reads each field through the element's `GoPrinted`
+   (`ForgeCompileOptions::element_type_go_printed`), so a gated byte string or text of an element is read as the
+   optional slice or string, as a procedure reads one. A number that counts a body handed a flag input of the
+   codec's own has no method, as the value does not hold the input; no document reads one.
+
+   *The fourth Go landing, 2026-11-16:* a body of a codec the Go backend prints, handed each flag input it takes and
+   does not say from a carrier or an input of the codec's own, and its encoded length. The decision was how a
+   source presents a body: as the body codec's value, or as its source interface. A value of the codec presents
+   its elements by methods on a pointer, so a body held as a value is a source of its codec only through its
+   address, and a constructor that takes the value cannot be handed what a source's method answers, which the
+   rebuild of a procedure hands it. The body is therefore presented, held and made as its codec's source interface
+   (`{Body}Source`), as the Rust, C++ and Python printers present any source of the body; the decode holds the
+   value it read by its address, and the zero value presents the body's zero value, so the zero value of a parent
+   still encodes. A copy of a value shares the body its interface points to, as any Go interface does. The body is
+   written by its codec's `EncodeSource`, the carrier a flag of which it is handed read as the encode writes it.
+   The runtime gains `codec.CountingSink`, a sink that counts and keeps nothing (ADR 0058 §3): a length that counts
+   a body's frame is the count of the body's encode over it, and a body whose encode can refuse is encoded over it
+   before the first byte, which returns its refusal while the caller's sink is as it was. A body counted for a
+   length is handed the carriers as the source presents them, before the encode folds a flag it derives into them,
+   so a body whose length the encode derives and which is handed a flag the encode derives stays unlowered, with a
+   body handed an input its parent binds nothing to.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
