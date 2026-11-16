@@ -624,7 +624,20 @@ BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 # machine that has one. `a-gate-in-an-image-says-so-everywhere` in the
 # self-test holds the three together: the file exists, an edit of it selects
 # the gate, and the unit asks for docker.
+#
+# The image carries no Rust. No gate installs a toolchain (the runner's "The
+# Rust release the gates run on"), and an image that installed one would build
+# the gate's generator with a compiler the unit's key does not name. The runner
+# mounts the toolchain it selected, read-only, where the runner inside looks
+# for a declared release, and names that release with `--rust`.
+# `a-gate-image-builds-on-the-selected-rust` holds both halves: no Containerfile
+# line installs Rust (`IMAGE_INSTALLS_RUST`), and `gate_in_container` mounts
+# the selected toolchain and passes its release in.
 CONTAINER_NEED = "docker"
+IMAGE_INSTALLS_RUST = re.compile(
+    r"\brustup\b|sh\.rustup\.rs|static\.rust-lang\.org|\bcargo\s+install\b"
+    r"|\brustc\b|\bcargo\b")
+CONTAINER_RUNNER_MARKS = ('--rust "$release"', '.local/rust/$release:ro')
 
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
@@ -5234,6 +5247,40 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "container: no gate runs in an image, so this case read nothing; "
             "cpp-interface-standard does")
+
+    # a-gate-image-builds-on-the-selected-rust. No image installs Rust: a
+    # toolchain installed in the image is no release the unit's key names. The
+    # runner hands its own selection in instead, mounted read-only where the
+    # runner inside looks, with the release as `--rust`.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        containerfile = spec.get("container")
+        if not isinstance(containerfile, str) \
+                or not (repo_root / containerfile).is_file():
+            continue
+        for line in script_code(repo_root / containerfile).splitlines():
+            if IMAGE_INSTALLS_RUST.search(line):
+                failures.append(
+                    f"container: {containerfile} (the image of {slug}) "
+                    f"installs or runs Rust ({line.strip()[:70]!r}); the "
+                    f"runner mounts the release it selected, and an image's "
+                    f"own would be a compiler the unit's key does not name")
+                break
+    runner_file = repo_root / "scripts" / "gate"
+    runner_text = script_code(runner_file) if runner_file.is_file() else ""
+    in_container = re.search(r"^gate_in_container\(\)\s*\{\n(.*?)^\}",
+                             runner_text, re.M | re.S)
+    if in_container is None:
+        failures.append(
+            "container: scripts/gate defines no `gate_in_container`, so no gate "
+            "in an image can run, and this case reads nothing")
+    else:
+        for mark in CONTAINER_RUNNER_MARKS:
+            if mark not in in_container.group(1):
+                failures.append(
+                    f"container: `gate_in_container` in scripts/gate no longer "
+                    f"holds {mark!r}: the gate in the image would not run on "
+                    f"the Rust this run selected")
 
     # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
     # the release `scripts/install_emsdk.sh` pins, and the hosted lanes name
