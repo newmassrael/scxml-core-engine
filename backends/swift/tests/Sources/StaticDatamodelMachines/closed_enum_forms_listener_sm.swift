@@ -132,6 +132,7 @@ public final class ClosedEnumFormsListenerPolicy: InvocablePolicy {
     }
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

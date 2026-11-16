@@ -559,27 +559,27 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `offered` datamodel variable, published (`sce:direction="out"`).
-    var vOffered: [UInt32] = []
+    var vOffered: [UInt32]
     /// W3C SCXML 5.2: the `request` datamodel variable.
-    var vRequest: String = ""
+    var vRequest: String
     /// W3C SCXML 5.2: the `prompt` datamodel variable.
-    var vPrompt: String = ""
+    var vPrompt: String
     /// W3C SCXML 5.2: the `said` datamodel variable.
-    var vSaid: String = ""
+    var vSaid: String
     /// W3C SCXML 5.2: the `offered_ok` datamodel variable.
-    var vOfferedOk: Bool = false
+    var vOfferedOk: Bool
     /// W3C SCXML 5.2: the `refused` datamodel variable.
-    var vRefused: StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord(code: StaticModelHarnessHarnessCodeEnum.notJson, path: "")
+    var vRefused: StaticModelHarnessRefusalRecord
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: [StaticModelHarnessRefusalRecord] = []
+    var vRefusals: [StaticModelHarnessRefusalRecord]
     /// W3C SCXML 5.2: the `attempts` datamodel variable, published (`sce:direction="out"`).
-    var vAttempts: UInt32 = 0
+    var vAttempts: UInt32
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `answer` datamodel variable, published (`sce:direction="out"`).
-    var vAnswer: StaticModelHarnessAnswerRecord? = nil
+    var vAnswer: StaticModelHarnessAnswerRecord?
     /// W3C SCXML 5.2: the `why` datamodel variable, published (`sce:direction="out"`).
-    var vWhy: StaticModelHarnessLiftRefusalRecord? = nil
+    var vWhy: StaticModelHarnessLiftRefusalRecord?
 
     /// Reports what the published `offered` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -619,30 +619,89 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
         public var vOutcome: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRequest {
-            vRequest = value
+        let vOffered: [UInt32] = []
+        let vRequest: String
+        if let handed = params.vRequest {
+            vRequest = handed
+        } else {
+            vRequest = ""
         }
-        if let value = params.vPrompt {
-            vPrompt = value
+        let vPrompt: String
+        if let handed = params.vPrompt {
+            vPrompt = handed
+        } else {
+            vPrompt = ""
         }
-        if let value = params.vSaid {
-            vSaid = value
+        let vSaid: String
+        if let handed = params.vSaid {
+            vSaid = handed
+        } else {
+            vSaid = ""
         }
-        if let value = params.vOfferedOk {
-            vOfferedOk = value
+        let vOfferedOk: Bool
+        if let handed = params.vOfferedOk {
+            vOfferedOk = handed
+        } else {
+            vOfferedOk = false
         }
-        if let value = params.vAttempts {
-            vAttempts = value
+        let vRefused: StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord(code: StaticModelHarnessHarnessCodeEnum.notJson, path: "")
+        let vRefusals: [StaticModelHarnessRefusalRecord] = []
+        let vAttempts: UInt32
+        if let handed = params.vAttempts {
+            vAttempts = handed
+        } else {
+            vAttempts = 0
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
+        let vAnswer: StaticModelHarnessAnswerRecord? = nil
+        let vWhy: StaticModelHarnessLiftRefusalRecord? = nil
+        self.vOffered = vOffered
+        self.vRequest = vRequest
+        self.vPrompt = vPrompt
+        self.vSaid = vSaid
+        self.vOfferedOk = vOfferedOk
+        self.vRefused = vRefused
+        self.vRefusals = vRefusals
+        self.vAttempts = vAttempts
+        self.vOutcome = vOutcome
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
     }
 
     public init() {
+        let vOffered: [UInt32] = []
+        let vRequest: String = ""
+        let vPrompt: String = ""
+        let vSaid: String = ""
+        let vOfferedOk: Bool = false
+        let vRefused: StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord(code: StaticModelHarnessHarnessCodeEnum.notJson, path: "")
+        let vRefusals: [StaticModelHarnessRefusalRecord] = []
+        let vAttempts: UInt32 = 0
+        let vOutcome: String = ""
+        let vAnswer: StaticModelHarnessAnswerRecord? = nil
+        let vWhy: StaticModelHarnessLiftRefusalRecord? = nil
+        self.vOffered = vOffered
+        self.vRequest = vRequest
+        self.vPrompt = vPrompt
+        self.vSaid = vSaid
+        self.vOfferedOk = vOfferedOk
+        self.vRefused = vRefused
+        self.vRefusals = vRefusals
+        self.vAttempts = vAttempts
+        self.vOutcome = vOutcome
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
+
         sessionID = drawSessionID()
     }
 

@@ -324,22 +324,30 @@ class StaticHostModelStateMachine(
         var answerTokens: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.prompt?.let { vPrompt = it }
-        params.maxTokens?.let { vMaxTokens = it }
-        params.temperatureMilli?.let { vTemperatureMilli = it }
-        params.calls?.let { vCalls = it }
-        params.outcome?.let { vOutcome = it }
-        params.finish?.let { vFinish = it }
-        params.constrained?.let { vConstrained = it }
-        params.answeredBy?.let { vAnsweredBy = it }
-        params.promptTokens?.let { vPromptTokens = it }
-        params.answerTokens?.let { vAnswerTokens = it }
+        vPrompt = params.prompt ?: ("")
+        vMaxTokens = params.maxTokens ?: (0.toUInt())
+        vTemperatureMilli = params.temperatureMilli ?: (0.toUShort())
+        vCalls = params.calls ?: (0.toUInt())
+        vOutcome = params.outcome ?: ("")
+        vFinish = params.finish ?: ("")
+        vConstrained = params.constrained ?: (false)
+        vAnsweredBy = params.answeredBy ?: ("")
+        vPromptTokens = params.promptTokens ?: (0.toUInt())
+        vAnswerTokens = params.answerTokens ?: (0.toUInt())
+        vAnswer = null
+        vWhy = null
     }
 
     /** The published variables as one immutable value, in declaration order. */

@@ -110,11 +110,11 @@ public final class StaticWrappingCounterPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `ticks` datamodel variable, published (`sce:direction="out"`).
-    var vTicks: UInt8 = 254
+    var vTicks: UInt8
     /// W3C SCXML 5.2: the `fuel` datamodel variable, published (`sce:direction="out"`).
-    var vFuel: UInt8 = 2
+    var vFuel: UInt8
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `ticks` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -139,21 +139,42 @@ public final class StaticWrappingCounterPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTicks {
-            vTicks = value
+        let vTicks: UInt8
+        if let handed = params.vTicks {
+            vTicks = handed
+        } else {
+            vTicks = 254
         }
-        if let value = params.vFuel {
-            vFuel = value
+        let vFuel: UInt8
+        if let handed = params.vFuel {
+            vFuel = handed
+        } else {
+            vFuel = 2
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vTicks = vTicks
+        self.vFuel = vFuel
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vTicks: UInt8 = 254
+        let vFuel: UInt8 = 2
+        let vRefusals: UInt32 = 0
+        self.vTicks = vTicks
+        self.vFuel = vFuel
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

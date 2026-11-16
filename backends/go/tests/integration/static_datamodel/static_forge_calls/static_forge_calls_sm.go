@@ -773,9 +773,10 @@ type StaticForgeCallsPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticForgeCallsPolicy creates a new policy with default values.
@@ -935,45 +936,99 @@ type StaticForgeCallsInvokeParams struct {
 	VKnown *bool
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticForgeCallsPolicy) AcceptParams(params StaticForgeCallsInvokeParams) {
-	if params.VGear != nil {
-		p.vGear = *params.VGear
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticForgeCallsPolicy) AcceptParams(handed StaticForgeCallsInvokeParams) {
+	var vGear uint8
+	if handed.VGear != nil {
+		vGear = *handed.VGear
+	} else {
+		vGear = 0
 	}
-	if params.VRatio != nil {
-		p.vRatio = *params.VRatio
+	var vRatio int32
+	if handed.VRatio != nil {
+		vRatio = *handed.VRatio
+	} else {
+		vRatio = 0
 	}
-	if params.VCode != nil {
-		p.vCode = *params.VCode
+	var vCode int32
+	if handed.VCode != nil {
+		vCode = *handed.VCode
+	} else {
+		vCode = 0
 	}
-	if params.VMisses != nil {
-		p.vMisses = *params.VMisses
+	var vMisses uint32
+	if handed.VMisses != nil {
+		vMisses = *handed.VMisses
+	} else {
+		vMisses = 0
 	}
-	if params.VLevel != nil {
-		p.vLevel = *params.VLevel
+	var vLevel int32
+	if handed.VLevel != nil {
+		vLevel = *handed.VLevel
+	} else {
+		vLevel = 0
 	}
-	if params.VOffset != nil {
-		p.vOffset = *params.VOffset
+	var vOffset int32
+	if handed.VOffset != nil {
+		vOffset = *handed.VOffset
+	} else {
+		vOffset = 0
 	}
-	if params.VAccepted != nil {
-		p.vAccepted = *params.VAccepted
+	var vAccepted bool
+	if handed.VAccepted != nil {
+		vAccepted = *handed.VAccepted
+	} else {
+		vAccepted = false
 	}
-	if params.VRpm != nil {
-		p.vRpm = *params.VRpm
+	var vRpm uint16
+	if handed.VRpm != nil {
+		vRpm = *handed.VRpm
+	} else {
+		vRpm = 0
 	}
-	if params.VLimit != nil {
-		p.vLimit = *params.VLimit
+	var vLimit float64
+	if handed.VLimit != nil {
+		vLimit = *handed.VLimit
+	} else {
+		vLimit = 0.0
 	}
-	if params.VHighs != nil {
-		p.vHighs = *params.VHighs
+	var vHighs uint32
+	if handed.VHighs != nil {
+		vHighs = *handed.VHighs
+	} else {
+		vHighs = 0
 	}
-	if params.VCustomer != nil {
-		p.vCustomer = *params.VCustomer
+	var vPhase StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnumOpen
+	var vWeight StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnumLight
+	var vCustomer string
+	if handed.VCustomer != nil {
+		vCustomer = *handed.VCustomer
+	} else {
+		vCustomer = "anna"
 	}
-	if params.VKnown != nil {
-		p.vKnown = *params.VKnown
+	var vKnown bool
+	if handed.VKnown != nil {
+		vKnown = *handed.VKnown
+	} else {
+		vKnown = false
 	}
+	p.vGear = vGear
+	p.vRatio = vRatio
+	p.vCode = vCode
+	p.vMisses = vMisses
+	p.vLevel = vLevel
+	p.vOffset = vOffset
+	p.vAccepted = vAccepted
+	p.vRpm = vRpm
+	p.vLimit = vLimit
+	p.vHighs = vHighs
+	p.vPhase = vPhase
+	p.vWeight = vWeight
+	p.vCustomer = vCustomer
+	p.vKnown = vKnown
 }
 
 

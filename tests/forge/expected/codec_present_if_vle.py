@@ -9,7 +9,31 @@ from __future__ import annotations
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecPresentIfVleSource(Protocol):
+    """The elements a value of :class:`CodecPresentIfVle` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def flags(self) -> int: ...
+
+    @property
+    def optional_id(self) -> Optional[int]: ...
+
+
+def encode_source(src: CodecPresentIfVleSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecPresentIfVle` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _c_flags = src.flags
+    _c_flags = (_c_flags & ~0x1) | (0x1 if src.optional_id is not None else 0)
+    w.write_u8(_c_flags & 0xFF)
+    if src.optional_id is not None:
+        w.write_vle_u64(src.optional_id)
 
 
 @dataclass
@@ -77,17 +101,7 @@ class CodecPresentIfVle:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.flags & 0xFF)
-        if self.optional_id is not None:
-            w.write_vle_u64(int(self.optional_id))
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

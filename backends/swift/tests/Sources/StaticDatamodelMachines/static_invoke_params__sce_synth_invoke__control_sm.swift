@@ -106,9 +106,9 @@ public final class StaticInvokeParamsSceSynthInvokeControlPolicy: InvocablePolic
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `start` datamodel variable.
-    var vStart: UInt32 = 0
+    var vStart: UInt32
     /// W3C SCXML 5.2: the `enabled` datamodel variable.
-    var vEnabled: Bool = false
+    var vEnabled: Bool
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -120,18 +120,33 @@ public final class StaticInvokeParamsSceSynthInvokeControlPolicy: InvocablePolic
         public var vEnabled: Bool? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vStart {
-            vStart = value
+        let vStart: UInt32
+        if let handed = params.vStart {
+            vStart = handed
+        } else {
+            vStart = 0
         }
-        if let value = params.vEnabled {
-            vEnabled = value
+        let vEnabled: Bool
+        if let handed = params.vEnabled {
+            vEnabled = handed
+        } else {
+            vEnabled = false
         }
+        self.vStart = vStart
+        self.vEnabled = vEnabled
     }
 
     public init() {
+        let vStart: UInt32 = 0
+        let vEnabled: Bool = false
+        self.vStart = vStart
+        self.vEnabled = vEnabled
+
         sessionID = drawSessionID()
     }
 

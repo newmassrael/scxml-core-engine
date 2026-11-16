@@ -108,11 +108,11 @@ public final class StaticSendTypePolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `kind` datamodel variable.
-    var vKind: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+    var vKind: String
     /// W3C SCXML 5.2: the `landed` datamodel variable, published (`sce:direction="out"`).
-    var vLanded: UInt32 = 0
+    var vLanded: UInt32
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
-    var vRefused: UInt32 = 0
+    var vRefused: UInt32
 
     /// Reports what the published `landed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -133,21 +133,42 @@ public final class StaticSendTypePolicy: InvocablePolicy {
         public var vRefused: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vKind {
-            vKind = value
+        let vKind: String
+        if let handed = params.vKind {
+            vKind = handed
+        } else {
+            vKind = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
         }
-        if let value = params.vLanded {
-            vLanded = value
+        let vLanded: UInt32
+        if let handed = params.vLanded {
+            vLanded = handed
+        } else {
+            vLanded = 0
         }
-        if let value = params.vRefused {
-            vRefused = value
+        let vRefused: UInt32
+        if let handed = params.vRefused {
+            vRefused = handed
+        } else {
+            vRefused = 0
         }
+        self.vKind = vKind
+        self.vLanded = vLanded
+        self.vRefused = vRefused
     }
 
     public init() {
+        let vKind: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+        let vLanded: UInt32 = 0
+        let vRefused: UInt32 = 0
+        self.vKind = vKind
+        self.vLanded = vLanded
+        self.vRefused = vRefused
+
         sessionID = drawSessionID()
     }
 

@@ -117,6 +117,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

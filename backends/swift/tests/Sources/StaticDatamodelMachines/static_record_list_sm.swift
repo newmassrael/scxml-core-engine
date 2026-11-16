@@ -168,17 +168,17 @@ public final class StaticRecordListPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `draft` datamodel variable, published (`sce:direction="out"`).
-    var vDraft: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+    var vDraft: StaticRecordListDayRecord
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+    var vLast: StaticRecordListDayRecord
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
-    var vDays: [StaticRecordListDayRecord] = []
+    var vDays: [StaticRecordListDayRecord]
     /// W3C SCXML 5.2: the `copies` datamodel variable, published (`sce:direction="out"`).
-    var vCopies: [StaticRecordListDayRecord] = []
+    var vCopies: [StaticRecordListDayRecord]
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
-    var vTotal: UInt32 = 0
+    var vTotal: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `draft` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -214,18 +214,49 @@ public final class StaticRecordListPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTotal {
-            vTotal = value
+        let vDraft: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+        let vLast: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+        let vDays: [StaticRecordListDayRecord] = []
+        let vCopies: [StaticRecordListDayRecord] = []
+        let vTotal: UInt32
+        if let handed = params.vTotal {
+            vTotal = handed
+        } else {
+            vTotal = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vDraft = vDraft
+        self.vLast = vLast
+        self.vDays = vDays
+        self.vCopies = vCopies
+        self.vTotal = vTotal
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vDraft: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+        let vLast: StaticRecordListDayRecord = StaticRecordListDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+        let vDays: [StaticRecordListDayRecord] = []
+        let vCopies: [StaticRecordListDayRecord] = []
+        let vTotal: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vDraft = vDraft
+        self.vLast = vLast
+        self.vDays = vDays
+        self.vCopies = vCopies
+        self.vTotal = vTotal
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

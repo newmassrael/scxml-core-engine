@@ -153,15 +153,15 @@ public final class StaticHostClockPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `utc_ms` datamodel variable, published (`sce:direction="out"`).
-    var vUtcMs: Int64 = 0
+    var vUtcMs: Int64
     /// W3C SCXML 5.2: the `monotonic_ms` datamodel variable, published (`sce:direction="out"`).
-    var vMonotonicMs: Int64 = 0
+    var vMonotonicMs: Int64
     /// W3C SCXML 5.2: the `zone_id` datamodel variable, published (`sce:direction="out"`).
-    var vZoneId: String = ""
+    var vZoneId: String
     /// W3C SCXML 5.2: the `utc_offset_s` datamodel variable, published (`sce:direction="out"`).
-    var vUtcOffsetS: Int32 = 0
+    var vUtcOffsetS: Int32
 
     /// Reports what the published `outcome` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -196,27 +196,60 @@ public final class StaticHostClockPolicy: InvocablePolicy {
         public var vUtcOffsetS: Int32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
-        if let value = params.vUtcMs {
-            vUtcMs = value
+        let vUtcMs: Int64
+        if let handed = params.vUtcMs {
+            vUtcMs = handed
+        } else {
+            vUtcMs = 0
         }
-        if let value = params.vMonotonicMs {
-            vMonotonicMs = value
+        let vMonotonicMs: Int64
+        if let handed = params.vMonotonicMs {
+            vMonotonicMs = handed
+        } else {
+            vMonotonicMs = 0
         }
-        if let value = params.vZoneId {
-            vZoneId = value
+        let vZoneId: String
+        if let handed = params.vZoneId {
+            vZoneId = handed
+        } else {
+            vZoneId = ""
         }
-        if let value = params.vUtcOffsetS {
-            vUtcOffsetS = value
+        let vUtcOffsetS: Int32
+        if let handed = params.vUtcOffsetS {
+            vUtcOffsetS = handed
+        } else {
+            vUtcOffsetS = 0
         }
+        self.vOutcome = vOutcome
+        self.vUtcMs = vUtcMs
+        self.vMonotonicMs = vMonotonicMs
+        self.vZoneId = vZoneId
+        self.vUtcOffsetS = vUtcOffsetS
     }
 
     public init() {
+        let vOutcome: String = ""
+        let vUtcMs: Int64 = 0
+        let vMonotonicMs: Int64 = 0
+        let vZoneId: String = ""
+        let vUtcOffsetS: Int32 = 0
+        self.vOutcome = vOutcome
+        self.vUtcMs = vUtcMs
+        self.vMonotonicMs = vMonotonicMs
+        self.vZoneId = vZoneId
+        self.vUtcOffsetS = vUtcOffsetS
+
         sessionID = drawSessionID()
     }
 

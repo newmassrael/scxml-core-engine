@@ -554,45 +554,45 @@ public final class StaticUnionPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `built` datamodel variable, published (`sce:direction="out"`).
-    var vBuilt: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.rect(StaticUnionRectRecord(width: 1, height: 2))
+    var vBuilt: StaticUnionUnionShapeUnion
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
-    var vKept: StaticUnionUnionShapeUnion? = nil
+    var vKept: StaticUnionUnionShapeUnion?
     /// W3C SCXML 5.2: the `last_kind` datamodel variable, published (`sce:direction="out"`).
-    var vLastKind: StaticUnionKindEnum = StaticUnionKindEnum.dot
+    var vLastKind: StaticUnionKindEnum
     /// W3C SCXML 5.2: the `radius` datamodel variable, published (`sce:direction="out"`).
-    var vRadius: UInt16 = 0
+    var vRadius: UInt16
     /// W3C SCXML 5.2: the `width` datamodel variable, published (`sce:direction="out"`).
-    var vWidth: UInt16 = 0
+    var vWidth: UInt16
     /// W3C SCXML 5.2: the `height` datamodel variable, published (`sce:direction="out"`).
-    var vHeight: UInt16 = 0
+    var vHeight: UInt16
     /// W3C SCXML 5.2: the `labels` datamodel variable, published (`sce:direction="out"`).
-    var vLabels: UInt32 = 0
+    var vLabels: UInt32
     /// W3C SCXML 5.2: the `points` datamodel variable, published (`sce:direction="out"`).
-    var vPoints: UInt32 = 0
+    var vPoints: UInt32
     /// W3C SCXML 5.2: the `dots` datamodel variable, published (`sce:direction="out"`).
-    var vDots: UInt32 = 0
+    var vDots: UInt32
     /// W3C SCXML 5.2: the `many_radius` datamodel variable, published (`sce:direction="out"`).
-    var vManyRadius: UInt16 = 0
+    var vManyRadius: UInt16
     /// W3C SCXML 5.2: the `many_width` datamodel variable, published (`sce:direction="out"`).
-    var vManyWidth: UInt16 = 0
+    var vManyWidth: UInt16
     /// W3C SCXML 5.2: the `many_shapes` datamodel variable, published (`sce:direction="out"`).
-    var vManyShapes: UInt32 = 0
+    var vManyShapes: UInt32
     /// W3C SCXML 5.2: the `maybe_width` datamodel variable, published (`sce:direction="out"`).
-    var vMaybeWidth: UInt16 = 0
+    var vMaybeWidth: UInt16
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
     /// W3C SCXML 5.2: the `lifted` datamodel variable, published (`sce:direction="out"`).
-    var vLifted: StaticUnionUnionShapeUnion? = nil
+    var vLifted: StaticUnionUnionShapeUnion?
     /// W3C SCXML 5.2: the `lift_why` datamodel variable, published (`sce:direction="out"`).
-    var vLiftWhy: StaticUnionLiftRefusalRecord? = nil
+    var vLiftWhy: StaticUnionLiftRefusalRecord?
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.dot
+    var vPicked: StaticUnionUnionShapeUnion
     /// W3C SCXML 5.2: the `picked_maybe` datamodel variable, published (`sce:direction="out"`).
-    var vPickedMaybe: StaticUnionUnionShapeUnion? = nil
+    var vPickedMaybe: StaticUnionUnionShapeUnion?
     /// W3C SCXML 5.2: the `picks` datamodel variable, published (`sce:direction="out"`).
-    var vPicks: UInt32 = 0
+    var vPicks: UInt32
     /// W3C SCXML 5.2: the `picked_width` datamodel variable, published (`sce:direction="out"`).
-    var vPickedWidth: UInt16 = 0
+    var vPickedWidth: UInt16
 
     /// Reports what the published `built` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -695,51 +695,160 @@ public final class StaticUnionPolicy: InvocablePolicy {
         public var vPickedWidth: UInt16? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRadius {
-            vRadius = value
+        let vBuilt: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.rect(StaticUnionRectRecord(width: 1, height: 2))
+        let vKept: StaticUnionUnionShapeUnion? = nil
+        let vLastKind: StaticUnionKindEnum = StaticUnionKindEnum.dot
+        let vRadius: UInt16
+        if let handed = params.vRadius {
+            vRadius = handed
+        } else {
+            vRadius = 0
         }
-        if let value = params.vWidth {
-            vWidth = value
+        let vWidth: UInt16
+        if let handed = params.vWidth {
+            vWidth = handed
+        } else {
+            vWidth = 0
         }
-        if let value = params.vHeight {
-            vHeight = value
+        let vHeight: UInt16
+        if let handed = params.vHeight {
+            vHeight = handed
+        } else {
+            vHeight = 0
         }
-        if let value = params.vLabels {
-            vLabels = value
+        let vLabels: UInt32
+        if let handed = params.vLabels {
+            vLabels = handed
+        } else {
+            vLabels = 0
         }
-        if let value = params.vPoints {
-            vPoints = value
+        let vPoints: UInt32
+        if let handed = params.vPoints {
+            vPoints = handed
+        } else {
+            vPoints = 0
         }
-        if let value = params.vDots {
-            vDots = value
+        let vDots: UInt32
+        if let handed = params.vDots {
+            vDots = handed
+        } else {
+            vDots = 0
         }
-        if let value = params.vManyRadius {
-            vManyRadius = value
+        let vManyRadius: UInt16
+        if let handed = params.vManyRadius {
+            vManyRadius = handed
+        } else {
+            vManyRadius = 0
         }
-        if let value = params.vManyWidth {
-            vManyWidth = value
+        let vManyWidth: UInt16
+        if let handed = params.vManyWidth {
+            vManyWidth = handed
+        } else {
+            vManyWidth = 0
         }
-        if let value = params.vManyShapes {
-            vManyShapes = value
+        let vManyShapes: UInt32
+        if let handed = params.vManyShapes {
+            vManyShapes = handed
+        } else {
+            vManyShapes = 0
         }
-        if let value = params.vMaybeWidth {
-            vMaybeWidth = value
+        let vMaybeWidth: UInt16
+        if let handed = params.vMaybeWidth {
+            vMaybeWidth = handed
+        } else {
+            vMaybeWidth = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
-        if let value = params.vPicks {
-            vPicks = value
+        let vLifted: StaticUnionUnionShapeUnion? = nil
+        let vLiftWhy: StaticUnionLiftRefusalRecord? = nil
+        let vPicked: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.dot
+        let vPickedMaybe: StaticUnionUnionShapeUnion? = nil
+        let vPicks: UInt32
+        if let handed = params.vPicks {
+            vPicks = handed
+        } else {
+            vPicks = 0
         }
-        if let value = params.vPickedWidth {
-            vPickedWidth = value
+        let vPickedWidth: UInt16
+        if let handed = params.vPickedWidth {
+            vPickedWidth = handed
+        } else {
+            vPickedWidth = 0
         }
+        self.vBuilt = vBuilt
+        self.vKept = vKept
+        self.vLastKind = vLastKind
+        self.vRadius = vRadius
+        self.vWidth = vWidth
+        self.vHeight = vHeight
+        self.vLabels = vLabels
+        self.vPoints = vPoints
+        self.vDots = vDots
+        self.vManyRadius = vManyRadius
+        self.vManyWidth = vManyWidth
+        self.vManyShapes = vManyShapes
+        self.vMaybeWidth = vMaybeWidth
+        self.vRefusals = vRefusals
+        self.vLifted = vLifted
+        self.vLiftWhy = vLiftWhy
+        self.vPicked = vPicked
+        self.vPickedMaybe = vPickedMaybe
+        self.vPicks = vPicks
+        self.vPickedWidth = vPickedWidth
     }
 
     public init() {
+        let vBuilt: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.rect(StaticUnionRectRecord(width: 1, height: 2))
+        let vKept: StaticUnionUnionShapeUnion? = nil
+        let vLastKind: StaticUnionKindEnum = StaticUnionKindEnum.dot
+        let vRadius: UInt16 = 0
+        let vWidth: UInt16 = 0
+        let vHeight: UInt16 = 0
+        let vLabels: UInt32 = 0
+        let vPoints: UInt32 = 0
+        let vDots: UInt32 = 0
+        let vManyRadius: UInt16 = 0
+        let vManyWidth: UInt16 = 0
+        let vManyShapes: UInt32 = 0
+        let vMaybeWidth: UInt16 = 0
+        let vRefusals: UInt32 = 0
+        let vLifted: StaticUnionUnionShapeUnion? = nil
+        let vLiftWhy: StaticUnionLiftRefusalRecord? = nil
+        let vPicked: StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnion.dot
+        let vPickedMaybe: StaticUnionUnionShapeUnion? = nil
+        let vPicks: UInt32 = 0
+        let vPickedWidth: UInt16 = 0
+        self.vBuilt = vBuilt
+        self.vKept = vKept
+        self.vLastKind = vLastKind
+        self.vRadius = vRadius
+        self.vWidth = vWidth
+        self.vHeight = vHeight
+        self.vLabels = vLabels
+        self.vPoints = vPoints
+        self.vDots = vDots
+        self.vManyRadius = vManyRadius
+        self.vManyWidth = vManyWidth
+        self.vManyShapes = vManyShapes
+        self.vMaybeWidth = vMaybeWidth
+        self.vRefusals = vRefusals
+        self.vLifted = vLifted
+        self.vLiftWhy = vLiftWhy
+        self.vPicked = vPicked
+        self.vPickedMaybe = vPickedMaybe
+        self.vPicks = vPicks
+        self.vPickedWidth = vPickedWidth
+
         sessionID = drawSessionID()
     }
 

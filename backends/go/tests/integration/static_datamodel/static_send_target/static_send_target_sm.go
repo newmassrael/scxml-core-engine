@@ -417,9 +417,10 @@ type StaticSendTargetPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticSendTargetPolicy creates a new policy with default values.
@@ -476,18 +477,32 @@ type StaticSendTargetInvokeParams struct {
 	VRefused *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticSendTargetPolicy) AcceptParams(params StaticSendTargetInvokeParams) {
-	if params.VRoute != nil {
-		p.vRoute = *params.VRoute
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticSendTargetPolicy) AcceptParams(handed StaticSendTargetInvokeParams) {
+	var vRoute string
+	if handed.VRoute != nil {
+		vRoute = *handed.VRoute
+	} else {
+		vRoute = "#_internal"
 	}
-	if params.VLanded != nil {
-		p.vLanded = *params.VLanded
+	var vLanded uint32
+	if handed.VLanded != nil {
+		vLanded = *handed.VLanded
+	} else {
+		vLanded = 0
 	}
-	if params.VRefused != nil {
-		p.vRefused = *params.VRefused
+	var vRefused uint32
+	if handed.VRefused != nil {
+		vRefused = *handed.VRefused
+	} else {
+		vRefused = 0
 	}
+	p.vRoute = vRoute
+	p.vLanded = vLanded
+	p.vRefused = vRefused
 }
 
 

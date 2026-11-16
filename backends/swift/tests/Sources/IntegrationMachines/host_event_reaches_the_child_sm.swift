@@ -124,6 +124,7 @@ public final class HostEventReachesTheChildPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

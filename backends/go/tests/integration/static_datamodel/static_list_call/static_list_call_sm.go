@@ -557,9 +557,10 @@ type StaticListCallPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticListCallPolicy creates a new policy with default values.
@@ -638,15 +639,31 @@ type StaticListCallInvokeParams struct {
 	VHigh *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticListCallPolicy) AcceptParams(params StaticListCallInvokeParams) {
-	if params.VRepeats != nil {
-		p.vRepeats = *params.VRepeats
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticListCallPolicy) AcceptParams(handed StaticListCallInvokeParams) {
+	var vEntries []StaticListCallEntryRecord = nil
+	var vIds []uint32 = nil
+	var vLine StaticListCallEntryRecord = StaticListCallEntryRecord{id: 0, amount: 0}
+	var vRepeats uint32
+	if handed.VRepeats != nil {
+		vRepeats = *handed.VRepeats
+	} else {
+		vRepeats = 0
 	}
-	if params.VHigh != nil {
-		p.vHigh = *params.VHigh
+	var vHigh uint32
+	if handed.VHigh != nil {
+		vHigh = *handed.VHigh
+	} else {
+		vHigh = 0
 	}
+	p.vEntries = vEntries
+	p.vIds = vIds
+	p.vLine = vLine
+	p.vRepeats = vRepeats
+	p.vHigh = vHigh
 }
 
 

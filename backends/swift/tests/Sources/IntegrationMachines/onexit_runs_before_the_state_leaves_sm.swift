@@ -138,6 +138,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

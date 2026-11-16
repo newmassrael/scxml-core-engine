@@ -334,10 +334,13 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -345,58 +348,54 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'selfInInner' with expr
-        try {
-            val initResult_selfInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "selfInInner", initResult_selfInInner)
-        } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInInner'> expr failed to evaluate")
+        // §scxml-6.4: 'selfInInner' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "selfInInner", OnexitRunsBeforeTheStateLeavesEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'selfInInner' with expr
+            try {
+                engine.setVariable(sid, "selfInInner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInInner'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'parentInInner' with expr
-        try {
-            val initResult_parentInInner = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "parentInInner", initResult_parentInInner)
-        } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='parentInInner'> expr failed to evaluate")
+        // §scxml-6.4: 'parentInInner' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "parentInInner", OnexitRunsBeforeTheStateLeavesEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'parentInInner' with expr
+            try {
+                engine.setVariable(sid, "parentInInner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='parentInInner'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'selfInOuter' with expr
-        try {
-            val initResult_selfInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "selfInOuter", initResult_selfInOuter)
-        } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInOuter'> expr failed to evaluate")
+        // §scxml-6.4: 'selfInOuter' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "selfInOuter", OnexitRunsBeforeTheStateLeavesEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'selfInOuter' with expr
+            try {
+                engine.setVariable(sid, "selfInOuter", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInOuter'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'childInOuter' with expr
-        try {
-            val initResult_childInOuter = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "childInOuter", initResult_childInOuter)
-        } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='childInOuter'> expr failed to evaluate")
+        // §scxml-6.4: 'childInOuter' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "childInOuter", OnexitRunsBeforeTheStateLeavesEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'childInOuter' with expr
+            try {
+                engine.setVariable(sid, "childInOuter", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='childInOuter'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'exits' with expr
-        try {
-            val initResult_exits = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "exits", initResult_exits)
-        } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='exits'> expr failed to evaluate")
+        // §scxml-6.4: 'exits' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "exits", OnexitRunsBeforeTheStateLeavesEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'exits' with expr
+            try {
+                engine.setVariable(sid, "exits", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='exits'> expr failed to evaluate")
+            }
         }
     }
 

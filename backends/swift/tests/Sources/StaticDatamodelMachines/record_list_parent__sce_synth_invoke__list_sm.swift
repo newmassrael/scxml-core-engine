@@ -835,129 +835,129 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
-    var vNode: UInt64 = 0
+    var vNode: UInt64
     /// W3C SCXML 5.2: the `journal` datamodel variable.
-    var vJournal: Bool = true
+    var vJournal: Bool
     /// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
-    var vClock: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vClock: RecordListParentSceSynthInvokeListHlcRecord
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
-    var vStamp: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vStamp: RecordListParentSceSynthInvokeListHlcRecord
     /// W3C SCXML 5.2: the `dot` datamodel variable.
-    var vDot: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vDot: RecordListParentSceSynthInvokeListHlcRecord
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
-    var vAdds: [RecordListParentSceSynthInvokeListEntryRecord] = []
+    var vAdds: [RecordListParentSceSynthInvokeListEntryRecord]
     /// W3C SCXML 5.2: the `one` datamodel variable.
-    var vOne: [RecordListParentSceSynthInvokeListEntryRecord] = []
+    var vOne: [RecordListParentSceSynthInvokeListEntryRecord]
     /// W3C SCXML 5.2: the `entry` datamodel variable.
-    var vEntry: RecordListParentSceSynthInvokeListEntryRecord = RecordListParentSceSynthInvokeListEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+    var vEntry: RecordListParentSceSynthInvokeListEntryRecord
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
-    var vValues: [RecordListParentSceSynthInvokeListValueRecord] = []
+    var vValues: [RecordListParentSceSynthInvokeListValueRecord]
     /// W3C SCXML 5.2: the `held` datamodel variable.
-    var vHeld: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vHeld: RecordListParentSceSynthInvokeListValueRecord
     /// W3C SCXML 5.2: the `shareId` datamodel variable.
-    var vShareId: UInt32 = 0
+    var vShareId: UInt32
     /// W3C SCXML 5.2: the `shareField` datamodel variable.
-    var vShareField: UInt16 = 0
+    var vShareField: UInt16
     /// W3C SCXML 5.2: the `wasLive` datamodel variable.
-    var vWasLive: Bool = false
+    var vWasLive: Bool
     /// W3C SCXML 5.2: the `present` datamodel variable.
-    var vPresent: Bool = false
+    var vPresent: Bool
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
     /// W3C SCXML 5.2: the `roomValues` datamodel variable.
-    var vRoomValues: UInt32 = 0
+    var vRoomValues: UInt32
     /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
-    var vFull: UInt32 = 0
+    var vFull: UInt32
     /// W3C SCXML 5.2: the `roster` datamodel variable.
-    var vRoster: [RecordListParentSceSynthInvokeListMemberRecord] = []
+    var vRoster: [RecordListParentSceSynthInvokeListMemberRecord]
     /// W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`).
-    var vDenied: UInt32 = 0
+    var vDenied: UInt32
     /// W3C SCXML 5.2: the `forbidden` datamodel variable.
-    var vForbidden: Bool = false
+    var vForbidden: Bool
     /// W3C SCXML 5.2: the `authorized` datamodel variable.
-    var vAuthorized: Bool = true
+    var vAuthorized: Bool
     /// W3C SCXML 5.2: the `announce` datamodel variable.
-    var vAnnounce: Bool = false
+    var vAnnounce: Bool
     /// W3C SCXML 5.2: the `announced` datamodel variable, published (`sce:direction="out"`).
-    var vAnnounced: UInt32 = 0
+    var vAnnounced: UInt32
     /// W3C SCXML 5.2: the `moved` datamodel variable.
-    var vMoved: [UInt64] = []
+    var vMoved: [UInt64]
     /// W3C SCXML 5.2: the `listed` datamodel variable.
-    var vListed: Bool = false
+    var vListed: Bool
     /// W3C SCXML 5.2: the `live` datamodel variable.
-    var vLive: [RecordListParentSceSynthInvokeListValueRecord] = []
+    var vLive: [RecordListParentSceSynthInvokeListValueRecord]
     /// W3C SCXML 5.2: the `ordinal` datamodel variable.
-    var vOrdinal: UInt32 = 0
+    var vOrdinal: UInt32
     /// W3C SCXML 5.2: the `empty` datamodel variable.
-    var vEmpty: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vEmpty: RecordListParentSceSynthInvokeListValueRecord
     /// W3C SCXML 5.2: the `staged` datamodel variable.
-    var vStaged: [RecordListParentSceSynthInvokeListStagedRecord] = []
+    var vStaged: [RecordListParentSceSynthInvokeListStagedRecord]
     /// W3C SCXML 5.2: the `staging` datamodel variable.
-    var vStaging: RecordListParentSceSynthInvokeListStagedRecord = RecordListParentSceSynthInvokeListStagedRecord(kind: 0, id: 0, field: 0, value: 0, text: "")
+    var vStaging: RecordListParentSceSynthInvokeListStagedRecord
     /// W3C SCXML 5.2: the `holding` datamodel variable.
-    var vHolding: Bool = false
+    var vHolding: Bool
     /// W3C SCXML 5.2: the `closingNow` datamodel variable.
-    var vClosingNow: Int64 = 0
+    var vClosingNow: Int64
     /// W3C SCXML 5.2: the `spoiled` datamodel variable.
-    var vSpoiled: Bool = false
+    var vSpoiled: Bool
     /// W3C SCXML 5.2: the `probing` datamodel variable.
-    var vProbing: Bool = false
+    var vProbing: Bool
     /// W3C SCXML 5.2: the `gone` datamodel variable.
-    var vGone: UInt32 = 0
+    var vGone: UInt32
     /// W3C SCXML 5.2: the `writes` datamodel variable.
-    var vWrites: UInt32 = 0
+    var vWrites: UInt32
     /// W3C SCXML 5.2: the `covered` datamodel variable.
-    var vCovered: Bool = false
+    var vCovered: Bool
     /// W3C SCXML 5.2: the `probe` datamodel variable.
-    var vProbe: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+    var vProbe: RecordListParentSceSynthInvokeListRefusalEnum
     /// W3C SCXML 5.2: the `spoiledFor` datamodel variable.
-    var vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+    var vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnum
     /// W3C SCXML 5.2: the `namedId` datamodel variable.
-    var vNamedId: UInt32 = 0
+    var vNamedId: UInt32
     /// W3C SCXML 5.2: the `namedField` datamodel variable.
-    var vNamedField: UInt16 = 0
+    var vNamedField: UInt16
     /// W3C SCXML 5.2: the `namedKind` datamodel variable.
-    var vNamedKind: RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnum.edit
+    var vNamedKind: RecordListParentSceSynthInvokeListCommandEnum
     /// W3C SCXML 5.2: the `taking` datamodel variable.
-    var vTaking: [RecordListParentSceSynthInvokeListOpRecord] = []
+    var vTaking: [RecordListParentSceSynthInvokeListOpRecord]
     /// W3C SCXML 5.2: the `took` datamodel variable.
-    var vTook: UInt32 = 0
+    var vTook: UInt32
     /// W3C SCXML 5.2: the `op` datamodel variable.
-    var vOp: RecordListParentSceSynthInvokeListOpRecord = RecordListParentSceSynthInvokeListOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vOp: RecordListParentSceSynthInvokeListOpRecord
     /// W3C SCXML 5.2: the `restoring` datamodel variable.
-    var vRestoring: Bool = false
+    var vRestoring: Bool
     /// W3C SCXML 5.2: the `tentative` datamodel variable.
-    var vTentative: Bool = false
+    var vTentative: Bool
     /// W3C SCXML 5.2: the `closingCommand` datamodel variable.
-    var vClosingCommand: UInt64 = 0
+    var vClosingCommand: UInt64
     /// W3C SCXML 5.2: the `offered` datamodel variable.
-    var vOffered: [RecordListParentSceSynthInvokeListOpRecord] = []
+    var vOffered: [RecordListParentSceSynthInvokeListOpRecord]
     /// W3C SCXML 5.2: the `offeredAt` datamodel variable.
-    var vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord
     /// W3C SCXML 5.2: the `refusedFor` datamodel variable.
-    var vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.peerRefused
+    var vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnum
     /// W3C SCXML 5.2: the `closedOps` datamodel variable.
-    var vClosedOps: UInt32 = 0
+    var vClosedOps: UInt32
     /// W3C SCXML 5.2: the `closedFor` datamodel variable.
-    var vClosedFor: RecordListParentSceSynthInvokeListRefusalEnum? = nil
+    var vClosedFor: RecordListParentSceSynthInvokeListRefusalEnum?
     /// W3C SCXML 5.2: the `closedAt` datamodel variable.
-    var vClosedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vClosedAt: RecordListParentSceSynthInvokeListHlcRecord
     /// W3C SCXML 5.2: the `provisional` datamodel variable.
-    var vProvisional: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+    var vProvisional: [RecordListParentSceSynthInvokeListProvisionalRecord]
     /// W3C SCXML 5.2: the `provisionalKept` datamodel variable.
-    var vProvisionalKept: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+    var vProvisionalKept: [RecordListParentSceSynthInvokeListProvisionalRecord]
     /// W3C SCXML 5.2: the `standing` datamodel variable.
-    var vStanding: RecordListParentSceSynthInvokeListProvisionalRecord = RecordListParentSceSynthInvokeListProvisionalRecord(wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnum.edit)
+    var vStanding: RecordListParentSceSynthInvokeListProvisionalRecord
     /// W3C SCXML 5.2: the `provisionalFound` datamodel variable.
-    var vProvisionalFound: Bool = false
+    var vProvisionalFound: Bool
     /// W3C SCXML 5.2: the `withdrawFrom` datamodel variable.
-    var vWithdrawFrom: UInt32 = 0
+    var vWithdrawFrom: UInt32
     /// W3C SCXML 5.2: the `undo` datamodel variable.
-    var vUndo: [RecordListParentSceSynthInvokeListUndoRecord] = []
+    var vUndo: [RecordListParentSceSynthInvokeListUndoRecord]
     /// W3C SCXML 5.2: the `undoKept` datamodel variable.
-    var vUndoKept: [RecordListParentSceSynthInvokeListUndoRecord] = []
+    var vUndoKept: [RecordListParentSceSynthInvokeListUndoRecord]
     /// W3C SCXML 5.2: the `undoing` datamodel variable.
-    var vUndoing: RecordListParentSceSynthInvokeListUndoRecord = RecordListParentSceSynthInvokeListUndoRecord(atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vUndoing: RecordListParentSceSynthInvokeListUndoRecord
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -1031,108 +1031,423 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         public var vWithdrawFrom: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNode {
-            vNode = value
+        let vNode: UInt64
+        if let handed = params.vNode {
+            vNode = handed
+        } else {
+            vNode = 0
         }
-        if let value = params.vJournal {
-            vJournal = value
+        let vJournal: Bool
+        if let handed = params.vJournal {
+            vJournal = handed
+        } else {
+            vJournal = true
         }
-        if let value = params.vShareId {
-            vShareId = value
+        let vClock: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vDot: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vAdds: [RecordListParentSceSynthInvokeListEntryRecord] = []
+        let vOne: [RecordListParentSceSynthInvokeListEntryRecord] = []
+        let vEntry: RecordListParentSceSynthInvokeListEntryRecord = RecordListParentSceSynthInvokeListEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+        let vValues: [RecordListParentSceSynthInvokeListValueRecord] = []
+        let vHeld: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vShareId: UInt32
+        if let handed = params.vShareId {
+            vShareId = handed
+        } else {
+            vShareId = 0
         }
-        if let value = params.vShareField {
-            vShareField = value
+        let vShareField: UInt16
+        if let handed = params.vShareField {
+            vShareField = handed
+        } else {
+            vShareField = 0
         }
-        if let value = params.vWasLive {
-            vWasLive = value
+        let vWasLive: Bool
+        if let handed = params.vWasLive {
+            vWasLive = handed
+        } else {
+            vWasLive = false
         }
-        if let value = params.vPresent {
-            vPresent = value
+        let vPresent: Bool
+        if let handed = params.vPresent {
+            vPresent = handed
+        } else {
+            vPresent = false
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
-        if let value = params.vRoomValues {
-            vRoomValues = value
+        let vRoomValues: UInt32
+        if let handed = params.vRoomValues {
+            vRoomValues = handed
+        } else {
+            vRoomValues = 0
         }
-        if let value = params.vFull {
-            vFull = value
+        let vFull: UInt32
+        if let handed = params.vFull {
+            vFull = handed
+        } else {
+            vFull = 0
         }
-        if let value = params.vDenied {
-            vDenied = value
+        let vRoster: [RecordListParentSceSynthInvokeListMemberRecord] = []
+        let vDenied: UInt32
+        if let handed = params.vDenied {
+            vDenied = handed
+        } else {
+            vDenied = 0
         }
-        if let value = params.vForbidden {
-            vForbidden = value
+        let vForbidden: Bool
+        if let handed = params.vForbidden {
+            vForbidden = handed
+        } else {
+            vForbidden = false
         }
-        if let value = params.vAuthorized {
-            vAuthorized = value
+        let vAuthorized: Bool
+        if let handed = params.vAuthorized {
+            vAuthorized = handed
+        } else {
+            vAuthorized = true
         }
-        if let value = params.vAnnounce {
-            vAnnounce = value
+        let vAnnounce: Bool
+        if let handed = params.vAnnounce {
+            vAnnounce = handed
+        } else {
+            vAnnounce = false
         }
-        if let value = params.vAnnounced {
-            vAnnounced = value
+        let vAnnounced: UInt32
+        if let handed = params.vAnnounced {
+            vAnnounced = handed
+        } else {
+            vAnnounced = 0
         }
-        if let value = params.vListed {
-            vListed = value
+        let vMoved: [UInt64] = []
+        let vListed: Bool
+        if let handed = params.vListed {
+            vListed = handed
+        } else {
+            vListed = false
         }
-        if let value = params.vOrdinal {
-            vOrdinal = value
+        let vLive: [RecordListParentSceSynthInvokeListValueRecord] = []
+        let vOrdinal: UInt32
+        if let handed = params.vOrdinal {
+            vOrdinal = handed
+        } else {
+            vOrdinal = 0
         }
-        if let value = params.vHolding {
-            vHolding = value
+        let vEmpty: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vStaged: [RecordListParentSceSynthInvokeListStagedRecord] = []
+        let vStaging: RecordListParentSceSynthInvokeListStagedRecord = RecordListParentSceSynthInvokeListStagedRecord(kind: 0, id: 0, field: 0, value: 0, text: "")
+        let vHolding: Bool
+        if let handed = params.vHolding {
+            vHolding = handed
+        } else {
+            vHolding = false
         }
-        if let value = params.vClosingNow {
-            vClosingNow = value
+        let vClosingNow: Int64
+        if let handed = params.vClosingNow {
+            vClosingNow = handed
+        } else {
+            vClosingNow = 0
         }
-        if let value = params.vSpoiled {
-            vSpoiled = value
+        let vSpoiled: Bool
+        if let handed = params.vSpoiled {
+            vSpoiled = handed
+        } else {
+            vSpoiled = false
         }
-        if let value = params.vProbing {
-            vProbing = value
+        let vProbing: Bool
+        if let handed = params.vProbing {
+            vProbing = handed
+        } else {
+            vProbing = false
         }
-        if let value = params.vGone {
-            vGone = value
+        let vGone: UInt32
+        if let handed = params.vGone {
+            vGone = handed
+        } else {
+            vGone = 0
         }
-        if let value = params.vWrites {
-            vWrites = value
+        let vWrites: UInt32
+        if let handed = params.vWrites {
+            vWrites = handed
+        } else {
+            vWrites = 0
         }
-        if let value = params.vCovered {
-            vCovered = value
+        let vCovered: Bool
+        if let handed = params.vCovered {
+            vCovered = handed
+        } else {
+            vCovered = false
         }
-        if let value = params.vNamedId {
-            vNamedId = value
+        let vProbe: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+        let vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+        let vNamedId: UInt32
+        if let handed = params.vNamedId {
+            vNamedId = handed
+        } else {
+            vNamedId = 0
         }
-        if let value = params.vNamedField {
-            vNamedField = value
+        let vNamedField: UInt16
+        if let handed = params.vNamedField {
+            vNamedField = handed
+        } else {
+            vNamedField = 0
         }
-        if let value = params.vTook {
-            vTook = value
+        let vNamedKind: RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnum.edit
+        let vTaking: [RecordListParentSceSynthInvokeListOpRecord] = []
+        let vTook: UInt32
+        if let handed = params.vTook {
+            vTook = handed
+        } else {
+            vTook = 0
         }
-        if let value = params.vRestoring {
-            vRestoring = value
+        let vOp: RecordListParentSceSynthInvokeListOpRecord = RecordListParentSceSynthInvokeListOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vRestoring: Bool
+        if let handed = params.vRestoring {
+            vRestoring = handed
+        } else {
+            vRestoring = false
         }
-        if let value = params.vTentative {
-            vTentative = value
+        let vTentative: Bool
+        if let handed = params.vTentative {
+            vTentative = handed
+        } else {
+            vTentative = false
         }
-        if let value = params.vClosingCommand {
-            vClosingCommand = value
+        let vClosingCommand: UInt64
+        if let handed = params.vClosingCommand {
+            vClosingCommand = handed
+        } else {
+            vClosingCommand = 0
         }
-        if let value = params.vClosedOps {
-            vClosedOps = value
+        let vOffered: [RecordListParentSceSynthInvokeListOpRecord] = []
+        let vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.peerRefused
+        let vClosedOps: UInt32
+        if let handed = params.vClosedOps {
+            vClosedOps = handed
+        } else {
+            vClosedOps = 0
         }
-        if let value = params.vProvisionalFound {
-            vProvisionalFound = value
+        let vClosedFor: RecordListParentSceSynthInvokeListRefusalEnum? = nil
+        let vClosedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vProvisional: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+        let vProvisionalKept: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+        let vStanding: RecordListParentSceSynthInvokeListProvisionalRecord = RecordListParentSceSynthInvokeListProvisionalRecord(wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnum.edit)
+        let vProvisionalFound: Bool
+        if let handed = params.vProvisionalFound {
+            vProvisionalFound = handed
+        } else {
+            vProvisionalFound = false
         }
-        if let value = params.vWithdrawFrom {
-            vWithdrawFrom = value
+        let vWithdrawFrom: UInt32
+        if let handed = params.vWithdrawFrom {
+            vWithdrawFrom = handed
+        } else {
+            vWithdrawFrom = 0
         }
+        let vUndo: [RecordListParentSceSynthInvokeListUndoRecord] = []
+        let vUndoKept: [RecordListParentSceSynthInvokeListUndoRecord] = []
+        let vUndoing: RecordListParentSceSynthInvokeListUndoRecord = RecordListParentSceSynthInvokeListUndoRecord(atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        self.vNode = vNode
+        self.vJournal = vJournal
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vDot = vDot
+        self.vAdds = vAdds
+        self.vOne = vOne
+        self.vEntry = vEntry
+        self.vValues = vValues
+        self.vHeld = vHeld
+        self.vShareId = vShareId
+        self.vShareField = vShareField
+        self.vWasLive = vWasLive
+        self.vPresent = vPresent
+        self.vRefusals = vRefusals
+        self.vRoomValues = vRoomValues
+        self.vFull = vFull
+        self.vRoster = vRoster
+        self.vDenied = vDenied
+        self.vForbidden = vForbidden
+        self.vAuthorized = vAuthorized
+        self.vAnnounce = vAnnounce
+        self.vAnnounced = vAnnounced
+        self.vMoved = vMoved
+        self.vListed = vListed
+        self.vLive = vLive
+        self.vOrdinal = vOrdinal
+        self.vEmpty = vEmpty
+        self.vStaged = vStaged
+        self.vStaging = vStaging
+        self.vHolding = vHolding
+        self.vClosingNow = vClosingNow
+        self.vSpoiled = vSpoiled
+        self.vProbing = vProbing
+        self.vGone = vGone
+        self.vWrites = vWrites
+        self.vCovered = vCovered
+        self.vProbe = vProbe
+        self.vSpoiledFor = vSpoiledFor
+        self.vNamedId = vNamedId
+        self.vNamedField = vNamedField
+        self.vNamedKind = vNamedKind
+        self.vTaking = vTaking
+        self.vTook = vTook
+        self.vOp = vOp
+        self.vRestoring = vRestoring
+        self.vTentative = vTentative
+        self.vClosingCommand = vClosingCommand
+        self.vOffered = vOffered
+        self.vOfferedAt = vOfferedAt
+        self.vRefusedFor = vRefusedFor
+        self.vClosedOps = vClosedOps
+        self.vClosedFor = vClosedFor
+        self.vClosedAt = vClosedAt
+        self.vProvisional = vProvisional
+        self.vProvisionalKept = vProvisionalKept
+        self.vStanding = vStanding
+        self.vProvisionalFound = vProvisionalFound
+        self.vWithdrawFrom = vWithdrawFrom
+        self.vUndo = vUndo
+        self.vUndoKept = vUndoKept
+        self.vUndoing = vUndoing
     }
 
     public init() {
+        let vNode: UInt64 = 0
+        let vJournal: Bool = true
+        let vClock: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vDot: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vAdds: [RecordListParentSceSynthInvokeListEntryRecord] = []
+        let vOne: [RecordListParentSceSynthInvokeListEntryRecord] = []
+        let vEntry: RecordListParentSceSynthInvokeListEntryRecord = RecordListParentSceSynthInvokeListEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+        let vValues: [RecordListParentSceSynthInvokeListValueRecord] = []
+        let vHeld: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vShareId: UInt32 = 0
+        let vShareField: UInt16 = 0
+        let vWasLive: Bool = false
+        let vPresent: Bool = false
+        let vRefusals: UInt32 = 0
+        let vRoomValues: UInt32 = 0
+        let vFull: UInt32 = 0
+        let vRoster: [RecordListParentSceSynthInvokeListMemberRecord] = []
+        let vDenied: UInt32 = 0
+        let vForbidden: Bool = false
+        let vAuthorized: Bool = true
+        let vAnnounce: Bool = false
+        let vAnnounced: UInt32 = 0
+        let vMoved: [UInt64] = []
+        let vListed: Bool = false
+        let vLive: [RecordListParentSceSynthInvokeListValueRecord] = []
+        let vOrdinal: UInt32 = 0
+        let vEmpty: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vStaged: [RecordListParentSceSynthInvokeListStagedRecord] = []
+        let vStaging: RecordListParentSceSynthInvokeListStagedRecord = RecordListParentSceSynthInvokeListStagedRecord(kind: 0, id: 0, field: 0, value: 0, text: "")
+        let vHolding: Bool = false
+        let vClosingNow: Int64 = 0
+        let vSpoiled: Bool = false
+        let vProbing: Bool = false
+        let vGone: UInt32 = 0
+        let vWrites: UInt32 = 0
+        let vCovered: Bool = false
+        let vProbe: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+        let vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.changeTooLarge
+        let vNamedId: UInt32 = 0
+        let vNamedField: UInt16 = 0
+        let vNamedKind: RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnum.edit
+        let vTaking: [RecordListParentSceSynthInvokeListOpRecord] = []
+        let vTook: UInt32 = 0
+        let vOp: RecordListParentSceSynthInvokeListOpRecord = RecordListParentSceSynthInvokeListOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vRestoring: Bool = false
+        let vTentative: Bool = false
+        let vClosingCommand: UInt64 = 0
+        let vOffered: [RecordListParentSceSynthInvokeListOpRecord] = []
+        let vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.peerRefused
+        let vClosedOps: UInt32 = 0
+        let vClosedFor: RecordListParentSceSynthInvokeListRefusalEnum? = nil
+        let vClosedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vProvisional: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+        let vProvisionalKept: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+        let vStanding: RecordListParentSceSynthInvokeListProvisionalRecord = RecordListParentSceSynthInvokeListProvisionalRecord(wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnum.edit)
+        let vProvisionalFound: Bool = false
+        let vWithdrawFrom: UInt32 = 0
+        let vUndo: [RecordListParentSceSynthInvokeListUndoRecord] = []
+        let vUndoKept: [RecordListParentSceSynthInvokeListUndoRecord] = []
+        let vUndoing: RecordListParentSceSynthInvokeListUndoRecord = RecordListParentSceSynthInvokeListUndoRecord(atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        self.vNode = vNode
+        self.vJournal = vJournal
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vDot = vDot
+        self.vAdds = vAdds
+        self.vOne = vOne
+        self.vEntry = vEntry
+        self.vValues = vValues
+        self.vHeld = vHeld
+        self.vShareId = vShareId
+        self.vShareField = vShareField
+        self.vWasLive = vWasLive
+        self.vPresent = vPresent
+        self.vRefusals = vRefusals
+        self.vRoomValues = vRoomValues
+        self.vFull = vFull
+        self.vRoster = vRoster
+        self.vDenied = vDenied
+        self.vForbidden = vForbidden
+        self.vAuthorized = vAuthorized
+        self.vAnnounce = vAnnounce
+        self.vAnnounced = vAnnounced
+        self.vMoved = vMoved
+        self.vListed = vListed
+        self.vLive = vLive
+        self.vOrdinal = vOrdinal
+        self.vEmpty = vEmpty
+        self.vStaged = vStaged
+        self.vStaging = vStaging
+        self.vHolding = vHolding
+        self.vClosingNow = vClosingNow
+        self.vSpoiled = vSpoiled
+        self.vProbing = vProbing
+        self.vGone = vGone
+        self.vWrites = vWrites
+        self.vCovered = vCovered
+        self.vProbe = vProbe
+        self.vSpoiledFor = vSpoiledFor
+        self.vNamedId = vNamedId
+        self.vNamedField = vNamedField
+        self.vNamedKind = vNamedKind
+        self.vTaking = vTaking
+        self.vTook = vTook
+        self.vOp = vOp
+        self.vRestoring = vRestoring
+        self.vTentative = vTentative
+        self.vClosingCommand = vClosingCommand
+        self.vOffered = vOffered
+        self.vOfferedAt = vOfferedAt
+        self.vRefusedFor = vRefusedFor
+        self.vClosedOps = vClosedOps
+        self.vClosedFor = vClosedFor
+        self.vClosedAt = vClosedAt
+        self.vProvisional = vProvisional
+        self.vProvisionalKept = vProvisionalKept
+        self.vStanding = vStanding
+        self.vProvisionalFound = vProvisionalFound
+        self.vWithdrawFrom = vWithdrawFrom
+        self.vUndo = vUndo
+        self.vUndoKept = vUndoKept
+        self.vUndoing = vUndoing
+
         sessionID = drawSessionID()
     }
 

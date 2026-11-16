@@ -1,0 +1,450 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 428dfedc40362bcde893d2a13aaf88295d66fbb3c5dc619cc8fae908cc42df31
+
+// GENERATED CODE — DO NOT EDIT
+// Source: integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml#first_macrostep
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:269 :: _machine
+
+package com.sce.integration.a_child_takes_a_handed_value_in_place_of_its_data
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState : State {
+    data object Look : AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState
+    data object Missed : AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState
+    data object Took : AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent : Event {
+    sealed interface Error : AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent {
+        data object Execution : Error
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepStateMachine(
+    scriptEngine: ScxmlScriptEngine,
+) : StateMachineEngine<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent>(scriptEngine) {
+
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `handed` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `handed` was assigned a value of another type, or the engine refused.
+     */
+    fun handed(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "handed")
+
+    override val initialState: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState = AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState): Boolean = when (state) {
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took -> true
+        else -> false
+    }
+
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>> =
+            listOf(StateTarget(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look))
+    }
+
+    private object TransitionsPart0 {
+
+        // W3C SCXML 3.13: look's transition 0, as the microstep reads it.
+        val transitionLookAt0 = EnabledTransition<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>(
+            AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look,
+            listOf(StateTarget(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: look's transition 1, as the microstep reads it.
+        val transitionLookAt1 = EnabledTransition<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>(
+            AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look,
+            listOf(StateTarget(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState? = when (stateId) {
+        "look" -> AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look
+        "missed" -> AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed
+        "took" -> AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took
+        else -> null
+    }
+
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState): String = when (state) {
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look -> "look"
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed -> "missed"
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took -> "took"
+    }
+
+
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
+    override fun documentOrderOf(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState): Int = when (state) {
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look -> 0
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed -> 1
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took -> 2
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent? = when (name) {
+        "error.execution" -> AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution
+        else -> null
+    }
+
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent): String? = when (event) {
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution -> "error.execution"
+    }
+
+
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // docs/adr/0096: make this machine's script session, the first step of
+    // every start (`initialize`, `start`, `enterAt`, and the start of a child
+    // this machine is). The runtime's `makeScriptSession` takes the three steps
+    // (create the session, which loads the shared library into it, then bind
+    // the system variables), releases what a failed step made and answers the
+    // failure, which refuses the start with nothing entered; a later start
+    // asks for the session again.
+    override fun establishScriptSession(): com.sce.runtime.ScriptSessionFailure? {
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        makeScriptSession(
+            engine,
+            "a_child_takes_a_handed_value_in_place_of_its_data__sce_synth_invoke__first_macrostep",
+        )?.let { return it }
+        return null
+    }
+
+    // W3C SCXML 5.3: initialize the datamodel in the session the start
+    // established, before any state is entered: the document's <data>, its
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
+    override fun declareDatamodel() {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+
+        declareVariablesPart0(engine, sid)
+
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
+        // §scxml-6.4: 'handed' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "handed", AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'handed' with expr
+            try {
+                engine.setVariable(sid, "handed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"own first\"", "'own first'")))
+            } catch (e: Exception) {
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution, "<data id='handed'> expr failed to evaluate")
+            }
+        }
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    //
+    // The guard arrives as a `ScriptSource`, not a `String`: it carries the
+    // language its text is in, so a machine generated for a Lua engine hands
+    // over Lua the build-time frontend produced and one generated for an
+    // ECMAScript engine hands over the author's own text — and the engine is
+    // never left to guess which it got. The C++ sibling
+    // (`process_transition.jinja2`) takes the same argument for the same
+    // reason.
+    private fun safeEvaluateGuard(guardExpr: com.sce.runtime.ScriptSource): Boolean =
+        evaluateGuardRaising(guardExpr, "a <transition> cond failed to evaluate") ?: false
+
+    // W3C SCXML 5.9.1 + 4.9: an <if> or <elseif> cond, evaluated and reported
+    // as a transition guard is. A failure also runs [onFailure]: the <if>
+    // still selects on `false`, and is then the element whose processing
+    // raised, so its block ends after it.
+    @Suppress("unused")
+    private inline fun evaluateIfCond(guardExpr: com.sce.runtime.ScriptSource, onFailure: () -> Unit): Boolean {
+        val result = evaluateGuardRaising(guardExpr, "an <if> cond failed to evaluate")
+        if (result == null) onFailure()
+        return result ?: false
+    }
+
+    // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
+    // `null` says so, where a bare `false` could not.
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution, reason)
+            null
+        }
+    }
+
+    // W3C SCXML B.2: the value of an inline `<content>` body, serialized
+    // for transport.
+    //
+    // The reading is decided at build time — `source` is already the
+    // expression or string literal the clause's ordered readings give —
+    // and this evaluates it *here*, at send time, rather than handing the
+    // expression to whatever reads `_event.data` later. That distinction
+    // is not academic: the two engines this backend runs on disagree
+    // about what a data string is. QuickJS tries a JS evaluation before
+    // falling back; Rhino goes straight from JSON to the normalized
+    // string, so an expression handed to it arrives as its own source
+    // text. `JSON.stringify` is what both of them can read back, and it
+    // is the same shape the C++ backend transports.
+    //
+    // The serialization wraps BOTH halves, in each half's own language. A
+    // wrapper composed around one of them only would build a `ScriptSource`
+    // whose two strings no longer say the same thing, and the diagnostic that
+    // reads `source` would name an expression the engine never ran. `JSON` is
+    // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
+    // characters on either arm — what differs is what it wraps.
+    private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+        val serialized = when (source.language) {
+            com.sce.runtime.ScriptLanguage.ECMAScript ->
+                com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
+            com.sce.runtime.ScriptLanguage.Lua ->
+                com.sce.runtime.ScriptSource.lua(
+                    "JSON.stringify((" + source.text + "))",
+                    "JSON.stringify((" + source.source + "))",
+                )
+        }
+        return try {
+            engine.evaluateExpr(sid, serialized)?.toString() ?: ""
+        } catch (e: Exception) {
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution, "an expression could not be serialised to JSON")
+            ""
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    //
+    // Both halves carry a language: this engine's Lua arm splices the location
+    // in front of `=` and runs the result, so a write target written in
+    // ECMAScript has to have been lowered too. Same split as
+    // `ScxmlScriptEngine.assign`.
+    // Returns whether the assignment took place; on failure error.execution is
+    // already raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+        return try {
+            engine.assign(sid, location, expr)
+            true
+        } catch (e: Exception) {
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution, "<assign> failed")
+            false
+        }
+    }
+
+    // W3C SCXML 5.8: Script block execution
+    // Returns whether the script ran; on failure error.execution is already
+    // raised, and the caller ends its block (W3C SCXML 4.9).
+    private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+        return try {
+            engine.executeScript(sid, script)
+            true
+        } catch (e: Exception) {
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent.Error.Execution, "<script> failed to execute")
+            false
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent) {
+        assertScriptSession()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
+        val meta = currentEventMetadata
+        // §scxml-5.10: the name the event ARRIVED under, which is longer than its
+        // member's when a name the document does not write was matched through a
+        // prefix (§scxml-3.12.1).
+        val eventName = meta.name.ifEmpty { eventNameOf(event) ?: return }
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1 + C.1: `_event.origin` and `_event.origintype` are the
+        // reply address the processor that delivered the event wrote where it
+        // built it, as one value (docs/adr/0090): the SCXML processor's type and
+        // the sender's published `_ioprocessors` location for an event a session
+        // sent, a host's own pair for what a host named, the Mesh transport's
+        // for a peer. Read here as written, with no conversion. An event no
+        // processor stamped — an internal or platform event, a host-posted event
+        // or reply that names no party, a BasicHTTP request — has none and is
+        // handed over as the empty string, which the binding surfaces as blank
+        // (undefined, §scxml-B-2-8): nothing is filled in for it, neither this
+        // session's own address nor the SCXML processor's type.
+        val eventOrigin = meta.origin
+        // §scxml-B-2-8-1: the binding answers which rung the payload got, and
+        // that answer used to end here. The ladder decided between a DOM, a
+        // value and a space-normalized string, and the decision was dropped —
+        // so a payload that announced structure and would not parse reached
+        // the document as raw characters, every `_event.data.<field>` read
+        // empty, and nothing anywhere could say so.
+        //
+        // Recorded on the spot rather than returned up: this class extends
+        // `StateMachineEngine`, so the frame that binds already holds both the
+        // reading and the event it belongs to — which is the pairing the count
+        // needs.
+        val payloadReading = engine.setCurrentEvent(
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = eventOrigin?.address ?: "",
+                originType = eventOrigin?.processor ?: "",
+                invokeId = meta.invokeId
+            )
+        )
+        notePayloadReading(event, payloadReading)
+    }
+
+
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent) {
+        setCurrentEventInScriptEngine(event)
+    }
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, event: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent?): EnabledTransition<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>? = when (state) {
+        is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look -> firstEnabledTransitionOfLook(state, event)
+        else -> null
+    }
+
+
+    // look's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLook(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, event: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent?): EnabledTransition<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, HistoryId>? = when {
+        event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(handed == \"handed first\")", "handed === 'handed first'")) -> TransitionsPart0.transitionLookAt0
+        event == null -> TransitionsPart0.transitionLookAt1
+        else -> null
+    }
+
+
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:269 :: _machine
+    override fun onEntry(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, isDefaultEntry: Boolean) {
+        when (state) {
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look -> onEntryOfLook()
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed -> onEntryOfMissed()
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took -> onEntryOfTook()
+        }
+    }
+
+
+    private fun onEntryOfLook() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:274 :: look :: _state_body
+    }
+
+    private fun onEntryOfMissed() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:278 :: missed :: _state_body
+    }
+
+    private fun onEntryOfTook() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:279 :: took :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:269 :: _machine
+    override fun onExit(state: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState) {
+        when (state) {
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Look -> onExitOfLook()
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Missed -> onExitOfMissed()
+            is AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState.Took -> onExitOfTook()
+        }
+    }
+
+
+    private fun onExitOfLook() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:274 :: look :: _state_body
+    }
+
+    private fun onExitOfMissed() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:278 :: missed :: _state_body
+    }
+
+    private fun onExitOfTook() {
+                // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:279 :: took :: _state_body
+    }
+
+
+
+    // Transition Content (W3C SCXML 3.13)
+    // SCE-MAP: a_child_takes_a_handed_value_in_place_of_its_data.scxml:269 :: _machine
+    override fun executeTransitionContent(source: AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, transitionIndex: Int) {
+        when (source) {
+            else -> {}
+        }
+    }
+}

@@ -174,13 +174,13 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`).
-    var vLayout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.month
+    var vLayout: StaticPayloadEnumViewModeEnum
     /// W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`).
-    var vZoom: UInt8 = 0
+    var vZoom: UInt8
     /// W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`).
-    var vAgenda: Bool = false
+    var vAgenda: Bool
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: UInt32 = 0
+    var vShown: UInt32
 
     /// Reports what the published `layout` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -209,21 +209,46 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
         public var vShown: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vZoom {
-            vZoom = value
+        let vLayout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.month
+        let vZoom: UInt8
+        if let handed = params.vZoom {
+            vZoom = handed
+        } else {
+            vZoom = 0
         }
-        if let value = params.vAgenda {
-            vAgenda = value
+        let vAgenda: Bool
+        if let handed = params.vAgenda {
+            vAgenda = handed
+        } else {
+            vAgenda = false
         }
-        if let value = params.vShown {
-            vShown = value
+        let vShown: UInt32
+        if let handed = params.vShown {
+            vShown = handed
+        } else {
+            vShown = 0
         }
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vAgenda = vAgenda
+        self.vShown = vShown
     }
 
     public init() {
+        let vLayout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.month
+        let vZoom: UInt8 = 0
+        let vAgenda: Bool = false
+        let vShown: UInt32 = 0
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vAgenda = vAgenda
+        self.vShown = vShown
+
         sessionID = drawSessionID()
     }
 

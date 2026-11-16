@@ -254,31 +254,42 @@ class StaticOptionalStateMachine(
         var huge: Long? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.due?.let { vDue = it }
-        params.other?.let { vOther = it }
-        params.title?.let { vTitle = it }
-        params.days?.let { vDays = it }
-        params.following?.let { vFollowing = it }
-        params.late?.let { vLate = it }
-        params.early?.let { vEarly = it }
-        params.label?.let { vLabel = it }
-        params.kept?.let { vKept = it }
-        params.listed?.let { vListed = it }
-        params.missing?.let { vMissing = it }
-        params.same?.let { vSame = it }
-        params.absent?.let { vAbsent = it }
-        params.statusDone?.let { vStatusDone = it }
-        params.echoed?.let { vEchoed = it }
-        params.echoTitle?.let { vEchoTitle = it }
-        params.fallbacks?.let { vFallbacks = it }
-        params.errors?.let { vErrors = it }
-        params.huge?.let { vHuge = it }
+        vDue = params.due ?: (null)
+        vOther = params.other ?: (7)
+        vTitle = params.title ?: (null)
+        vStatus = StaticOptionalStatusEnum.OPEN
+        vItem = StaticOptionalDueRecord(id = 0.toUInt(), due = null, title = "first", status = null)
+        vItems = emptyList()
+        vDays = params.days ?: (0)
+        vFollowing = params.following ?: (0)
+        vLate = params.late ?: (false)
+        vEarly = params.early ?: (false)
+        vLabel = params.label ?: ("")
+        vPlain = StaticOptionalStatusEnum.OPEN
+        vKept = params.kept ?: (0)
+        vListed = params.listed ?: (0)
+        vMissing = params.missing ?: (0.toUInt())
+        vSame = params.same ?: (false)
+        vAbsent = params.absent ?: (false)
+        vStatusDone = params.statusDone ?: (false)
+        vEchoed = params.echoed ?: (0)
+        vEchoTitle = params.echoTitle ?: (null)
+        vEchoStatus = null
+        vFallbacks = params.fallbacks ?: (0.toUInt())
+        vErrors = params.errors ?: (0.toUInt())
+        vHuge = params.huge ?: (4294967296)
     }
 
     /** The published variables as one immutable value, in declaration order. */

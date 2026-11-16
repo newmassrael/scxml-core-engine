@@ -667,9 +667,10 @@ type SyncClientPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewSyncClientPolicy creates a new policy with default values.
@@ -786,36 +787,74 @@ type SyncClientInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *SyncClientPolicy) AcceptParams(params SyncClientInvokeParams) {
-	if params.VByToken != nil {
-		p.vByToken = *params.VByToken
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *SyncClientPolicy) AcceptParams(handed SyncClientInvokeParams) {
+	var vByToken bool
+	if handed.VByToken != nil {
+		vByToken = *handed.VByToken
+	} else {
+		vByToken = false
 	}
-	if params.VFullListing != nil {
-		p.vFullListing = *params.VFullListing
+	var vFullListing bool
+	if handed.VFullListing != nil {
+		vFullListing = *handed.VFullListing
+	} else {
+		vFullListing = true
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome uint8
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = 0
 	}
-	if params.VRetryAt != nil {
-		p.vRetryAt = *params.VRetryAt
+	var vRetryAt int64
+	if handed.VRetryAt != nil {
+		vRetryAt = *handed.VRetryAt
+	} else {
+		vRetryAt = 0
 	}
-	if params.VDeleted != nil {
-		p.vDeleted = *params.VDeleted
+	var vDeleted uint32
+	if handed.VDeleted != nil {
+		vDeleted = *handed.VDeleted
+	} else {
+		vDeleted = 0
 	}
-	if params.VUploaded != nil {
-		p.vUploaded = *params.VUploaded
+	var vUploaded uint32
+	if handed.VUploaded != nil {
+		vUploaded = *handed.VUploaded
+	} else {
+		vUploaded = 0
 	}
-	if params.VDiscarded != nil {
-		p.vDiscarded = *params.VDiscarded
+	var vDiscarded uint32
+	if handed.VDiscarded != nil {
+		vDiscarded = *handed.VDiscarded
+	} else {
+		vDiscarded = 0
 	}
-	if params.VPages != nil {
-		p.vPages = *params.VPages
+	var vPages uint32
+	if handed.VPages != nil {
+		vPages = *handed.VPages
+	} else {
+		vPages = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vByToken = vByToken
+	p.vFullListing = vFullListing
+	p.vOutcome = vOutcome
+	p.vRetryAt = vRetryAt
+	p.vDeleted = vDeleted
+	p.vUploaded = vUploaded
+	p.vDiscarded = vDiscarded
+	p.vPages = vPages
+	p.vRefusals = vRefusals
 }
 
 

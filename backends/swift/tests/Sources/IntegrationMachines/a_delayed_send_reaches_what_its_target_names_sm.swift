@@ -118,6 +118,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -104,6 +104,7 @@ public final class SessionIdsAreDistinctSceSynthInvokeInvBPolicy: InvocablePolic
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

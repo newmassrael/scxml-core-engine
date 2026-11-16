@@ -112,11 +112,11 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `base` datamodel variable.
-    var vBase: UInt32 = 4
+    var vBase: UInt32
     /// W3C SCXML 5.2: the `enabled` datamodel variable.
-    var vEnabled: Bool = true
+    var vEnabled: Bool
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
-    var vCompleted: UInt32 = 0
+    var vCompleted: UInt32
 
     /// Reports what the published `completed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -133,21 +133,42 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         public var vCompleted: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vBase {
-            vBase = value
+        let vBase: UInt32
+        if let handed = params.vBase {
+            vBase = handed
+        } else {
+            vBase = 4
         }
-        if let value = params.vEnabled {
-            vEnabled = value
+        let vEnabled: Bool
+        if let handed = params.vEnabled {
+            vEnabled = handed
+        } else {
+            vEnabled = true
         }
-        if let value = params.vCompleted {
-            vCompleted = value
+        let vCompleted: UInt32
+        if let handed = params.vCompleted {
+            vCompleted = handed
+        } else {
+            vCompleted = 0
         }
+        self.vBase = vBase
+        self.vEnabled = vEnabled
+        self.vCompleted = vCompleted
     }
 
     public init() {
+        let vBase: UInt32 = 4
+        let vEnabled: Bool = true
+        let vCompleted: UInt32 = 0
+        self.vBase = vBase
+        self.vEnabled = vEnabled
+        self.vCompleted = vCompleted
+
         sessionID = drawSessionID()
     }
 

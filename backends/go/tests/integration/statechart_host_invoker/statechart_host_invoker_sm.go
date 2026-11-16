@@ -425,9 +425,10 @@ type StatechartHostInvokerPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStatechartHostInvokerPolicy creates a new policy with default values.
@@ -825,8 +826,10 @@ func (p *StatechartHostInvokerPolicy) establishScriptSession() *sce.ScriptSessio
 // It is the one place a session is made (establishScriptSession), and a
 // session that cannot be established is its answer: nothing of the datamodel is
 // touched and the start is refused (docs/adr/0096). The order after it is the
-// document's: its `<data>`, then the invoke params its parent handed it, then
-// its top-level `<script>`.
+// document's (docs/adr/0098): its top-level `<data>`, each taking the value an
+// invoking session handed for it in place of its own; the early-bound `<data>`
+// of its states; its top-level `<script>`. The initial configuration is
+// entered after this returns, so its `<onentry>` reads the handed values too.
 func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent]) *sce.ScriptSessionFailure {
 	if !p.scriptEngineInitialized {
 		if failure := p.establishScriptSession(); failure != nil {
@@ -840,9 +843,22 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
+	// §scxml-6.4: the values the invoking session handed this one
+	// (`SetParamValueInScriptEngine`), taken by this start and by no later
+	// one. Which of them this session keeps is its own to decide, from the
+	// ids of its top-level `<data>`, written below when it was generated: a
+	// name none of them carries is not added, and a state's `<data>` never
+	// takes a handed value, whatever its id.
+	handed := p.handedValues
+	p.handedValues = nil
+
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
-	// W3C SCXML 5.2/5.3: Initialize started from expr="0"
-	{
+	if value, wasHanded := handed["started"]; wasHanded {
+		// §scxml-6.4: started takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "started", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize started from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started", result)
@@ -851,8 +867,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "started", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize started2 from expr="0"
-	{
+	if value, wasHanded := handed["started2"]; wasHanded {
+		// §scxml-6.4: started2 takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "started2", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize started2 from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started2", result)
@@ -861,8 +881,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "started2", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize refused from expr="0"
-	{
+	if value, wasHanded := handed["refused"]; wasHanded {
+		// §scxml-6.4: refused takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "refused", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize refused from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refused", result)
@@ -871,8 +895,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "refused", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize ended from expr="0"
-	{
+	if value, wasHanded := handed["ended"]; wasHanded {
+		// §scxml-6.4: ended takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "ended", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize ended from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "ended", result)
@@ -881,8 +909,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "ended", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize entered from expr="0"
-	{
+	if value, wasHanded := handed["entered"]; wasHanded {
+		// §scxml-6.4: entered takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "entered", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize entered from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entered", result)
@@ -891,8 +923,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "entered", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize destination from expr="'pane://dyn'"
-	{
+	if value, wasHanded := handed["destination"]; wasHanded {
+		// §scxml-6.4: destination takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "destination", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize destination from expr="'pane://dyn'"
 		result, err := engine.EvaluateExpression(sessionID, `"pane://dyn"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "destination", result)
@@ -901,8 +937,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "destination", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize n from expr="7"
-	{
+	if value, wasHanded := handed["n"]; wasHanded {
+		// §scxml-6.4: n takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "n", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize n from expr="7"
 		result, err := engine.EvaluateExpression(sessionID, `7`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "n", result)
@@ -911,8 +951,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "n", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize dropped from expr="0"
-	{
+	if value, wasHanded := handed["dropped"]; wasHanded {
+		// §scxml-6.4: dropped takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "dropped", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize dropped from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "dropped", result)
@@ -921,8 +965,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "dropped", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize doneId from expr="''"
-	{
+	if value, wasHanded := handed["doneId"]; wasHanded {
+		// §scxml-6.4: doneId takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "doneId", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize doneId from expr="''"
 		result, err := engine.EvaluateExpression(sessionID, `""`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "doneId", result)
@@ -931,8 +979,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "doneId", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize matched from expr="0"
-	{
+	if value, wasHanded := handed["matched"]; wasHanded {
+		// §scxml-6.4: matched takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "matched", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize matched from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "matched", result)
@@ -941,8 +993,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "matched", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize slot from expr="({ id: '', sid: '' })"
-	{
+	if value, wasHanded := handed["slot"]; wasHanded {
+		// §scxml-6.4: slot takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "slot", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize slot from expr="({ id: '', sid: '' })"
 		result, err := engine.EvaluateExpression(sessionID, `{["id"] = "", ["sid"] = ""}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "slot", result)
@@ -951,8 +1007,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "slot", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize slotted from expr="0"
-	{
+	if value, wasHanded := handed["slotted"]; wasHanded {
+		// §scxml-6.4: slotted takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "slotted", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize slotted from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "slotted", result)
@@ -961,8 +1021,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "slotted", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize pinged from expr="0"
-	{
+	if value, wasHanded := handed["pinged"]; wasHanded {
+		// §scxml-6.4: pinged takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "pinged", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize pinged from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pinged", result)
@@ -971,8 +1035,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "pinged", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize leaked from expr="0"
-	{
+	if value, wasHanded := handed["leaked"]; wasHanded {
+		// §scxml-6.4: leaked takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "leaked", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize leaked from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "leaked", result)
@@ -981,8 +1049,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "leaked", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize lost from expr="0"
-	{
+	if value, wasHanded := handed["lost"]; wasHanded {
+		// §scxml-6.4: lost takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "lost", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize lost from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "lost", result)
@@ -991,8 +1063,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "lost", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize expired from expr="0"
-	{
+	if value, wasHanded := handed["expired"]; wasHanded {
+		// §scxml-6.4: expired takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "expired", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize expired from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "expired", result)
@@ -1001,8 +1077,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "expired", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize finished from expr="0"
-	{
+	if value, wasHanded := handed["finished"]; wasHanded {
+		// §scxml-6.4: finished takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "finished", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize finished from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "finished", result)
@@ -1011,8 +1091,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "finished", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize misdated from expr="0"
-	{
+	if value, wasHanded := handed["misdated"]; wasHanded {
+		// §scxml-6.4: misdated takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "misdated", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize misdated from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "misdated", result)
@@ -1021,8 +1105,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "misdated", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize granted from expr="0"
-	{
+	if value, wasHanded := handed["granted"]; wasHanded {
+		// §scxml-6.4: granted takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "granted", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize granted from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "granted", result)
@@ -1031,8 +1119,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "granted", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize denied from expr="0"
-	{
+	if value, wasHanded := handed["denied"]; wasHanded {
+		// §scxml-6.4: denied takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "denied", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize denied from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "denied", result)
@@ -1041,8 +1133,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "denied", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize unreadable from expr="0"
-	{
+	if value, wasHanded := handed["unreadable"]; wasHanded {
+		// §scxml-6.4: unreadable takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "unreadable", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize unreadable from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "unreadable", result)
@@ -1051,8 +1147,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "unreadable", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize scope from expr="'storage'"
-	{
+	if value, wasHanded := handed["scope"]; wasHanded {
+		// §scxml-6.4: scope takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "scope", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize scope from expr="'storage'"
 		result, err := engine.EvaluateExpression(sessionID, `"storage"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "scope", result)
@@ -1061,8 +1161,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "scope", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize level from expr="2"
-	{
+	if value, wasHanded := handed["level"]; wasHanded {
+		// §scxml-6.4: level takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "level", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize level from expr="2"
 		result, err := engine.EvaluateExpression(sessionID, `2`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "level", result)
@@ -1071,8 +1175,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "level", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize failed from expr="0"
-	{
+	if value, wasHanded := handed["failed"]; wasHanded {
+		// §scxml-6.4: failed takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "failed", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize failed from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "failed", result)
@@ -1081,8 +1189,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "failed", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize overturned from expr="0"
-	{
+	if value, wasHanded := handed["overturned"]; wasHanded {
+		// §scxml-6.4: overturned takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "overturned", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize overturned from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "overturned", result)
@@ -1091,8 +1203,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "overturned", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize unstarted from expr="0"
-	{
+	if value, wasHanded := handed["unstarted"]; wasHanded {
+		// §scxml-6.4: unstarted takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "unstarted", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize unstarted from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "unstarted", result)
@@ -1101,8 +1217,12 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "unstarted", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize revived from expr="0"
-	{
+	if value, wasHanded := handed["revived"]; wasHanded {
+		// §scxml-6.4: revived takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "revived", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize revived from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "revived", result)
@@ -1112,24 +1232,6 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		}
 	}
 
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule. They are applied
-	// before the top-level `<script>`, which reads the datamodel the invocation
-	// started it with. The parent hands them before this session's start
-	// (`SetParamValueInScriptEngine`) and this session applies them, so a
-	// child's session is made by the child.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
 
 	return nil
 }
@@ -1246,23 +1348,38 @@ func (p *StatechartHostInvokerPolicy) getVariable(name string) interface{} {
 	return result
 }
 
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
+// SetParamValueInScriptEngine hands this machine, before its start, the value
+// an invoking session evaluated for one `<param>` or `namelist` name
+// (§scxml-6.4). The invoking session hands every name it evaluated; this
+// machine's start (InitializeDataModel) decides which it keeps, from the ids
+// of its own top-level `<data>`, and declares each kept one as that `<data>`'s
+// initial value in place of its own (docs/adr/0098). Nothing is written to the
+// script session here: the session is the child's own, established by its
+// start (docs/adr/0096).
 //
-// Params are applied by InitializeDataModel after the `<data>` and before the
-// top-level `<script>`, overriding the `<data>` default only for names the
-// child declares, so the session they are applied in is the child's own,
-// established by its start (docs/adr/0096). The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
+// The value crosses as a value: this took the parent's value rendered as Lua
+// source and re-evaluated it here until 2026-08-21, which survived every value
+// a test had tried and lost the ones Lua cannot spell — `ToScriptLiteral`
+// renders a non-finite number as `+Inf`, which is not a Lua expression, so an
 // `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
 func (p *StatechartHostInvokerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
+	if p.handedValues == nil {
+		p.handedValues = make(map[string]interface{})
 	}
-	p.pendingParams[name] = value
+	p.handedValues[name] = value
+}
+
+// declareHandedValue declares the top-level `<data>` name with the value an
+// invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
+// `expr`, `src` or content, which is not evaluated. A value the session cannot
+// hold is the error of that `<data>`'s initialization (§scxml-5.3):
+// error.execution, and the `<data>` left unset, as one whose own expression
+// failed is left (docs/adr/0098).
+func (p *StatechartHostInvokerPolicy) declareHandedValue(eng *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
+	if err := engine.SetVariable(sessionID, name, value); err != nil {
+		eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		_ = engine.SetVariable(sessionID, name, nil)
+	}
 }
 
 

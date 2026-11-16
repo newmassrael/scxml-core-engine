@@ -86,18 +86,24 @@ class StaticInvokeOptionalStateMachine(
         var errors: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.size?.let { vSize = it }
-        params.label?.let { vLabel = it }
-        params.nosize?.let { vNosize = it }
-        params.lengthy?.let { vLengthy = it }
-        params.completed?.let { vCompleted = it }
-        params.errors?.let { vErrors = it }
+        vSize = params.size ?: (7)
+        vLabel = params.label ?: ("abc")
+        vNosize = params.nosize ?: (null)
+        vLengthy = params.lengthy ?: ("abcdefgh")
+        vCompleted = params.completed ?: (0.toUInt())
+        vErrors = params.errors ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

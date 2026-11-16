@@ -7,15 +7,54 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecLengthRefUint32LePayloadBytes(BoundedBytes):
+    """The ``payload`` element of :class:`CodecLengthRefUint32Le`, 0 to 1024 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 1024
+
+
+class CodecLengthRefUint32LeSource(Protocol):
+    """The elements a value of :class:`CodecLengthRefUint32Le` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def payload(self) -> CodecLengthRefUint32LePayloadBytes: ...
+
+
+def encode_source(src: CodecLengthRefUint32LeSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecLengthRefUint32Le` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``payload_len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_payload_len = len(src.payload)
+    w.write_u8(_d_payload_len & 0xFF)
+    w.write_u8((_d_payload_len >> 8) & 0xFF)
+    w.write_u8((_d_payload_len >> 16) & 0xFF)
+    w.write_u8((_d_payload_len >> 24) & 0xFF)
+    w.write_bytes(src.payload)
 
 
 @dataclass
 class CodecLengthRefUint32Le:
-    payload_len: int = 0
-    payload: bytes = b""
+    payload: CodecLengthRefUint32LePayloadBytes = CodecLengthRefUint32LePayloadBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "payload":
+            value = CodecLengthRefUint32LePayloadBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecLengthRefUint32Le]:
@@ -40,7 +79,6 @@ class CodecLengthRefUint32Le:
         except CodecError:
             return None
         value = cls(
-            payload_len=f_payload_len,
             payload=f_payload,
         )
         try:
@@ -54,17 +92,8 @@ class CodecLengthRefUint32Le:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.payload) > 1024:
-            raise LengthOutOfRange()
-        w.write_u8(self.payload_len & 0xFF)
-        w.write_u8((self.payload_len >> 8) & 0xFF)
-        w.write_u8((self.payload_len >> 16) & 0xFF)
-        w.write_u8((self.payload_len >> 24) & 0xFF)
-        w.write_bytes(self.payload)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

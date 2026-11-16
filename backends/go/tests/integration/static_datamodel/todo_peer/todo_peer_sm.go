@@ -2925,9 +2925,10 @@ type TodoPeerPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewTodoPeerPolicy creates a new policy with default values.
@@ -3121,63 +3122,187 @@ type TodoPeerInvokeParams struct {
 	VTook *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *TodoPeerPolicy) AcceptParams(params TodoPeerInvokeParams) {
-	if params.VNode != nil {
-		p.vNode = *params.VNode
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *TodoPeerPolicy) AcceptParams(handed TodoPeerInvokeParams) {
+	var vNode uint64
+	if handed.VNode != nil {
+		vNode = *handed.VNode
+	} else {
+		vNode = 0
 	}
-	if params.VTyped != nil {
-		p.vTyped = *params.VTyped
+	var vClock TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vDot TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vAdds []TodoPeerEntryRecord = nil
+	var vOne []TodoPeerEntryRecord = nil
+	var vEntry TodoPeerEntryRecord = TodoPeerEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0}
+	var vValues []TodoPeerValueRecord = nil
+	var vTyped string
+	if handed.VTyped != nil {
+		vTyped = *handed.VTyped
+	} else {
+		vTyped = ""
 	}
-	if params.VWasLive != nil {
-		p.vWasLive = *params.VWasLive
+	var vHeld TodoPeerValueRecord = TodoPeerValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vWasLive bool
+	if handed.VWasLive != nil {
+		vWasLive = *handed.VWasLive
+	} else {
+		vWasLive = false
 	}
-	if params.VPresent != nil {
-		p.vPresent = *params.VPresent
+	var vPresent bool
+	if handed.VPresent != nil {
+		vPresent = *handed.VPresent
+	} else {
+		vPresent = false
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
-	if params.VAgendaNext != nil {
-		p.vAgendaNext = *params.VAgendaNext
+	var vAgenda []TodoPeerOccurrenceRecord = nil
+	var vLocal []TodoPeerOccurrenceRecord = nil
+	var vOcc TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord{id: 0, start: 0, end: 0, nth: 0, conflict: 0}
+	var vAgendaNext uint32
+	if handed.VAgendaNext != nil {
+		vAgendaNext = *handed.VAgendaNext
+	} else {
+		vAgendaNext = 0
 	}
-	if params.VZoneRows != nil {
-		p.vZoneRows = *params.VZoneRows
+	var vZoneStarts1 []int64 = nil
+	var vZoneOffsets1 []int32 = nil
+	var vZoneStarts2 []int64 = nil
+	var vZoneOffsets2 []int32 = nil
+	var vZoneStarts3 []int64 = nil
+	var vZoneOffsets3 []int32 = nil
+	var vZoneStarts4 []int64 = nil
+	var vZoneOffsets4 []int32 = nil
+	var vZoneStarts []int64 = nil
+	var vZoneOffsets []int32 = nil
+	var vZoneRows uint32
+	if handed.VZoneRows != nil {
+		vZoneRows = *handed.VZoneRows
+	} else {
+		vZoneRows = 0
 	}
-	if params.VSplit != nil {
-		p.vSplit = *params.VSplit
+	var vSplit bool
+	if handed.VSplit != nil {
+		vSplit = *handed.VSplit
+	} else {
+		vSplit = false
 	}
-	if params.VRawCount != nil {
-		p.vRawCount = *params.VRawCount
+	var vSched TodoPeerScheduleRecord = TodoPeerScheduleRecord{zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0}
+	var vRawCount uint32
+	if handed.VRawCount != nil {
+		vRawCount = *handed.VRawCount
+	} else {
+		vRawCount = 0
 	}
-	if params.VRawLast != nil {
-		p.vRawLast = *params.VRawLast
+	var vRawLast uint32
+	if handed.VRawLast != nil {
+		vRawLast = *handed.VRawLast
+	} else {
+		vRawLast = 0
 	}
-	if params.VUtcSec != nil {
-		p.vUtcSec = *params.VUtcSec
+	var vUtcSec int64
+	if handed.VUtcSec != nil {
+		vUtcSec = *handed.VUtcSec
+	} else {
+		vUtcSec = 0
 	}
-	if params.VRoomValues != nil {
-		p.vRoomValues = *params.VRoomValues
+	var vRoomValues uint32
+	if handed.VRoomValues != nil {
+		vRoomValues = *handed.VRoomValues
+	} else {
+		vRoomValues = 0
 	}
-	if params.VFull != nil {
-		p.vFull = *params.VFull
+	var vFull uint32
+	if handed.VFull != nil {
+		vFull = *handed.VFull
+	} else {
+		vFull = 0
 	}
-	if params.VGone != nil {
-		p.vGone = *params.VGone
+	var vGone uint32
+	if handed.VGone != nil {
+		vGone = *handed.VGone
+	} else {
+		vGone = 0
 	}
-	if params.VDenied != nil {
-		p.vDenied = *params.VDenied
+	var vRoster []TodoPeerMemberRecord = nil
+	var vDenied uint32
+	if handed.VDenied != nil {
+		vDenied = *handed.VDenied
+	} else {
+		vDenied = 0
 	}
-	if params.VForbidden != nil {
-		p.vForbidden = *params.VForbidden
+	var vForbidden bool
+	if handed.VForbidden != nil {
+		vForbidden = *handed.VForbidden
+	} else {
+		vForbidden = false
 	}
-	if params.VAuthorized != nil {
-		p.vAuthorized = *params.VAuthorized
+	var vAuthorized bool
+	if handed.VAuthorized != nil {
+		vAuthorized = *handed.VAuthorized
+	} else {
+		vAuthorized = true
 	}
-	if params.VTook != nil {
-		p.vTook = *params.VTook
+	var vTaking []TodoPeerOpRecord = nil
+	var vTook uint32
+	if handed.VTook != nil {
+		vTook = *handed.VTook
+	} else {
+		vTook = 0
 	}
+	var vOp TodoPeerOpRecord = TodoPeerOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	p.vNode = vNode
+	p.vClock = vClock
+	p.vStamp = vStamp
+	p.vDot = vDot
+	p.vAdds = vAdds
+	p.vOne = vOne
+	p.vEntry = vEntry
+	p.vValues = vValues
+	p.vTyped = vTyped
+	p.vHeld = vHeld
+	p.vWasLive = vWasLive
+	p.vPresent = vPresent
+	p.vRefusals = vRefusals
+	p.vAgenda = vAgenda
+	p.vLocal = vLocal
+	p.vOcc = vOcc
+	p.vAgendaNext = vAgendaNext
+	p.vZoneStarts1 = vZoneStarts1
+	p.vZoneOffsets1 = vZoneOffsets1
+	p.vZoneStarts2 = vZoneStarts2
+	p.vZoneOffsets2 = vZoneOffsets2
+	p.vZoneStarts3 = vZoneStarts3
+	p.vZoneOffsets3 = vZoneOffsets3
+	p.vZoneStarts4 = vZoneStarts4
+	p.vZoneOffsets4 = vZoneOffsets4
+	p.vZoneStarts = vZoneStarts
+	p.vZoneOffsets = vZoneOffsets
+	p.vZoneRows = vZoneRows
+	p.vSplit = vSplit
+	p.vSched = vSched
+	p.vRawCount = vRawCount
+	p.vRawLast = vRawLast
+	p.vUtcSec = vUtcSec
+	p.vRoomValues = vRoomValues
+	p.vFull = vFull
+	p.vGone = vGone
+	p.vRoster = vRoster
+	p.vDenied = vDenied
+	p.vForbidden = vForbidden
+	p.vAuthorized = vAuthorized
+	p.vTaking = vTaking
+	p.vTook = vTook
+	p.vOp = vOp
 }
 
 

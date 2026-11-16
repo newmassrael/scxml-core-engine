@@ -119,6 +119,7 @@ public final class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy: In
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

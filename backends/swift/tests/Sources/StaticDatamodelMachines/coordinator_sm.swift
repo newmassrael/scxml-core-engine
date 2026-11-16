@@ -160,9 +160,9 @@ public final class CoordinatorPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `requested` datamodel variable.
-    var vRequested: UInt32 = 0
+    var vRequested: UInt32
     /// W3C SCXML 5.2: the `ok` datamodel variable.
-    var vOk: UInt32 = 0
+    var vOk: UInt32
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -174,18 +174,33 @@ public final class CoordinatorPolicy: InvocablePolicy {
         public var vOk: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRequested {
-            vRequested = value
+        let vRequested: UInt32
+        if let handed = params.vRequested {
+            vRequested = handed
+        } else {
+            vRequested = 0
         }
-        if let value = params.vOk {
-            vOk = value
+        let vOk: UInt32
+        if let handed = params.vOk {
+            vOk = handed
+        } else {
+            vOk = 0
         }
+        self.vRequested = vRequested
+        self.vOk = vOk
     }
 
     public init() {
+        let vRequested: UInt32 = 0
+        let vOk: UInt32 = 0
+        self.vRequested = vRequested
+        self.vOk = vOk
+
         sessionID = drawSessionID()
     }
 

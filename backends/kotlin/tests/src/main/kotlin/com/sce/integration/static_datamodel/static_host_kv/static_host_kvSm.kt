@@ -314,23 +314,29 @@ class StaticHostKvStateMachine(
         var next: String? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.key?.let { vKey = it }
-        params.value?.let { vValue = it }
-        params.after?.let { vAfter = it }
-        params.prefix?.let { vPrefix = it }
-        params.outcome?.let { vOutcome = it }
-        params.found?.let { vFound = it }
-        params.got?.let { vGot = it }
-        params.replaced?.let { vReplaced = it }
-        params.existed?.let { vExisted = it }
-        params.nextFound?.let { vNextFound = it }
-        params.next?.let { vNext = it }
+        vKey = params.key ?: ("")
+        vValue = params.value ?: ("")
+        vAfter = params.after ?: ("")
+        vPrefix = params.prefix ?: ("")
+        vOutcome = params.outcome ?: ("")
+        vFound = params.found ?: (false)
+        vGot = params.got ?: ("")
+        vReplaced = params.replaced ?: (false)
+        vExisted = params.existed ?: (false)
+        vNextFound = params.nextFound ?: (false)
+        vNext = params.next ?: ("")
     }
 
     /** The published variables as one immutable value, in declaration order. */

@@ -109,9 +109,9 @@ public final class StaticOverflowPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`).
-    var vLevel: UInt8 = 250
+    var vLevel: UInt8
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `level` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -131,18 +131,33 @@ public final class StaticOverflowPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vLevel {
-            vLevel = value
+        let vLevel: UInt8
+        if let handed = params.vLevel {
+            vLevel = handed
+        } else {
+            vLevel = 250
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vLevel = vLevel
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vLevel: UInt8 = 250
+        let vRefusals: UInt32 = 0
+        self.vLevel = vLevel
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

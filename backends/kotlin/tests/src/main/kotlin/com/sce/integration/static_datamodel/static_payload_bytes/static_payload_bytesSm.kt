@@ -125,16 +125,25 @@ class StaticPayloadBytesStateMachine(
         var errors: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.size?.let { vSize = it }
-        params.matches?.let { vMatches = it }
-        params.misses?.let { vMisses = it }
-        params.errors?.let { vErrors = it }
+        vLast = StaticPayloadBytesFramedRecord(sensor = 1.toUByte(), frame = "ab".toByteArray())
+        vHeld = "z".toByteArray()
+        vFrames = emptyList()
+        vSize = params.size ?: (0.toUInt())
+        vMatches = params.matches ?: (0.toUInt())
+        vMisses = params.misses ?: (0.toUInt())
+        vErrors = params.errors ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

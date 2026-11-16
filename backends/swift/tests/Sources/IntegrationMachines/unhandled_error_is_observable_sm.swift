@@ -113,6 +113,7 @@ public final class UnhandledErrorIsObservablePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

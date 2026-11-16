@@ -137,6 +137,7 @@ public final class EventDescriptorSpellingsAgreePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

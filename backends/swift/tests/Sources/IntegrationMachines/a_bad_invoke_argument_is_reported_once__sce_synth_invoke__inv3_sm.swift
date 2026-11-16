@@ -108,6 +108,7 @@ public final class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy: Inv
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

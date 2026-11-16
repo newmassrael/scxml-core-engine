@@ -134,11 +134,11 @@ public final class StaticListPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: [UInt8] = []
+    var vPicked: [UInt8]
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
 
     /// Reports what the published `picked` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -162,18 +162,37 @@ public final class StaticListPolicy: InvocablePolicy {
         public var vCount: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vPicked: [UInt8] = []
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
+        self.vPicked = vPicked
+        self.vRefusals = vRefusals
+        self.vCount = vCount
     }
 
     public init() {
+        let vPicked: [UInt8] = []
+        let vRefusals: UInt32 = 0
+        let vCount: UInt32 = 0
+        self.vPicked = vPicked
+        self.vRefusals = vRefusals
+        self.vCount = vCount
+
         sessionID = drawSessionID()
     }
 

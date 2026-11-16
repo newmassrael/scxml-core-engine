@@ -158,13 +158,13 @@ public final class StaticDonedataPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `small` datamodel variable.
-    var vSmall: UInt8 = 250
+    var vSmall: UInt8
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String = "tally"
+    var vLabel: String
     /// W3C SCXML 5.2: the `layout` datamodel variable.
-    var vLayout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.month
+    var vLayout: StaticDonedataViewModeEnum
 
     /// Reports what the published `count` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -181,21 +181,46 @@ public final class StaticDonedataPolicy: InvocablePolicy {
         public var vLabel: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vSmall {
-            vSmall = value
+        let vSmall: UInt8
+        if let handed = params.vSmall {
+            vSmall = handed
+        } else {
+            vSmall = 250
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "tally"
         }
+        let vLayout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.month
+        self.vCount = vCount
+        self.vSmall = vSmall
+        self.vLabel = vLabel
+        self.vLayout = vLayout
     }
 
     public init() {
+        let vCount: UInt32 = 0
+        let vSmall: UInt8 = 250
+        let vLabel: String = "tally"
+        let vLayout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.month
+        self.vCount = vCount
+        self.vSmall = vSmall
+        self.vLabel = vLabel
+        self.vLayout = vLayout
+
         sessionID = drawSessionID()
     }
 

@@ -185,21 +185,21 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `goals` datamodel variable, published (`sce:direction="out"`).
-    var vGoals: [StaticStateAlgorithmOptionalGoalRecord] = []
+    var vGoals: [StaticStateAlgorithmOptionalGoalRecord]
     /// W3C SCXML 5.2: the `draft` datamodel variable.
-    var vDraft: StaticStateAlgorithmOptionalGoalRecord = StaticStateAlgorithmOptionalGoalRecord(id: 0, day: nil, weight: 0)
+    var vDraft: StaticStateAlgorithmOptionalGoalRecord
     /// W3C SCXML 5.2: the `today` datamodel variable.
-    var vToday: Int64 = 100
+    var vToday: Int64
     /// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
-    var vFirst: Int64? = nil
+    var vFirst: Int64?
     /// W3C SCXML 5.2: the `left` datamodel variable, published (`sce:direction="out"`).
-    var vLeft: Int64? = 0
+    var vLeft: Int64?
     /// W3C SCXML 5.2: the `undated` datamodel variable, published (`sce:direction="out"`).
-    var vUndated: UInt32 = 0
+    var vUndated: UInt32
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
-    var vTotal: Int64 = 0
+    var vTotal: Int64
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `goals` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -239,30 +239,77 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vToday {
-            vToday = value
+        let vGoals: [StaticStateAlgorithmOptionalGoalRecord] = []
+        let vDraft: StaticStateAlgorithmOptionalGoalRecord = StaticStateAlgorithmOptionalGoalRecord(id: 0, day: nil, weight: 0)
+        let vToday: Int64
+        if let handed = params.vToday {
+            vToday = handed
+        } else {
+            vToday = 100
         }
-        if let value = params.vFirst {
-            vFirst = value
+        let vFirst: Int64?
+        if let handed = params.vFirst {
+            vFirst = handed
+        } else {
+            vFirst = nil
         }
-        if let value = params.vLeft {
-            vLeft = value
+        let vLeft: Int64?
+        if let handed = params.vLeft {
+            vLeft = handed
+        } else {
+            vLeft = 0
         }
-        if let value = params.vUndated {
-            vUndated = value
+        let vUndated: UInt32
+        if let handed = params.vUndated {
+            vUndated = handed
+        } else {
+            vUndated = 0
         }
-        if let value = params.vTotal {
-            vTotal = value
+        let vTotal: Int64
+        if let handed = params.vTotal {
+            vTotal = handed
+        } else {
+            vTotal = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vGoals = vGoals
+        self.vDraft = vDraft
+        self.vToday = vToday
+        self.vFirst = vFirst
+        self.vLeft = vLeft
+        self.vUndated = vUndated
+        self.vTotal = vTotal
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vGoals: [StaticStateAlgorithmOptionalGoalRecord] = []
+        let vDraft: StaticStateAlgorithmOptionalGoalRecord = StaticStateAlgorithmOptionalGoalRecord(id: 0, day: nil, weight: 0)
+        let vToday: Int64 = 100
+        let vFirst: Int64? = nil
+        let vLeft: Int64? = 0
+        let vUndated: UInt32 = 0
+        let vTotal: Int64 = 0
+        let vErrors: UInt32 = 0
+        self.vGoals = vGoals
+        self.vDraft = vDraft
+        self.vToday = vToday
+        self.vFirst = vFirst
+        self.vLeft = vLeft
+        self.vUndated = vUndated
+        self.vTotal = vTotal
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

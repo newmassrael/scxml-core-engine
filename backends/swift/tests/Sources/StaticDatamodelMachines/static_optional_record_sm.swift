@@ -178,25 +178,25 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `pick` datamodel variable, published (`sce:direction="out"`).
-    var vPick: StaticOptionalRecordItemRecord? = nil
+    var vPick: StaticOptionalRecordItemRecord?
     /// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
-    var vFound: StaticOptionalRecordItemRecord? = nil
+    var vFound: StaticOptionalRecordItemRecord?
     /// W3C SCXML 5.2: the `draft` datamodel variable, published (`sce:direction="out"`).
-    var vDraft: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord(id: 0, title: "draft", count: 0)
+    var vDraft: StaticOptionalRecordItemRecord
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    var vItems: [StaticOptionalRecordItemRecord] = []
+    var vItems: [StaticOptionalRecordItemRecord]
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    var vTitle: String = ""
+    var vTitle: String
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: Int32 = 0
+    var vCount: Int32
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: Int32 = 0
+    var vShown: Int32
     /// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
-    var vKnown: Bool = false
+    var vKnown: Bool
     /// W3C SCXML 5.2: the `absent` datamodel variable, published (`sce:direction="out"`).
-    var vAbsent: Bool = false
+    var vAbsent: Bool
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `pick` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -252,30 +252,85 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTitle {
-            vTitle = value
+        let vPick: StaticOptionalRecordItemRecord? = nil
+        let vFound: StaticOptionalRecordItemRecord? = nil
+        let vDraft: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord(id: 0, title: "draft", count: 0)
+        let vItems: [StaticOptionalRecordItemRecord] = []
+        let vTitle: String
+        if let handed = params.vTitle {
+            vTitle = handed
+        } else {
+            vTitle = ""
         }
-        if let value = params.vCount {
-            vCount = value
+        let vCount: Int32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vShown {
-            vShown = value
+        let vShown: Int32
+        if let handed = params.vShown {
+            vShown = handed
+        } else {
+            vShown = 0
         }
-        if let value = params.vKnown {
-            vKnown = value
+        let vKnown: Bool
+        if let handed = params.vKnown {
+            vKnown = handed
+        } else {
+            vKnown = false
         }
-        if let value = params.vAbsent {
-            vAbsent = value
+        let vAbsent: Bool
+        if let handed = params.vAbsent {
+            vAbsent = handed
+        } else {
+            vAbsent = false
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vPick = vPick
+        self.vFound = vFound
+        self.vDraft = vDraft
+        self.vItems = vItems
+        self.vTitle = vTitle
+        self.vCount = vCount
+        self.vShown = vShown
+        self.vKnown = vKnown
+        self.vAbsent = vAbsent
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vPick: StaticOptionalRecordItemRecord? = nil
+        let vFound: StaticOptionalRecordItemRecord? = nil
+        let vDraft: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord(id: 0, title: "draft", count: 0)
+        let vItems: [StaticOptionalRecordItemRecord] = []
+        let vTitle: String = ""
+        let vCount: Int32 = 0
+        let vShown: Int32 = 0
+        let vKnown: Bool = false
+        let vAbsent: Bool = false
+        let vErrors: UInt32 = 0
+        self.vPick = vPick
+        self.vFound = vFound
+        self.vDraft = vDraft
+        self.vItems = vItems
+        self.vTitle = vTitle
+        self.vCount = vCount
+        self.vShown = vShown
+        self.vKnown = vKnown
+        self.vAbsent = vAbsent
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

@@ -145,6 +145,7 @@ public final class StaticHostedFirstPolicy: InvocablePolicy {
     private let actions: any StaticHostedFirstActions
 
     public init(actions: any StaticHostedFirstActions) {
+
         self.actions = actions
         sessionID = drawSessionID()
     }

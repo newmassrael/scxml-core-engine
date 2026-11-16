@@ -128,15 +128,15 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `entry` datamodel variable, published (`sce:direction="out"`).
-    var vEntry: UInt32 = 0
+    var vEntry: UInt32
     /// W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`).
-    var vDue: Int64? = nil
+    var vDue: Int64?
     /// W3C SCXML 5.2: the `remind` datamodel variable, published (`sce:direction="out"`).
-    var vRemind: Int64? = nil
+    var vRemind: Int64?
     /// W3C SCXML 5.2: the `taken` datamodel variable, published (`sce:direction="out"`).
-    var vTaken: UInt32 = 0
+    var vTaken: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `entry` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -171,27 +171,60 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vEntry {
-            vEntry = value
+        let vEntry: UInt32
+        if let handed = params.vEntry {
+            vEntry = handed
+        } else {
+            vEntry = 0
         }
-        if let value = params.vDue {
-            vDue = value
+        let vDue: Int64?
+        if let handed = params.vDue {
+            vDue = handed
+        } else {
+            vDue = nil
         }
-        if let value = params.vRemind {
-            vRemind = value
+        let vRemind: Int64?
+        if let handed = params.vRemind {
+            vRemind = handed
+        } else {
+            vRemind = nil
         }
-        if let value = params.vTaken {
-            vTaken = value
+        let vTaken: UInt32
+        if let handed = params.vTaken {
+            vTaken = handed
+        } else {
+            vTaken = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vEntry = vEntry
+        self.vDue = vDue
+        self.vRemind = vRemind
+        self.vTaken = vTaken
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vEntry: UInt32 = 0
+        let vDue: Int64? = nil
+        let vRemind: Int64? = nil
+        let vTaken: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vEntry = vEntry
+        self.vDue = vDue
+        self.vRemind = vRemind
+        self.vTaken = vTaken
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

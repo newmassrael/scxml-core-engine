@@ -266,10 +266,13 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -277,51 +280,45 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'got' with expr
-        try {
-            val initResult_got = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "got", initResult_got)
-        } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='got'> expr failed to evaluate")
+        // §scxml-6.4: 'got' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "got", APayloadRidesOnItsOwnEventEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'got' with expr
+            try {
+                engine.setVariable(sid, "got", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='got'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'stolen' with expr
-        try {
-            val initResult_stolen = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "stolen", initResult_stolen)
-        } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='stolen'> expr failed to evaluate")
+        // §scxml-6.4: 'stolen' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "stolen", APayloadRidesOnItsOwnEventEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'stolen' with expr
+            try {
+                engine.setVariable(sid, "stolen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='stolen'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'plains' with expr
-        try {
-            val initResult_plains = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "plains", initResult_plains)
-        } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='plains'> expr failed to evaluate")
+        // §scxml-6.4: 'plains' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "plains", APayloadRidesOnItsOwnEventEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'plains' with expr
+            try {
+                engine.setVariable(sid, "plains", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='plains'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'v9' with expr
-        try {
-            val initResult_v9 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9"))
-            engine.setVariable(sid, "v9", initResult_v9)
-        } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='v9'> expr failed to evaluate")
+        // §scxml-6.4: 'v9' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "v9", APayloadRidesOnItsOwnEventEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'v9' with expr
+            try {
+                engine.setVariable(sid, "v9", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9")))
+            } catch (e: Exception) {
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='v9'> expr failed to evaluate")
+            }
         }
     }
 

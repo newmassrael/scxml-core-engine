@@ -109,6 +109,7 @@ public final class DonedataLateCompletionSceSynthInvokeInvLatePolicy: InvocableP
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

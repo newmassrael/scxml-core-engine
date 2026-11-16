@@ -183,15 +183,15 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `slots` datamodel variable, published (`sce:direction="out"`).
-    var vSlots: [StaticTextRecordSlotRecord] = []
+    var vSlots: [StaticTextRecordSlotRecord]
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
-    var vHeld: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "start")
+    var vHeld: StaticTextRecordSlotRecord
     /// W3C SCXML 5.2: the `incoming` datamodel variable, published (`sce:direction="out"`).
-    var vIncoming: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "")
+    var vIncoming: StaticTextRecordSlotRecord
     /// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
-    var vKnown: UInt32 = 0
+    var vKnown: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `slots` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -223,18 +223,45 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vKnown {
-            vKnown = value
+        let vSlots: [StaticTextRecordSlotRecord] = []
+        let vHeld: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "start")
+        let vIncoming: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "")
+        let vKnown: UInt32
+        if let handed = params.vKnown {
+            vKnown = handed
+        } else {
+            vKnown = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vSlots = vSlots
+        self.vHeld = vHeld
+        self.vIncoming = vIncoming
+        self.vKnown = vKnown
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vSlots: [StaticTextRecordSlotRecord] = []
+        let vHeld: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "start")
+        let vIncoming: StaticTextRecordSlotRecord = StaticTextRecordSlotRecord(slot: 1, version: 0, text: "")
+        let vKnown: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vSlots = vSlots
+        self.vHeld = vHeld
+        self.vIncoming = vIncoming
+        self.vKnown = vKnown
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

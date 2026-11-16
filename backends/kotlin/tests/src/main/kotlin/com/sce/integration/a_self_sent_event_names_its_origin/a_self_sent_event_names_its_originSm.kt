@@ -333,10 +333,13 @@ class ASelfSentEventNamesItsOriginStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -344,65 +347,63 @@ class ASelfSentEventNamesItsOriginStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'blank' with expr
-        try {
-            val initResult_blank = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
-            engine.setVariable(sid, "blank", initResult_blank)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='blank'> expr failed to evaluate")
+        // §scxml-6.4: 'blank' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "blank", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'blank' with expr
+            try {
+                engine.setVariable(sid, "blank", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='blank'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'immediateOk' with expr
-        try {
-            val initResult_immediateOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "immediateOk", initResult_immediateOk)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='immediateOk'> expr failed to evaluate")
+        // §scxml-6.4: 'immediateOk' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "immediateOk", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'immediateOk' with expr
+            try {
+                engine.setVariable(sid, "immediateOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='immediateOk'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'replied' with expr
-        try {
-            val initResult_replied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "replied", initResult_replied)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='replied'> expr failed to evaluate")
+        // §scxml-6.4: 'replied' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "replied", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'replied' with expr
+            try {
+                engine.setVariable(sid, "replied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='replied'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'delayedOk' with expr
-        try {
-            val initResult_delayedOk = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "delayedOk", initResult_delayedOk)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='delayedOk'> expr failed to evaluate")
+        // §scxml-6.4: 'delayedOk' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "delayedOk", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'delayedOk' with expr
+            try {
+                engine.setVariable(sid, "delayedOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='delayedOk'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'unreachable' with expr
-        try {
-            val initResult_unreachable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "unreachable", initResult_unreachable)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='unreachable'> expr failed to evaluate")
+        // §scxml-6.4: 'unreachable' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "unreachable", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'unreachable' with expr
+            try {
+                engine.setVariable(sid, "unreachable", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='unreachable'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'strayed' with expr
-        try {
-            val initResult_strayed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "strayed", initResult_strayed)
-        } catch (e: Exception) {
-            raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='strayed'> expr failed to evaluate")
+        // §scxml-6.4: 'strayed' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "strayed", ASelfSentEventNamesItsOriginEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'strayed' with expr
+            try {
+                engine.setVariable(sid, "strayed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ASelfSentEventNamesItsOriginEvent.Error.Execution, "<data id='strayed'> expr failed to evaluate")
+            }
         }
     }
 

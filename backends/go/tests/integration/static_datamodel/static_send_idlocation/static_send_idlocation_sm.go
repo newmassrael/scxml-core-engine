@@ -464,9 +464,10 @@ type StaticSendIdlocationPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticSendIdlocationPolicy creates a new policy with default values.
@@ -538,27 +539,53 @@ type StaticSendIdlocationInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticSendIdlocationPolicy) AcceptParams(params StaticSendIdlocationInvokeParams) {
-	if params.VFirst != nil {
-		p.vFirst = *params.VFirst
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticSendIdlocationPolicy) AcceptParams(handed StaticSendIdlocationInvokeParams) {
+	var vFirst string
+	if handed.VFirst != nil {
+		vFirst = *handed.VFirst
+	} else {
+		vFirst = ""
 	}
-	if params.VSecond != nil {
-		p.vSecond = *params.VSecond
+	var vSecond string
+	if handed.VSecond != nil {
+		vSecond = *handed.VSecond
+	} else {
+		vSecond = ""
 	}
-	if params.VScale != nil {
-		p.vScale = *params.VScale
+	var vScale uint32
+	if handed.VScale != nil {
+		vScale = *handed.VScale
+	} else {
+		vScale = 3
 	}
-	if params.VFirstFired != nil {
-		p.vFirstFired = *params.VFirstFired
+	var vFirstFired uint32
+	if handed.VFirstFired != nil {
+		vFirstFired = *handed.VFirstFired
+	} else {
+		vFirstFired = 0
 	}
-	if params.VSecondFired != nil {
-		p.vSecondFired = *params.VSecondFired
+	var vSecondFired uint32
+	if handed.VSecondFired != nil {
+		vSecondFired = *handed.VSecondFired
+	} else {
+		vSecondFired = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vFirst = vFirst
+	p.vSecond = vSecond
+	p.vScale = vScale
+	p.vFirstFired = vFirstFired
+	p.vSecondFired = vSecondFired
+	p.vRefusals = vRefusals
 }
 
 

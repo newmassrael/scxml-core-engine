@@ -699,9 +699,10 @@ type StaticStateAlgorithmPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticStateAlgorithmPolicy creates a new policy with default values.
@@ -797,18 +798,40 @@ type StaticStateAlgorithmInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticStateAlgorithmPolicy) AcceptParams(params StaticStateAlgorithmInvokeParams) {
-	if params.VIdsum != nil {
-		p.vIdsum = *params.VIdsum
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticStateAlgorithmPolicy) AcceptParams(handed StaticStateAlgorithmInvokeParams) {
+	var vEntries []StaticStateAlgorithmEntryRecord = nil
+	var vTotal StaticStateAlgorithmTotalRecord = StaticStateAlgorithmTotalRecord{count: 0, sum: 0}
+	var vLast StaticStateAlgorithmEntryRecord = StaticStateAlgorithmEntryRecord{id: 0, amount: 0}
+	var vIds []uint32 = nil
+	var vIdsum uint32
+	if handed.VIdsum != nil {
+		vIdsum = *handed.VIdsum
+	} else {
+		vIdsum = 0
 	}
-	if params.VLarge != nil {
-		p.vLarge = *params.VLarge
+	var vLarge uint32
+	if handed.VLarge != nil {
+		vLarge = *handed.VLarge
+	} else {
+		vLarge = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vEntries = vEntries
+	p.vTotal = vTotal
+	p.vLast = vLast
+	p.vIds = vIds
+	p.vIdsum = vIdsum
+	p.vLarge = vLarge
+	p.vRefusals = vRefusals
 }
 
 

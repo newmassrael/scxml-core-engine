@@ -787,9 +787,10 @@ type StaticComposedSendPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticComposedSendPolicy creates a new policy with default values.
@@ -944,45 +945,99 @@ type StaticComposedSendInvokeParams struct {
 	VCountedHops *uint8
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticComposedSendPolicy) AcceptParams(params StaticComposedSendInvokeParams) {
-	if params.VDeliveries != nil {
-		p.vDeliveries = *params.VDeliveries
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticComposedSendPolicy) AcceptParams(handed StaticComposedSendInvokeParams) {
+	var vDeliveries uint32
+	if handed.VDeliveries != nil {
+		vDeliveries = *handed.VDeliveries
+	} else {
+		vDeliveries = 0
 	}
-	if params.VItemCount != nil {
-		p.vItemCount = *params.VItemCount
+	var vItemCount uint32
+	if handed.VItemCount != nil {
+		vItemCount = *handed.VItemCount
+	} else {
+		vItemCount = 0
 	}
-	if params.VTagCount != nil {
-		p.vTagCount = *params.VTagCount
+	var vTagCount uint32
+	if handed.VTagCount != nil {
+		vTagCount = *handed.VTagCount
+	} else {
+		vTagCount = 0
 	}
-	if params.VIdSum != nil {
-		p.vIdSum = *params.VIdSum
+	var vIdSum uint32
+	if handed.VIdSum != nil {
+		vIdSum = *handed.VIdSum
+	} else {
+		vIdSum = 0
 	}
-	if params.VCellSum != nil {
-		p.vCellSum = *params.VCellSum
+	var vCellSum uint32
+	if handed.VCellSum != nil {
+		vCellSum = *handed.VCellSum
+	} else {
+		vCellSum = 0
 	}
-	if params.VLevelCount != nil {
-		p.vLevelCount = *params.VLevelCount
+	var vLevelCount uint32
+	if handed.VLevelCount != nil {
+		vLevelCount = *handed.VLevelCount
+	} else {
+		vLevelCount = 0
 	}
-	if params.VFirstMaybe.IsPresent() {
-		p.vFirstMaybe = params.VFirstMaybe
+	var vFirstMaybe optional.Of[uint16]
+	if handed.VFirstMaybe.IsPresent() {
+		vFirstMaybe = handed.VFirstMaybe
+	} else {
+		vFirstMaybe = optional.None[uint16]()
 	}
-	if params.VLateSum != nil {
-		p.vLateSum = *params.VLateSum
+	var vLateSum uint32
+	if handed.VLateSum != nil {
+		vLateSum = *handed.VLateSum
+	} else {
+		vLateSum = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vLate []uint8 = nil
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
-	if params.VCountedDeliveries != nil {
-		p.vCountedDeliveries = *params.VCountedDeliveries
+	var vHeld []uint8 = nil
+	var vCountedDeliveries uint32
+	if handed.VCountedDeliveries != nil {
+		vCountedDeliveries = *handed.VCountedDeliveries
+	} else {
+		vCountedDeliveries = 0
 	}
-	if params.VCountedSum != nil {
-		p.vCountedSum = *params.VCountedSum
+	var vCountedSum uint32
+	if handed.VCountedSum != nil {
+		vCountedSum = *handed.VCountedSum
+	} else {
+		vCountedSum = 0
 	}
-	if params.VCountedHops != nil {
-		p.vCountedHops = *params.VCountedHops
+	var vCountedHops uint8
+	if handed.VCountedHops != nil {
+		vCountedHops = *handed.VCountedHops
+	} else {
+		vCountedHops = 0
 	}
+	p.vDeliveries = vDeliveries
+	p.vItemCount = vItemCount
+	p.vTagCount = vTagCount
+	p.vIdSum = vIdSum
+	p.vCellSum = vCellSum
+	p.vLevelCount = vLevelCount
+	p.vFirstMaybe = vFirstMaybe
+	p.vLateSum = vLateSum
+	p.vLate = vLate
+	p.vRefusals = vRefusals
+	p.vHeld = vHeld
+	p.vCountedDeliveries = vCountedDeliveries
+	p.vCountedSum = vCountedSum
+	p.vCountedHops = vCountedHops
 }
 
 

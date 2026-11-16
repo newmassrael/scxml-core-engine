@@ -8,15 +8,37 @@ from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_zenoh_timestamp import CodecZenohTimestamp
+from . import codec_zenoh_timestamp as sce_codec_zenoh_timestamp
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Protocol
+
+
+class CodecZenohTimestampExtSource(Protocol):
+    """The elements a value of :class:`CodecZenohTimestampExt` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def ts(self) -> sce_codec_zenoh_timestamp.CodecZenohTimestampSource: ...
+
+
+def encode_source(src: CodecZenohTimestampExtSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohTimestampExt` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``ext_size`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _b_ts = bytearray()
+    sce_codec_zenoh_timestamp.encode_source(src.ts, BytearraySink(_b_ts))
+    _d_ext_size = len(_b_ts)
+    w.write_vle_u64(_d_ext_size)
+    w.write_bytes(_b_ts)
 
 
 @dataclass
 class CodecZenohTimestampExt:
-    ext_size: int = 0
-    ts: CodecZenohTimestamp = b""
+    ts: CodecZenohTimestamp = field(default_factory=CodecZenohTimestamp)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohTimestampExt]:
@@ -54,7 +76,6 @@ class CodecZenohTimestampExt:
         except CodecError:
             return None
         return cls(
-            ext_size=f_ext_size,
             ts=f_ts,
         )
 
@@ -64,16 +85,7 @@ class CodecZenohTimestampExt:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_vle_u64(self.ext_size)
-        self.ts.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

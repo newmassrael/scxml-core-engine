@@ -160,6 +160,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

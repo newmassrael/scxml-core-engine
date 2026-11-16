@@ -204,7 +204,7 @@ public final class StaticHistoryPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `resumed` datamodel variable, published (`sce:direction="out"`).
-    var vResumed: UInt8 = 0
+    var vResumed: UInt8
 
     /// Reports what the published `resumed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -219,15 +219,24 @@ public final class StaticHistoryPolicy: InvocablePolicy {
         public var vResumed: UInt8? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vResumed {
-            vResumed = value
+        let vResumed: UInt8
+        if let handed = params.vResumed {
+            vResumed = handed
+        } else {
+            vResumed = 0
         }
+        self.vResumed = vResumed
     }
 
     public init() {
+        let vResumed: UInt8 = 0
+        self.vResumed = vResumed
+
         sessionID = drawSessionID()
     }
 

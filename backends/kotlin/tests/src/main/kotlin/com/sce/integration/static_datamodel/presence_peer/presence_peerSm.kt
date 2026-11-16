@@ -166,21 +166,30 @@ class PresencePeerStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.node?.let { vNode = it }
-        params.hub?.let { vHub = it }
-        params.ttl?.let { vTtl = it }
-        params.lease?.let { vLease = it }
-        params.serial?.let { vSerial = it }
-        params.known?.let { vKnown = it }
-        params.fresh?.let { vFresh = it }
-        params.lost?.let { vLost = it }
-        params.refusals?.let { vRefusals = it }
+        vNode = params.node ?: (0.toUInt())
+        vHub = params.hub ?: (false)
+        vTtl = params.ttl ?: (0.toUInt())
+        vLease = params.lease ?: (0.toUInt())
+        vOnline = emptyList()
+        vRebuilt = emptyList()
+        vEntry = PresencePeerSeenRecord(client = 0.toUInt(), last = 0, gen = 0.toUInt())
+        vSerial = params.serial ?: (0.toUInt())
+        vKnown = params.known ?: (false)
+        vFresh = params.fresh ?: (false)
+        vLost = params.lost ?: (0.toUInt())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

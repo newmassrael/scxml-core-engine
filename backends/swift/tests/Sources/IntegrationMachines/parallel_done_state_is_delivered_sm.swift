@@ -135,6 +135,7 @@ public final class ParallelDoneStateIsDeliveredPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

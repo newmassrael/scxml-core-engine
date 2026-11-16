@@ -141,23 +141,23 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `count` datamodel variable.
-    var vCount: UInt32 = 3
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `small` datamodel variable.
-    var vSmall: UInt8 = 250
+    var vSmall: UInt8
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String = "tally"
+    var vLabel: String
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
-    var vTotal: UInt32 = 0
+    var vTotal: UInt32
     /// W3C SCXML 5.2: the `ok` datamodel variable, published (`sce:direction="out"`).
-    var vOk: Bool = false
+    var vOk: Bool
     /// W3C SCXML 5.2: the `tag` datamodel variable, published (`sce:direction="out"`).
-    var vTag: String = ""
+    var vTag: String
     /// W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`).
-    var vPartialTotal: UInt32 = 0
+    var vPartialTotal: UInt32
     /// W3C SCXML 5.2: the `partialPart` datamodel variable.
-    var vPartialPart: UInt8 = 0
+    var vPartialPart: UInt8
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `total` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -196,39 +196,96 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 3
         }
-        if let value = params.vSmall {
-            vSmall = value
+        let vSmall: UInt8
+        if let handed = params.vSmall {
+            vSmall = handed
+        } else {
+            vSmall = 250
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "tally"
         }
-        if let value = params.vTotal {
-            vTotal = value
+        let vTotal: UInt32
+        if let handed = params.vTotal {
+            vTotal = handed
+        } else {
+            vTotal = 0
         }
-        if let value = params.vOk {
-            vOk = value
+        let vOk: Bool
+        if let handed = params.vOk {
+            vOk = handed
+        } else {
+            vOk = false
         }
-        if let value = params.vTag {
-            vTag = value
+        let vTag: String
+        if let handed = params.vTag {
+            vTag = handed
+        } else {
+            vTag = ""
         }
-        if let value = params.vPartialTotal {
-            vPartialTotal = value
+        let vPartialTotal: UInt32
+        if let handed = params.vPartialTotal {
+            vPartialTotal = handed
+        } else {
+            vPartialTotal = 0
         }
-        if let value = params.vPartialPart {
-            vPartialPart = value
+        let vPartialPart: UInt8
+        if let handed = params.vPartialPart {
+            vPartialPart = handed
+        } else {
+            vPartialPart = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vCount = vCount
+        self.vSmall = vSmall
+        self.vLabel = vLabel
+        self.vTotal = vTotal
+        self.vOk = vOk
+        self.vTag = vTag
+        self.vPartialTotal = vPartialTotal
+        self.vPartialPart = vPartialPart
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vCount: UInt32 = 3
+        let vSmall: UInt8 = 250
+        let vLabel: String = "tally"
+        let vTotal: UInt32 = 0
+        let vOk: Bool = false
+        let vTag: String = ""
+        let vPartialTotal: UInt32 = 0
+        let vPartialPart: UInt8 = 0
+        let vRefusals: UInt32 = 0
+        self.vCount = vCount
+        self.vSmall = vSmall
+        self.vLabel = vLabel
+        self.vTotal = vTotal
+        self.vOk = vOk
+        self.vTag = vTag
+        self.vPartialTotal = vPartialTotal
+        self.vPartialPart = vPartialPart
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

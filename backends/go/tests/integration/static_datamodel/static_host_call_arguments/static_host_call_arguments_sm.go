@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93d2eaee6dba5e766fb0efd849f4ad17022adf69f4fe4542648ce89066aa1aec
+// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -398,9 +398,10 @@ type StaticHostCallArgumentsPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostCallArgumentsPolicy creates a new policy with default values.
@@ -454,15 +455,25 @@ type StaticHostCallArgumentsInvokeParams struct {
 	VErrors *uint8
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostCallArgumentsPolicy) AcceptParams(params StaticHostCallArgumentsInvokeParams) {
-	if params.VLevel != nil {
-		p.vLevel = *params.VLevel
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostCallArgumentsPolicy) AcceptParams(handed StaticHostCallArgumentsInvokeParams) {
+	var vLevel uint8
+	if handed.VLevel != nil {
+		vLevel = *handed.VLevel
+	} else {
+		vLevel = 250
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint8
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vLevel = vLevel
+	p.vErrors = vErrors
 }
 
 

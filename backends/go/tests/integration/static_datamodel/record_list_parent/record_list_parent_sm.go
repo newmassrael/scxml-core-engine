@@ -1920,9 +1920,10 @@ type RecordListParentPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewRecordListParentPolicy creates a new policy with default values.
@@ -2022,21 +2023,47 @@ type RecordListParentInvokeParams struct {
 	VConfirmedCount *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *RecordListParentPolicy) AcceptParams(params RecordListParentInvokeParams) {
-	if params.VTold != nil {
-		p.vTold = *params.VTold
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *RecordListParentPolicy) AcceptParams(handed RecordListParentInvokeParams) {
+	var vTold uint32
+	if handed.VTold != nil {
+		vTold = *handed.VTold
+	} else {
+		vTold = 0
 	}
-	if params.VRefusedCount != nil {
-		p.vRefusedCount = *params.VRefusedCount
+	var vShown RecordListParentToldRecord = RecordListParentToldRecord{id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vOthers []RecordListParentToldValueRecord = nil
+	var vOther RecordListParentToldValueRecord = RecordListParentToldValueRecord{id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vRefused optional.Of[RecordListParentRefusedRecord] = optional.None[RecordListParentRefusedRecord]()
+	var vRefusedCount uint32
+	if handed.VRefusedCount != nil {
+		vRefusedCount = *handed.VRefusedCount
+	} else {
+		vRefusedCount = 0
 	}
-	if params.VPendingCount != nil {
-		p.vPendingCount = *params.VPendingCount
+	var vPendingCount uint32
+	if handed.VPendingCount != nil {
+		vPendingCount = *handed.VPendingCount
+	} else {
+		vPendingCount = 0
 	}
-	if params.VConfirmedCount != nil {
-		p.vConfirmedCount = *params.VConfirmedCount
+	var vConfirmedCount uint32
+	if handed.VConfirmedCount != nil {
+		vConfirmedCount = *handed.VConfirmedCount
+	} else {
+		vConfirmedCount = 0
 	}
+	p.vTold = vTold
+	p.vShown = vShown
+	p.vOthers = vOthers
+	p.vOther = vOther
+	p.vRefused = vRefused
+	p.vRefusedCount = vRefusedCount
+	p.vPendingCount = vPendingCount
+	p.vConfirmedCount = vConfirmedCount
 }
 
 

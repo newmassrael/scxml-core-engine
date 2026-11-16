@@ -200,25 +200,25 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `note_is_ab` datamodel variable, published (`sce:direction="out"`).
-    var vNoteIsAb: Bool = false
+    var vNoteIsAb: Bool
     /// W3C SCXML 5.2: the `note_len` datamodel variable, published (`sce:direction="out"`).
-    var vNoteLen: UInt32 = 0
+    var vNoteLen: UInt32
     /// W3C SCXML 5.2: the `first_label_is_ab` datamodel variable, published (`sce:direction="out"`).
-    var vFirstLabelIsAb: Bool = false
+    var vFirstLabelIsAb: Bool
     /// W3C SCXML 5.2: the `labels_ab` datamodel variable, published (`sce:direction="out"`).
-    var vLabelsAb: UInt32 = 0
+    var vLabelsAb: UInt32
     /// W3C SCXML 5.2: the `first_tags_ab` datamodel variable, published (`sce:direction="out"`).
-    var vFirstTagsAb: UInt32 = 0
+    var vFirstTagsAb: UInt32
     /// W3C SCXML 5.2: the `words_ab` datamodel variable, published (`sce:direction="out"`).
-    var vWordsAb: UInt32 = 0
+    var vWordsAb: UInt32
     /// W3C SCXML 5.2: the `last_label` datamodel variable, published (`sce:direction="out"`).
-    var vLastLabel: String = ""
+    var vLastLabel: String
     /// W3C SCXML 5.2: the `blob_bytes` datamodel variable, published (`sce:direction="out"`).
-    var vBlobBytes: UInt32 = 0
+    var vBlobBytes: UInt32
     /// W3C SCXML 5.2: the `blobs_ab` datamodel variable, published (`sce:direction="out"`).
-    var vBlobsAb: UInt32 = 0
+    var vBlobsAb: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `note_is_ab` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -278,42 +278,105 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNoteIsAb {
-            vNoteIsAb = value
+        let vNoteIsAb: Bool
+        if let handed = params.vNoteIsAb {
+            vNoteIsAb = handed
+        } else {
+            vNoteIsAb = false
         }
-        if let value = params.vNoteLen {
-            vNoteLen = value
+        let vNoteLen: UInt32
+        if let handed = params.vNoteLen {
+            vNoteLen = handed
+        } else {
+            vNoteLen = 0
         }
-        if let value = params.vFirstLabelIsAb {
-            vFirstLabelIsAb = value
+        let vFirstLabelIsAb: Bool
+        if let handed = params.vFirstLabelIsAb {
+            vFirstLabelIsAb = handed
+        } else {
+            vFirstLabelIsAb = false
         }
-        if let value = params.vLabelsAb {
-            vLabelsAb = value
+        let vLabelsAb: UInt32
+        if let handed = params.vLabelsAb {
+            vLabelsAb = handed
+        } else {
+            vLabelsAb = 0
         }
-        if let value = params.vFirstTagsAb {
-            vFirstTagsAb = value
+        let vFirstTagsAb: UInt32
+        if let handed = params.vFirstTagsAb {
+            vFirstTagsAb = handed
+        } else {
+            vFirstTagsAb = 0
         }
-        if let value = params.vWordsAb {
-            vWordsAb = value
+        let vWordsAb: UInt32
+        if let handed = params.vWordsAb {
+            vWordsAb = handed
+        } else {
+            vWordsAb = 0
         }
-        if let value = params.vLastLabel {
-            vLastLabel = value
+        let vLastLabel: String
+        if let handed = params.vLastLabel {
+            vLastLabel = handed
+        } else {
+            vLastLabel = ""
         }
-        if let value = params.vBlobBytes {
-            vBlobBytes = value
+        let vBlobBytes: UInt32
+        if let handed = params.vBlobBytes {
+            vBlobBytes = handed
+        } else {
+            vBlobBytes = 0
         }
-        if let value = params.vBlobsAb {
-            vBlobsAb = value
+        let vBlobsAb: UInt32
+        if let handed = params.vBlobsAb {
+            vBlobsAb = handed
+        } else {
+            vBlobsAb = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vNoteIsAb = vNoteIsAb
+        self.vNoteLen = vNoteLen
+        self.vFirstLabelIsAb = vFirstLabelIsAb
+        self.vLabelsAb = vLabelsAb
+        self.vFirstTagsAb = vFirstTagsAb
+        self.vWordsAb = vWordsAb
+        self.vLastLabel = vLastLabel
+        self.vBlobBytes = vBlobBytes
+        self.vBlobsAb = vBlobsAb
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vNoteIsAb: Bool = false
+        let vNoteLen: UInt32 = 0
+        let vFirstLabelIsAb: Bool = false
+        let vLabelsAb: UInt32 = 0
+        let vFirstTagsAb: UInt32 = 0
+        let vWordsAb: UInt32 = 0
+        let vLastLabel: String = ""
+        let vBlobBytes: UInt32 = 0
+        let vBlobsAb: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vNoteIsAb = vNoteIsAb
+        self.vNoteLen = vNoteLen
+        self.vFirstLabelIsAb = vFirstLabelIsAb
+        self.vLabelsAb = vLabelsAb
+        self.vFirstTagsAb = vFirstTagsAb
+        self.vWordsAb = vWordsAb
+        self.vLastLabel = vLastLabel
+        self.vBlobBytes = vBlobBytes
+        self.vBlobsAb = vBlobsAb
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

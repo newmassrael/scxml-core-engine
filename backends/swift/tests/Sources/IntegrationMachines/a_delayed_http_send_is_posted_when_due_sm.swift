@@ -114,6 +114,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

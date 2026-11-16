@@ -211,33 +211,33 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`).
-    var vDeliveries: UInt32 = 0
+    var vDeliveries: UInt32
     /// W3C SCXML 5.2: the `item_count` datamodel variable, published (`sce:direction="out"`).
-    var vItemCount: UInt32 = 0
+    var vItemCount: UInt32
     /// W3C SCXML 5.2: the `tag_count` datamodel variable, published (`sce:direction="out"`).
-    var vTagCount: UInt32 = 0
+    var vTagCount: UInt32
     /// W3C SCXML 5.2: the `id_sum` datamodel variable, published (`sce:direction="out"`).
-    var vIdSum: UInt32 = 0
+    var vIdSum: UInt32
     /// W3C SCXML 5.2: the `cell_sum` datamodel variable, published (`sce:direction="out"`).
-    var vCellSum: UInt32 = 0
+    var vCellSum: UInt32
     /// W3C SCXML 5.2: the `level_count` datamodel variable, published (`sce:direction="out"`).
-    var vLevelCount: UInt32 = 0
+    var vLevelCount: UInt32
     /// W3C SCXML 5.2: the `first_maybe` datamodel variable, published (`sce:direction="out"`).
-    var vFirstMaybe: UInt16? = nil
+    var vFirstMaybe: UInt16?
     /// W3C SCXML 5.2: the `late_sum` datamodel variable, published (`sce:direction="out"`).
-    var vLateSum: UInt32 = 0
+    var vLateSum: UInt32
     /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: [UInt8] = []
+    var vLate: [UInt8]
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
     /// W3C SCXML 5.2: the `held` datamodel variable.
-    var vHeld: [UInt8] = []
+    var vHeld: [UInt8]
     /// W3C SCXML 5.2: the `counted_deliveries` datamodel variable, published (`sce:direction="out"`).
-    var vCountedDeliveries: UInt32 = 0
+    var vCountedDeliveries: UInt32
     /// W3C SCXML 5.2: the `counted_sum` datamodel variable, published (`sce:direction="out"`).
-    var vCountedSum: UInt32 = 0
+    var vCountedSum: UInt32
     /// W3C SCXML 5.2: the `counted_hops` datamodel variable, published (`sce:direction="out"`).
-    var vCountedHops: UInt8 = 0
+    var vCountedHops: UInt8
 
     /// Reports what the published `deliveries` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -311,48 +311,131 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         public var vCountedHops: UInt8? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vDeliveries {
-            vDeliveries = value
+        let vDeliveries: UInt32
+        if let handed = params.vDeliveries {
+            vDeliveries = handed
+        } else {
+            vDeliveries = 0
         }
-        if let value = params.vItemCount {
-            vItemCount = value
+        let vItemCount: UInt32
+        if let handed = params.vItemCount {
+            vItemCount = handed
+        } else {
+            vItemCount = 0
         }
-        if let value = params.vTagCount {
-            vTagCount = value
+        let vTagCount: UInt32
+        if let handed = params.vTagCount {
+            vTagCount = handed
+        } else {
+            vTagCount = 0
         }
-        if let value = params.vIdSum {
-            vIdSum = value
+        let vIdSum: UInt32
+        if let handed = params.vIdSum {
+            vIdSum = handed
+        } else {
+            vIdSum = 0
         }
-        if let value = params.vCellSum {
-            vCellSum = value
+        let vCellSum: UInt32
+        if let handed = params.vCellSum {
+            vCellSum = handed
+        } else {
+            vCellSum = 0
         }
-        if let value = params.vLevelCount {
-            vLevelCount = value
+        let vLevelCount: UInt32
+        if let handed = params.vLevelCount {
+            vLevelCount = handed
+        } else {
+            vLevelCount = 0
         }
-        if let value = params.vFirstMaybe {
-            vFirstMaybe = value
+        let vFirstMaybe: UInt16?
+        if let handed = params.vFirstMaybe {
+            vFirstMaybe = handed
+        } else {
+            vFirstMaybe = nil
         }
-        if let value = params.vLateSum {
-            vLateSum = value
+        let vLateSum: UInt32
+        if let handed = params.vLateSum {
+            vLateSum = handed
+        } else {
+            vLateSum = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vLate: [UInt8] = []
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
-        if let value = params.vCountedDeliveries {
-            vCountedDeliveries = value
+        let vHeld: [UInt8] = []
+        let vCountedDeliveries: UInt32
+        if let handed = params.vCountedDeliveries {
+            vCountedDeliveries = handed
+        } else {
+            vCountedDeliveries = 0
         }
-        if let value = params.vCountedSum {
-            vCountedSum = value
+        let vCountedSum: UInt32
+        if let handed = params.vCountedSum {
+            vCountedSum = handed
+        } else {
+            vCountedSum = 0
         }
-        if let value = params.vCountedHops {
-            vCountedHops = value
+        let vCountedHops: UInt8
+        if let handed = params.vCountedHops {
+            vCountedHops = handed
+        } else {
+            vCountedHops = 0
         }
+        self.vDeliveries = vDeliveries
+        self.vItemCount = vItemCount
+        self.vTagCount = vTagCount
+        self.vIdSum = vIdSum
+        self.vCellSum = vCellSum
+        self.vLevelCount = vLevelCount
+        self.vFirstMaybe = vFirstMaybe
+        self.vLateSum = vLateSum
+        self.vLate = vLate
+        self.vRefusals = vRefusals
+        self.vHeld = vHeld
+        self.vCountedDeliveries = vCountedDeliveries
+        self.vCountedSum = vCountedSum
+        self.vCountedHops = vCountedHops
     }
 
     public init() {
+        let vDeliveries: UInt32 = 0
+        let vItemCount: UInt32 = 0
+        let vTagCount: UInt32 = 0
+        let vIdSum: UInt32 = 0
+        let vCellSum: UInt32 = 0
+        let vLevelCount: UInt32 = 0
+        let vFirstMaybe: UInt16? = nil
+        let vLateSum: UInt32 = 0
+        let vLate: [UInt8] = []
+        let vRefusals: UInt32 = 0
+        let vHeld: [UInt8] = []
+        let vCountedDeliveries: UInt32 = 0
+        let vCountedSum: UInt32 = 0
+        let vCountedHops: UInt8 = 0
+        self.vDeliveries = vDeliveries
+        self.vItemCount = vItemCount
+        self.vTagCount = vTagCount
+        self.vIdSum = vIdSum
+        self.vCellSum = vCellSum
+        self.vLevelCount = vLevelCount
+        self.vFirstMaybe = vFirstMaybe
+        self.vLateSum = vLateSum
+        self.vLate = vLate
+        self.vRefusals = vRefusals
+        self.vHeld = vHeld
+        self.vCountedDeliveries = vCountedDeliveries
+        self.vCountedSum = vCountedSum
+        self.vCountedHops = vCountedHops
+
         sessionID = drawSessionID()
     }
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93d2eaee6dba5e766fb0efd849f4ad17022adf69f4fe4542648ce89066aa1aec
+// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -639,9 +639,10 @@ type StaticInvokeEntryPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticInvokeEntryPolicy creates a new policy with default values.
@@ -712,24 +713,46 @@ type StaticInvokeEntryInvokeParams struct {
 	VGreetings *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticInvokeEntryPolicy) AcceptParams(params StaticInvokeEntryInvokeParams) {
-	if params.VBase != nil {
-		p.vBase = *params.VBase
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticInvokeEntryPolicy) AcceptParams(handed StaticInvokeEntryInvokeParams) {
+	var vBase uint32
+	if handed.VBase != nil {
+		vBase = *handed.VBase
+	} else {
+		vBase = 7
 	}
-	if params.VBig != nil {
-		p.vBig = *params.VBig
+	var vBig uint32
+	if handed.VBig != nil {
+		vBig = *handed.VBig
+	} else {
+		vBig = 4294967295
 	}
-	if params.VCompleted != nil {
-		p.vCompleted = *params.VCompleted
+	var vCompleted uint32
+	if handed.VCompleted != nil {
+		vCompleted = *handed.VCompleted
+	} else {
+		vCompleted = 0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
-	if params.VGreetings != nil {
-		p.vGreetings = *params.VGreetings
+	var vGreetings uint32
+	if handed.VGreetings != nil {
+		vGreetings = *handed.VGreetings
+	} else {
+		vGreetings = 0
 	}
+	p.vBase = vBase
+	p.vBig = vBig
+	p.vCompleted = vCompleted
+	p.vErrors = vErrors
+	p.vGreetings = vGreetings
 }
 
 

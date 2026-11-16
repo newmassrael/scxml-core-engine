@@ -109,6 +109,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

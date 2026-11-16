@@ -196,15 +196,15 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `last` datamodel variable.
-    var vLast: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord = StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord(level: 0, layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum.month, urgent: false)
+    var vLast: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord
     /// W3C SCXML 5.2: the `pick` datamodel variable.
-    var vPick: String = "static_hybrid_watcher.scxml"
+    var vPick: String
     /// W3C SCXML 5.2: the `base` datamodel variable.
-    var vBase: UInt32 = 7
+    var vBase: UInt32
     /// W3C SCXML 5.2: the `steps` datamodel variable.
-    var vSteps: UInt32 = 0
+    var vSteps: UInt32
     /// W3C SCXML 5.2: the `helper_id` datamodel variable.
-    var vHelperId: String = ""
+    var vHelperId: String
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -218,24 +218,55 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
         public var vHelperId: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vPick {
-            vPick = value
+        let vLast: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord = StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord(level: 0, layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum.month, urgent: false)
+        let vPick: String
+        if let handed = params.vPick {
+            vPick = handed
+        } else {
+            vPick = "static_hybrid_watcher.scxml"
         }
-        if let value = params.vBase {
-            vBase = value
+        let vBase: UInt32
+        if let handed = params.vBase {
+            vBase = handed
+        } else {
+            vBase = 7
         }
-        if let value = params.vSteps {
-            vSteps = value
+        let vSteps: UInt32
+        if let handed = params.vSteps {
+            vSteps = handed
+        } else {
+            vSteps = 0
         }
-        if let value = params.vHelperId {
-            vHelperId = value
+        let vHelperId: String
+        if let handed = params.vHelperId {
+            vHelperId = handed
+        } else {
+            vHelperId = ""
         }
+        self.vLast = vLast
+        self.vPick = vPick
+        self.vBase = vBase
+        self.vSteps = vSteps
+        self.vHelperId = vHelperId
     }
 
     public init() {
+        let vLast: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord = StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord(level: 0, layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum.month, urgent: false)
+        let vPick: String = "static_hybrid_watcher.scxml"
+        let vBase: UInt32 = 7
+        let vSteps: UInt32 = 0
+        let vHelperId: String = ""
+        self.vLast = vLast
+        self.vPick = vPick
+        self.vBase = vBase
+        self.vSteps = vSteps
+        self.vHelperId = vHelperId
+
         sessionID = drawSessionID()
     }
 

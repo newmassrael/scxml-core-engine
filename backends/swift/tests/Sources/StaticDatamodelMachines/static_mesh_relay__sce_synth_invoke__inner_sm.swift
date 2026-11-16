@@ -103,6 +103,7 @@ public final class StaticMeshRelaySceSynthInvokeInnerPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

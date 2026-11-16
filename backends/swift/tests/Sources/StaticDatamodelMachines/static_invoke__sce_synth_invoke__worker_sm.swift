@@ -110,6 +110,7 @@ public final class StaticInvokeSceSynthInvokeWorkerPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

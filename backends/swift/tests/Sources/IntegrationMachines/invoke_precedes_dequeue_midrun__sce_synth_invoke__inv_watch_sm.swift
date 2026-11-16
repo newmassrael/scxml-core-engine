@@ -119,6 +119,7 @@ public final class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy: Invo
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

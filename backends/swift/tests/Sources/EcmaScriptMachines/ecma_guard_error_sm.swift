@@ -110,6 +110,7 @@ public final class EcmaGuardErrorPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -7,16 +7,58 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecTailPayloadBytes(BoundedBytes):
+    """The ``payload`` element of :class:`CodecTail`, 0 to 32 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 32
+
+
+class CodecTailSource(Protocol):
+    """The elements a value of :class:`CodecTail` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def msg_id(self) -> int: ...
+
+    @property
+    def status(self) -> int: ...
+
+    @property
+    def payload(self) -> CodecTailPayloadBytes: ...
+
+
+def encode_source(src: CodecTailSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecTail` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    w.write_u8(src.msg_id & 0xFF)
+    w.write_u8(src.status & 0xFF)
+    w.write_bytes(src.payload)
 
 
 @dataclass
 class CodecTail:
     msg_id: int = 0
     status: int = 0
-    payload: bytes = b""
+    payload: CodecTailPayloadBytes = CodecTailPayloadBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "payload":
+            value = CodecTailPayloadBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecTail]:
@@ -55,15 +97,8 @@ class CodecTail:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.payload) > 32:
-            raise LengthOutOfRange()
-        w.write_u8(self.msg_id & 0xFF)
-        w.write_u8(self.status & 0xFF)
-        w.write_bytes(self.payload)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

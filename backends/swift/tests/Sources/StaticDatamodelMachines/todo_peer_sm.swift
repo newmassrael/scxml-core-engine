@@ -699,91 +699,91 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
-    var vNode: UInt64 = 0
+    var vNode: UInt64
     /// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
-    var vClock: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vClock: TodoPeerHlcRecord
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
-    var vStamp: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vStamp: TodoPeerHlcRecord
     /// W3C SCXML 5.2: the `dot` datamodel variable.
-    var vDot: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vDot: TodoPeerHlcRecord
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
-    var vAdds: [TodoPeerEntryRecord] = []
+    var vAdds: [TodoPeerEntryRecord]
     /// W3C SCXML 5.2: the `one` datamodel variable.
-    var vOne: [TodoPeerEntryRecord] = []
+    var vOne: [TodoPeerEntryRecord]
     /// W3C SCXML 5.2: the `entry` datamodel variable.
-    var vEntry: TodoPeerEntryRecord = TodoPeerEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+    var vEntry: TodoPeerEntryRecord
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
-    var vValues: [TodoPeerValueRecord] = []
+    var vValues: [TodoPeerValueRecord]
     /// W3C SCXML 5.2: the `typed` datamodel variable.
-    var vTyped: String = ""
+    var vTyped: String
     /// W3C SCXML 5.2: the `held` datamodel variable.
-    var vHeld: TodoPeerValueRecord = TodoPeerValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vHeld: TodoPeerValueRecord
     /// W3C SCXML 5.2: the `wasLive` datamodel variable.
-    var vWasLive: Bool = false
+    var vWasLive: Bool
     /// W3C SCXML 5.2: the `present` datamodel variable.
-    var vPresent: Bool = false
+    var vPresent: Bool
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
     /// W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`).
-    var vAgenda: [TodoPeerOccurrenceRecord] = []
+    var vAgenda: [TodoPeerOccurrenceRecord]
     /// W3C SCXML 5.2: the `local` datamodel variable.
-    var vLocal: [TodoPeerOccurrenceRecord] = []
+    var vLocal: [TodoPeerOccurrenceRecord]
     /// W3C SCXML 5.2: the `occ` datamodel variable.
-    var vOcc: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id: 0, start: 0, end: 0, nth: 0, conflict: 0)
+    var vOcc: TodoPeerOccurrenceRecord
     /// W3C SCXML 5.2: the `agendaNext` datamodel variable, published (`sce:direction="out"`).
-    var vAgendaNext: UInt32 = 0
+    var vAgendaNext: UInt32
     /// W3C SCXML 5.2: the `zoneStarts1` datamodel variable.
-    var vZoneStarts1: [Int64] = []
+    var vZoneStarts1: [Int64]
     /// W3C SCXML 5.2: the `zoneOffsets1` datamodel variable.
-    var vZoneOffsets1: [Int32] = []
+    var vZoneOffsets1: [Int32]
     /// W3C SCXML 5.2: the `zoneStarts2` datamodel variable.
-    var vZoneStarts2: [Int64] = []
+    var vZoneStarts2: [Int64]
     /// W3C SCXML 5.2: the `zoneOffsets2` datamodel variable.
-    var vZoneOffsets2: [Int32] = []
+    var vZoneOffsets2: [Int32]
     /// W3C SCXML 5.2: the `zoneStarts3` datamodel variable.
-    var vZoneStarts3: [Int64] = []
+    var vZoneStarts3: [Int64]
     /// W3C SCXML 5.2: the `zoneOffsets3` datamodel variable.
-    var vZoneOffsets3: [Int32] = []
+    var vZoneOffsets3: [Int32]
     /// W3C SCXML 5.2: the `zoneStarts4` datamodel variable.
-    var vZoneStarts4: [Int64] = []
+    var vZoneStarts4: [Int64]
     /// W3C SCXML 5.2: the `zoneOffsets4` datamodel variable.
-    var vZoneOffsets4: [Int32] = []
+    var vZoneOffsets4: [Int32]
     /// W3C SCXML 5.2: the `zoneStarts` datamodel variable.
-    var vZoneStarts: [Int64] = []
+    var vZoneStarts: [Int64]
     /// W3C SCXML 5.2: the `zoneOffsets` datamodel variable.
-    var vZoneOffsets: [Int32] = []
+    var vZoneOffsets: [Int32]
     /// W3C SCXML 5.2: the `zoneRows` datamodel variable.
-    var vZoneRows: UInt32 = 0
+    var vZoneRows: UInt32
     /// W3C SCXML 5.2: the `split` datamodel variable.
-    var vSplit: Bool = false
+    var vSplit: Bool
     /// W3C SCXML 5.2: the `sched` datamodel variable.
-    var vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0)
+    var vSched: TodoPeerScheduleRecord
     /// W3C SCXML 5.2: the `rawCount` datamodel variable.
-    var vRawCount: UInt32 = 0
+    var vRawCount: UInt32
     /// W3C SCXML 5.2: the `rawLast` datamodel variable.
-    var vRawLast: UInt32 = 0
+    var vRawLast: UInt32
     /// W3C SCXML 5.2: the `utcSec` datamodel variable.
-    var vUtcSec: Int64 = 0
+    var vUtcSec: Int64
     /// W3C SCXML 5.2: the `roomValues` datamodel variable.
-    var vRoomValues: UInt32 = 0
+    var vRoomValues: UInt32
     /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
-    var vFull: UInt32 = 0
+    var vFull: UInt32
     /// W3C SCXML 5.2: the `gone` datamodel variable.
-    var vGone: UInt32 = 0
+    var vGone: UInt32
     /// W3C SCXML 5.2: the `roster` datamodel variable.
-    var vRoster: [TodoPeerMemberRecord] = []
+    var vRoster: [TodoPeerMemberRecord]
     /// W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`).
-    var vDenied: UInt32 = 0
+    var vDenied: UInt32
     /// W3C SCXML 5.2: the `forbidden` datamodel variable.
-    var vForbidden: Bool = false
+    var vForbidden: Bool
     /// W3C SCXML 5.2: the `authorized` datamodel variable.
-    var vAuthorized: Bool = true
+    var vAuthorized: Bool
     /// W3C SCXML 5.2: the `taking` datamodel variable.
-    var vTaking: [TodoPeerOpRecord] = []
+    var vTaking: [TodoPeerOpRecord]
     /// W3C SCXML 5.2: the `took` datamodel variable.
-    var vTook: UInt32 = 0
+    var vTook: UInt32
     /// W3C SCXML 5.2: the `op` datamodel variable.
-    var vOp: TodoPeerOpRecord = TodoPeerOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vOp: TodoPeerOpRecord
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -847,66 +847,277 @@ public final class TodoPeerPolicy: InvocablePolicy {
         public var vTook: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNode {
-            vNode = value
+        let vNode: UInt64
+        if let handed = params.vNode {
+            vNode = handed
+        } else {
+            vNode = 0
         }
-        if let value = params.vTyped {
-            vTyped = value
+        let vClock: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vDot: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vAdds: [TodoPeerEntryRecord] = []
+        let vOne: [TodoPeerEntryRecord] = []
+        let vEntry: TodoPeerEntryRecord = TodoPeerEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+        let vValues: [TodoPeerValueRecord] = []
+        let vTyped: String
+        if let handed = params.vTyped {
+            vTyped = handed
+        } else {
+            vTyped = ""
         }
-        if let value = params.vWasLive {
-            vWasLive = value
+        let vHeld: TodoPeerValueRecord = TodoPeerValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vWasLive: Bool
+        if let handed = params.vWasLive {
+            vWasLive = handed
+        } else {
+            vWasLive = false
         }
-        if let value = params.vPresent {
-            vPresent = value
+        let vPresent: Bool
+        if let handed = params.vPresent {
+            vPresent = handed
+        } else {
+            vPresent = false
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
-        if let value = params.vAgendaNext {
-            vAgendaNext = value
+        let vAgenda: [TodoPeerOccurrenceRecord] = []
+        let vLocal: [TodoPeerOccurrenceRecord] = []
+        let vOcc: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id: 0, start: 0, end: 0, nth: 0, conflict: 0)
+        let vAgendaNext: UInt32
+        if let handed = params.vAgendaNext {
+            vAgendaNext = handed
+        } else {
+            vAgendaNext = 0
         }
-        if let value = params.vZoneRows {
-            vZoneRows = value
+        let vZoneStarts1: [Int64] = []
+        let vZoneOffsets1: [Int32] = []
+        let vZoneStarts2: [Int64] = []
+        let vZoneOffsets2: [Int32] = []
+        let vZoneStarts3: [Int64] = []
+        let vZoneOffsets3: [Int32] = []
+        let vZoneStarts4: [Int64] = []
+        let vZoneOffsets4: [Int32] = []
+        let vZoneStarts: [Int64] = []
+        let vZoneOffsets: [Int32] = []
+        let vZoneRows: UInt32
+        if let handed = params.vZoneRows {
+            vZoneRows = handed
+        } else {
+            vZoneRows = 0
         }
-        if let value = params.vSplit {
-            vSplit = value
+        let vSplit: Bool
+        if let handed = params.vSplit {
+            vSplit = handed
+        } else {
+            vSplit = false
         }
-        if let value = params.vRawCount {
-            vRawCount = value
+        let vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0)
+        let vRawCount: UInt32
+        if let handed = params.vRawCount {
+            vRawCount = handed
+        } else {
+            vRawCount = 0
         }
-        if let value = params.vRawLast {
-            vRawLast = value
+        let vRawLast: UInt32
+        if let handed = params.vRawLast {
+            vRawLast = handed
+        } else {
+            vRawLast = 0
         }
-        if let value = params.vUtcSec {
-            vUtcSec = value
+        let vUtcSec: Int64
+        if let handed = params.vUtcSec {
+            vUtcSec = handed
+        } else {
+            vUtcSec = 0
         }
-        if let value = params.vRoomValues {
-            vRoomValues = value
+        let vRoomValues: UInt32
+        if let handed = params.vRoomValues {
+            vRoomValues = handed
+        } else {
+            vRoomValues = 0
         }
-        if let value = params.vFull {
-            vFull = value
+        let vFull: UInt32
+        if let handed = params.vFull {
+            vFull = handed
+        } else {
+            vFull = 0
         }
-        if let value = params.vGone {
-            vGone = value
+        let vGone: UInt32
+        if let handed = params.vGone {
+            vGone = handed
+        } else {
+            vGone = 0
         }
-        if let value = params.vDenied {
-            vDenied = value
+        let vRoster: [TodoPeerMemberRecord] = []
+        let vDenied: UInt32
+        if let handed = params.vDenied {
+            vDenied = handed
+        } else {
+            vDenied = 0
         }
-        if let value = params.vForbidden {
-            vForbidden = value
+        let vForbidden: Bool
+        if let handed = params.vForbidden {
+            vForbidden = handed
+        } else {
+            vForbidden = false
         }
-        if let value = params.vAuthorized {
-            vAuthorized = value
+        let vAuthorized: Bool
+        if let handed = params.vAuthorized {
+            vAuthorized = handed
+        } else {
+            vAuthorized = true
         }
-        if let value = params.vTook {
-            vTook = value
+        let vTaking: [TodoPeerOpRecord] = []
+        let vTook: UInt32
+        if let handed = params.vTook {
+            vTook = handed
+        } else {
+            vTook = 0
         }
+        let vOp: TodoPeerOpRecord = TodoPeerOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        self.vNode = vNode
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vDot = vDot
+        self.vAdds = vAdds
+        self.vOne = vOne
+        self.vEntry = vEntry
+        self.vValues = vValues
+        self.vTyped = vTyped
+        self.vHeld = vHeld
+        self.vWasLive = vWasLive
+        self.vPresent = vPresent
+        self.vRefusals = vRefusals
+        self.vAgenda = vAgenda
+        self.vLocal = vLocal
+        self.vOcc = vOcc
+        self.vAgendaNext = vAgendaNext
+        self.vZoneStarts1 = vZoneStarts1
+        self.vZoneOffsets1 = vZoneOffsets1
+        self.vZoneStarts2 = vZoneStarts2
+        self.vZoneOffsets2 = vZoneOffsets2
+        self.vZoneStarts3 = vZoneStarts3
+        self.vZoneOffsets3 = vZoneOffsets3
+        self.vZoneStarts4 = vZoneStarts4
+        self.vZoneOffsets4 = vZoneOffsets4
+        self.vZoneStarts = vZoneStarts
+        self.vZoneOffsets = vZoneOffsets
+        self.vZoneRows = vZoneRows
+        self.vSplit = vSplit
+        self.vSched = vSched
+        self.vRawCount = vRawCount
+        self.vRawLast = vRawLast
+        self.vUtcSec = vUtcSec
+        self.vRoomValues = vRoomValues
+        self.vFull = vFull
+        self.vGone = vGone
+        self.vRoster = vRoster
+        self.vDenied = vDenied
+        self.vForbidden = vForbidden
+        self.vAuthorized = vAuthorized
+        self.vTaking = vTaking
+        self.vTook = vTook
+        self.vOp = vOp
     }
 
     public init() {
+        let vNode: UInt64 = 0
+        let vClock: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vDot: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vAdds: [TodoPeerEntryRecord] = []
+        let vOne: [TodoPeerEntryRecord] = []
+        let vEntry: TodoPeerEntryRecord = TodoPeerEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
+        let vValues: [TodoPeerValueRecord] = []
+        let vTyped: String = ""
+        let vHeld: TodoPeerValueRecord = TodoPeerValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vWasLive: Bool = false
+        let vPresent: Bool = false
+        let vRefusals: UInt32 = 0
+        let vAgenda: [TodoPeerOccurrenceRecord] = []
+        let vLocal: [TodoPeerOccurrenceRecord] = []
+        let vOcc: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id: 0, start: 0, end: 0, nth: 0, conflict: 0)
+        let vAgendaNext: UInt32 = 0
+        let vZoneStarts1: [Int64] = []
+        let vZoneOffsets1: [Int32] = []
+        let vZoneStarts2: [Int64] = []
+        let vZoneOffsets2: [Int32] = []
+        let vZoneStarts3: [Int64] = []
+        let vZoneOffsets3: [Int32] = []
+        let vZoneStarts4: [Int64] = []
+        let vZoneOffsets4: [Int32] = []
+        let vZoneStarts: [Int64] = []
+        let vZoneOffsets: [Int32] = []
+        let vZoneRows: UInt32 = 0
+        let vSplit: Bool = false
+        let vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0)
+        let vRawCount: UInt32 = 0
+        let vRawLast: UInt32 = 0
+        let vUtcSec: Int64 = 0
+        let vRoomValues: UInt32 = 0
+        let vFull: UInt32 = 0
+        let vGone: UInt32 = 0
+        let vRoster: [TodoPeerMemberRecord] = []
+        let vDenied: UInt32 = 0
+        let vForbidden: Bool = false
+        let vAuthorized: Bool = true
+        let vTaking: [TodoPeerOpRecord] = []
+        let vTook: UInt32 = 0
+        let vOp: TodoPeerOpRecord = TodoPeerOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        self.vNode = vNode
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vDot = vDot
+        self.vAdds = vAdds
+        self.vOne = vOne
+        self.vEntry = vEntry
+        self.vValues = vValues
+        self.vTyped = vTyped
+        self.vHeld = vHeld
+        self.vWasLive = vWasLive
+        self.vPresent = vPresent
+        self.vRefusals = vRefusals
+        self.vAgenda = vAgenda
+        self.vLocal = vLocal
+        self.vOcc = vOcc
+        self.vAgendaNext = vAgendaNext
+        self.vZoneStarts1 = vZoneStarts1
+        self.vZoneOffsets1 = vZoneOffsets1
+        self.vZoneStarts2 = vZoneStarts2
+        self.vZoneOffsets2 = vZoneOffsets2
+        self.vZoneStarts3 = vZoneStarts3
+        self.vZoneOffsets3 = vZoneOffsets3
+        self.vZoneStarts4 = vZoneStarts4
+        self.vZoneOffsets4 = vZoneOffsets4
+        self.vZoneStarts = vZoneStarts
+        self.vZoneOffsets = vZoneOffsets
+        self.vZoneRows = vZoneRows
+        self.vSplit = vSplit
+        self.vSched = vSched
+        self.vRawCount = vRawCount
+        self.vRawLast = vRawLast
+        self.vUtcSec = vUtcSec
+        self.vRoomValues = vRoomValues
+        self.vFull = vFull
+        self.vGone = vGone
+        self.vRoster = vRoster
+        self.vDenied = vDenied
+        self.vForbidden = vForbidden
+        self.vAuthorized = vAuthorized
+        self.vTaking = vTaking
+        self.vTook = vTook
+        self.vOp = vOp
+
         sessionID = drawSessionID()
     }
 

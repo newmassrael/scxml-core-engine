@@ -120,11 +120,11 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `answers` datamodel variable, published (`sce:direction="out"`).
-    var vAnswers: UInt32 = 0
+    var vAnswers: UInt32
     /// W3C SCXML 5.2: the `reports` datamodel variable, published (`sce:direction="out"`).
-    var vReports: UInt32 = 0
+    var vReports: UInt32
     /// W3C SCXML 5.2: the `stamps` datamodel variable, published (`sce:direction="out"`).
-    var vStamps: UInt32 = 0
+    var vStamps: UInt32
 
     /// Reports what the published `answers` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -149,21 +149,42 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
         public var vStamps: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vAnswers {
-            vAnswers = value
+        let vAnswers: UInt32
+        if let handed = params.vAnswers {
+            vAnswers = handed
+        } else {
+            vAnswers = 0
         }
-        if let value = params.vReports {
-            vReports = value
+        let vReports: UInt32
+        if let handed = params.vReports {
+            vReports = handed
+        } else {
+            vReports = 0
         }
-        if let value = params.vStamps {
-            vStamps = value
+        let vStamps: UInt32
+        if let handed = params.vStamps {
+            vStamps = handed
+        } else {
+            vStamps = 0
         }
+        self.vAnswers = vAnswers
+        self.vReports = vReports
+        self.vStamps = vStamps
     }
 
     public init() {
+        let vAnswers: UInt32 = 0
+        let vReports: UInt32 = 0
+        let vStamps: UInt32 = 0
+        self.vAnswers = vAnswers
+        self.vReports = vReports
+        self.vStamps = vStamps
+
         sessionID = drawSessionID()
     }
 

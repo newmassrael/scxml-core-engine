@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93d2eaee6dba5e766fb0efd849f4ad17022adf69f4fe4542648ce89066aa1aec
+// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_static_child_declares_its_data_with_a_handed_value.scxml:30 :: _machine
+// SCE-MAP: a_static_child_declares_its_data_with_a_handed_value.scxml:32 :: _machine
 
 package a_static_child_declares_its_data_with_a_handed_value
 
@@ -384,9 +384,10 @@ type AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy struc
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewAStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy creates a new policy with default values.
@@ -428,15 +429,25 @@ type AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerInvokeParams
 	VCopied *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) AcceptParams(params AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerInvokeParams) {
-	if params.VStart != nil {
-		p.vStart = *params.VStart
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) AcceptParams(handed AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerInvokeParams) {
+	var vStart uint32
+	if handed.VStart != nil {
+		vStart = *handed.VStart
+	} else {
+		vStart = 0
 	}
-	if params.VCopied != nil {
-		p.vCopied = *params.VCopied
+	var vCopied uint32
+	if handed.VCopied != nil {
+		vCopied = *handed.VCopied
+	} else {
+		vCopied = vStart
 	}
+	p.vStart = vStart
+	p.vCopied = vCopied
 }
 
 
@@ -668,7 +679,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) ExecuteEntryActions(state AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -681,7 +692,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -689,7 +700,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) ExecuteExitActions(state AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent], configurationBeforeExit []AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -706,7 +717,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) BindCurrentEvent(event AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -716,7 +727,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) FirstEnabledTransition(state AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, event AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent]) (sce.EnabledTransition[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, sce.HistoryID], bool) {
 	switch state {
 	case AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerStateWaiting:
@@ -740,7 +751,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) 
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:30
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:32
 func (p *AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(source AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, transitionIndex int, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerState, AStaticChildDeclaresItsDataWithAHandedValueSceSynthInvokeWorkerEvent]) {
 	// W3C SCXML 3.13: no transition in this document has content.
 }

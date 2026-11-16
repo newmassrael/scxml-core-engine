@@ -1496,9 +1496,10 @@ type StaticModelHarnessPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticModelHarnessPolicy creates a new policy with default values.
@@ -1601,27 +1602,63 @@ type StaticModelHarnessInvokeParams struct {
 	VOutcome *string
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticModelHarnessPolicy) AcceptParams(params StaticModelHarnessInvokeParams) {
-	if params.VRequest != nil {
-		p.vRequest = *params.VRequest
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticModelHarnessPolicy) AcceptParams(handed StaticModelHarnessInvokeParams) {
+	var vOffered []uint32 = nil
+	var vRequest string
+	if handed.VRequest != nil {
+		vRequest = *handed.VRequest
+	} else {
+		vRequest = ""
 	}
-	if params.VPrompt != nil {
-		p.vPrompt = *params.VPrompt
+	var vPrompt string
+	if handed.VPrompt != nil {
+		vPrompt = *handed.VPrompt
+	} else {
+		vPrompt = ""
 	}
-	if params.VSaid != nil {
-		p.vSaid = *params.VSaid
+	var vSaid string
+	if handed.VSaid != nil {
+		vSaid = *handed.VSaid
+	} else {
+		vSaid = ""
 	}
-	if params.VOfferedOk != nil {
-		p.vOfferedOk = *params.VOfferedOk
+	var vOfferedOk bool
+	if handed.VOfferedOk != nil {
+		vOfferedOk = *handed.VOfferedOk
+	} else {
+		vOfferedOk = false
 	}
-	if params.VAttempts != nil {
-		p.vAttempts = *params.VAttempts
+	var vRefused StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord{code: StaticModelHarnessHarnessCodeEnumNotJson, path: ""}
+	var vRefusals []StaticModelHarnessRefusalRecord = nil
+	var vAttempts uint32
+	if handed.VAttempts != nil {
+		vAttempts = *handed.VAttempts
+	} else {
+		vAttempts = 0
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
+	var vAnswer optional.Of[StaticModelHarnessAnswerRecord] = optional.None[StaticModelHarnessAnswerRecord]()
+	var vWhy optional.Of[StaticModelHarnessLiftRefusalRecord] = optional.None[StaticModelHarnessLiftRefusalRecord]()
+	p.vOffered = vOffered
+	p.vRequest = vRequest
+	p.vPrompt = vPrompt
+	p.vSaid = vSaid
+	p.vOfferedOk = vOfferedOk
+	p.vRefused = vRefused
+	p.vRefusals = vRefusals
+	p.vAttempts = vAttempts
+	p.vOutcome = vOutcome
+	p.vAnswer = vAnswer
+	p.vWhy = vWhy
 }
 
 

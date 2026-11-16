@@ -130,18 +130,27 @@ class StaticRecordListIndexStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.cursor?.let { vCursor = it }
-        params.day?.let { vDay = it }
-        params.year?.let { vYear = it }
-        params.sum?.let { vSum = it }
-        params.ordered?.let { vOrdered = it }
-        params.refusals?.let { vRefusals = it }
+        vDraft = StaticRecordListIndexDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+        vPicked = StaticRecordListIndexDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+        vDays = emptyList()
+        vCursor = params.cursor ?: (0)
+        vDay = params.day ?: (0.toUByte())
+        vYear = params.year ?: (0.toUShort())
+        vSum = params.sum ?: (0.toUInt())
+        vOrdered = params.ordered ?: (false)
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

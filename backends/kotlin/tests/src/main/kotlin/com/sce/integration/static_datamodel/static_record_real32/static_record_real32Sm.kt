@@ -96,14 +96,21 @@ class StaticRecordReal32StateMachine(
         var errors: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.sum?.let { vSum = it }
-        params.errors?.let { vErrors = it }
+        vLast = StaticRecordReal32Reading32Record(sensor = 1.toUByte(), value = 0.5f)
+        vSum = params.sum ?: (0.0f)
+        vErrors = params.errors ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

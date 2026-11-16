@@ -128,6 +128,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

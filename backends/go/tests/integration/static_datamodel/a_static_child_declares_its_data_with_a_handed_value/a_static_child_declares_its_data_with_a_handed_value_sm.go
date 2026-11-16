@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 93d2eaee6dba5e766fb0efd849f4ad17022adf69f4fe4542648ce89066aa1aec
+// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: a_static_child_declares_its_data_with_a_handed_value.scxml:20 :: _machine
+// SCE-MAP: a_static_child_declares_its_data_with_a_handed_value.scxml:22 :: _machine
 
 package a_static_child_declares_its_data_with_a_handed_value
 
@@ -485,9 +485,10 @@ type AStaticChildDeclaresItsDataWithAHandedValuePolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewAStaticChildDeclaresItsDataWithAHandedValuePolicy creates a new policy with default values.
@@ -528,12 +529,18 @@ type AStaticChildDeclaresItsDataWithAHandedValueInvokeParams struct {
 	VBase *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) AcceptParams(params AStaticChildDeclaresItsDataWithAHandedValueInvokeParams) {
-	if params.VBase != nil {
-		p.vBase = *params.VBase
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) AcceptParams(handed AStaticChildDeclaresItsDataWithAHandedValueInvokeParams) {
+	var vBase uint32
+	if handed.VBase != nil {
+		vBase = *handed.VBase
+	} else {
+		vBase = 7
 	}
+	p.vBase = vBase
 }
 
 
@@ -1042,11 +1049,11 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ClearEventMetadata()
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteEntryActions(state AStaticChildDeclaresItsDataWithAHandedValueState, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent], isDefaultEntry bool) {
 	switch state {
 	case AStaticChildDeclaresItsDataWithAHandedValueStateWorking:
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:26
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:28
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1088,7 +1095,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) RestartInvokes(engin
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1096,7 +1103,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteHistoryDefaul
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteExitActions(state AStaticChildDeclaresItsDataWithAHandedValueState, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent], configurationBeforeExit []AStaticChildDeclaresItsDataWithAHandedValueState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1131,7 +1138,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteExitActions(s
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) BindCurrentEvent(event AStaticChildDeclaresItsDataWithAHandedValueEvent, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1141,7 +1148,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) BindCurrentEvent(eve
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) FirstEnabledTransition(state AStaticChildDeclaresItsDataWithAHandedValueState, event AStaticChildDeclaresItsDataWithAHandedValueEvent, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent]) (sce.EnabledTransition[AStaticChildDeclaresItsDataWithAHandedValueState, sce.HistoryID], bool) {
 	switch state {
 	case AStaticChildDeclaresItsDataWithAHandedValueStateWorking:
@@ -1162,7 +1169,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) FirstEnabledTransiti
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line a_static_child_declares_its_data_with_a_handed_value.scxml:20
+//line a_static_child_declares_its_data_with_a_handed_value.scxml:22
 func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecuteTransitionContent(source AStaticChildDeclaresItsDataWithAHandedValueState, transitionIndex int, engine *sce.Engine[AStaticChildDeclaresItsDataWithAHandedValueState, AStaticChildDeclaresItsDataWithAHandedValueEvent]) {
 	// W3C SCXML 3.13: no transition in this document has content.
 }

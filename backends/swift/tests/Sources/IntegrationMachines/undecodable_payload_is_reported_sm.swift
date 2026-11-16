@@ -108,6 +108,7 @@ public final class UndecodablePayloadIsReportedPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

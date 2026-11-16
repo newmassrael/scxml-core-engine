@@ -145,6 +145,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

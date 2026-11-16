@@ -173,13 +173,13 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord(sensor: 1, label: "a")
+    var vLast: StaticRecordStringLabelledRecord
     /// W3C SCXML 5.2: the `note` datamodel variable, published (`sce:direction="out"`).
-    var vNote: String = "hello"
+    var vNote: String
     /// W3C SCXML 5.2: the `labels` datamodel variable, published (`sce:direction="out"`).
-    var vLabels: [StaticRecordStringLabelledRecord] = []
+    var vLabels: [StaticRecordStringLabelledRecord]
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `last` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -207,18 +207,41 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNote {
-            vNote = value
+        let vLast: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord(sensor: 1, label: "a")
+        let vNote: String
+        if let handed = params.vNote {
+            vNote = handed
+        } else {
+            vNote = "hello"
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vLabels: [StaticRecordStringLabelledRecord] = []
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vLast = vLast
+        self.vNote = vNote
+        self.vLabels = vLabels
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vLast: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord(sensor: 1, label: "a")
+        let vNote: String = "hello"
+        let vLabels: [StaticRecordStringLabelledRecord] = []
+        let vErrors: UInt32 = 0
+        self.vLast = vLast
+        self.vNote = vNote
+        self.vLabels = vLabels
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

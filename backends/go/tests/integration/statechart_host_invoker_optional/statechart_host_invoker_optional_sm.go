@@ -673,9 +673,10 @@ type StatechartHostInvokerOptionalPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStatechartHostInvokerOptionalPolicy creates a new policy with default values.
@@ -803,45 +804,95 @@ type StatechartHostInvokerOptionalInvokeParams struct {
 	VHitTrue *bool
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StatechartHostInvokerOptionalPolicy) AcceptParams(params StatechartHostInvokerOptionalInvokeParams) {
-	if params.VAt.IsPresent() {
-		p.vAt = params.VAt
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StatechartHostInvokerOptionalPolicy) AcceptParams(handed StatechartHostInvokerOptionalInvokeParams) {
+	var vAt optional.Of[int64]
+	if handed.VAt.IsPresent() {
+		vAt = handed.VAt
+	} else {
+		vAt = optional.None[int64]()
 	}
-	if params.VLabel.IsPresent() {
-		p.vLabel = params.VLabel
+	var vLabel optional.Of[string]
+	if handed.VLabel.IsPresent() {
+		vLabel = handed.VLabel
+	} else {
+		vLabel = optional.None[string]()
 	}
-	if params.VHit.IsPresent() {
-		p.vHit = params.VHit
+	var vHit optional.Of[bool]
+	if handed.VHit.IsPresent() {
+		vHit = handed.VHit
+	} else {
+		vHit = optional.None[bool]()
 	}
-	if params.VAnswered != nil {
-		p.vAnswered = *params.VAnswered
+	var vAnswered uint8
+	if handed.VAnswered != nil {
+		vAnswered = *handed.VAnswered
+	} else {
+		vAnswered = 0
 	}
-	if params.VRowsSeen != nil {
-		p.vRowsSeen = *params.VRowsSeen
+	var vRowsSeen uint8
+	if handed.VRowsSeen != nil {
+		vRowsSeen = *handed.VRowsSeen
+	} else {
+		vRowsSeen = 0
 	}
-	if params.VTotalSeen != nil {
-		p.vTotalSeen = *params.VTotalSeen
+	var vTotalSeen uint64
+	if handed.VTotalSeen != nil {
+		vTotalSeen = *handed.VTotalSeen
+	} else {
+		vTotalSeen = 0
 	}
-	if params.VAtPresent != nil {
-		p.vAtPresent = *params.VAtPresent
+	var vAtPresent bool
+	if handed.VAtPresent != nil {
+		vAtPresent = *handed.VAtPresent
+	} else {
+		vAtPresent = false
 	}
-	if params.VAtValue != nil {
-		p.vAtValue = *params.VAtValue
+	var vAtValue int64
+	if handed.VAtValue != nil {
+		vAtValue = *handed.VAtValue
+	} else {
+		vAtValue = 0
 	}
-	if params.VLabelPresent != nil {
-		p.vLabelPresent = *params.VLabelPresent
+	var vLabelPresent bool
+	if handed.VLabelPresent != nil {
+		vLabelPresent = *handed.VLabelPresent
+	} else {
+		vLabelPresent = false
 	}
-	if params.VLabelValue != nil {
-		p.vLabelValue = *params.VLabelValue
+	var vLabelValue string
+	if handed.VLabelValue != nil {
+		vLabelValue = *handed.VLabelValue
+	} else {
+		vLabelValue = ""
 	}
-	if params.VHitKnown != nil {
-		p.vHitKnown = *params.VHitKnown
+	var vHitKnown bool
+	if handed.VHitKnown != nil {
+		vHitKnown = *handed.VHitKnown
+	} else {
+		vHitKnown = false
 	}
-	if params.VHitTrue != nil {
-		p.vHitTrue = *params.VHitTrue
+	var vHitTrue bool
+	if handed.VHitTrue != nil {
+		vHitTrue = *handed.VHitTrue
+	} else {
+		vHitTrue = false
 	}
+	p.vAt = vAt
+	p.vLabel = vLabel
+	p.vHit = vHit
+	p.vAnswered = vAnswered
+	p.vRowsSeen = vRowsSeen
+	p.vTotalSeen = vTotalSeen
+	p.vAtPresent = vAtPresent
+	p.vAtValue = vAtValue
+	p.vLabelPresent = vLabelPresent
+	p.vLabelValue = vLabelValue
+	p.vHitKnown = vHitKnown
+	p.vHitTrue = vHitTrue
 }
 
 

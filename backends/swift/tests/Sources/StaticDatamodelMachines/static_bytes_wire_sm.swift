@@ -144,13 +144,13 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
-    var vHeld: [UInt8] = Array("ab".utf8)
+    var vHeld: [UInt8]
     /// W3C SCXML 5.2: the `echo` datamodel variable, published (`sce:direction="out"`).
-    var vEcho: [UInt8] = Array("".utf8)
+    var vEcho: [UInt8]
     /// W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`).
-    var vRelays: UInt32 = 0
+    var vRelays: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `held` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -178,18 +178,41 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRelays {
-            vRelays = value
+        let vHeld: [UInt8] = Array("ab".utf8)
+        let vEcho: [UInt8] = Array("".utf8)
+        let vRelays: UInt32
+        if let handed = params.vRelays {
+            vRelays = handed
+        } else {
+            vRelays = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vHeld = vHeld
+        self.vEcho = vEcho
+        self.vRelays = vRelays
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vHeld: [UInt8] = Array("ab".utf8)
+        let vEcho: [UInt8] = Array("".utf8)
+        let vRelays: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vHeld = vHeld
+        self.vEcho = vEcho
+        self.vRelays = vRelays
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

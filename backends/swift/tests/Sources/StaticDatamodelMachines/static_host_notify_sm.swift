@@ -222,21 +222,21 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `id` datamodel variable.
-    var vId: String = ""
+    var vId: String
     /// W3C SCXML 5.2: the `title` datamodel variable.
-    var vTitle: String = ""
+    var vTitle: String
     /// W3C SCXML 5.2: the `body` datamodel variable.
-    var vBody: String = ""
+    var vBody: String
     /// W3C SCXML 5.2: the `at_ms` datamodel variable.
-    var vAtMs: Int64 = 0
+    var vAtMs: Int64
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `permission` datamodel variable, published (`sce:direction="out"`).
-    var vPermission: String = ""
+    var vPermission: String
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
-    var vStatus: String = ""
+    var vStatus: String
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
-    var vExisted: Bool = false
+    var vExisted: Bool
 
     /// Reports what the published `outcome` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -270,36 +270,87 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
         public var vExisted: Bool? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vId {
-            vId = value
+        let vId: String
+        if let handed = params.vId {
+            vId = handed
+        } else {
+            vId = ""
         }
-        if let value = params.vTitle {
-            vTitle = value
+        let vTitle: String
+        if let handed = params.vTitle {
+            vTitle = handed
+        } else {
+            vTitle = ""
         }
-        if let value = params.vBody {
-            vBody = value
+        let vBody: String
+        if let handed = params.vBody {
+            vBody = handed
+        } else {
+            vBody = ""
         }
-        if let value = params.vAtMs {
-            vAtMs = value
+        let vAtMs: Int64
+        if let handed = params.vAtMs {
+            vAtMs = handed
+        } else {
+            vAtMs = 0
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
-        if let value = params.vPermission {
-            vPermission = value
+        let vPermission: String
+        if let handed = params.vPermission {
+            vPermission = handed
+        } else {
+            vPermission = ""
         }
-        if let value = params.vStatus {
-            vStatus = value
+        let vStatus: String
+        if let handed = params.vStatus {
+            vStatus = handed
+        } else {
+            vStatus = ""
         }
-        if let value = params.vExisted {
-            vExisted = value
+        let vExisted: Bool
+        if let handed = params.vExisted {
+            vExisted = handed
+        } else {
+            vExisted = false
         }
+        self.vId = vId
+        self.vTitle = vTitle
+        self.vBody = vBody
+        self.vAtMs = vAtMs
+        self.vOutcome = vOutcome
+        self.vPermission = vPermission
+        self.vStatus = vStatus
+        self.vExisted = vExisted
     }
 
     public init() {
+        let vId: String = ""
+        let vTitle: String = ""
+        let vBody: String = ""
+        let vAtMs: Int64 = 0
+        let vOutcome: String = ""
+        let vPermission: String = ""
+        let vStatus: String = ""
+        let vExisted: Bool = false
+        self.vId = vId
+        self.vTitle = vTitle
+        self.vBody = vBody
+        self.vAtMs = vAtMs
+        self.vOutcome = vOutcome
+        self.vPermission = vPermission
+        self.vStatus = vStatus
+        self.vExisted = vExisted
+
         sessionID = drawSessionID()
     }
 

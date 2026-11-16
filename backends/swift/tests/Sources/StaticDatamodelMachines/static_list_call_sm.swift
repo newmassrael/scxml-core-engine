@@ -171,15 +171,15 @@ public final class StaticListCallPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `entries` datamodel variable, published (`sce:direction="out"`).
-    var vEntries: [StaticListCallEntryRecord] = []
+    var vEntries: [StaticListCallEntryRecord]
     /// W3C SCXML 5.2: the `ids` datamodel variable, published (`sce:direction="out"`).
-    var vIds: [UInt32] = []
+    var vIds: [UInt32]
     /// W3C SCXML 5.2: the `line` datamodel variable, published (`sce:direction="out"`).
-    var vLine: StaticListCallEntryRecord = StaticListCallEntryRecord(id: 0, amount: 0)
+    var vLine: StaticListCallEntryRecord
     /// W3C SCXML 5.2: the `repeats` datamodel variable, published (`sce:direction="out"`).
-    var vRepeats: UInt32 = 0
+    var vRepeats: UInt32
     /// W3C SCXML 5.2: the `high` datamodel variable, published (`sce:direction="out"`).
-    var vHigh: UInt32 = 0
+    var vHigh: UInt32
 
     /// Reports what the published `entries` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -211,18 +211,45 @@ public final class StaticListCallPolicy: InvocablePolicy {
         public var vHigh: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRepeats {
-            vRepeats = value
+        let vEntries: [StaticListCallEntryRecord] = []
+        let vIds: [UInt32] = []
+        let vLine: StaticListCallEntryRecord = StaticListCallEntryRecord(id: 0, amount: 0)
+        let vRepeats: UInt32
+        if let handed = params.vRepeats {
+            vRepeats = handed
+        } else {
+            vRepeats = 0
         }
-        if let value = params.vHigh {
-            vHigh = value
+        let vHigh: UInt32
+        if let handed = params.vHigh {
+            vHigh = handed
+        } else {
+            vHigh = 0
         }
+        self.vEntries = vEntries
+        self.vIds = vIds
+        self.vLine = vLine
+        self.vRepeats = vRepeats
+        self.vHigh = vHigh
     }
 
     public init() {
+        let vEntries: [StaticListCallEntryRecord] = []
+        let vIds: [UInt32] = []
+        let vLine: StaticListCallEntryRecord = StaticListCallEntryRecord(id: 0, amount: 0)
+        let vRepeats: UInt32 = 0
+        let vHigh: UInt32 = 0
+        self.vEntries = vEntries
+        self.vIds = vIds
+        self.vLine = vLine
+        self.vRepeats = vRepeats
+        self.vHigh = vHigh
+
         sessionID = drawSessionID()
     }
 

@@ -115,21 +115,27 @@ class StaticSendParamsStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.count?.let { vCount = it }
-        params.small?.let { vSmall = it }
-        params.label?.let { vLabel = it }
-        params.total?.let { vTotal = it }
-        params.ok?.let { vOk = it }
-        params.tag?.let { vTag = it }
-        params.partialTotal?.let { vPartialTotal = it }
-        params.partialPart?.let { vPartialPart = it }
-        params.refusals?.let { vRefusals = it }
+        vCount = params.count ?: (3.toUInt())
+        vSmall = params.small ?: (250.toUByte())
+        vLabel = params.label ?: ("tally")
+        vTotal = params.total ?: (0.toUInt())
+        vOk = params.ok ?: (false)
+        vTag = params.tag ?: ("")
+        vPartialTotal = params.partialTotal ?: (0.toUInt())
+        vPartialPart = params.partialPart ?: (0.toUByte())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

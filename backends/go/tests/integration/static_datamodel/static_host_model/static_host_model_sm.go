@@ -1161,9 +1161,10 @@ type StaticHostModelPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostModelPolicy creates a new policy with default values.
@@ -1289,39 +1290,85 @@ type StaticHostModelInvokeParams struct {
 	VAnswerTokens *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostModelPolicy) AcceptParams(params StaticHostModelInvokeParams) {
-	if params.VPrompt != nil {
-		p.vPrompt = *params.VPrompt
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostModelPolicy) AcceptParams(handed StaticHostModelInvokeParams) {
+	var vPrompt string
+	if handed.VPrompt != nil {
+		vPrompt = *handed.VPrompt
+	} else {
+		vPrompt = ""
 	}
-	if params.VMaxTokens != nil {
-		p.vMaxTokens = *params.VMaxTokens
+	var vMaxTokens uint32
+	if handed.VMaxTokens != nil {
+		vMaxTokens = *handed.VMaxTokens
+	} else {
+		vMaxTokens = 0
 	}
-	if params.VTemperatureMilli != nil {
-		p.vTemperatureMilli = *params.VTemperatureMilli
+	var vTemperatureMilli uint16
+	if handed.VTemperatureMilli != nil {
+		vTemperatureMilli = *handed.VTemperatureMilli
+	} else {
+		vTemperatureMilli = 0
 	}
-	if params.VCalls != nil {
-		p.vCalls = *params.VCalls
+	var vCalls uint32
+	if handed.VCalls != nil {
+		vCalls = *handed.VCalls
+	} else {
+		vCalls = 0
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
-	if params.VFinish != nil {
-		p.vFinish = *params.VFinish
+	var vFinish string
+	if handed.VFinish != nil {
+		vFinish = *handed.VFinish
+	} else {
+		vFinish = ""
 	}
-	if params.VConstrained != nil {
-		p.vConstrained = *params.VConstrained
+	var vConstrained bool
+	if handed.VConstrained != nil {
+		vConstrained = *handed.VConstrained
+	} else {
+		vConstrained = false
 	}
-	if params.VAnsweredBy != nil {
-		p.vAnsweredBy = *params.VAnsweredBy
+	var vAnsweredBy string
+	if handed.VAnsweredBy != nil {
+		vAnsweredBy = *handed.VAnsweredBy
+	} else {
+		vAnsweredBy = ""
 	}
-	if params.VPromptTokens != nil {
-		p.vPromptTokens = *params.VPromptTokens
+	var vPromptTokens uint32
+	if handed.VPromptTokens != nil {
+		vPromptTokens = *handed.VPromptTokens
+	} else {
+		vPromptTokens = 0
 	}
-	if params.VAnswerTokens != nil {
-		p.vAnswerTokens = *params.VAnswerTokens
+	var vAnswerTokens uint32
+	if handed.VAnswerTokens != nil {
+		vAnswerTokens = *handed.VAnswerTokens
+	} else {
+		vAnswerTokens = 0
 	}
+	var vAnswer optional.Of[StaticHostModelAnswerRecord] = optional.None[StaticHostModelAnswerRecord]()
+	var vWhy optional.Of[StaticHostModelLiftRefusalRecord] = optional.None[StaticHostModelLiftRefusalRecord]()
+	p.vPrompt = vPrompt
+	p.vMaxTokens = vMaxTokens
+	p.vTemperatureMilli = vTemperatureMilli
+	p.vCalls = vCalls
+	p.vOutcome = vOutcome
+	p.vFinish = vFinish
+	p.vConstrained = vConstrained
+	p.vAnsweredBy = vAnsweredBy
+	p.vPromptTokens = vPromptTokens
+	p.vAnswerTokens = vAnswerTokens
+	p.vAnswer = vAnswer
+	p.vWhy = vWhy
 }
 
 

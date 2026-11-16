@@ -106,6 +106,7 @@ public final class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy: In
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

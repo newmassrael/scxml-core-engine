@@ -683,9 +683,10 @@ type StaticOptionalRecordPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticOptionalRecordPolicy creates a new policy with default values.
@@ -807,27 +808,61 @@ type StaticOptionalRecordInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticOptionalRecordPolicy) AcceptParams(params StaticOptionalRecordInvokeParams) {
-	if params.VTitle != nil {
-		p.vTitle = *params.VTitle
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticOptionalRecordPolicy) AcceptParams(handed StaticOptionalRecordInvokeParams) {
+	var vPick optional.Of[StaticOptionalRecordItemRecord] = optional.None[StaticOptionalRecordItemRecord]()
+	var vFound optional.Of[StaticOptionalRecordItemRecord] = optional.None[StaticOptionalRecordItemRecord]()
+	var vDraft StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord{id: 0, title: "draft", count: 0}
+	var vItems []StaticOptionalRecordItemRecord = nil
+	var vTitle string
+	if handed.VTitle != nil {
+		vTitle = *handed.VTitle
+	} else {
+		vTitle = ""
 	}
-	if params.VCount != nil {
-		p.vCount = *params.VCount
+	var vCount int32
+	if handed.VCount != nil {
+		vCount = *handed.VCount
+	} else {
+		vCount = 0
 	}
-	if params.VShown != nil {
-		p.vShown = *params.VShown
+	var vShown int32
+	if handed.VShown != nil {
+		vShown = *handed.VShown
+	} else {
+		vShown = 0
 	}
-	if params.VKnown != nil {
-		p.vKnown = *params.VKnown
+	var vKnown bool
+	if handed.VKnown != nil {
+		vKnown = *handed.VKnown
+	} else {
+		vKnown = false
 	}
-	if params.VAbsent != nil {
-		p.vAbsent = *params.VAbsent
+	var vAbsent bool
+	if handed.VAbsent != nil {
+		vAbsent = *handed.VAbsent
+	} else {
+		vAbsent = false
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vPick = vPick
+	p.vFound = vFound
+	p.vDraft = vDraft
+	p.vItems = vItems
+	p.vTitle = vTitle
+	p.vCount = vCount
+	p.vShown = vShown
+	p.vKnown = vKnown
+	p.vAbsent = vAbsent
+	p.vErrors = vErrors
 }
 
 

@@ -159,11 +159,11 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record(sensor: 1, value: 0.5)
+    var vLast: StaticRecordReal32Reading32Record
     /// W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`).
-    var vSum: Float = 0.0
+    var vSum: Float
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `last` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -187,18 +187,37 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSum {
-            vSum = value
+        let vLast: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record(sensor: 1, value: 0.5)
+        let vSum: Float
+        if let handed = params.vSum {
+            vSum = handed
+        } else {
+            vSum = 0.0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vLast = vLast
+        self.vSum = vSum
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vLast: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record(sensor: 1, value: 0.5)
+        let vSum: Float = 0.0
+        let vErrors: UInt32 = 0
+        self.vLast = vLast
+        self.vSum = vSum
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

@@ -165,24 +165,30 @@ class StatechartHostInvokerOptionalStateMachine(
         var hitTrue: Boolean? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.at?.let { vAt = it }
-        params.label?.let { vLabel = it }
-        params.hit?.let { vHit = it }
-        params.answered?.let { vAnswered = it }
-        params.rowsSeen?.let { vRowsSeen = it }
-        params.totalSeen?.let { vTotalSeen = it }
-        params.atPresent?.let { vAtPresent = it }
-        params.atValue?.let { vAtValue = it }
-        params.labelPresent?.let { vLabelPresent = it }
-        params.labelValue?.let { vLabelValue = it }
-        params.hitKnown?.let { vHitKnown = it }
-        params.hitTrue?.let { vHitTrue = it }
+        vAt = params.at ?: (null)
+        vLabel = params.label ?: (null)
+        vHit = params.hit ?: (null)
+        vAnswered = params.answered ?: (0.toUByte())
+        vRowsSeen = params.rowsSeen ?: (0.toUByte())
+        vTotalSeen = params.totalSeen ?: (0.toULong())
+        vAtPresent = params.atPresent ?: (false)
+        vAtValue = params.atValue ?: (0)
+        vLabelPresent = params.labelPresent ?: (false)
+        vLabelValue = params.labelValue ?: ("")
+        vHitKnown = params.hitKnown ?: (false)
+        vHitTrue = params.hitTrue ?: (false)
     }
 
     /** The published variables as one immutable value, in declaration order. */

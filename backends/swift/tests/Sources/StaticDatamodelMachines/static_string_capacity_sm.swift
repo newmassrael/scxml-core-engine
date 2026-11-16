@@ -110,15 +110,15 @@ public final class StaticStringCapacityPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    var vTitle: String = "ab"
+    var vTitle: String
     /// W3C SCXML 5.2: the `body` datamodel variable, published (`sce:direction="out"`).
-    var vBody: String = "hello"
+    var vBody: String
     /// W3C SCXML 5.2: the `copied` datamodel variable, published (`sce:direction="out"`).
-    var vCopied: UInt32 = 0
+    var vCopied: UInt32
     /// W3C SCXML 5.2: the `measured` datamodel variable, published (`sce:direction="out"`).
-    var vMeasured: UInt32 = 0
+    var vMeasured: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `title` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -153,27 +153,60 @@ public final class StaticStringCapacityPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTitle {
-            vTitle = value
+        let vTitle: String
+        if let handed = params.vTitle {
+            vTitle = handed
+        } else {
+            vTitle = "ab"
         }
-        if let value = params.vBody {
-            vBody = value
+        let vBody: String
+        if let handed = params.vBody {
+            vBody = handed
+        } else {
+            vBody = "hello"
         }
-        if let value = params.vCopied {
-            vCopied = value
+        let vCopied: UInt32
+        if let handed = params.vCopied {
+            vCopied = handed
+        } else {
+            vCopied = 0
         }
-        if let value = params.vMeasured {
-            vMeasured = value
+        let vMeasured: UInt32
+        if let handed = params.vMeasured {
+            vMeasured = handed
+        } else {
+            vMeasured = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vTitle = vTitle
+        self.vBody = vBody
+        self.vCopied = vCopied
+        self.vMeasured = vMeasured
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vTitle: String = "ab"
+        let vBody: String = "hello"
+        let vCopied: UInt32 = 0
+        let vMeasured: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vTitle = vTitle
+        self.vBody = vBody
+        self.vCopied = vCopied
+        self.vMeasured = vMeasured
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

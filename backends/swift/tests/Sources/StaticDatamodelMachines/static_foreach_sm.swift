@@ -113,21 +113,21 @@ public final class StaticForeachPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: [UInt8] = []
+    var vPicked: [UInt8]
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
-    var vTotal: UInt32 = 0
+    var vTotal: UInt32
     /// W3C SCXML 5.2: the `weighted` datamodel variable, published (`sce:direction="out"`).
-    var vWeighted: UInt32 = 0
+    var vWeighted: UInt32
     /// W3C SCXML 5.2: the `small` datamodel variable, published (`sce:direction="out"`).
-    var vSmall: UInt8 = 0
+    var vSmall: UInt8
     /// W3C SCXML 5.2: the `crossings` datamodel variable, published (`sce:direction="out"`).
-    var vCrossings: UInt32 = 0
+    var vCrossings: UInt32
     /// W3C SCXML 5.2: the `visited` datamodel variable, published (`sce:direction="out"`).
-    var vVisited: UInt32 = 0
+    var vVisited: UInt32
     /// W3C SCXML 5.2: the `finished` datamodel variable, published (`sce:direction="out"`).
-    var vFinished: UInt32 = 0
+    var vFinished: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `picked` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -176,33 +176,82 @@ public final class StaticForeachPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTotal {
-            vTotal = value
+        let vPicked: [UInt8] = []
+        let vTotal: UInt32
+        if let handed = params.vTotal {
+            vTotal = handed
+        } else {
+            vTotal = 0
         }
-        if let value = params.vWeighted {
-            vWeighted = value
+        let vWeighted: UInt32
+        if let handed = params.vWeighted {
+            vWeighted = handed
+        } else {
+            vWeighted = 0
         }
-        if let value = params.vSmall {
-            vSmall = value
+        let vSmall: UInt8
+        if let handed = params.vSmall {
+            vSmall = handed
+        } else {
+            vSmall = 0
         }
-        if let value = params.vCrossings {
-            vCrossings = value
+        let vCrossings: UInt32
+        if let handed = params.vCrossings {
+            vCrossings = handed
+        } else {
+            vCrossings = 0
         }
-        if let value = params.vVisited {
-            vVisited = value
+        let vVisited: UInt32
+        if let handed = params.vVisited {
+            vVisited = handed
+        } else {
+            vVisited = 0
         }
-        if let value = params.vFinished {
-            vFinished = value
+        let vFinished: UInt32
+        if let handed = params.vFinished {
+            vFinished = handed
+        } else {
+            vFinished = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vPicked = vPicked
+        self.vTotal = vTotal
+        self.vWeighted = vWeighted
+        self.vSmall = vSmall
+        self.vCrossings = vCrossings
+        self.vVisited = vVisited
+        self.vFinished = vFinished
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vPicked: [UInt8] = []
+        let vTotal: UInt32 = 0
+        let vWeighted: UInt32 = 0
+        let vSmall: UInt8 = 0
+        let vCrossings: UInt32 = 0
+        let vVisited: UInt32 = 0
+        let vFinished: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vPicked = vPicked
+        self.vTotal = vTotal
+        self.vWeighted = vWeighted
+        self.vSmall = vSmall
+        self.vCrossings = vCrossings
+        self.vVisited = vVisited
+        self.vFinished = vFinished
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

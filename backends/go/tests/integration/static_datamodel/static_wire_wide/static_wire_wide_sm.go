@@ -532,9 +532,10 @@ type StaticWireWidePolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticWireWidePolicy creates a new policy with default values.
@@ -624,27 +625,53 @@ type StaticWireWideInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticWireWidePolicy) AcceptParams(params StaticWireWideInvokeParams) {
-	if params.VLow != nil {
-		p.vLow = *params.VLow
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticWireWidePolicy) AcceptParams(handed StaticWireWideInvokeParams) {
+	var vLow uint64
+	if handed.VLow != nil {
+		vLow = *handed.VLow
+	} else {
+		vLow = 0
 	}
-	if params.VSmallLow != nil {
-		p.vSmallLow = *params.VSmallLow
+	var vSmallLow int64
+	if handed.VSmallLow != nil {
+		vSmallLow = *handed.VSmallLow
+	} else {
+		vSmallLow = 0
 	}
-	if params.VLarge != nil {
-		p.vLarge = *params.VLarge
+	var vLarge bool
+	if handed.VLarge != nil {
+		vLarge = *handed.VLarge
+	} else {
+		vLarge = false
 	}
-	if params.VNegative != nil {
-		p.vNegative = *params.VNegative
+	var vNegative bool
+	if handed.VNegative != nil {
+		vNegative = *handed.VNegative
+	} else {
+		vNegative = false
 	}
-	if params.VRelays != nil {
-		p.vRelays = *params.VRelays
+	var vRelays uint32
+	if handed.VRelays != nil {
+		vRelays = *handed.VRelays
+	} else {
+		vRelays = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vLow = vLow
+	p.vSmallLow = vSmallLow
+	p.vLarge = vLarge
+	p.vNegative = vNegative
+	p.vRelays = vRelays
+	p.vRefusals = vRefusals
 }
 
 

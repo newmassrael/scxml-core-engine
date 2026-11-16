@@ -537,9 +537,10 @@ type StatechartStaticHostParamsPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStatechartStaticHostParamsPolicy creates a new policy with default values.
@@ -607,33 +608,67 @@ type StatechartStaticHostParamsInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StatechartStaticHostParamsPolicy) AcceptParams(params StatechartStaticHostParamsInvokeParams) {
-	if params.VCount != nil {
-		p.vCount = *params.VCount
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StatechartStaticHostParamsPolicy) AcceptParams(handed StatechartStaticHostParamsInvokeParams) {
+	var vCount uint32
+	if handed.VCount != nil {
+		vCount = *handed.VCount
+	} else {
+		vCount = 3
 	}
-	if params.VReady != nil {
-		p.vReady = *params.VReady
+	var vReady bool
+	if handed.VReady != nil {
+		vReady = *handed.VReady
+	} else {
+		vReady = false
 	}
-	if params.VLabel != nil {
-		p.vLabel = *params.VLabel
+	var vLabel string
+	if handed.VLabel != nil {
+		vLabel = *handed.VLabel
+	} else {
+		vLabel = "idle"
 	}
-	if params.VDelta != nil {
-		p.vDelta = *params.VDelta
+	var vDelta int16
+	if handed.VDelta != nil {
+		vDelta = *handed.VDelta
+	} else {
+		vDelta = -5
 	}
-	if params.VRatio != nil {
-		p.vRatio = *params.VRatio
+	var vRatio float64
+	if handed.VRatio != nil {
+		vRatio = *handed.VRatio
+	} else {
+		vRatio = 1.5
 	}
-	if params.VTag != nil {
-		p.vTag = *params.VTag
+	var vTag string
+	if handed.VTag != nil {
+		vTag = *handed.VTag
+	} else {
+		vTag = "job://params"
 	}
-	if params.VHuge != nil {
-		p.vHuge = *params.VHuge
+	var vHuge uint32
+	if handed.VHuge != nil {
+		vHuge = *handed.VHuge
+	} else {
+		vHuge = 1
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vCount = vCount
+	p.vReady = vReady
+	p.vLabel = vLabel
+	p.vDelta = vDelta
+	p.vRatio = vRatio
+	p.vTag = vTag
+	p.vHuge = vHuge
+	p.vErrors = vErrors
 }
 
 

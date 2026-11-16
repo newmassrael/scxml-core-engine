@@ -117,6 +117,7 @@ public final class AutoforwardDequeuePointPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

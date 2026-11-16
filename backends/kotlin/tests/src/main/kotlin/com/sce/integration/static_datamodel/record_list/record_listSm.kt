@@ -611,44 +611,80 @@ class RecordListStateMachine(
         var withdrawFrom: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.node?.let { vNode = it }
-        params.journal?.let { vJournal = it }
-        params.shareId?.let { vShareId = it }
-        params.shareField?.let { vShareField = it }
-        params.wasLive?.let { vWasLive = it }
-        params.present?.let { vPresent = it }
-        params.refusals?.let { vRefusals = it }
-        params.roomValues?.let { vRoomValues = it }
-        params.full?.let { vFull = it }
-        params.denied?.let { vDenied = it }
-        params.forbidden?.let { vForbidden = it }
-        params.authorized?.let { vAuthorized = it }
-        params.announce?.let { vAnnounce = it }
-        params.announced?.let { vAnnounced = it }
-        params.listed?.let { vListed = it }
-        params.ordinal?.let { vOrdinal = it }
-        params.holding?.let { vHolding = it }
-        params.closingNow?.let { vClosingNow = it }
-        params.spoiled?.let { vSpoiled = it }
-        params.probing?.let { vProbing = it }
-        params.gone?.let { vGone = it }
-        params.writes?.let { vWrites = it }
-        params.covered?.let { vCovered = it }
-        params.namedId?.let { vNamedId = it }
-        params.namedField?.let { vNamedField = it }
-        params.took?.let { vTook = it }
-        params.restoring?.let { vRestoring = it }
-        params.tentative?.let { vTentative = it }
-        params.closingCommand?.let { vClosingCommand = it }
-        params.closedOps?.let { vClosedOps = it }
-        params.provisionalFound?.let { vProvisionalFound = it }
-        params.withdrawFrom?.let { vWithdrawFrom = it }
+        vNode = params.node ?: (0.toULong())
+        vJournal = params.journal ?: (true)
+        vClock = RecordListHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vStamp = RecordListHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vDot = RecordListHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vAdds = emptyList()
+        vOne = emptyList()
+        vEntry = RecordListEntryRecord(element = 0.toULong(), wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vValues = emptyList()
+        vHeld = RecordListValueRecord(id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vShareId = params.shareId ?: (0.toUInt())
+        vShareField = params.shareField ?: (0.toUShort())
+        vWasLive = params.wasLive ?: (false)
+        vPresent = params.present ?: (false)
+        vRefusals = params.refusals ?: (0.toUInt())
+        vRoomValues = params.roomValues ?: (0.toUInt())
+        vFull = params.full ?: (0.toUInt())
+        vRoster = emptyList()
+        vDenied = params.denied ?: (0.toUInt())
+        vForbidden = params.forbidden ?: (false)
+        vAuthorized = params.authorized ?: (true)
+        vAnnounce = params.announce ?: (false)
+        vAnnounced = params.announced ?: (0.toUInt())
+        vMoved = emptyList()
+        vListed = params.listed ?: (false)
+        vLive = emptyList()
+        vOrdinal = params.ordinal ?: (0.toUInt())
+        vEmpty = RecordListValueRecord(id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vStaged = emptyList()
+        vStaging = RecordListStagedRecord(kind = 0.toUByte(), id = 0.toUInt(), field = 0.toUShort(), value = 0, text = "")
+        vHolding = params.holding ?: (false)
+        vClosingNow = params.closingNow ?: (0)
+        vSpoiled = params.spoiled ?: (false)
+        vProbing = params.probing ?: (false)
+        vGone = params.gone ?: (0.toUInt())
+        vWrites = params.writes ?: (0.toUInt())
+        vCovered = params.covered ?: (false)
+        vProbe = RecordListRefusalEnum.CHANGE_TOO_LARGE
+        vSpoiledFor = RecordListRefusalEnum.CHANGE_TOO_LARGE
+        vNamedId = params.namedId ?: (0.toUInt())
+        vNamedField = params.namedField ?: (0.toUShort())
+        vNamedKind = RecordListCommandEnum.EDIT
+        vTaking = emptyList()
+        vTook = params.took ?: (0.toUInt())
+        vOp = RecordListOpRecord(kind = 0.toUByte(), id = 0.toUInt(), field = 0.toUShort(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vRestoring = params.restoring ?: (false)
+        vTentative = params.tentative ?: (false)
+        vClosingCommand = params.closingCommand ?: (0.toULong())
+        vOffered = emptyList()
+        vOfferedAt = RecordListHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vRefusedFor = RecordListRefusalEnum.PEER_REFUSED
+        vClosedOps = params.closedOps ?: (0.toUInt())
+        vClosedFor = null
+        vClosedAt = RecordListHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vProvisional = emptyList()
+        vProvisionalKept = emptyList()
+        vStanding = RecordListProvisionalRecord(wallTime = 0, counter = 0.toUInt(), command = 0.toULong(), id = 0.toUInt(), field = 0.toUShort(), kind = RecordListCommandEnum.EDIT)
+        vProvisionalFound = params.provisionalFound ?: (false)
+        vWithdrawFrom = params.withdrawFrom ?: (0.toUInt())
+        vUndo = emptyList()
+        vUndoKept = emptyList()
+        vUndoing = RecordListUndoRecord(atWallTime = 0, atCounter = 0.toUInt(), id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
     }
 
     /** The published variables as one immutable value, in declaration order. */

@@ -8,16 +8,42 @@ from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_zenoh_decl_ext_keyexpr_inner import CodecZenohDeclExtKeyexprInner
+from . import codec_zenoh_decl_ext_keyexpr_inner as sce_codec_zenoh_decl_ext_keyexpr_inner
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Protocol
+
+
+class CodecZenohDeclExtKeyexprSource(Protocol):
+    """The elements a value of :class:`CodecZenohDeclExtKeyexpr` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def outer_header(self) -> int: ...
+
+    @property
+    def inner(self) -> sce_codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInnerSource: ...
+
+
+def encode_source(src: CodecZenohDeclExtKeyexprSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohDeclExtKeyexpr` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``total_length`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _b_inner = bytearray()
+    sce_codec_zenoh_decl_ext_keyexpr_inner.encode_source(src.inner, BytearraySink(_b_inner))
+    _d_total_length = len(_b_inner)
+    w.write_u8(src.outer_header & 0xFF)
+    w.write_vle_u64(_d_total_length)
+    w.write_bytes(_b_inner)
 
 
 @dataclass
 class CodecZenohDeclExtKeyexpr:
     outer_header: int = 0
-    total_length: int = 0
-    inner: CodecZenohDeclExtKeyexprInner = b""
+    inner: CodecZenohDeclExtKeyexprInner = field(default_factory=CodecZenohDeclExtKeyexprInner)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohDeclExtKeyexpr]:
@@ -59,7 +85,6 @@ class CodecZenohDeclExtKeyexpr:
             return None
         return cls(
             outer_header=f_outer_header,
-            total_length=f_total_length,
             inner=f_inner,
         )
 
@@ -110,17 +135,7 @@ class CodecZenohDeclExtKeyexpr:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.outer_header & 0xFF)
-        w.write_vle_u64(self.total_length)
-        self.inner.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

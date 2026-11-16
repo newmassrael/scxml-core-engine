@@ -176,13 +176,13 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `best` datamodel variable, published (`sce:direction="out"`).
-    var vBest: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
+    var vBest: StaticRecordCallEntryRecord
     /// W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`).
-    var vLarge: UInt32 = 0
+    var vLarge: UInt32
     /// W3C SCXML 5.2: the `debts` datamodel variable, published (`sce:direction="out"`).
-    var vDebts: UInt32 = 0
+    var vDebts: UInt32
     /// W3C SCXML 5.2: the `peaks` datamodel variable, published (`sce:direction="out"`).
-    var vPeaks: UInt32 = 0
+    var vPeaks: UInt32
 
     /// Reports what the published `best` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -211,21 +211,46 @@ public final class StaticRecordCallPolicy: InvocablePolicy {
         public var vPeaks: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vLarge {
-            vLarge = value
+        let vBest: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
+        let vLarge: UInt32
+        if let handed = params.vLarge {
+            vLarge = handed
+        } else {
+            vLarge = 0
         }
-        if let value = params.vDebts {
-            vDebts = value
+        let vDebts: UInt32
+        if let handed = params.vDebts {
+            vDebts = handed
+        } else {
+            vDebts = 0
         }
-        if let value = params.vPeaks {
-            vPeaks = value
+        let vPeaks: UInt32
+        if let handed = params.vPeaks {
+            vPeaks = handed
+        } else {
+            vPeaks = 0
         }
+        self.vBest = vBest
+        self.vLarge = vLarge
+        self.vDebts = vDebts
+        self.vPeaks = vPeaks
     }
 
     public init() {
+        let vBest: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord(id: 0, amount: 0)
+        let vLarge: UInt32 = 0
+        let vDebts: UInt32 = 0
+        let vPeaks: UInt32 = 0
+        self.vBest = vBest
+        self.vLarge = vLarge
+        self.vDebts = vDebts
+        self.vPeaks = vPeaks
+
         sessionID = drawSessionID()
     }
 

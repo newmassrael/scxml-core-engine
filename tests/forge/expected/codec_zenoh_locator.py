@@ -7,15 +7,51 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedText
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohLocatorLocatorText(BoundedText):
+    """The ``locator`` element of :class:`CodecZenohLocator`, 0 to 255 UTF-8 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 255
+
+
+class CodecZenohLocatorSource(Protocol):
+    """The elements a value of :class:`CodecZenohLocator` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def locator(self) -> CodecZenohLocatorLocatorText: ...
+
+
+def encode_source(src: CodecZenohLocatorSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohLocator` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``locator_len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_locator_len = len(src.locator.encode("utf-8"))
+    w.write_vle_u64(_d_locator_len)
+    w.write_bytes(src.locator.encode("utf-8"))
 
 
 @dataclass
 class CodecZenohLocator:
-    locator_len: int = 0
-    locator: str = ""
+    locator: CodecZenohLocatorLocatorText = CodecZenohLocatorLocatorText()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "locator":
+            value = CodecZenohLocatorLocatorText(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohLocator]:
@@ -54,7 +90,6 @@ class CodecZenohLocator:
         except CodecError:
             return None
         return cls(
-            locator_len=f_locator_len,
             locator=f_locator,
         )
 
@@ -63,22 +98,8 @@ class CodecZenohLocator:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.locator.encode("utf-8")) > 255:
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_vle_u64(self.locator_len)
-        w.write_bytes(self.locator.encode('utf-8'))
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

@@ -107,6 +107,7 @@ public final class SendParamPayloadSceSynthInvokeInvEmitterPolicy: InvocablePoli
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

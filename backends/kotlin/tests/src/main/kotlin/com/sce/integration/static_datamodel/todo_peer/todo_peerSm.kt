@@ -402,30 +402,61 @@ class TodoPeerStateMachine(
         var took: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.node?.let { vNode = it }
-        params.typed?.let { vTyped = it }
-        params.wasLive?.let { vWasLive = it }
-        params.present?.let { vPresent = it }
-        params.refusals?.let { vRefusals = it }
-        params.agendaNext?.let { vAgendaNext = it }
-        params.zoneRows?.let { vZoneRows = it }
-        params.split?.let { vSplit = it }
-        params.rawCount?.let { vRawCount = it }
-        params.rawLast?.let { vRawLast = it }
-        params.utcSec?.let { vUtcSec = it }
-        params.roomValues?.let { vRoomValues = it }
-        params.full?.let { vFull = it }
-        params.gone?.let { vGone = it }
-        params.denied?.let { vDenied = it }
-        params.forbidden?.let { vForbidden = it }
-        params.authorized?.let { vAuthorized = it }
-        params.took?.let { vTook = it }
+        vNode = params.node ?: (0.toULong())
+        vClock = TodoPeerHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vStamp = TodoPeerHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vDot = TodoPeerHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vAdds = emptyList()
+        vOne = emptyList()
+        vEntry = TodoPeerEntryRecord(element = 0.toULong(), wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vValues = emptyList()
+        vTyped = params.typed ?: ("")
+        vHeld = TodoPeerValueRecord(id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vWasLive = params.wasLive ?: (false)
+        vPresent = params.present ?: (false)
+        vRefusals = params.refusals ?: (0.toUInt())
+        vAgenda = emptyList()
+        vLocal = emptyList()
+        vOcc = TodoPeerOccurrenceRecord(id = 0.toULong(), start = 0, end = 0, nth = 0.toUInt(), conflict = 0.toUByte())
+        vAgendaNext = params.agendaNext ?: (0.toUInt())
+        vZoneStarts1 = emptyList()
+        vZoneOffsets1 = emptyList()
+        vZoneStarts2 = emptyList()
+        vZoneOffsets2 = emptyList()
+        vZoneStarts3 = emptyList()
+        vZoneOffsets3 = emptyList()
+        vZoneStarts4 = emptyList()
+        vZoneOffsets4 = emptyList()
+        vZoneStarts = emptyList()
+        vZoneOffsets = emptyList()
+        vZoneRows = params.zoneRows ?: (0.toUInt())
+        vSplit = params.split ?: (false)
+        vSched = TodoPeerScheduleRecord(zone = 0, start = -1, length = 0, freq = 0, interval = 1, days = 0, count = 0, until = 0, bymonth = 0, mdPos = 0, mdNeg = 0, invalid = 0, op0 = 0, op1 = 0, op2 = 0, op3 = 0, op4 = 0, op5 = 0, op6 = 0, on0 = 0, on1 = 0, on2 = 0, on3 = 0, on4 = 0, on5 = 0, on6 = 0, spPos = 0, spNeg = 0, wkst = 1, wnPos = 0, wnNeg = 0, yd0 = 0, yd1 = 0, yd2 = 0, yd3 = 0, yd4 = 0, yd5 = 0, ydn0 = 0, ydn1 = 0, ydn2 = 0, ydn3 = 0, ydn4 = 0, ydn5 = 0, gone = 0, flag = 0)
+        vRawCount = params.rawCount ?: (0.toUInt())
+        vRawLast = params.rawLast ?: (0.toUInt())
+        vUtcSec = params.utcSec ?: (0)
+        vRoomValues = params.roomValues ?: (0.toUInt())
+        vFull = params.full ?: (0.toUInt())
+        vGone = params.gone ?: (0.toUInt())
+        vRoster = emptyList()
+        vDenied = params.denied ?: (0.toUInt())
+        vForbidden = params.forbidden ?: (false)
+        vAuthorized = params.authorized ?: (true)
+        vTaking = emptyList()
+        vTook = params.took ?: (0.toUInt())
+        vOp = TodoPeerOpRecord(kind = 0.toUByte(), id = 0.toUInt(), field = 0.toUShort(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
     }
 
     /** The published variables as one immutable value, in declaration order. */

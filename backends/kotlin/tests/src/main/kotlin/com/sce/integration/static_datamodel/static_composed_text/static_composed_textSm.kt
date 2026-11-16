@@ -177,22 +177,28 @@ class StaticComposedTextStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.noteIsAb?.let { vNoteIsAb = it }
-        params.noteLen?.let { vNoteLen = it }
-        params.firstLabelIsAb?.let { vFirstLabelIsAb = it }
-        params.labelsAb?.let { vLabelsAb = it }
-        params.firstTagsAb?.let { vFirstTagsAb = it }
-        params.wordsAb?.let { vWordsAb = it }
-        params.lastLabel?.let { vLastLabel = it }
-        params.blobBytes?.let { vBlobBytes = it }
-        params.blobsAb?.let { vBlobsAb = it }
-        params.refusals?.let { vRefusals = it }
+        vNoteIsAb = params.noteIsAb ?: (false)
+        vNoteLen = params.noteLen ?: (0.toUInt())
+        vFirstLabelIsAb = params.firstLabelIsAb ?: (false)
+        vLabelsAb = params.labelsAb ?: (0.toUInt())
+        vFirstTagsAb = params.firstTagsAb ?: (0.toUInt())
+        vWordsAb = params.wordsAb ?: (0.toUInt())
+        vLastLabel = params.lastLabel ?: ("")
+        vBlobBytes = params.blobBytes ?: (0.toUInt())
+        vBlobsAb = params.blobsAb ?: (0.toUInt())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

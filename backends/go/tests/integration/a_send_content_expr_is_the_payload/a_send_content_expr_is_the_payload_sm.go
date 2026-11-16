@@ -210,9 +210,10 @@ type ASendContentExprIsThePayloadPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewASendContentExprIsThePayloadPolicy creates a new policy with default values.
@@ -380,8 +381,10 @@ func (p *ASendContentExprIsThePayloadPolicy) establishScriptSession() *sce.Scrip
 // It is the one place a session is made (establishScriptSession), and a
 // session that cannot be established is its answer: nothing of the datamodel is
 // touched and the start is refused (docs/adr/0096). The order after it is the
-// document's: its `<data>`, then the invoke params its parent handed it, then
-// its top-level `<script>`.
+// document's (docs/adr/0098): its top-level `<data>`, each taking the value an
+// invoking session handed for it in place of its own; the early-bound `<data>`
+// of its states; its top-level `<script>`. The initial configuration is
+// entered after this returns, so its `<onentry>` reads the handed values too.
 func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent]) *sce.ScriptSessionFailure {
 	if !p.scriptEngineInitialized {
 		if failure := p.establishScriptSession(); failure != nil {
@@ -395,9 +398,22 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
+	// §scxml-6.4: the values the invoking session handed this one
+	// (`SetParamValueInScriptEngine`), taken by this start and by no later
+	// one. Which of them this session keeps is its own to decide, from the
+	// ids of its top-level `<data>`, written below when it was generated: a
+	// name none of them carries is not added, and a state's `<data>` never
+	// takes a handed value, whatever its id.
+	handed := p.handedValues
+	p.handedValues = nil
+
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
-	// W3C SCXML 5.2/5.3: Initialize obj from expr="({})"
-	{
+	if value, wasHanded := handed["obj"]; wasHanded {
+		// §scxml-6.4: obj takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "obj", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize obj from expr="({})"
 		result, err := engine.EvaluateExpression(sessionID, `{}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
@@ -406,8 +422,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize numberOk from expr="0"
-	{
+	if value, wasHanded := handed["numberOk"]; wasHanded {
+		// §scxml-6.4: numberOk takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "numberOk", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize numberOk from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "numberOk", result)
@@ -416,8 +436,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "numberOk", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize objectOk from expr="0"
-	{
+	if value, wasHanded := handed["objectOk"]; wasHanded {
+		// §scxml-6.4: objectOk takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "objectOk", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize objectOk from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "objectOk", result)
@@ -426,8 +450,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "objectOk", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize textOk from expr="0"
-	{
+	if value, wasHanded := handed["textOk"]; wasHanded {
+		// §scxml-6.4: textOk takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "textOk", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize textOk from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "textOk", result)
@@ -436,8 +464,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "textOk", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
-	{
+	if value, wasHanded := handed["errors"]; wasHanded {
+		// §scxml-6.4: errors takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "errors", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
@@ -446,8 +478,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize badArrived from expr="0"
-	{
+	if value, wasHanded := handed["badArrived"]; wasHanded {
+		// §scxml-6.4: badArrived takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "badArrived", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize badArrived from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "badArrived", result)
@@ -456,8 +492,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "badArrived", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize badEmpty from expr="0"
-	{
+	if value, wasHanded := handed["badEmpty"]; wasHanded {
+		// §scxml-6.4: badEmpty takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "badEmpty", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize badEmpty from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "badEmpty", result)
@@ -466,8 +506,12 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 			_ = engine.SetVariable(sessionID, "badEmpty", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterBad from expr="0"
-	{
+	if value, wasHanded := handed["afterBad"]; wasHanded {
+		// §scxml-6.4: afterBad takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterBad", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterBad from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterBad", result)
@@ -477,24 +521,6 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		}
 	}
 
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule. They are applied
-	// before the top-level `<script>`, which reads the datamodel the invocation
-	// started it with. The parent hands them before this session's start
-	// (`SetParamValueInScriptEngine`) and this session applies them, so a
-	// child's session is made by the child.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
 
 	return nil
 }
@@ -601,23 +627,38 @@ func (p *ASendContentExprIsThePayloadPolicy) getVariable(name string) interface{
 	return result
 }
 
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
+// SetParamValueInScriptEngine hands this machine, before its start, the value
+// an invoking session evaluated for one `<param>` or `namelist` name
+// (§scxml-6.4). The invoking session hands every name it evaluated; this
+// machine's start (InitializeDataModel) decides which it keeps, from the ids
+// of its own top-level `<data>`, and declares each kept one as that `<data>`'s
+// initial value in place of its own (docs/adr/0098). Nothing is written to the
+// script session here: the session is the child's own, established by its
+// start (docs/adr/0096).
 //
-// Params are applied by InitializeDataModel after the `<data>` and before the
-// top-level `<script>`, overriding the `<data>` default only for names the
-// child declares, so the session they are applied in is the child's own,
-// established by its start (docs/adr/0096). The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
+// The value crosses as a value: this took the parent's value rendered as Lua
+// source and re-evaluated it here until 2026-08-21, which survived every value
+// a test had tried and lost the ones Lua cannot spell — `ToScriptLiteral`
+// renders a non-finite number as `+Inf`, which is not a Lua expression, so an
 // `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
 func (p *ASendContentExprIsThePayloadPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
+	if p.handedValues == nil {
+		p.handedValues = make(map[string]interface{})
 	}
-	p.pendingParams[name] = value
+	p.handedValues[name] = value
+}
+
+// declareHandedValue declares the top-level `<data>` name with the value an
+// invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
+// `expr`, `src` or content, which is not evaluated. A value the session cannot
+// hold is the error of that `<data>`'s initialization (§scxml-5.3):
+// error.execution, and the `<data>` left unset, as one whose own expression
+// failed is left (docs/adr/0098).
+func (p *ASendContentExprIsThePayloadPolicy) declareHandedValue(eng *sce.Engine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
+	if err := engine.SetVariable(sessionID, name, value); err != nil {
+		eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		_ = engine.SetVariable(sessionID, name, nil)
+	}
 }
 
 

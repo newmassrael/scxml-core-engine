@@ -140,6 +140,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedPolicy: InvocablePolicy
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

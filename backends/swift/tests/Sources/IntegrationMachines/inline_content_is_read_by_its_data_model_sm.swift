@@ -143,6 +143,7 @@ public final class InlineContentIsReadByItsDataModelPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

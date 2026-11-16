@@ -206,13 +206,13 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`).
-    var vLayout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.week
+    var vLayout: StaticWireEnumViewModeEnum
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: StaticWireEnumViewRecord = StaticWireEnumViewRecord(layout: StaticWireEnumViewModeEnum.day, zoom: 2)
+    var vShown: StaticWireEnumViewRecord
     /// W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`).
-    var vReceived: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.month
+    var vReceived: StaticWireEnumViewModeEnum
     /// W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`).
-    var vDeliveries: UInt32 = 0
+    var vDeliveries: UInt32
 
     /// Reports what the published `layout` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -239,15 +239,36 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
         public var vDeliveries: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vDeliveries {
-            vDeliveries = value
+        let vLayout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.week
+        let vShown: StaticWireEnumViewRecord = StaticWireEnumViewRecord(layout: StaticWireEnumViewModeEnum.day, zoom: 2)
+        let vReceived: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.month
+        let vDeliveries: UInt32
+        if let handed = params.vDeliveries {
+            vDeliveries = handed
+        } else {
+            vDeliveries = 0
         }
+        self.vLayout = vLayout
+        self.vShown = vShown
+        self.vReceived = vReceived
+        self.vDeliveries = vDeliveries
     }
 
     public init() {
+        let vLayout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.week
+        let vShown: StaticWireEnumViewRecord = StaticWireEnumViewRecord(layout: StaticWireEnumViewModeEnum.day, zoom: 2)
+        let vReceived: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.month
+        let vDeliveries: UInt32 = 0
+        self.vLayout = vLayout
+        self.vShown = vShown
+        self.vReceived = vReceived
+        self.vDeliveries = vDeliveries
+
         sessionID = drawSessionID()
     }
 

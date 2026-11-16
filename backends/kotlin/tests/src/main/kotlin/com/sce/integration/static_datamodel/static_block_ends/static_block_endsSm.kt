@@ -117,22 +117,28 @@ class StaticBlockEndsStateMachine(
         var errors: UByte? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.a?.let { vA = it }
-        params.b?.let { vB = it }
-        params.afterAssign?.let { vAfterAssign = it }
-        params.thenRan?.let { vThenRan = it }
-        params.elseRan?.let { vElseRan = it }
-        params.afterIf?.let { vAfterIf = it }
-        params.inBranch?.let { vInBranch = it }
-        params.afterBranch?.let { vAfterBranch = it }
-        params.afterOk?.let { vAfterOk = it }
-        params.errors?.let { vErrors = it }
+        vA = params.a ?: (250.toUByte())
+        vB = params.b ?: (0.toUByte())
+        vAfterAssign = params.afterAssign ?: (0.toUByte())
+        vThenRan = params.thenRan ?: (0.toUByte())
+        vElseRan = params.elseRan ?: (0.toUByte())
+        vAfterIf = params.afterIf ?: (0.toUByte())
+        vInBranch = params.inBranch ?: (0.toUByte())
+        vAfterBranch = params.afterBranch ?: (0.toUByte())
+        vAfterOk = params.afterOk ?: (0.toUByte())
+        vErrors = params.errors ?: (0.toUByte())
     }
 
     /** The published variables as one immutable value, in declaration order. */

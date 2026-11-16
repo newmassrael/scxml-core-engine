@@ -149,10 +149,13 @@ class Test552StateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -160,33 +163,18 @@ class Test552StateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3.1: Load variable 'Var1' from external source (C++ DataModelInitHelper pattern)
-        try {
-            val srcContent_Var1 = engine.loadDataFromSrc("file:test552.txt", "resources/552")
-            if (srcContent_Var1 != null) {
-                val srcValue_Var1 = engine.parseDataValue(sid, srcContent_Var1)
-                engine.setVariable(sid, "Var1", srcValue_Var1)
+        // §scxml-6.4: 'Var1' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "Var1", Test552Event.Error.Execution)) {
+            // W3C SCXML 5.3.1: Load variable 'Var1' from external source (C++ DataModelInitHelper pattern)
+            try {
+                engine.loadDataFromSrc("file:test552.txt", "resources/552")?.let { engine.setVariable(sid, "Var1", engine.parseDataValue(sid, it)) }
+            } catch (e: Exception) {
+                raisePlatformError(Test552Event.Error.Execution, "<data id='Var1' src='file:test552.txt'> could not be loaded")
             }
-        } catch (e: Exception) {
-            raisePlatformError(Test552Event.Error.Execution, "<data id='Var1' src='file:test552.txt'> could not be loaded")
         }
     }
 

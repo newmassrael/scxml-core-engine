@@ -110,17 +110,17 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `size` datamodel variable.
-    var vSize: Int32? = 7
+    var vSize: Int32?
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String? = "abc"
+    var vLabel: String?
     /// W3C SCXML 5.2: the `nosize` datamodel variable.
-    var vNosize: Int32? = nil
+    var vNosize: Int32?
     /// W3C SCXML 5.2: the `lengthy` datamodel variable.
-    var vLengthy: String = "abcdefgh"
+    var vLengthy: String
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
-    var vCompleted: UInt32 = 0
+    var vCompleted: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `completed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -144,30 +144,69 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSize {
-            vSize = value
+        let vSize: Int32?
+        if let handed = params.vSize {
+            vSize = handed
+        } else {
+            vSize = 7
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String?
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "abc"
         }
-        if let value = params.vNosize {
-            vNosize = value
+        let vNosize: Int32?
+        if let handed = params.vNosize {
+            vNosize = handed
+        } else {
+            vNosize = nil
         }
-        if let value = params.vLengthy {
-            vLengthy = value
+        let vLengthy: String
+        if let handed = params.vLengthy {
+            vLengthy = handed
+        } else {
+            vLengthy = "abcdefgh"
         }
-        if let value = params.vCompleted {
-            vCompleted = value
+        let vCompleted: UInt32
+        if let handed = params.vCompleted {
+            vCompleted = handed
+        } else {
+            vCompleted = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vSize = vSize
+        self.vLabel = vLabel
+        self.vNosize = vNosize
+        self.vLengthy = vLengthy
+        self.vCompleted = vCompleted
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vSize: Int32? = 7
+        let vLabel: String? = "abc"
+        let vNosize: Int32? = nil
+        let vLengthy: String = "abcdefgh"
+        let vCompleted: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vSize = vSize
+        self.vLabel = vLabel
+        self.vNosize = vNosize
+        self.vLengthy = vLengthy
+        self.vCompleted = vCompleted
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

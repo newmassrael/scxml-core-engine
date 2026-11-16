@@ -150,11 +150,11 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `heard` datamodel variable.
-    var vHeard: UInt32 = 0
+    var vHeard: UInt32
     /// W3C SCXML 5.2: the `stamped_at` datamodel variable, published (`sce:direction="out"`).
-    var vStampedAt: UInt32 = 0
+    var vStampedAt: UInt32
     /// W3C SCXML 5.2: the `answer_at` datamodel variable, published (`sce:direction="out"`).
-    var vAnswerAt: UInt32 = 0
+    var vAnswerAt: UInt32
 
     /// Reports what the published `stamped_at` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -175,21 +175,42 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
         public var vAnswerAt: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vHeard {
-            vHeard = value
+        let vHeard: UInt32
+        if let handed = params.vHeard {
+            vHeard = handed
+        } else {
+            vHeard = 0
         }
-        if let value = params.vStampedAt {
-            vStampedAt = value
+        let vStampedAt: UInt32
+        if let handed = params.vStampedAt {
+            vStampedAt = handed
+        } else {
+            vStampedAt = 0
         }
-        if let value = params.vAnswerAt {
-            vAnswerAt = value
+        let vAnswerAt: UInt32
+        if let handed = params.vAnswerAt {
+            vAnswerAt = handed
+        } else {
+            vAnswerAt = 0
         }
+        self.vHeard = vHeard
+        self.vStampedAt = vStampedAt
+        self.vAnswerAt = vAnswerAt
     }
 
     public init(actions: any StaticInvokeEndingOrderActions) {
+        let vHeard: UInt32 = 0
+        let vStampedAt: UInt32 = 0
+        let vAnswerAt: UInt32 = 0
+        self.vHeard = vHeard
+        self.vStampedAt = vStampedAt
+        self.vAnswerAt = vAnswerAt
+
         self.actions = actions
         sessionID = drawSessionID()
     }

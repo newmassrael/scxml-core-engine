@@ -7,19 +7,72 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedTuple
 from .codec_nested_body import CodecNestedBody
+from . import codec_nested_body as sce_codec_nested_body
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecNestedParentBodyListList(BoundedTuple):
+    """The ``body_list`` element of :class:`CodecNestedParent`, 0 to 4 entries,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 4
+
+
+class CodecNestedParentSource(Protocol):
+    """The elements a value of :class:`CodecNestedParent` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def hdr(self) -> int: ...
+
+    @property
+    def required_body(self) -> sce_codec_nested_body.CodecNestedBodySource: ...
+
+    @property
+    def optional_body(self) -> Optional[sce_codec_nested_body.CodecNestedBodySource]: ...
+
+    @property
+    def body_list(self) -> CodecNestedParentBodyListList: ...
+
+
+def encode_source(src: CodecNestedParentSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecNestedParent` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``m`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_m = len(src.body_list)
+    _c_hdr = src.hdr
+    _c_hdr = (_c_hdr & ~0x1) | (0x1 if src.optional_body is not None else 0)
+    w.write_u8(_c_hdr & 0xFF)
+    w.write_u8(_d_m & 0xFF)
+    sce_codec_nested_body.encode_source(src.required_body, w)
+    if src.optional_body is not None:
+        sce_codec_nested_body.encode_source(src.optional_body, w)
+    for _entry in src.body_list:
+        sce_codec_nested_body.encode_source(_entry, w)
 
 
 @dataclass
 class CodecNestedParent:
     hdr: int = 0
-    m: int = 0
-    required_body: CodecNestedBody = b""
+    required_body: CodecNestedBody = field(default_factory=CodecNestedBody)
     optional_body: Optional[CodecNestedBody] = None
-    body_list: List[CodecNestedBody] = field(default_factory=list)
+    body_list: CodecNestedParentBodyListList = CodecNestedParentBodyListList()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "body_list":
+            value = CodecNestedParentBodyListList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecNestedParent]:
@@ -71,7 +124,6 @@ class CodecNestedParent:
             return None
         return cls(
             hdr=f_hdr,
-            m=f_m,
             required_body=f_required_body,
             optional_body=f_optional_body,
             body_list=f_body_list,
@@ -98,27 +150,8 @@ class CodecNestedParent:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.body_list) > 4:
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.hdr & 0xFF)
-        w.write_u8(self.m & 0xFF)
-        self.required_body.encode(w)
-        if self.optional_body is not None:
-            self.optional_body.encode(w)
-        for _e in self.body_list:
-            _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

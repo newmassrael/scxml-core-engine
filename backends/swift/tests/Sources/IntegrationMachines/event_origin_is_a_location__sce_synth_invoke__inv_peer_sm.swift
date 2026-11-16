@@ -110,6 +110,7 @@ public final class EventOriginIsALocationSceSynthInvokeInvPeerPolicy: InvocableP
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

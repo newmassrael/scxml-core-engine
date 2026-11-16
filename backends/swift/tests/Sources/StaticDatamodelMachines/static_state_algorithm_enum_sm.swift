@@ -231,21 +231,21 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    var vItems: [StaticStateAlgorithmEnumItemRecord] = []
+    var vItems: [StaticStateAlgorithmEnumItemRecord]
     /// W3C SCXML 5.2: the `draft` datamodel variable.
-    var vDraft: StaticStateAlgorithmEnumItemRecord = StaticStateAlgorithmEnumItemRecord(id: 0, status: StaticStateAlgorithmEnumStatusEnum.open)
+    var vDraft: StaticStateAlgorithmEnumItemRecord
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.open
+    var vLast: StaticStateAlgorithmEnumStatusEnum
     /// W3C SCXML 5.2: the `openCount` datamodel variable, published (`sce:direction="out"`).
-    var vOpenCount: UInt32 = 0
+    var vOpenCount: UInt32
     /// W3C SCXML 5.2: the `startedCount` datamodel variable, published (`sce:direction="out"`).
-    var vStartedCount: UInt32 = 0
+    var vStartedCount: UInt32
     /// W3C SCXML 5.2: the `doneCount` datamodel variable, published (`sce:direction="out"`).
-    var vDoneCount: UInt32 = 0
+    var vDoneCount: UInt32
     /// W3C SCXML 5.2: the `checks` datamodel variable, published (`sce:direction="out"`).
-    var vChecks: UInt32 = 0
+    var vChecks: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `items` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -288,27 +288,72 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vOpenCount {
-            vOpenCount = value
+        let vItems: [StaticStateAlgorithmEnumItemRecord] = []
+        let vDraft: StaticStateAlgorithmEnumItemRecord = StaticStateAlgorithmEnumItemRecord(id: 0, status: StaticStateAlgorithmEnumStatusEnum.open)
+        let vLast: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.open
+        let vOpenCount: UInt32
+        if let handed = params.vOpenCount {
+            vOpenCount = handed
+        } else {
+            vOpenCount = 0
         }
-        if let value = params.vStartedCount {
-            vStartedCount = value
+        let vStartedCount: UInt32
+        if let handed = params.vStartedCount {
+            vStartedCount = handed
+        } else {
+            vStartedCount = 0
         }
-        if let value = params.vDoneCount {
-            vDoneCount = value
+        let vDoneCount: UInt32
+        if let handed = params.vDoneCount {
+            vDoneCount = handed
+        } else {
+            vDoneCount = 0
         }
-        if let value = params.vChecks {
-            vChecks = value
+        let vChecks: UInt32
+        if let handed = params.vChecks {
+            vChecks = handed
+        } else {
+            vChecks = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vItems = vItems
+        self.vDraft = vDraft
+        self.vLast = vLast
+        self.vOpenCount = vOpenCount
+        self.vStartedCount = vStartedCount
+        self.vDoneCount = vDoneCount
+        self.vChecks = vChecks
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vItems: [StaticStateAlgorithmEnumItemRecord] = []
+        let vDraft: StaticStateAlgorithmEnumItemRecord = StaticStateAlgorithmEnumItemRecord(id: 0, status: StaticStateAlgorithmEnumStatusEnum.open)
+        let vLast: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.open
+        let vOpenCount: UInt32 = 0
+        let vStartedCount: UInt32 = 0
+        let vDoneCount: UInt32 = 0
+        let vChecks: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vItems = vItems
+        self.vDraft = vDraft
+        self.vLast = vLast
+        self.vOpenCount = vOpenCount
+        self.vStartedCount = vStartedCount
+        self.vDoneCount = vDoneCount
+        self.vChecks = vChecks
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

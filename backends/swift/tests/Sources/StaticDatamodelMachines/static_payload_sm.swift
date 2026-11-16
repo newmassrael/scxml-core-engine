@@ -128,13 +128,13 @@ public final class StaticPayloadPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `day` datamodel variable, published (`sce:direction="out"`).
-    var vDay: UInt8 = 0
+    var vDay: UInt8
     /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: Bool = false
+    var vLate: Bool
     /// W3C SCXML 5.2: the `sinceEpoch` datamodel variable, published (`sce:direction="out"`).
-    var vSinceEpoch: UInt16 = 0
+    var vSinceEpoch: UInt16
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `day` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -164,24 +164,51 @@ public final class StaticPayloadPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vDay {
-            vDay = value
+        let vDay: UInt8
+        if let handed = params.vDay {
+            vDay = handed
+        } else {
+            vDay = 0
         }
-        if let value = params.vLate {
-            vLate = value
+        let vLate: Bool
+        if let handed = params.vLate {
+            vLate = handed
+        } else {
+            vLate = false
         }
-        if let value = params.vSinceEpoch {
-            vSinceEpoch = value
+        let vSinceEpoch: UInt16
+        if let handed = params.vSinceEpoch {
+            vSinceEpoch = handed
+        } else {
+            vSinceEpoch = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vDay = vDay
+        self.vLate = vLate
+        self.vSinceEpoch = vSinceEpoch
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vDay: UInt8 = 0
+        let vLate: Bool = false
+        let vSinceEpoch: UInt16 = 0
+        let vRefusals: UInt32 = 0
+        self.vDay = vDay
+        self.vLate = vLate
+        self.vSinceEpoch = vSinceEpoch
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

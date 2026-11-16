@@ -7,17 +7,63 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedTuple
 from .codec_repeat_elem import CodecRepeatElem
+from . import codec_repeat_elem as sce_codec_repeat_elem
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecRepeatPresentIfBasicElemsList(BoundedTuple):
+    """The ``elems`` element of :class:`CodecRepeatPresentIfBasic`, 0 to 32 entries,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 32
+
+
+class CodecRepeatPresentIfBasicSource(Protocol):
+    """The elements a value of :class:`CodecRepeatPresentIfBasic` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def carrier(self) -> int: ...
+
+    @property
+    def elems(self) -> Optional[CodecRepeatPresentIfBasicElemsList]: ...
+
+
+def encode_source(src: CodecRepeatPresentIfBasicSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecRepeatPresentIfBasic` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``num_elems`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_num_elems = (len(src.elems)) if src.elems is not None else 0
+    _c_carrier = src.carrier
+    _c_carrier = (_c_carrier & ~0x1) | (0x1 if src.elems is not None else 0)
+    w.write_u8(_c_carrier & 0xFF)
+    if ((_c_carrier >> 0) & 1) != 0:
+        w.write_u8(_d_num_elems & 0xFF)
+    if src.elems is not None:
+        for _entry in src.elems:
+            sce_codec_repeat_elem.encode_source(_entry, w)
 
 
 @dataclass
 class CodecRepeatPresentIfBasic:
     carrier: int = 0
-    num_elems: Optional[int] = None
-    elems: Optional[List[CodecRepeatElem]] = None
+    elems: Optional[CodecRepeatPresentIfBasicElemsList] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "elems":
+            value = None if value is None else CodecRepeatPresentIfBasicElemsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecRepeatPresentIfBasic]:
@@ -67,7 +113,6 @@ class CodecRepeatPresentIfBasic:
             return None
         return cls(
             carrier=f_carrier,
-            num_elems=f_num_elems,
             elems=f_elems,
         )
 
@@ -92,26 +137,8 @@ class CodecRepeatPresentIfBasic:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.elems is not None and (len(self.elems) > 32):
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.carrier & 0xFF)
-        if self.num_elems is not None:
-            w.write_u8(self.num_elems & 0xFF)
-        if self.elems is not None:
-            for _e in self.elems:
-                _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

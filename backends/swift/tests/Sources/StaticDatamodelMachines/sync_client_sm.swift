@@ -168,23 +168,23 @@ public final class SyncClientPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `byToken` datamodel variable, published (`sce:direction="out"`).
-    var vByToken: Bool = false
+    var vByToken: Bool
     /// W3C SCXML 5.2: the `fullListing` datamodel variable, published (`sce:direction="out"`).
-    var vFullListing: Bool = true
+    var vFullListing: Bool
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: UInt8 = 0
+    var vOutcome: UInt8
     /// W3C SCXML 5.2: the `retryAt` datamodel variable, published (`sce:direction="out"`).
-    var vRetryAt: Int64 = 0
+    var vRetryAt: Int64
     /// W3C SCXML 5.2: the `deleted` datamodel variable, published (`sce:direction="out"`).
-    var vDeleted: UInt32 = 0
+    var vDeleted: UInt32
     /// W3C SCXML 5.2: the `uploaded` datamodel variable, published (`sce:direction="out"`).
-    var vUploaded: UInt32 = 0
+    var vUploaded: UInt32
     /// W3C SCXML 5.2: the `discarded` datamodel variable, published (`sce:direction="out"`).
-    var vDiscarded: UInt32 = 0
+    var vDiscarded: UInt32
     /// W3C SCXML 5.2: the `pages` datamodel variable, published (`sce:direction="out"`).
-    var vPages: UInt32 = 0
+    var vPages: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `byToken` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -239,39 +239,96 @@ public final class SyncClientPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vByToken {
-            vByToken = value
+        let vByToken: Bool
+        if let handed = params.vByToken {
+            vByToken = handed
+        } else {
+            vByToken = false
         }
-        if let value = params.vFullListing {
-            vFullListing = value
+        let vFullListing: Bool
+        if let handed = params.vFullListing {
+            vFullListing = handed
+        } else {
+            vFullListing = true
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: UInt8
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = 0
         }
-        if let value = params.vRetryAt {
-            vRetryAt = value
+        let vRetryAt: Int64
+        if let handed = params.vRetryAt {
+            vRetryAt = handed
+        } else {
+            vRetryAt = 0
         }
-        if let value = params.vDeleted {
-            vDeleted = value
+        let vDeleted: UInt32
+        if let handed = params.vDeleted {
+            vDeleted = handed
+        } else {
+            vDeleted = 0
         }
-        if let value = params.vUploaded {
-            vUploaded = value
+        let vUploaded: UInt32
+        if let handed = params.vUploaded {
+            vUploaded = handed
+        } else {
+            vUploaded = 0
         }
-        if let value = params.vDiscarded {
-            vDiscarded = value
+        let vDiscarded: UInt32
+        if let handed = params.vDiscarded {
+            vDiscarded = handed
+        } else {
+            vDiscarded = 0
         }
-        if let value = params.vPages {
-            vPages = value
+        let vPages: UInt32
+        if let handed = params.vPages {
+            vPages = handed
+        } else {
+            vPages = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vByToken = vByToken
+        self.vFullListing = vFullListing
+        self.vOutcome = vOutcome
+        self.vRetryAt = vRetryAt
+        self.vDeleted = vDeleted
+        self.vUploaded = vUploaded
+        self.vDiscarded = vDiscarded
+        self.vPages = vPages
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vByToken: Bool = false
+        let vFullListing: Bool = true
+        let vOutcome: UInt8 = 0
+        let vRetryAt: Int64 = 0
+        let vDeleted: UInt32 = 0
+        let vUploaded: UInt32 = 0
+        let vDiscarded: UInt32 = 0
+        let vPages: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vByToken = vByToken
+        self.vFullListing = vFullListing
+        self.vOutcome = vOutcome
+        self.vRetryAt = vRetryAt
+        self.vDeleted = vDeleted
+        self.vUploaded = vUploaded
+        self.vDiscarded = vDiscarded
+        self.vPages = vPages
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

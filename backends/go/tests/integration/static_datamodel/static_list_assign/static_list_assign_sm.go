@@ -466,9 +466,10 @@ type StaticListAssignPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticListAssignPolicy creates a new policy with default values.
@@ -558,21 +559,43 @@ type StaticListAssignInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticListAssignPolicy) AcceptParams(params StaticListAssignInvokeParams) {
-	if params.VFirst != nil {
-		p.vFirst = *params.VFirst
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticListAssignPolicy) AcceptParams(handed StaticListAssignInvokeParams) {
+	var vShown []uint8 = nil
+	var vFirst uint8
+	if handed.VFirst != nil {
+		vFirst = *handed.VFirst
+	} else {
+		vFirst = 10
 	}
-	if params.VCount != nil {
-		p.vCount = *params.VCount
+	var vFew []uint8 = nil
+	var vCount uint32
+	if handed.VCount != nil {
+		vCount = *handed.VCount
+	} else {
+		vCount = 0
 	}
-	if params.VSize != nil {
-		p.vSize = *params.VSize
+	var vSize uint32
+	if handed.VSize != nil {
+		vSize = *handed.VSize
+	} else {
+		vSize = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vShown = vShown
+	p.vFirst = vFirst
+	p.vFew = vFew
+	p.vCount = vCount
+	p.vSize = vSize
+	p.vRefusals = vRefusals
 }
 
 

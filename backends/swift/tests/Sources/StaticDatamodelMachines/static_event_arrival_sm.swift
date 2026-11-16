@@ -104,9 +104,9 @@ public final class StaticEventArrivalPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `requests` datamodel variable, published (`sce:direction="out"`).
-    var vRequests: UInt32 = 0
+    var vRequests: UInt32
     /// W3C SCXML 5.2: the `specials` datamodel variable, published (`sce:direction="out"`).
-    var vSpecials: UInt32 = 0
+    var vSpecials: UInt32
 
     /// Reports what the published `requests` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -126,18 +126,33 @@ public final class StaticEventArrivalPolicy: InvocablePolicy {
         public var vSpecials: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRequests {
-            vRequests = value
+        let vRequests: UInt32
+        if let handed = params.vRequests {
+            vRequests = handed
+        } else {
+            vRequests = 0
         }
-        if let value = params.vSpecials {
-            vSpecials = value
+        let vSpecials: UInt32
+        if let handed = params.vSpecials {
+            vSpecials = handed
+        } else {
+            vSpecials = 0
         }
+        self.vRequests = vRequests
+        self.vSpecials = vSpecials
     }
 
     public init() {
+        let vRequests: UInt32 = 0
+        let vSpecials: UInt32 = 0
+        self.vRequests = vRequests
+        self.vSpecials = vSpecials
+
         sessionID = drawSessionID()
     }
 

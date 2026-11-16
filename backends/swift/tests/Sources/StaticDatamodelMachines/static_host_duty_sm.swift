@@ -165,6 +165,7 @@ public final class StaticHostDutyPolicy: InvocablePolicy {
     /// host that only simulates its duties (a recorder, a test double) on purpose. A machine
     /// that states a duty traps for a host that says it only simulates, unless it is.
     public init(actions: any StaticHostDutyActions, acceptSimulatedHost: Bool = false) {
+
         precondition(
             actions.realization == .performs || acceptSimulatedHost,
             "StaticHostDuty states a duty and its host declares that it only simulates the duties: "

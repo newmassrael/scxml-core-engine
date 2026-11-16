@@ -109,17 +109,17 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `first` datamodel variable.
-    var vFirst: String = ""
+    var vFirst: String
     /// W3C SCXML 5.2: the `second` datamodel variable.
-    var vSecond: String = ""
+    var vSecond: String
     /// W3C SCXML 5.2: the `scale` datamodel variable.
-    var vScale: UInt32 = 3
+    var vScale: UInt32
     /// W3C SCXML 5.2: the `first_fired` datamodel variable, published (`sce:direction="out"`).
-    var vFirstFired: UInt32 = 0
+    var vFirstFired: UInt32
     /// W3C SCXML 5.2: the `second_fired` datamodel variable, published (`sce:direction="out"`).
-    var vSecondFired: UInt32 = 0
+    var vSecondFired: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `first_fired` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -147,30 +147,69 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vFirst {
-            vFirst = value
+        let vFirst: String
+        if let handed = params.vFirst {
+            vFirst = handed
+        } else {
+            vFirst = ""
         }
-        if let value = params.vSecond {
-            vSecond = value
+        let vSecond: String
+        if let handed = params.vSecond {
+            vSecond = handed
+        } else {
+            vSecond = ""
         }
-        if let value = params.vScale {
-            vScale = value
+        let vScale: UInt32
+        if let handed = params.vScale {
+            vScale = handed
+        } else {
+            vScale = 3
         }
-        if let value = params.vFirstFired {
-            vFirstFired = value
+        let vFirstFired: UInt32
+        if let handed = params.vFirstFired {
+            vFirstFired = handed
+        } else {
+            vFirstFired = 0
         }
-        if let value = params.vSecondFired {
-            vSecondFired = value
+        let vSecondFired: UInt32
+        if let handed = params.vSecondFired {
+            vSecondFired = handed
+        } else {
+            vSecondFired = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vFirst = vFirst
+        self.vSecond = vSecond
+        self.vScale = vScale
+        self.vFirstFired = vFirstFired
+        self.vSecondFired = vSecondFired
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vFirst: String = ""
+        let vSecond: String = ""
+        let vScale: UInt32 = 3
+        let vFirstFired: UInt32 = 0
+        let vSecondFired: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vFirst = vFirst
+        self.vSecond = vSecond
+        self.vScale = vScale
+        self.vFirstFired = vFirstFired
+        self.vSecondFired = vSecondFired
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

@@ -128,20 +128,27 @@ class StaticListIndexStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.cursor?.let { vCursor = it }
-        params.under?.let { vUnder = it }
-        params.first?.let { vFirst = it }
-        params.last?.let { vLast = it }
-        params.ordered?.let { vOrdered = it }
-        params.room?.let { vRoom = it }
-        params.count?.let { vCount = it }
-        params.refusals?.let { vRefusals = it }
+        vPicked = emptyList()
+        vCursor = params.cursor ?: (0)
+        vUnder = params.under ?: (0.toUByte())
+        vFirst = params.first ?: (0.toUByte())
+        vLast = params.last ?: (0.toUByte())
+        vOrdered = params.ordered ?: (false)
+        vRoom = params.room ?: (false)
+        vCount = params.count ?: (0.toUInt())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

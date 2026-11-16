@@ -178,15 +178,15 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`).
-    var vLayout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.week
+    var vLayout: StaticSendNamelistViewModeEnum
     /// W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`).
-    var vZoom: UInt8 = 3
+    var vZoom: UInt8
     /// W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`).
-    var vReceived: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.month
+    var vReceived: StaticSendNamelistViewModeEnum
     /// W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`).
-    var vLevel: UInt8 = 0
+    var vLevel: UInt8
     /// W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`).
-    var vDeliveries: UInt32 = 0
+    var vDeliveries: UInt32
 
     /// Reports what the published `layout` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -219,21 +219,50 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
         public var vDeliveries: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vZoom {
-            vZoom = value
+        let vLayout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.week
+        let vZoom: UInt8
+        if let handed = params.vZoom {
+            vZoom = handed
+        } else {
+            vZoom = 3
         }
-        if let value = params.vLevel {
-            vLevel = value
+        let vReceived: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.month
+        let vLevel: UInt8
+        if let handed = params.vLevel {
+            vLevel = handed
+        } else {
+            vLevel = 0
         }
-        if let value = params.vDeliveries {
-            vDeliveries = value
+        let vDeliveries: UInt32
+        if let handed = params.vDeliveries {
+            vDeliveries = handed
+        } else {
+            vDeliveries = 0
         }
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vReceived = vReceived
+        self.vLevel = vLevel
+        self.vDeliveries = vDeliveries
     }
 
     public init() {
+        let vLayout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.week
+        let vZoom: UInt8 = 3
+        let vReceived: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.month
+        let vLevel: UInt8 = 0
+        let vDeliveries: UInt32 = 0
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vReceived = vReceived
+        self.vLevel = vLevel
+        self.vDeliveries = vDeliveries
+
         sessionID = drawSessionID()
     }
 

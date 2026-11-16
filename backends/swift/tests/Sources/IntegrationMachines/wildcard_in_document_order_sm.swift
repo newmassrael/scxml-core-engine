@@ -161,6 +161,7 @@ public final class WildcardInDocumentOrderPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

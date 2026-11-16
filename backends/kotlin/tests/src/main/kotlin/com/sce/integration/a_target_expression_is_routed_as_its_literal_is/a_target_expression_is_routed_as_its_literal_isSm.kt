@@ -505,10 +505,13 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -516,163 +519,189 @@ class ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'tInternal' with expr
-        try {
-            val initResult_tInternal = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'"))
-            engine.setVariable(sid, "tInternal", initResult_tInternal)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tInternal'> expr failed to evaluate")
+        // §scxml-6.4: 'tInternal' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "tInternal", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'tInternal' with expr
+            try {
+                engine.setVariable(sid, "tInternal", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tInternal'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'tKid' with expr
-        try {
-            val initResult_tKid = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_kid\"", "'#_kid'"))
-            engine.setVariable(sid, "tKid", initResult_tKid)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tKid'> expr failed to evaluate")
+        // §scxml-6.4: 'tKid' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "tKid", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'tKid' with expr
+            try {
+                engine.setVariable(sid, "tKid", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_kid\"", "'#_kid'")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tKid'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'tStranger' with expr
-        try {
-            val initResult_tStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_scxml_nosuch\"", "'#_scxml_nosuch'"))
-            engine.setVariable(sid, "tStranger", initResult_tStranger)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tStranger'> expr failed to evaluate")
+        // §scxml-6.4: 'tStranger' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "tStranger", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'tStranger' with expr
+            try {
+                engine.setVariable(sid, "tStranger", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_scxml_nosuch\"", "'#_scxml_nosuch'")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tStranger'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'tParent' with expr
-        try {
-            val initResult_tParent = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'"))
-            engine.setVariable(sid, "tParent", initResult_tParent)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
+        // §scxml-6.4: 'tParent' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "tParent", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'tParent' with expr
+            try {
+                engine.setVariable(sid, "tParent", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'tBogus' with expr
-        try {
-            val initResult_tBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"bogus\"", "'bogus'"))
-            engine.setVariable(sid, "tBogus", initResult_tBogus)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tBogus'> expr failed to evaluate")
+        // §scxml-6.4: 'tBogus' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "tBogus", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'tBogus' with expr
+            try {
+                engine.setVariable(sid, "tBogus", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"bogus\"", "'bogus'")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='tBogus'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'kidLoc' with expr
-        try {
-            val initResult_kidLoc = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
-            engine.setVariable(sid, "kidLoc", initResult_kidLoc)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLoc'> expr failed to evaluate")
+        // §scxml-6.4: 'kidLoc' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "kidLoc", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'kidLoc' with expr
+            try {
+                engine.setVariable(sid, "kidLoc", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLoc'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'internalNow' with expr
-        try {
-            val initResult_internalNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "internalNow", initResult_internalNow)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalNow'> expr failed to evaluate")
+        // §scxml-6.4: 'internalNow' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "internalNow", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'internalNow' with expr
+            try {
+                engine.setVariable(sid, "internalNow", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalNow'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'internalLater' with expr
-        try {
-            val initResult_internalLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "internalLater", initResult_internalLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalLater'> expr failed to evaluate")
+        // §scxml-6.4: 'internalLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "internalLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'internalLater' with expr
+            try {
+                engine.setVariable(sid, "internalLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='internalLater'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'kidNow' with expr
-        try {
-            val initResult_kidNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "kidNow", initResult_kidNow)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidNow'> expr failed to evaluate")
+        // §scxml-6.4: 'kidNow' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "kidNow", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'kidNow' with expr
+            try {
+                engine.setVariable(sid, "kidNow", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidNow'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'kidLater' with expr
-        try {
-            val initResult_kidLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "kidLater", initResult_kidLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLater'> expr failed to evaluate")
+        // §scxml-6.4: 'kidLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "kidLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'kidLater' with expr
+            try {
+                engine.setVariable(sid, "kidLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='kidLater'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'sessNow' with expr
-        try {
-            val initResult_sessNow = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "sessNow", initResult_sessNow)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessNow'> expr failed to evaluate")
+        // §scxml-6.4: 'sessNow' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "sessNow", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'sessNow' with expr
+            try {
+                engine.setVariable(sid, "sessNow", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessNow'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'sessLater' with expr
-        try {
-            val initResult_sessLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "sessLater", initResult_sessLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessLater'> expr failed to evaluate")
+        // §scxml-6.4: 'sessLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "sessLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'sessLater' with expr
+            try {
+                engine.setVariable(sid, "sessLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='sessLater'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'commErrors' with expr
-        try {
-            val initResult_commErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "commErrors", initResult_commErrors)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
+        // §scxml-6.4: 'commErrors' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "commErrors", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'commErrors' with expr
+            try {
+                engine.setVariable(sid, "commErrors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'execErrors' with expr
-        try {
-            val initResult_execErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "execErrors", initResult_execErrors)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='execErrors'> expr failed to evaluate")
+        // §scxml-6.4: 'execErrors' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "execErrors", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'execErrors' with expr
+            try {
+                engine.setVariable(sid, "execErrors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='execErrors'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterStranger' with expr
-        try {
-            val initResult_afterStranger = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterStranger", initResult_afterStranger)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
+        // §scxml-6.4: 'afterStranger' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterStranger", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterStranger' with expr
+            try {
+                engine.setVariable(sid, "afterStranger", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterStrangerLater' with expr
-        try {
-            val initResult_afterStrangerLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterStrangerLater", initResult_afterStrangerLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStrangerLater'> expr failed to evaluate")
+        // §scxml-6.4: 'afterStrangerLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterStrangerLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterStrangerLater' with expr
+            try {
+                engine.setVariable(sid, "afterStrangerLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterStrangerLater'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterOrphan' with expr
-        try {
-            val initResult_afterOrphan = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterOrphan", initResult_afterOrphan)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphan'> expr failed to evaluate")
+        // §scxml-6.4: 'afterOrphan' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterOrphan", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterOrphan' with expr
+            try {
+                engine.setVariable(sid, "afterOrphan", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphan'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterOrphanLater' with expr
-        try {
-            val initResult_afterOrphanLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterOrphanLater", initResult_afterOrphanLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphanLater'> expr failed to evaluate")
+        // §scxml-6.4: 'afterOrphanLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterOrphanLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterOrphanLater' with expr
+            try {
+                engine.setVariable(sid, "afterOrphanLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterOrphanLater'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterBogus' with expr
-        try {
-            val initResult_afterBogus = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterBogus", initResult_afterBogus)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogus'> expr failed to evaluate")
+        // §scxml-6.4: 'afterBogus' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterBogus", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterBogus' with expr
+            try {
+                engine.setVariable(sid, "afterBogus", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogus'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'afterBogusLater' with expr
-        try {
-            val initResult_afterBogusLater = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "afterBogusLater", initResult_afterBogusLater)
-        } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogusLater'> expr failed to evaluate")
+        // §scxml-6.4: 'afterBogusLater' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "afterBogusLater", ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'afterBogusLater' with expr
+            try {
+                engine.setVariable(sid, "afterBogusLater", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.Error.Execution, "<data id='afterBogusLater'> expr failed to evaluate")
+            }
         }
     }
 

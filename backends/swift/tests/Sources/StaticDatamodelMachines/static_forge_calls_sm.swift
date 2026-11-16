@@ -217,33 +217,33 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `gear` datamodel variable, published (`sce:direction="out"`).
-    var vGear: UInt8 = 0
+    var vGear: UInt8
     /// W3C SCXML 5.2: the `ratio` datamodel variable, published (`sce:direction="out"`).
-    var vRatio: Int32 = 0
+    var vRatio: Int32
     /// W3C SCXML 5.2: the `code` datamodel variable, published (`sce:direction="out"`).
-    var vCode: Int32 = 0
+    var vCode: Int32
     /// W3C SCXML 5.2: the `misses` datamodel variable, published (`sce:direction="out"`).
-    var vMisses: UInt32 = 0
+    var vMisses: UInt32
     /// W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`).
-    var vLevel: Int32 = 0
+    var vLevel: Int32
     /// W3C SCXML 5.2: the `offset` datamodel variable, published (`sce:direction="out"`).
-    var vOffset: Int32 = 0
+    var vOffset: Int32
     /// W3C SCXML 5.2: the `accepted` datamodel variable, published (`sce:direction="out"`).
-    var vAccepted: Bool = false
+    var vAccepted: Bool
     /// W3C SCXML 5.2: the `rpm` datamodel variable, published (`sce:direction="out"`).
-    var vRpm: UInt16 = 0
+    var vRpm: UInt16
     /// W3C SCXML 5.2: the `limit` datamodel variable, published (`sce:direction="out"`).
-    var vLimit: Double = 0.0
+    var vLimit: Double
     /// W3C SCXML 5.2: the `highs` datamodel variable, published (`sce:direction="out"`).
-    var vHighs: UInt32 = 0
+    var vHighs: UInt32
     /// W3C SCXML 5.2: the `phase` datamodel variable, published (`sce:direction="out"`).
-    var vPhase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum.open
+    var vPhase: StaticForgeCallsStatusEnum
     /// W3C SCXML 5.2: the `weight` datamodel variable, published (`sce:direction="out"`).
-    var vWeight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum.light
+    var vWeight: StaticForgeCallsLevelEnum
     /// W3C SCXML 5.2: the `customer` datamodel variable, published (`sce:direction="out"`).
-    var vCustomer: String = "anna"
+    var vCustomer: String
     /// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
-    var vKnown: Bool = false
+    var vKnown: Bool
 
     /// Reports what the published `gear` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -321,48 +321,131 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
         public var vKnown: Bool? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vGear {
-            vGear = value
+        let vGear: UInt8
+        if let handed = params.vGear {
+            vGear = handed
+        } else {
+            vGear = 0
         }
-        if let value = params.vRatio {
-            vRatio = value
+        let vRatio: Int32
+        if let handed = params.vRatio {
+            vRatio = handed
+        } else {
+            vRatio = 0
         }
-        if let value = params.vCode {
-            vCode = value
+        let vCode: Int32
+        if let handed = params.vCode {
+            vCode = handed
+        } else {
+            vCode = 0
         }
-        if let value = params.vMisses {
-            vMisses = value
+        let vMisses: UInt32
+        if let handed = params.vMisses {
+            vMisses = handed
+        } else {
+            vMisses = 0
         }
-        if let value = params.vLevel {
-            vLevel = value
+        let vLevel: Int32
+        if let handed = params.vLevel {
+            vLevel = handed
+        } else {
+            vLevel = 0
         }
-        if let value = params.vOffset {
-            vOffset = value
+        let vOffset: Int32
+        if let handed = params.vOffset {
+            vOffset = handed
+        } else {
+            vOffset = 0
         }
-        if let value = params.vAccepted {
-            vAccepted = value
+        let vAccepted: Bool
+        if let handed = params.vAccepted {
+            vAccepted = handed
+        } else {
+            vAccepted = false
         }
-        if let value = params.vRpm {
-            vRpm = value
+        let vRpm: UInt16
+        if let handed = params.vRpm {
+            vRpm = handed
+        } else {
+            vRpm = 0
         }
-        if let value = params.vLimit {
-            vLimit = value
+        let vLimit: Double
+        if let handed = params.vLimit {
+            vLimit = handed
+        } else {
+            vLimit = 0.0
         }
-        if let value = params.vHighs {
-            vHighs = value
+        let vHighs: UInt32
+        if let handed = params.vHighs {
+            vHighs = handed
+        } else {
+            vHighs = 0
         }
-        if let value = params.vCustomer {
-            vCustomer = value
+        let vPhase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum.open
+        let vWeight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum.light
+        let vCustomer: String
+        if let handed = params.vCustomer {
+            vCustomer = handed
+        } else {
+            vCustomer = "anna"
         }
-        if let value = params.vKnown {
-            vKnown = value
+        let vKnown: Bool
+        if let handed = params.vKnown {
+            vKnown = handed
+        } else {
+            vKnown = false
         }
+        self.vGear = vGear
+        self.vRatio = vRatio
+        self.vCode = vCode
+        self.vMisses = vMisses
+        self.vLevel = vLevel
+        self.vOffset = vOffset
+        self.vAccepted = vAccepted
+        self.vRpm = vRpm
+        self.vLimit = vLimit
+        self.vHighs = vHighs
+        self.vPhase = vPhase
+        self.vWeight = vWeight
+        self.vCustomer = vCustomer
+        self.vKnown = vKnown
     }
 
     public init() {
+        let vGear: UInt8 = 0
+        let vRatio: Int32 = 0
+        let vCode: Int32 = 0
+        let vMisses: UInt32 = 0
+        let vLevel: Int32 = 0
+        let vOffset: Int32 = 0
+        let vAccepted: Bool = false
+        let vRpm: UInt16 = 0
+        let vLimit: Double = 0.0
+        let vHighs: UInt32 = 0
+        let vPhase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum.open
+        let vWeight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum.light
+        let vCustomer: String = "anna"
+        let vKnown: Bool = false
+        self.vGear = vGear
+        self.vRatio = vRatio
+        self.vCode = vCode
+        self.vMisses = vMisses
+        self.vLevel = vLevel
+        self.vOffset = vOffset
+        self.vAccepted = vAccepted
+        self.vRpm = vRpm
+        self.vLimit = vLimit
+        self.vHighs = vHighs
+        self.vPhase = vPhase
+        self.vWeight = vWeight
+        self.vCustomer = vCustomer
+        self.vKnown = vKnown
+
         sessionID = drawSessionID()
     }
 

@@ -7,16 +7,60 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedText
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecPresentIfStringTextText(BoundedText):
+    """The ``text`` element of :class:`CodecPresentIfString`, 0 to 32 UTF-8 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 32
+
+
+class CodecPresentIfStringSource(Protocol):
+    """The elements a value of :class:`CodecPresentIfString` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def carrier(self) -> int: ...
+
+    @property
+    def text(self) -> Optional[CodecPresentIfStringTextText]: ...
+
+
+def encode_source(src: CodecPresentIfStringSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecPresentIfString` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``text_len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_text_len = (len(src.text.encode("utf-8"))) if src.text is not None else 0
+    _c_carrier = src.carrier
+    _c_carrier = (_c_carrier & ~0x1) | (0x1 if src.text is not None else 0)
+    w.write_u8(_c_carrier & 0xFF)
+    if ((_c_carrier >> 0) & 1) != 0:
+        w.write_u8(_d_text_len & 0xFF)
+    if src.text is not None:
+        w.write_bytes(src.text.encode("utf-8"))
 
 
 @dataclass
 class CodecPresentIfString:
     carrier: int = 0
-    text_len: Optional[int] = None
-    text: Optional[str] = None
+    text: Optional[CodecPresentIfStringTextText] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "text":
+            value = None if value is None else CodecPresentIfStringTextText(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecPresentIfString]:
@@ -69,7 +113,6 @@ class CodecPresentIfString:
             return None
         return cls(
             carrier=f_carrier,
-            text_len=f_text_len,
             text=f_text,
         )
 
@@ -94,25 +137,8 @@ class CodecPresentIfString:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.text is not None and (len(self.text.encode("utf-8")) > 32):
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.carrier & 0xFF)
-        if self.text_len is not None:
-            w.write_u8(self.text_len & 0xFF)
-        if self.text is not None:
-            w.write_bytes(self.text.encode('utf-8'))
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

@@ -132,6 +132,7 @@ public final class ABadDonedataPairIsIgnoredPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

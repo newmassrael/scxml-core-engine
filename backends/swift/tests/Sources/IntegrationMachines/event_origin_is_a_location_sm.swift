@@ -123,6 +123,7 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

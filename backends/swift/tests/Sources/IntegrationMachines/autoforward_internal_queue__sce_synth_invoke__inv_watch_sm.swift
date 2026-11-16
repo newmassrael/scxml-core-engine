@@ -114,6 +114,7 @@ public final class AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy: Invocab
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

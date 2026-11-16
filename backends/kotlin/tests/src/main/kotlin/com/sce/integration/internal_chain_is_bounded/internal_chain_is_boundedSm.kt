@@ -434,10 +434,13 @@ class InternalChainIsBoundedStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -445,72 +448,72 @@ class InternalChainIsBoundedStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'pokes' with expr
-        try {
-            val initResult_pokes = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "pokes", initResult_pokes)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+        // §scxml-6.4: 'pokes' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "pokes", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'pokes' with expr
+            try {
+                engine.setVariable(sid, "pokes", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'laps' with expr
-        try {
-            val initResult_laps = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "laps", initResult_laps)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
+        // §scxml-6.4: 'laps' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "laps", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'laps' with expr
+            try {
+                engine.setVariable(sid, "laps", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'links' with expr
-        try {
-            val initResult_links = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "links", initResult_links)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
+        // §scxml-6.4: 'links' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "links", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'links' with expr
+            try {
+                engine.setVariable(sid, "links", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'beats' with expr
-        try {
-            val initResult_beats = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "beats", initResult_beats)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
+        // §scxml-6.4: 'beats' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "beats", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'beats' with expr
+            try {
+                engine.setVariable(sid, "beats", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'alts' with expr
-        try {
-            val initResult_alts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "alts", initResult_alts)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='alts'> expr failed to evaluate")
+        // §scxml-6.4: 'alts' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "alts", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'alts' with expr
+            try {
+                engine.setVariable(sid, "alts", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='alts'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'ignores' with expr
-        try {
-            val initResult_ignores = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "ignores", initResult_ignores)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='ignores'> expr failed to evaluate")
+        // §scxml-6.4: 'ignores' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "ignores", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'ignores' with expr
+            try {
+                engine.setVariable(sid, "ignores", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='ignores'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'pending' with expr
-        try {
-            val initResult_pending = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "pending", initResult_pending)
-        } catch (e: Exception) {
-            raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pending'> expr failed to evaluate")
+        // §scxml-6.4: 'pending' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "pending", InternalChainIsBoundedEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'pending' with expr
+            try {
+                engine.setVariable(sid, "pending", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(InternalChainIsBoundedEvent.Error.Execution, "<data id='pending'> expr failed to evaluate")
+            }
         }
     }
 

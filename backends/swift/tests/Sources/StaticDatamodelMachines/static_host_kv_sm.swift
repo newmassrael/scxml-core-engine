@@ -225,27 +225,27 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `key` datamodel variable.
-    var vKey: String = ""
+    var vKey: String
     /// W3C SCXML 5.2: the `value` datamodel variable.
-    var vValue: String = ""
+    var vValue: String
     /// W3C SCXML 5.2: the `after` datamodel variable.
-    var vAfter: String = ""
+    var vAfter: String
     /// W3C SCXML 5.2: the `prefix` datamodel variable.
-    var vPrefix: String = ""
+    var vPrefix: String
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
-    var vFound: Bool = false
+    var vFound: Bool
     /// W3C SCXML 5.2: the `got` datamodel variable, published (`sce:direction="out"`).
-    var vGot: String = ""
+    var vGot: String
     /// W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`).
-    var vReplaced: Bool = false
+    var vReplaced: Bool
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
-    var vExisted: Bool = false
+    var vExisted: Bool
     /// W3C SCXML 5.2: the `next_found` datamodel variable, published (`sce:direction="out"`).
-    var vNextFound: Bool = false
+    var vNextFound: Bool
     /// W3C SCXML 5.2: the `next` datamodel variable, published (`sce:direction="out"`).
-    var vNext: String = ""
+    var vNext: String
 
     /// Reports what the published `outcome` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -294,45 +294,114 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         public var vNext: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vKey {
-            vKey = value
+        let vKey: String
+        if let handed = params.vKey {
+            vKey = handed
+        } else {
+            vKey = ""
         }
-        if let value = params.vValue {
-            vValue = value
+        let vValue: String
+        if let handed = params.vValue {
+            vValue = handed
+        } else {
+            vValue = ""
         }
-        if let value = params.vAfter {
-            vAfter = value
+        let vAfter: String
+        if let handed = params.vAfter {
+            vAfter = handed
+        } else {
+            vAfter = ""
         }
-        if let value = params.vPrefix {
-            vPrefix = value
+        let vPrefix: String
+        if let handed = params.vPrefix {
+            vPrefix = handed
+        } else {
+            vPrefix = ""
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
-        if let value = params.vFound {
-            vFound = value
+        let vFound: Bool
+        if let handed = params.vFound {
+            vFound = handed
+        } else {
+            vFound = false
         }
-        if let value = params.vGot {
-            vGot = value
+        let vGot: String
+        if let handed = params.vGot {
+            vGot = handed
+        } else {
+            vGot = ""
         }
-        if let value = params.vReplaced {
-            vReplaced = value
+        let vReplaced: Bool
+        if let handed = params.vReplaced {
+            vReplaced = handed
+        } else {
+            vReplaced = false
         }
-        if let value = params.vExisted {
-            vExisted = value
+        let vExisted: Bool
+        if let handed = params.vExisted {
+            vExisted = handed
+        } else {
+            vExisted = false
         }
-        if let value = params.vNextFound {
-            vNextFound = value
+        let vNextFound: Bool
+        if let handed = params.vNextFound {
+            vNextFound = handed
+        } else {
+            vNextFound = false
         }
-        if let value = params.vNext {
-            vNext = value
+        let vNext: String
+        if let handed = params.vNext {
+            vNext = handed
+        } else {
+            vNext = ""
         }
+        self.vKey = vKey
+        self.vValue = vValue
+        self.vAfter = vAfter
+        self.vPrefix = vPrefix
+        self.vOutcome = vOutcome
+        self.vFound = vFound
+        self.vGot = vGot
+        self.vReplaced = vReplaced
+        self.vExisted = vExisted
+        self.vNextFound = vNextFound
+        self.vNext = vNext
     }
 
     public init() {
+        let vKey: String = ""
+        let vValue: String = ""
+        let vAfter: String = ""
+        let vPrefix: String = ""
+        let vOutcome: String = ""
+        let vFound: Bool = false
+        let vGot: String = ""
+        let vReplaced: Bool = false
+        let vExisted: Bool = false
+        let vNextFound: Bool = false
+        let vNext: String = ""
+        self.vKey = vKey
+        self.vValue = vValue
+        self.vAfter = vAfter
+        self.vPrefix = vPrefix
+        self.vOutcome = vOutcome
+        self.vFound = vFound
+        self.vGot = vGot
+        self.vReplaced = vReplaced
+        self.vExisted = vExisted
+        self.vNextFound = vNextFound
+        self.vNext = vNext
+
         sessionID = drawSessionID()
     }
 

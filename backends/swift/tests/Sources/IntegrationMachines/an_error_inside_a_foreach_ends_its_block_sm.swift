@@ -118,6 +118,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

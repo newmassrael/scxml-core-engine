@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9744814bbcba25096b3a8566c61a417ad0df1ffce3ba2396694e4204f8dd4a7d
+// source-hash: 5d7de648199e914cbb8c5a25528d967c7a1eb5cde909f9d931236278a06e8d44
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -1044,6 +1044,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_little_endian case \(index) decode")
         #expect(cursor.remaining == 0, "codec_little_endian case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_simple_frame
@@ -1077,6 +1078,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_simple_frame case \(index) decode")
         #expect(cursor.remaining == 0, "codec_simple_frame case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_subbyte
@@ -1110,6 +1112,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_subbyte case \(index) decode")
         #expect(cursor.remaining == 0, "codec_subbyte case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_optional_field_attributes
@@ -1142,6 +1145,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_optional_field_attributes case \(index) decode")
         #expect(cursor.remaining == 0, "codec_optional_field_attributes case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_tail
@@ -1174,6 +1178,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecTail.decode(&cursor)
         #expect(roundTripped == value, "codec_tail case \(index) decode")
         #expect(cursor.remaining == 0, "codec_tail case \(index) decode consumed the frame and nothing else")
+    }
+
+    do {
+        var rejectCursor = SceCursor([3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_tail reject 0: the tail holds 33 bytes, one past the max-size of 32: the frame is refused, not truncated") {
+            try CodecTail.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 35, "codec_tail reject 0: the refused decode moved the cursor")
     }
 }
 
@@ -1208,6 +1220,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_length_ref case \(index) decode")
         #expect(cursor.remaining == 0, "codec_length_ref case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        var rejectCursor = SceCursor([1, 200, 9, 9])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_length_ref reject 0: the length byte says 200, past the max-size of 32, and the frame holds two payload bytes: the bound is judged before the frame length") {
+            try CodecLengthRef.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_length_ref reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 33, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_length_ref reject 1: the length byte says 33, one past the max-size of 32, and the frame holds all 33 payload bytes") {
+            try CodecLengthRef.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 35, "codec_length_ref reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 33, 0])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_length_ref reject 2: the length byte says 33, one past the max-size of 32, and the frame ends after its first payload byte") {
+            try CodecLengthRef.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 3, "codec_length_ref reject 2: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 3, 10, 20])
+        #expect(throws: CodecError.needMoreBytes, "codec_length_ref reject 3: the frame is one byte short of the payload its length byte declares") {
+            try CodecLengthRef.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_length_ref reject 3: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_vle_zint_u16
@@ -1238,6 +1279,28 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecVleZintU16.decode(&cursor)
         #expect(roundTripped == value, "codec_vle_zint_u16 case \(index) decode")
         #expect(cursor.remaining == 0, "codec_vle_zint_u16 case \(index) decode consumed the frame and nothing else")
+    }
+
+    do {
+        var rejectCursor = SceCursor([128, 128, 4])
+        #expect(throws: CodecError.vleWidthOverflow, "codec_vle_zint_u16 reject 0: 65536 in three bytes, the first value past a u16: the value is refused, not the length") {
+            try CodecVleZintU16.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 3, "codec_vle_zint_u16 reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([128, 128, 128, 128, 128, 128, 128, 128, 128])
+        #expect(throws: CodecError.vleWidthOverflow, "codec_vle_zint_u16 reject 1: 2^63 in nine bytes: the high bit of the ninth byte is data, not a flag asking for a tenth") {
+            try CodecVleZintU16.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 9, "codec_vle_zint_u16 reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([129, 128, 128, 128, 128, 128, 128, 128])
+        #expect(throws: CodecError.needMoreBytes, "codec_vle_zint_u16 reject 2: eight flagged bytes and no ninth: the frame ends inside the ZInt") {
+            try CodecVleZintU16.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 8, "codec_vle_zint_u16 reject 2: the refused decode moved the cursor")
     }
 }
 
@@ -1270,6 +1333,28 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_vle_zint_u32 case \(index) decode")
         #expect(cursor.remaining == 0, "codec_vle_zint_u32 case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        var rejectCursor = SceCursor([128, 128, 128, 128, 16])
+        #expect(throws: CodecError.vleWidthOverflow, "codec_vle_zint_u32 reject 0: 2^32 in five bytes, the first value past a u32: the value is refused, not the length") {
+            try CodecVleZintU32.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 5, "codec_vle_zint_u32 reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([255, 255, 255, 255, 255, 255, 255, 255, 255])
+        #expect(throws: CodecError.vleWidthOverflow, "codec_vle_zint_u32 reject 1: the largest u64 in nine bytes, past a u32") {
+            try CodecVleZintU32.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 9, "codec_vle_zint_u32 reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([255, 255, 255, 255, 143])
+        #expect(throws: CodecError.needMoreBytes, "codec_vle_zint_u32 reject 2: four flagged bytes and no fifth: the frame ends inside the ZInt") {
+            try CodecVleZintU32.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 5, "codec_vle_zint_u32 reject 2: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_vle_zint_u64
@@ -1300,6 +1385,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecVleZintU64.decode(&cursor)
         #expect(roundTripped == value, "codec_vle_zint_u64 case \(index) decode")
         #expect(cursor.remaining == 0, "codec_vle_zint_u64 case \(index) decode consumed the frame and nothing else")
+    }
+
+    do {
+        var rejectCursor = SceCursor([255, 255, 255, 255, 255, 255, 255, 255])
+        #expect(throws: CodecError.needMoreBytes, "codec_vle_zint_u64 reject 0: eight flagged bytes and no ninth: the frame ends inside the ZInt") {
+            try CodecVleZintU64.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 8, "codec_vle_zint_u64 reject 0: the refused decode moved the cursor")
     }
 }
 
@@ -1332,6 +1425,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_close case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_close case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_frame
@@ -1364,6 +1458,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_frame case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_frame case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_qos_byte
@@ -1395,6 +1490,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_qos_byte case \(index) decode")
         #expect(cursor.remaining == 0, "codec_qos_byte case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_keep_alive
@@ -1425,6 +1521,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_keep_alive case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_keep_alive case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_locator
@@ -1457,6 +1554,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_locator case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_locator case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_put
@@ -1488,6 +1586,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_put case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_put case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_del
@@ -1518,6 +1617,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_del case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_del case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_fragment
@@ -1550,6 +1650,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_fragment case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_fragment case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_zenoh_decl_final
@@ -1580,6 +1681,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_decl_final case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_decl_final case \(index) decode consumed the frame and nothing else")
     }
+
 }
 
 // MARK: - codec: codec_length_ref_dotted_basic
@@ -1611,6 +1713,21 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecLengthRefDottedBasic.decode(&cursor)
         #expect(roundTripped == value, "codec_length_ref_dotted_basic case \(index) decode")
         #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic case \(index) decode consumed the frame and nothing else")
+    }
+
+    do {
+        var rejectCursor = SceCursor([48, 9])
+        #expect(throws: CodecError.needMoreBytes, "codec_length_ref_dotted_basic reject 0: the carrier says a 3-byte payload and the frame holds one") {
+            try CodecLengthRefDottedBasic.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 2, "codec_length_ref_dotted_basic reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([240])
+        #expect(throws: CodecError.needMoreBytes, "codec_length_ref_dotted_basic reject 1: the carrier says the 15-byte maximum and the frame holds none") {
+            try CodecLengthRefDottedBasic.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 1, "codec_length_ref_dotted_basic reject 1: the refused decode moved the cursor")
     }
 }
 
@@ -5083,6 +5200,63 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecDeclaredBounds.frameLength
+
+    do {
+        var rejectCursor = SceCursor([132, 128, 128, 128, 16, 1, 2, 3, 4, 1, 0])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 0: the key length is 2^32 + 4, past the max-size of 8; a decode that narrowed it to 32 bits first would read 4 and accept the frame") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 11, "codec_declared_bounds reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 0])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 1: the key length is 9, one past the max-size of 8, and the frame holds all 9 key bytes") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 12, "codec_declared_bounds reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 0, 0])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 2: the tag length is carried as itself plus one and the carried value is 0, a length of -1") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 3, "codec_declared_bounds reject 2: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 6, 1, 2, 3, 4, 5, 0])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 3: the tag length is 5, one past the max-size of 4, and the frame holds all 5 tag bytes") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 8, "codec_declared_bounds reject 3: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 6])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 4: the tag length is 5, one past the max-size of 4, and the frame ends after the length: the bound is judged before the slice, so a Rust value's own bound, which judges bytes that were read, cannot stand in for it") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 2, "codec_declared_bounds reject 4: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 1, 3])
+        #expect(throws: CodecError.tooManyElements, "codec_declared_bounds reject 5: the count is 3, one past the max-count of 2, and the frame holds no entry: the count is judged before the entries are read") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 3, "codec_declared_bounds reject 5: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 1, 3, 0, 1, 0, 2, 0, 3])
+        #expect(throws: CodecError.tooManyElements, "codec_declared_bounds reject 6: the count is 3, one past the max-count of 2, and the frame holds all 3 entries") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 9, "codec_declared_bounds reject 6: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 1, 2, 0, 1])
+        #expect(throws: CodecError.needMoreBytes, "codec_declared_bounds reject 7: the count is 2, the max-count, and the frame ends after the first entry") {
+            try CodecDeclaredBounds.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 5, "codec_declared_bounds reject 7: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_declared_bounds_gated
@@ -5091,6 +5265,42 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecDeclaredBoundsGated.frameLength
+
+    do {
+        var rejectCursor = SceCursor([1, 4, 97, 98, 99, 100])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds_gated reject 0: G is set and the name length is 4, one past the max-size of 3, with all 4 name bytes present") {
+            try CodecDeclaredBoundsGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 6, "codec_declared_bounds_gated reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 4])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds_gated reject 1: G is set and the name length is 4, one past the max-size of 3, and the frame ends after the length") {
+            try CodecDeclaredBoundsGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 2, "codec_declared_bounds_gated reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 3, 97, 98, 99, 1, 2, 3])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds_gated reject 2: G is set, the name is 3 bytes, and the tail holds 3 bytes, one past its max-size of 2") {
+            try CodecDeclaredBoundsGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 8, "codec_declared_bounds_gated reject 2: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 1, 2, 3])
+        #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds_gated reject 3: G is clear and the tail holds 3 bytes, one past its max-size of 2") {
+            try CodecDeclaredBoundsGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_declared_bounds_gated reject 3: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([1, 3, 97, 98])
+        #expect(throws: CodecError.needMoreBytes, "codec_declared_bounds_gated reject 4: G is set and the name length is 3, the max-size, and the frame holds two name bytes") {
+            try CodecDeclaredBoundsGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_declared_bounds_gated reject 4: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_declared_bounds_to_end
@@ -5099,6 +5309,21 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecDeclaredBoundsToEnd.frameLength
+
+    do {
+        var rejectCursor = SceCursor([0, 1, 0, 2, 0, 3])
+        #expect(throws: CodecError.tooManyElements, "codec_declared_bounds_to_end reject 0: the frame holds 3 entries, one past the max-count of 2") {
+            try CodecDeclaredBoundsToEnd.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 6, "codec_declared_bounds_to_end reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([0, 1, 0, 2, 0])
+        #expect(throws: CodecError.tooManyElements, "codec_declared_bounds_to_end reject 1: the frame holds 2 entries and the first byte of a third: the entry past the max-count is refused before it is read") {
+            try CodecDeclaredBoundsToEnd.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 5, "codec_declared_bounds_to_end reject 1: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_origin_leaf
@@ -5107,6 +5332,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginLeaf.frameLength
+
 }
 
 // MARK: - codec: codec_origin_scalar
@@ -5115,6 +5341,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginScalar.frameLength
+
 }
 
 // MARK: - codec: codec_origin_envelope
@@ -5123,6 +5350,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginEnvelope.frameLength
+
 }
 
 // MARK: - codec: codec_origin_choice
@@ -5131,6 +5359,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginChoice.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_slice
@@ -5139,6 +5368,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasSlice.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_envelope
@@ -5147,6 +5377,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasEnvelope.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_marker_slice
@@ -5155,6 +5386,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasMarkerSlice.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_marker
@@ -5163,6 +5395,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasMarker.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_tagged_entry
@@ -5171,6 +5404,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTaggedEntry.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_tagged
@@ -5179,6 +5413,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTagged.frameLength
+
 }
 
 // MARK: - codec: codec_chain_flag_entry
@@ -5187,6 +5422,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagEntry.frameLength
+
 }
 
 // MARK: - codec: codec_chain_flag_carrier
@@ -5195,6 +5431,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagCarrier.frameLength
+
 }
 
 // MARK: - codec: codec_chain_flag_forward
@@ -5203,6 +5440,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagForward.frameLength
+
 }
 
 // MARK: - codec: codec_chain_prev_entry
@@ -5211,6 +5449,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevEntry.frameLength
+
 }
 
 // MARK: - codec: codec_chain_prev_carrier
@@ -5219,6 +5458,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevCarrier.frameLength
+
 }
 
 // MARK: - codec: codec_chain_prev_gated
@@ -5227,6 +5467,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevGated.frameLength
+
 }
 
 // MARK: - codec: codec_chain_prev_tail
@@ -5235,6 +5476,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevTail.frameLength
+
 }
 
 // MARK: - codec: codec_chain_prev_tail_gated
@@ -5243,6 +5485,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevTailGated.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_value_slice
@@ -5251,6 +5494,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueSlice.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_value_zbuf
@@ -5259,6 +5503,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueZbuf.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_value_entry
@@ -5267,6 +5512,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueEntry.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_query_value
@@ -5275,6 +5521,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohQueryValue.frameLength
+
 }
 
 // MARK: - codec: codec_embed_basic
@@ -5283,6 +5530,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEmbedBasic.frameLength
+
 }
 
 // MARK: - codec: codec_ext_attachment
@@ -5291,6 +5539,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtAttachment.frameLength
+
 }
 
 // MARK: - codec: codec_ext_encoding_info
@@ -5299,6 +5548,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtEncodingInfo.frameLength
+
 }
 
 // MARK: - codec: codec_ext_timestamp
@@ -5307,6 +5557,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtTimestamp.frameLength
+
 }
 
 // MARK: - codec: codec_cbor_map
@@ -5342,6 +5593,49 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecCborMap.decode(&cursor)
         #expect(roundTripped == value, "codec_cbor_map case \(index) decode")
         #expect(cursor.remaining == 0, "codec_cbor_map case \(index) decode consumed the frame and nothing else")
+    }
+
+    do {
+        var rejectCursor = SceCursor([164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 5, 66, 222, 173, 7, 245])
+        #expect(throws: CodecError.cborRequiredKeyMissing, "codec_cbor_map reject 0: the required pattern entry (key 3) is absent from a four-entry map") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 33, "codec_cbor_map reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([165, 0, 79, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245])
+        #expect(throws: CodecError.cborWrongLength, "codec_cbor_map reject 1: the id is fifteen bytes where its declared length is sixteen") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 34, "codec_cbor_map reject 1: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 7, 244])
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 2: key 7 is given twice") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 2: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 25, 1, 44, 5, 66, 222, 173, 7, 245])
+        #expect(throws: CodecError.cborOutOfRange, "codec_cbor_map reject 3: pattern holds 300, past a uint8") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 3: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120])
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 4: a text string where the urgent entry expects a truth value") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 36, "codec_cbor_map reject 4: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([191, 255])
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 5: an indefinite-length map, which the codec never reads") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 2, "codec_cbor_map reject 5: the refused decode moved the cursor")
     }
 }
 
@@ -5413,19 +5707,546 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }
 
-    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
-        let rejectBytes = try oracleBytes(reject.member("encoded"))
-        let why = try oracleText(reject.member("why"))
-        var rejectCursor = SceCursor(rejectBytes)
-        var refused = false
-        do {
-            _ = try CodecContentLineEnums.decode(&rejectCursor)
-        } catch {
-            refused = true
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 68, 79, 78, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 0: a text no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
         }
-        #expect(refused, "codec_content_line_enums reject \(index): \(why)")
-        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_enums reject \(index): the cursor moved")
-    }}
+        #expect(rejectCursor.remaining == 60, "codec_content_line_enums reject 0: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 1: an empty value") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 56, "codec_content_line_enums reject 1: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 78, 69, 69, 68, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 2: the start of a text is not a text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_enums reject 2: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 45, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 3: a text with more after it") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_enums reject 3: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 45, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 4: a value longer than the longest text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 81, "codec_content_line_enums reject 4: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 32, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 5: a space before a text is part of the value") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 5: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 32, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 6: a space after a text is part of the value") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 6: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 110, 101, 101, 100, 115, 65, 99, 116, 105, 111, 110, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 7: the declared name of a variant that has a text is not its text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 7: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 105, 110, 80, 114, 111, 99, 101, 115, 115, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 8: a name that is neither the text nor an open enum's variant") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 65, "codec_content_line_enums reject 8: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 92, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 9: a text is not a TEXT: an escape in it is part of the value, not a bad escape") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 9: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 92, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 10: a backslash that ends a text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 10: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 7, 80, 82, 79, 67, 69, 83, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 11: a control character in a text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 11: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 197, 191, 197, 191, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 12: a letter that Unicode folds to an ASCII one is not that letter: U+017F for S") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 68, "codec_content_line_enums reject 12: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 196, 177, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 13: a letter that Unicode folds to an ASCII one is not that letter: U+0131 for I") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 13: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 83, 69, 67, 82, 69, 84, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 14: an open enum reads only the texts it declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 47, "codec_content_line_enums reject 14: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 15: an open enum's text with more after it") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_enums reject 15: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 117, 110, 99, 108, 97, 115, 115, 105, 102, 105, 101, 100, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 16: an open enum's declared name is not its text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 53, "codec_content_line_enums reject 16: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 83, 84, 65, 84, 85, 83, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 17: the STATUS line twice") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 84, "codec_content_line_enums reject 17: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 18: the required CLASS twice") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 62, "codec_content_line_enums reject 18: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 19: a fourth line of a list of an enum past three") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 131, "codec_content_line_enums reject 19: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 68, 79, 78, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 20: a bad value on the line that is past the bound is still past the bound") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 126, "codec_content_line_enums reject 20: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 68, 79, 78, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 21: a bad value in a list of an enum") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 84, "codec_content_line_enums reject 21: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 83, 84, 69, 80, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 83, 84, 69, 80, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 88, 45, 83, 84, 69, 80, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 22: a third line of X-STEP past two") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 101, "codec_content_line_enums reject 22: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 23: the required CLASS absent") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 33, "codec_content_line_enums reject 23: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 24: the required UID absent") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 40, "codec_content_line_enums reject 24: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 25: a line of ATTENDEE without its required ROLE") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 66, "codec_content_line_enums reject 25: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 26: a line of ATTENDEE with only its optional PARTSTAT") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 85, "codec_content_line_enums reject 26: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 27: the second line lacks the role the first has") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 101, "codec_content_line_enums reject 27: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 66, 79, 83, 83, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 28: a role no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_enums reject 28: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 29: an empty role") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 65, "codec_content_line_enums reject 29: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 112, 97, 114, 116, 105, 99, 105, 112, 97, 110, 116, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 30: the name of a variant that has a text is not its role") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_enums reject 30: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 44, 67, 72, 65, 73, 82, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 31: two values for ROLE, which holds one") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_enums reject 31: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 34, 67, 72, 65, 73, 82, 34, 44, 34, 67, 72, 65, 73, 82, 34, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 32: two quoted values for ROLE") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 80, "codec_content_line_enums reject 32: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 82, 79, 76, 69, 61, 79, 66, 83, 69, 82, 86, 69, 82, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 33: ROLE given twice in one line") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 84, "codec_content_line_enums reject 33: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 90, 90, 90, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 34: a status no variant declares, beside a good role") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 83, "codec_content_line_enums reject 34: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 35: an empty PARTSTAT") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 80, "codec_content_line_enums reject 35: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 36: a fourth ATTENDEE line past three") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 139, "codec_content_line_enums reject 36: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 58, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_enums reject 37: a value of ATTENDEE of 25 octets past its 24") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 94, "codec_content_line_enums reject 37: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 68, 79, 78, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 38: a record's enum value that no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_enums reject 38: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 58, 68, 79, 78, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_enums reject 39: a record's parameter is judged before its enum value: a note past 16 and a bad status") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 83, "codec_content_line_enums reject 39: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 110, 58, 67, 79, 77, 80, 76, 69, 84, 69, 68, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_enums reject 40: a NOTE of 17 octets past its 16") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 88, "codec_content_line_enums reject 40: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_enums reject 41: a UID of 17 octets past its 16") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_enums reject 41: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 97, 92, 113, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_enums reject 42: a stray backslash in the UID, a TEXT") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 49, "codec_content_line_enums reject 42: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 43: a control character in the UID") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 47, "codec_content_line_enums reject 43: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_enums reject 44: a line that has no colon") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 55, "codec_content_line_enums reject 44: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_enums reject 45: an empty line among the properties") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 68, "codec_content_line_enums reject 45: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 76, 65, 83, 83, 58, 80, 85, 66, 76, 73, 67, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_enums reject 46: the END line is missing") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 54, "codec_content_line_enums reject 46: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 47: fuzz: the role taken from the attendee") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 187, "codec_content_line_enums reject 47: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_enums reject 48: fuzz: the END line dropped") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 186, "codec_content_line_enums reject 48: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 49: fuzz: the CLASS text cut short") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 49: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 50: fuzz: the role taken from the attendee") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 187, "codec_content_line_enums reject 50: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 105, 110, 80, 114, 111, 99, 101, 115, 115, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 51: fuzz: a variant's declared name written for its text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 51: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 52: fuzz: a property line repeated") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 205, "codec_content_line_enums reject 52: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_enums reject 53: fuzz: an empty line put among the properties") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 200, "codec_content_line_enums reject 53: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 54: fuzz: the CLASS text cut short") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 54: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_enums reject 55: fuzz: an empty line put among the properties") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 200, "codec_content_line_enums reject 55: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 56: fuzz: the CLASS text cut short") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 56: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 68, 79, 78, 69, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 57: fuzz: a status text no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 192, "codec_content_line_enums reject 57: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 58: fuzz: the UID removed") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 191, "codec_content_line_enums reject 58: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 105, 110, 80, 114, 111, 99, 101, 115, 115, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 59: fuzz: a variant's declared name written for its text") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 59: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 60: fuzz: the UID removed") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 191, "codec_content_line_enums reject 60: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_enums reject 61: fuzz: the END line dropped") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 186, "codec_content_line_enums reject 61: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 62: fuzz: the role taken from the attendee") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 187, "codec_content_line_enums reject 62: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 63: fuzz: a fourth line of the history") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 246, "codec_content_line_enums reject 63: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_enums reject 64: fuzz: the END line dropped") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 186, "codec_content_line_enums reject 64: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_enums reject 65: fuzz: an empty line put among the properties") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 200, "codec_content_line_enums reject 65: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 68, 79, 78, 69, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 66: fuzz: a status text no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 192, "codec_content_line_enums reject 66: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 67: fuzz: the CLASS text cut short") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 67: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 68, 79, 78, 69, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 68: fuzz: a status text no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 192, "codec_content_line_enums reject 68: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 69: fuzz: a control character put into the UID") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 199, "codec_content_line_enums reject 69: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 70: fuzz: a control character put into the UID") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 199, "codec_content_line_enums reject 70: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 71: fuzz: a control character put into the UID") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 199, "codec_content_line_enums reject 71: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 68, 79, 78, 69, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 72: fuzz: a status text no variant declares") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 192, "codec_content_line_enums reject 72: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_enums reject 73: fuzz: the role taken from the attendee") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 187, "codec_content_line_enums reject 73: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 74: fuzz: the CLASS text cut short") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 197, "codec_content_line_enums reject 74: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_enums reject 75: fuzz: a control character put into the UID") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 199, "codec_content_line_enums reject 75: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 83, 84, 65, 84, 85, 83, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 76, 65, 83, 83, 58, 80, 82, 73, 86, 65, 84, 69, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 78, 69, 69, 68, 83, 45, 65, 67, 84, 73, 79, 78, 13, 10, 88, 45, 72, 73, 83, 84, 79, 82, 89, 58, 99, 97, 110, 99, 101, 108, 108, 101, 100, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 67, 72, 65, 73, 82, 59, 80, 65, 82, 84, 83, 84, 65, 84, 61, 67, 79, 77, 80, 76, 69, 84, 69, 68, 58, 109, 97, 105, 108, 116, 111, 58, 107, 13, 10, 88, 45, 83, 84, 69, 80, 59, 78, 79, 84, 69, 61, 110, 58, 73, 78, 45, 80, 82, 79, 67, 69, 83, 83, 13, 10, 67, 79, 77, 77, 69, 78, 84, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_enums reject 76: fuzz: a fourth line of the history") {
+            try CodecContentLineEnums.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 246, "codec_content_line_enums reject 76: the cursor moved")
+    }
+}
 
 // MARK: - codec: codec_content_line_event
 
@@ -5499,19 +6320,546 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }
 
-    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
-        let rejectBytes = try oracleBytes(reject.member("encoded"))
-        let why = try oracleText(reject.member("why"))
-        var rejectCursor = SceCursor(rejectBytes)
-        var refused = false
-        do {
-            _ = try CodecContentLineEvent.decode(&rejectCursor)
-        } catch {
-            refused = true
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 67, 65, 76, 69, 78, 68, 65, 82, 13, 10, 86, 69, 82, 83, 73, 79, 78, 58, 50, 46, 48, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 0: the input ends before the component begins") {
+            try CodecContentLineEvent.decode(&rejectCursor)
         }
-        #expect(refused, "codec_content_line_event reject \(index): \(why)")
-        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_event reject \(index): the cursor moved")
-    }}
+        #expect(rejectCursor.remaining == 30, "codec_content_line_event reject 0: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 1: the component begins and nothing follows") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 14, "codec_content_line_event reject 1: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 2: the END line is missing") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 53, "codec_content_line_event reject 2: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 3: the END line is cut short") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_event reject 3: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 97, 98])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 4: the last property is cut short") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_event reject 4: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 66, 69, 71, 73, 78, 58, 86, 65, 76, 65, 82, 77, 13, 10, 65, 67, 84, 73, 79, 78, 58, 65, 85, 68, 73, 79, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 5: a nested component never ends") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 93, "codec_content_line_event reject 5: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 6: an empty line inside the component") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_event reject 6: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 7: a line with a name and no separator") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 74, "codec_content_line_event reject 7: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 61, 120, 58, 121, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 8: a line whose name is not a name") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 71, "codec_content_line_event reject 8: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 9: a line that begins with a separator") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_event reject 9: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 84, 79, 68, 79, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 10: an END that is another component's") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 64, "codec_content_line_event reject 10: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 11: a parameter with no equals sign") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_event reject 11: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 34, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 12: a quoted parameter value that never closes") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 66, "codec_content_line_event reject 12: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 34, 90, 34, 120, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 13: text after the closing quote of a parameter value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 68, "codec_content_line_event reject 13: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 97, 34, 98, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 14: a quote inside an unquoted parameter value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_event reject 14: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 59, 61, 120, 58, 121, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 15: a parameter with no name") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 79, "codec_content_line_event reject 15: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 16: a parameter of a property nobody reads is still a parameter of a declared one: DTSTART's has no colon") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 49, "codec_content_line_event reject 16: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_event reject 17: the required UID is absent") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 58, "codec_content_line_event reject 17: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_event reject 18: the required DTSTART is absent") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 33, "codec_content_line_event reject 18: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_event reject 19: the required TZID of DTSTART is absent") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 58, "codec_content_line_event reject 19: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 85, 73, 68, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 20: UID occurs twice") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 72, "codec_content_line_event reject 20: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 59, 84, 90, 73, 68, 61, 66, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 21: TZID is given twice in one line") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 72, "codec_content_line_event reject 21: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 88, 68, 65, 84, 69, 58, 49, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 13, 10, 69, 88, 68, 65, 84, 69, 58, 51, 13, 10, 69, 88, 68, 65, 84, 69, 58, 52, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 22: a fourth EXDATE past the list's three") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 105, "codec_content_line_event reject 22: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 23: a UID of 25 octets past its 24") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 89, "codec_content_line_event reject 23: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 24: a SUMMARY of 25 octets once unescaped") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 100, "codec_content_line_event reject 24: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 122, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 25: a TZID of 25 octets past its 24") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 89, "codec_content_line_event reject 25: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 88, 68, 65, 84, 69, 58, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 26: an EXDATE of 21 octets past its 20") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 95, "codec_content_line_event reject 26: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 97, 92, 120, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_event reject 27: a backslash before a letter that is not an escape") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 79, "codec_content_line_event reject 27: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 97, 98, 92, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_event reject 28: a backslash that ends the value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 78, "codec_content_line_event reject 28: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 97, 1, 98, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 29: a control character in a UID") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_event reject 29: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 82, 82, 85, 76, 69, 58, 97, 13, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 30: a carriage return alone inside a value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_event reject 30: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 82, 82, 85, 76, 69, 58, 97, 127, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 31: a delete character in a value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_event reject 31: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 82, 82, 85, 76, 69, 58, 97, 255, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 32: bytes that are not UTF-8 in a value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_event reject 32: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 82, 82, 85, 76, 69, 58, 97, 195, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 33: an incomplete UTF-8 sequence at the end of a value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 75, "codec_content_line_event reject 33: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 54, 53, 53, 51, 54, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 34: a number past its type: 65536 in a uint16") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 81, "codec_content_line_event reject 34: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 45, 49, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 35: a minus sign on an unsigned number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 78, "codec_content_line_event reject 35: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 49, 50, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 36: a number that is not digits") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 79, "codec_content_line_event reject 36: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 32, 49, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 37: a number with a space in it") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 78, "codec_content_line_event reject 37: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 38: no digits at all") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 76, "codec_content_line_event reject 38: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 50, 49, 52, 55, 52, 56, 51, 54, 52, 56, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 39: 2147483648 in an int32") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 86, "codec_content_line_event reject 39: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 45, 50, 49, 52, 55, 52, 56, 51, 54, 52, 57, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 40: -2147483649 in an int32") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 87, "codec_content_line_event reject 40: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 57, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 41: a number with more digits than any type holds") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 136, "codec_content_line_event reject 41: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 121, 101, 115, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 42: a truth value that is not one") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 80, "codec_content_line_event reject 42: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 84, 82, 85, 69, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 43: a truth value with extra letters") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 82, "codec_content_line_event reject 43: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 97, 44, 98, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 44: two values for a parameter that holds one") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_event reject 44: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 34, 97, 34, 44, 34, 98, 34, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 45: two quoted values for a parameter that holds one") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 71, "codec_content_line_event reject 45: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 97, 2, 98, 58, 50, 48, 50, 54, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 46: a control character in a parameter value") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 67, "codec_content_line_event reject 46: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 47: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 47: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 48: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 48: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 92, 113, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_event reject 49: fuzz: a stray backslash put into a TEXT") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 49: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 50: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 50: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 51: fuzz: the END line dropped") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 188, "codec_content_line_event reject 51: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 52: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 52: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 53: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 53: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 54: fuzz: a control character put into the UID") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 54: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 55: fuzz: the UID grown past its bound") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 240, "codec_content_line_event reject 55: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 56: fuzz: an empty line put among the properties") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 56: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 57: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 57: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 58: fuzz: a control character put into the UID") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 58: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 59: fuzz: a property line repeated") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 211, "codec_content_line_event reject 59: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 60: fuzz: a property line repeated") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 211, "codec_content_line_event reject 60: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 61: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 61: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 62: fuzz: an empty line put among the properties") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 62: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 63: fuzz: a property line repeated") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 211, "codec_content_line_event reject 63: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 92, 113, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_event reject 64: fuzz: a stray backslash put into a TEXT") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 64: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 65: fuzz: an empty line put among the properties") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 65: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 66: fuzz: a control character put into the UID") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 66: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_event reject 67: fuzz: the UID removed") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 189, "codec_content_line_event reject 67: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 68: fuzz: the END line dropped") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 188, "codec_content_line_event reject 68: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_event reject 69: fuzz: a property line repeated") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 211, "codec_content_line_event reject 69: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 70: fuzz: the UID grown past its bound") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 240, "codec_content_line_event reject 70: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_event reject 71: fuzz: the UID grown past its bound") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 240, "codec_content_line_event reject 71: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_event reject 72: fuzz: the END line dropped") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 188, "codec_content_line_event reject 72: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 7, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 73: fuzz: a control character put into the UID") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 73: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_event reject 74: fuzz: an empty line put among the properties") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 202, "codec_content_line_event reject 74: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_event reject 75: fuzz: the UID removed") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 189, "codec_content_line_event reject 75: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 101, 118, 116, 45, 49, 13, 10, 68, 84, 83, 84, 65, 82, 84, 59, 84, 90, 73, 68, 61, 65, 115, 105, 97, 47, 83, 101, 111, 117, 108, 58, 50, 48, 50, 54, 49, 48, 48, 56, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 85, 77, 77, 65, 82, 89, 58, 82, 101, 118, 105, 101, 119, 13, 10, 79, 82, 71, 65, 78, 73, 90, 69, 82, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 105, 109, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 13, 10, 83, 69, 81, 85, 69, 78, 67, 69, 58, 120, 50, 13, 10, 80, 82, 73, 79, 82, 73, 84, 89, 58, 53, 13, 10, 88, 45, 65, 76, 76, 45, 68, 65, 89, 58, 70, 65, 76, 83, 69, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_event reject 76: fuzz: the sequence made not a number") {
+            try CodecContentLineEvent.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 201, "codec_content_line_event reject 76: the cursor moved")
+    }
+}
 
 // MARK: - codec: codec_content_line_records
 
@@ -5573,19 +6921,427 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }
 
-    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
-        let rejectBytes = try oracleBytes(reject.member("encoded"))
-        let why = try oracleText(reject.member("why"))
-        var rejectCursor = SceCursor(rejectBytes)
-        var refused = false
-        do {
-            _ = try CodecContentLineRecords.decode(&rejectCursor)
-        } catch {
-            refused = true
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 0: a list line with no value") {
+            try CodecContentLineRecords.decode(&rejectCursor)
         }
-        #expect(refused, "codec_content_line_records reject \(index): \(why)")
-        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_records reject \(index): the cursor moved")
-    }}
+        #expect(rejectCursor.remaining == 46, "codec_content_line_records reject 0: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 44, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 1: an empty part between two separators") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 50, "codec_content_line_records reject 1: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 44, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 2: an empty part at the start") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_records reject 2: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 3: an empty part at the end") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_records reject 3: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 71, 69, 79, 58, 49, 59, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 4: an empty part in a list cut at a semicolon") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 41, "codec_content_line_records reject 4: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 5: a fifth value past the four") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 55, "codec_content_line_records reject 5: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 6: an empty part past the bound is still past it") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 54, "codec_content_line_records reject 6: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 88, 68, 65, 84, 69, 58, 49, 44, 50, 44, 51, 44, 52, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 7: a fourth value of an EXDATE line past three") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 49, "codec_content_line_records reject 7: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 71, 69, 79, 58, 49, 59, 50, 59, 51, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 8: a third value of a GEO line past two") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 44, "codec_content_line_records reject 8: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_records reject 9: a part of 13 octets past its 12") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_records reject 9: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 44, 44, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_records reject 10: the first failure in order: a long part before an empty one") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_records reject 10: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 44, 44, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 11: the first failure in order: an empty part before a long one") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_records reject 11: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 92, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_records reject 12: a bad escape in a later part") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 51, "codec_content_line_records reject 12: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 92, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_records reject 13: a backslash that ends the last part") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 50, "codec_content_line_records reject 13: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 88, 68, 65, 84, 69, 58, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_records reject 14: a value of an EXDATE line of 21 octets past its 20") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_records reject 14: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 15: a line of ATTENDEE without its required ROLE") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 52, "codec_content_line_records reject 15: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 58, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 16: the second line lacks the role the first has") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_records reject 16: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 17: the required parameter is judged before the value: a value past its bound and no role") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 85, "codec_content_line_records reject 17: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 98, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 99, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 100, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 18: a fourth ATTENDEE line past three") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 109, "codec_content_line_records reject 18: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 97, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 98, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 99, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 58, 100, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 19: the count is judged on the line before its parameters are read") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 107, "codec_content_line_records reject 19: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 88, 68, 65, 84, 69, 58, 49, 13, 10, 69, 88, 68, 65, 84, 69, 58, 50, 13, 10, 69, 88, 68, 65, 84, 69, 58, 51, 13, 10, 69, 88, 68, 65, 84, 69, 58, 52, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 20: a fourth EXDATE line past three") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 73, "codec_content_line_records reject 20: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 65, 59, 82, 79, 76, 69, 61, 66, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 21: ROLE given twice in one line") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 59, "codec_content_line_records reject 21: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 65, 44, 66, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 22: two values for ROLE, which holds one") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 54, "codec_content_line_records reject 22: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 97, 44, 98, 58, 49, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 23: two values for TZID, which holds one") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 52, "codec_content_line_records reject 23: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 59, 67, 78, 61, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_records reject 24: a CN of 25 octets past its 24") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 81, "codec_content_line_records reject 24: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 61, 82, 58, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_records reject 25: a value of ATTENDEE of 41 octets past its 40") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 92, "codec_content_line_records reject 25: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 82, 79, 76, 69, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 26: a parameter of a record's line with no equals sign") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 50, "codec_content_line_records reject 26: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 27: the required UID is absent") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 35, "codec_content_line_records reject 27: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 85, 73, 68, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 28: UID occurs twice") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 40, "codec_content_line_records reject 28: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 29: the END line is missing") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 37, "codec_content_line_records reject 29: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 30: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 30: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 31: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 31: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 32: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 32: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 33: fuzz: the role taken from the attendee") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 33: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 34: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 34: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 35: fuzz: an empty part put into the categories") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 151, "codec_content_line_records reject 35: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 36: fuzz: a property line repeated") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 157, "codec_content_line_records reject 36: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 37: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 37: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 38: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 38: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 39: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 39: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 40: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 40: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 41: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 41: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 42: fuzz: the END line dropped") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 138, "codec_content_line_records reject 42: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 43: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 43: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 85, 73, 68, 58, 117, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 44: fuzz: a property line repeated") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 157, "codec_content_line_records reject 44: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 45: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 45: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 46: fuzz: the END line dropped") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 138, "codec_content_line_records reject 46: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 47: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 47: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 48: fuzz: the END line dropped") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 138, "codec_content_line_records reject 48: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 49: fuzz: the role taken from the attendee") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 49: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 50: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 50: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 51: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 51: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 52: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 52: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 53: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 53: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_records reject 54: fuzz: an empty line put among the properties") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 152, "codec_content_line_records reject 54: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 44, 99, 44, 100, 44, 101, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_records reject 55: fuzz: a fifth category") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 156, "codec_content_line_records reject 55: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 56: fuzz: the END line dropped") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 138, "codec_content_line_records reject 56: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_records reject 57: fuzz: the UID removed") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 143, "codec_content_line_records reject 57: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_records reject 58: fuzz: an empty part put into the categories") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 151, "codec_content_line_records reject 58: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 59, 67, 78, 61, 75, 105, 109, 59, 82, 79, 76, 69, 61, 82, 58, 109, 97, 105, 108, 116, 111, 58, 107, 64, 101, 120, 97, 109, 112, 108, 101, 46, 111, 114, 103, 13, 10, 69, 88, 68, 65, 84, 69, 59, 84, 90, 73, 68, 61, 90, 58, 50, 48, 50, 54, 49, 48, 49, 53, 84, 48, 57, 48, 48, 48, 48, 44, 50, 48, 50, 54, 49, 48, 50, 50, 84, 48, 57, 48, 48, 48, 48, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 98, 13, 10, 71, 69, 79, 58, 49, 59, 50, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_records reject 59: fuzz: the END line dropped") {
+            try CodecContentLineRecords.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 138, "codec_content_line_records reject 59: the cursor moved")
+    }
+}
 
 // MARK: - codec: codec_content_line_required_lists
 
@@ -5638,19 +7394,133 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }
 
-    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
-        let rejectBytes = try oracleBytes(reject.member("encoded"))
-        let why = try oracleText(reject.member("why"))
-        var rejectCursor = SceCursor(rejectBytes)
-        var refused = false
-        do {
-            _ = try CodecContentLineRequiredLists.decode(&rejectCursor)
-        } catch {
-            refused = true
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 0: the repeated property absent") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
         }
-        #expect(refused, "codec_content_line_required_lists reject \(index): \(why)")
-        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_required_lists reject \(index): the cursor moved")
-    }}
+        #expect(rejectCursor.remaining == 48, "codec_content_line_required_lists reject 0: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 1: the TEXT list absent") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 47, "codec_content_line_required_lists reject 1: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 2: the record list absent") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_required_lists reject 2: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 3: every list absent") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 33, "codec_content_line_required_lists reject 3: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 4: only the UID absent") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_required_lists reject 4: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 84, 65, 71, 58, 97, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_required_lists reject 5: a third TAG line past two") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_required_lists reject 5: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 82, 69, 67, 58, 118, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_required_lists reject 6: a third REC line past two") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 69, "codec_content_line_required_lists reject 6: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_required_lists reject 7: the CATS line twice") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_required_lists reject 7: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 97, 44, 98, 44, 99, 44, 100, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_required_lists reject 8: a fourth CATS value past three") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 61, "codec_content_line_required_lists reject 8: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 97, 44, 44, 98, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_required_lists reject 9: an empty CATS part") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 58, "codec_content_line_required_lists reject 9: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 99, 99, 99, 99, 99, 99, 99, 99, 99, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_required_lists reject 10: a CATS value of 9 octets past 8") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_required_lists reject 10: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 116, 116, 116, 116, 116, 116, 116, 116, 116, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_required_lists reject 11: a TAG value of 9 octets past 8") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 63, "codec_content_line_required_lists reject 11: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 97, 92, 113, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_required_lists reject 12: a stray backslash in CATS") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 57, "codec_content_line_required_lists reject 12: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_required_lists reject 13: an empty line among the properties") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 57, "codec_content_line_required_lists reject 13: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_required_lists reject 14: the END line missing") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 43, "codec_content_line_required_lists reject 14: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 15: fuzz: the TAG line removed") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_required_lists reject 15: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 82, 69, 67, 58, 118, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 16: fuzz: the CATS line removed") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 47, "codec_content_line_required_lists reject 16: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 84, 65, 71, 58, 97, 13, 10, 67, 65, 84, 83, 58, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_required_lists reject 17: fuzz: the REC line removed") {
+            try CodecContentLineRequiredLists.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 48, "codec_content_line_required_lists reject 17: the cursor moved")
+    }
+}
 
 // MARK: - codec: codec_content_line_open
 
@@ -5706,19 +7576,70 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         }
     }
 
-    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
-        let rejectBytes = try oracleBytes(reject.member("encoded"))
-        let why = try oracleText(reject.member("why"))
-        var rejectCursor = SceCursor(rejectBytes)
-        var refused = false
-        do {
-            _ = try CodecContentLineOpen.decode(&rejectCursor)
-        } catch {
-            refused = true
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineRequiredMissing, "codec_content_line_open reject 0: the attendees absent") {
+            try CodecContentLineOpen.decode(&rejectCursor)
         }
-        #expect(refused, "codec_content_line_open reject \(index): \(why)")
-        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_open reject \(index): the cursor moved")
-    }}
+        #expect(rejectCursor.remaining == 33, "codec_content_line_open reject 0: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 82, 69, 83, 79, 85, 82, 67, 69, 83, 58, 97, 13, 10, 82, 69, 83, 79, 85, 82, 67, 69, 83, 58, 97, 13, 10, 82, 69, 83, 79, 85, 82, 67, 69, 83, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_open reject 1: a third RESOURCES line past two") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 93, "codec_content_line_open reject 1: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooLong, "codec_content_line_open reject 2: a UID of 17 octets past 16") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 70, "codec_content_line_open reject 2: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 44, 44, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_open reject 3: an empty CATEGORIES part") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 71, "codec_content_line_open reject 3: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 13, 10, 67, 65, 84, 69, 71, 79, 82, 73, 69, 83, 58, 97, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineTooMany, "codec_content_line_open reject 4: the CATEGORIES line twice") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 82, "codec_content_line_open reject 4: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 68, 69, 83, 67, 82, 73, 80, 84, 73, 79, 78, 58, 97, 92, 113, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadEscape, "codec_content_line_open reject 5: a stray backslash in the description") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 71, "codec_content_line_open reject 5: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 97, 1, 98, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineBadValue, "codec_content_line_open reject 6: a control character in an attendee") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 47, "codec_content_line_open reject 6: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10, 13, 10, 69, 78, 68, 58, 86, 69, 86, 69, 78, 84, 13, 10])
+        #expect(throws: CodecError.lineMalformed, "codec_content_line_open reject 7: an empty line among the properties") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 56, "codec_content_line_open reject 7: the cursor moved")
+    }
+    do {
+        var rejectCursor = SceCursor([66, 69, 71, 73, 78, 58, 86, 69, 86, 69, 78, 84, 13, 10, 85, 73, 68, 58, 117, 13, 10, 65, 84, 84, 69, 78, 68, 69, 69, 58, 109, 97, 105, 108, 116, 111, 58, 97, 64, 120, 13, 10])
+        #expect(throws: CodecError.needMoreBytes, "codec_content_line_open reject 8: the END line missing") {
+            try CodecContentLineOpen.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 42, "codec_content_line_open reject 8: the cursor moved")
+    }
+}
 
 // MARK: - codec: codec_flags_basic
 
@@ -5726,6 +7647,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecFlagsBasic.frameLength
+
 }
 
 // MARK: - codec: codec_init_cookie_body
@@ -5734,6 +7656,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitCookieBody.frameLength
+
 }
 
 // MARK: - codec: codec_init_syn_body
@@ -5742,6 +7665,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitSynBody.frameLength
+
 }
 
 // MARK: - codec: codec_init_syn_envelope
@@ -5750,6 +7674,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitSynEnvelope.frameLength
+
 }
 
 // MARK: - codec: codec_peek_arm_a
@@ -5758,6 +7683,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPeekArmA.frameLength
+
 }
 
 // MARK: - codec: codec_peek_arm_b
@@ -5766,6 +7692,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPeekArmB.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_basic
@@ -5774,6 +7701,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfBasic.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_checked
@@ -5782,6 +7710,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfChecked.frameLength
+
 }
 
 // MARK: - codec: codec_length_shared
@@ -5790,6 +7719,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecLengthShared.frameLength
+
 }
 
 // MARK: - codec: codec_length_stated
@@ -5798,6 +7728,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecLengthStated.frameLength
+
 }
 
 // MARK: - codec: codec_encoded_length_checked
@@ -5806,6 +7737,16 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEncodedLengthChecked.frameLength
+
+}
+
+// MARK: - codec: codec_group_enum
+
+@Test func codecGroupEnumMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecGroupEnum.frameLength
+
 }
 
 // MARK: - codec: codec_chain_has_input
@@ -5814,6 +7755,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasInput.frameLength
+
 }
 
 // MARK: - codec: codec_chain_handed_entry
@@ -5822,6 +7764,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHandedEntry.frameLength
+
 }
 
 // MARK: - codec: codec_chain_handed
@@ -5830,6 +7773,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHanded.frameLength
+
 }
 
 // MARK: - codec: codec_source_leaf
@@ -5838,6 +7782,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSourceLeaf.frameLength
+
 }
 
 // MARK: - codec: codec_source_parent_tag
@@ -5846,6 +7791,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSourceParentTag.frameLength
+
 }
 
 // MARK: - codec: codec_every_arm_says_near
@@ -5854,6 +7800,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysNear.frameLength
+
 }
 
 // MARK: - codec: codec_every_arm_says_far
@@ -5862,6 +7809,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysFar.frameLength
+
 }
 
 // MARK: - codec: codec_every_arm_says
@@ -5870,6 +7818,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSays.frameLength
+
 }
 
 // MARK: - codec: codec_every_arm_says_parent
@@ -5878,6 +7827,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysParent.frameLength
+
 }
 
 // MARK: - codec: codec_some_arms_say_plain
@@ -5886,6 +7836,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayPlain.frameLength
+
 }
 
 // MARK: - codec: codec_some_arms_say
@@ -5894,6 +7845,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSay.frameLength
+
 }
 
 // MARK: - codec: codec_some_arms_say_parent
@@ -5902,6 +7854,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayParent.frameLength
+
 }
 
 // MARK: - codec: codec_some_arms_say_forward
@@ -5910,6 +7863,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayForward.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_disjunction
@@ -5918,6 +7872,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfDisjunction.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_length_ref
@@ -5926,6 +7881,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfLengthRef.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_length_from
@@ -5934,6 +7890,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfLengthFrom.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_negation
@@ -5942,6 +7899,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfNegation.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_string
@@ -5950,6 +7908,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfString.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_tail
@@ -5958,6 +7917,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfTail.frameLength
+
 }
 
 // MARK: - codec: codec_present_if_vle
@@ -5966,6 +7926,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfVle.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_basic
@@ -5974,6 +7935,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatBasic.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_elem
@@ -5982,6 +7944,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatElem.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_unconditional_count
@@ -5990,6 +7953,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatUnconditionalCount.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_flag_carrier
@@ -5998,6 +7962,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagCarrier.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_flag_gated
@@ -6006,6 +7971,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagGated.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_flag_group
@@ -6014,6 +7980,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagGroup.frameLength
+
+}
+
+// MARK: - codec: codec_repeat_flag_forward_group
+
+@Test func codecRepeatFlagForwardGroupMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatFlagForwardGroup.frameLength
+
+}
+
+// MARK: - codec: codec_repeat_flag_aligned_group
+
+@Test func codecRepeatFlagAlignedGroupMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatFlagAlignedGroup.frameLength
+
+}
+
+// MARK: - codec: codec_repeat_flag_aligned_always
+
+@Test func codecRepeatFlagAlignedAlwaysMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatFlagAlignedAlways.frameLength
+
 }
 
 // MARK: - codec: codec_repeat_present_if_basic
@@ -6022,6 +8016,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatPresentIfBasic.frameLength
+
 }
 
 // MARK: - codec: codec_scout_zid_body
@@ -6030,6 +8025,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecScoutZidBody.frameLength
+
 }
 
 // MARK: - codec: codec_tlv_chain_basic
@@ -6038,6 +8034,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvChainBasic.frameLength
+
 }
 
 // MARK: - codec: codec_tlv_chain_present_if_basic
@@ -6046,6 +8043,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvChainPresentIfBasic.frameLength
+
 }
 
 // MARK: - codec: codec_chain_depth_entry
@@ -6054,6 +8052,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainDepthEntry.frameLength
+
 }
 
 // MARK: - codec: codec_chain_depth_plain
@@ -6062,6 +8061,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainDepthPlain.frameLength
+
+    do {
+        var rejectCursor = SceCursor([0, 129, 130, 131, 132, 133, 134, 135, 136, 9])
+        #expect(throws: CodecError.tooManyElements, "codec_chain_depth_plain reject 0: chain saturates max-depth=8 with the entry flag still set, so the ninth entry the peer sent is refused rather than dropped") {
+            try CodecChainDepthPlain.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 10, "codec_chain_depth_plain reject 0: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_chain_depth_gated
@@ -6070,6 +8077,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainDepthGated.frameLength
+
+    do {
+        var rejectCursor = SceCursor([128, 129, 130, 131, 132, 133, 134, 135, 136, 3, 3, 170, 187, 204])
+        #expect(throws: CodecError.tooManyElements, "codec_chain_depth_gated reject 0: nine entries on a max-depth=8 chain: the ninth entry's header byte must not be read as payload_len") {
+            try CodecChainDepthGated.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 14, "codec_chain_depth_gated reject 0: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_tlv_entry
@@ -6078,6 +8093,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvEntry.frameLength
+
 }
 
 // MARK: - codec: codec_transport_envelope
@@ -6086,6 +8102,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTransportEnvelope.frameLength
+
 }
 
 // MARK: - codec: codec_until_eof_basic
@@ -6094,6 +8111,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecUntilEofBasic.frameLength
+
 }
 
 // MARK: - codec: codec_variant_dispatch
@@ -6102,6 +8120,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantDispatch.frameLength
+
 }
 
 // MARK: - codec: codec_variant_peek_basic
@@ -6110,6 +8129,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantPeekBasic.frameLength
+
 }
 
 // MARK: - codec: codec_variant_session_close
@@ -6118,6 +8138,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionClose.frameLength
+
 }
 
 // MARK: - codec: codec_variant_session_open
@@ -6126,6 +8147,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionOpen.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_ext_keyexpr
@@ -6134,6 +8156,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclExtKeyexpr.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_ext_keyexpr_inner
@@ -6142,6 +8165,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclExtKeyexprInner.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_kexpr
@@ -6150,6 +8174,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclKexpr.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_queryable
@@ -6158,6 +8183,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclQueryable.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_subscriber
@@ -6166,6 +8192,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclSubscriber.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_decl_token
@@ -6174,6 +8201,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclToken.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_declaration
@@ -6182,6 +8210,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclaration.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_declare
@@ -6190,6 +8219,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclare.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_encoding
@@ -6198,6 +8228,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohEncoding.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_ext_entry
@@ -6206,6 +8237,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtEntry.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_ext_envelope
@@ -6214,6 +8246,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtEnvelope.frameLength
+
+    do {
+        var rejectCursor = SceCursor([0, 129, 130, 131])
+        #expect(throws: CodecError.needMoreBytes, "codec_zenoh_ext_envelope reject 0: the last entry declares a successor and the frame ends there, so the chain is short rather than finished") {
+            try CodecZenohExtEnvelope.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_zenoh_ext_envelope reject 0: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_zenoh_ext_unit
@@ -6222,6 +8262,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtUnit.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_ext_zbuf
@@ -6230,6 +8271,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtZbuf.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_ext_zint
@@ -6238,6 +8280,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtZint.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_hello
@@ -6246,6 +8289,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohHello.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_init_body
@@ -6254,6 +8298,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInitBody.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_interest
@@ -6262,6 +8307,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInterest.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_interest_body
@@ -6270,6 +8316,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInterestBody.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_join
@@ -6278,6 +8325,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohJoin.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_msg_del
@@ -6286,6 +8334,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohMsgDel.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_err
@@ -6294,6 +8343,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohErr.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_msg_put
@@ -6302,6 +8352,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohMsgPut.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_reply
@@ -6310,6 +8361,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohReply.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_network_envelope
@@ -6318,6 +8370,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohNetworkEnvelope.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_oam
@@ -6326,6 +8379,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohOam.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_open_body
@@ -6334,6 +8388,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohOpenBody.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_push
@@ -6342,6 +8397,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPush.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_push_body
@@ -6350,6 +8406,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPushBody.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_query
@@ -6358,6 +8415,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohQuery.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_request
@@ -6366,6 +8424,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohRequest.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_response
@@ -6374,6 +8433,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohResponse.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_response_final
@@ -6382,6 +8442,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohResponseFinal.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_scout
@@ -6390,6 +8451,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohScout.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_source_info
@@ -6398,6 +8460,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohSourceInfo.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_source_info_ext
@@ -6406,6 +8469,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohSourceInfoExt.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_timestamp
@@ -6414,6 +8478,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohTimestamp.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_timestamp_ext
@@ -6422,6 +8487,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohTimestampExt.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_kexpr
@@ -6430,6 +8496,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclKexpr.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_queryable
@@ -6438,6 +8505,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclQueryable.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_subscriber
@@ -6446,6 +8514,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclSubscriber.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_token
@@ -6454,6 +8523,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclToken.frameLength
+
 }
 
 // MARK: - codec: codec_zenoh_wireexpr
@@ -6462,6 +8532,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohWireexpr.frameLength
+
 }
 
 // MARK: - enum: enum_content_line_class
@@ -7042,6 +9113,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     // A map has no fixed length; the type is named by the initializer every codec offers.
     _ = Envelope()
+
 }
 
 // MARK: - timer: timer_tester_present

@@ -110,15 +110,15 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `which` datamodel variable.
-    var vWhich: String = "a"
+    var vWhich: String
     /// W3C SCXML 5.2: the `scale` datamodel variable.
-    var vScale: UInt32 = 3
+    var vScale: UInt32
     /// W3C SCXML 5.2: the `a_fired` datamodel variable, published (`sce:direction="out"`).
-    var vAFired: UInt32 = 0
+    var vAFired: UInt32
     /// W3C SCXML 5.2: the `b_fired` datamodel variable, published (`sce:direction="out"`).
-    var vBFired: UInt32 = 0
+    var vBFired: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `a_fired` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -145,27 +145,60 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vWhich {
-            vWhich = value
+        let vWhich: String
+        if let handed = params.vWhich {
+            vWhich = handed
+        } else {
+            vWhich = "a"
         }
-        if let value = params.vScale {
-            vScale = value
+        let vScale: UInt32
+        if let handed = params.vScale {
+            vScale = handed
+        } else {
+            vScale = 3
         }
-        if let value = params.vAFired {
-            vAFired = value
+        let vAFired: UInt32
+        if let handed = params.vAFired {
+            vAFired = handed
+        } else {
+            vAFired = 0
         }
-        if let value = params.vBFired {
-            vBFired = value
+        let vBFired: UInt32
+        if let handed = params.vBFired {
+            vBFired = handed
+        } else {
+            vBFired = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vWhich = vWhich
+        self.vScale = vScale
+        self.vAFired = vAFired
+        self.vBFired = vBFired
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vWhich: String = "a"
+        let vScale: UInt32 = 3
+        let vAFired: UInt32 = 0
+        let vBFired: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vWhich = vWhich
+        self.vScale = vScale
+        self.vAFired = vAFired
+        self.vBFired = vBFired
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

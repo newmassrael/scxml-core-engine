@@ -114,6 +114,7 @@ public final class AutoforwardEventFieldsPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

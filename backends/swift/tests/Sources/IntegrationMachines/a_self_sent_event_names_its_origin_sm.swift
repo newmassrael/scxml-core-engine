@@ -128,6 +128,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

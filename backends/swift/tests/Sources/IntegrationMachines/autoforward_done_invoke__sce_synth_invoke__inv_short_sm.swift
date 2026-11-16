@@ -100,6 +100,7 @@ public final class AutoforwardDoneInvokeSceSynthInvokeInvShortPolicy: InvocableP
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

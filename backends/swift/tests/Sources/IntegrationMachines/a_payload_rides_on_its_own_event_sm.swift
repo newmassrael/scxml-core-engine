@@ -115,6 +115,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

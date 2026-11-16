@@ -135,6 +135,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

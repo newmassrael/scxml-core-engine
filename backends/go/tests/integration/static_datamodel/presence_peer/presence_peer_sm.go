@@ -851,9 +851,10 @@ type PresencePeerPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewPresencePeerPolicy creates a new policy with default values.
@@ -970,36 +971,80 @@ type PresencePeerInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *PresencePeerPolicy) AcceptParams(params PresencePeerInvokeParams) {
-	if params.VNode != nil {
-		p.vNode = *params.VNode
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *PresencePeerPolicy) AcceptParams(handed PresencePeerInvokeParams) {
+	var vNode uint32
+	if handed.VNode != nil {
+		vNode = *handed.VNode
+	} else {
+		vNode = 0
 	}
-	if params.VHub != nil {
-		p.vHub = *params.VHub
+	var vHub bool
+	if handed.VHub != nil {
+		vHub = *handed.VHub
+	} else {
+		vHub = false
 	}
-	if params.VTtl != nil {
-		p.vTtl = *params.VTtl
+	var vTtl uint32
+	if handed.VTtl != nil {
+		vTtl = *handed.VTtl
+	} else {
+		vTtl = 0
 	}
-	if params.VLease != nil {
-		p.vLease = *params.VLease
+	var vLease uint32
+	if handed.VLease != nil {
+		vLease = *handed.VLease
+	} else {
+		vLease = 0
 	}
-	if params.VSerial != nil {
-		p.vSerial = *params.VSerial
+	var vOnline []PresencePeerSeenRecord = nil
+	var vRebuilt []PresencePeerSeenRecord = nil
+	var vEntry PresencePeerSeenRecord = PresencePeerSeenRecord{client: 0, last: 0, gen: 0}
+	var vSerial uint32
+	if handed.VSerial != nil {
+		vSerial = *handed.VSerial
+	} else {
+		vSerial = 0
 	}
-	if params.VKnown != nil {
-		p.vKnown = *params.VKnown
+	var vKnown bool
+	if handed.VKnown != nil {
+		vKnown = *handed.VKnown
+	} else {
+		vKnown = false
 	}
-	if params.VFresh != nil {
-		p.vFresh = *params.VFresh
+	var vFresh bool
+	if handed.VFresh != nil {
+		vFresh = *handed.VFresh
+	} else {
+		vFresh = false
 	}
-	if params.VLost != nil {
-		p.vLost = *params.VLost
+	var vLost uint32
+	if handed.VLost != nil {
+		vLost = *handed.VLost
+	} else {
+		vLost = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vNode = vNode
+	p.vHub = vHub
+	p.vTtl = vTtl
+	p.vLease = vLease
+	p.vOnline = vOnline
+	p.vRebuilt = vRebuilt
+	p.vEntry = vEntry
+	p.vSerial = vSerial
+	p.vKnown = vKnown
+	p.vFresh = vFresh
+	p.vLost = vLost
+	p.vRefusals = vRefusals
 }
 
 

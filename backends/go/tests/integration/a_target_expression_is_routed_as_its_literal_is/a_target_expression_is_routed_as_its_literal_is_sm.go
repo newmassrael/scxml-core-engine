@@ -248,9 +248,10 @@ type ATargetExpressionIsRoutedAsItsLiteralIsPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewATargetExpressionIsRoutedAsItsLiteralIsPolicy creates a new policy with default values.
@@ -561,8 +562,10 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) establishScriptSession()
 // It is the one place a session is made (establishScriptSession), and a
 // session that cannot be established is its answer: nothing of the datamodel is
 // touched and the start is refused (docs/adr/0096). The order after it is the
-// document's: its `<data>`, then the invoke params its parent handed it, then
-// its top-level `<script>`.
+// document's (docs/adr/0098): its top-level `<data>`, each taking the value an
+// invoking session handed for it in place of its own; the early-bound `<data>`
+// of its states; its top-level `<script>`. The initial configuration is
+// entered after this returns, so its `<onentry>` reads the handed values too.
 func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng *sce.Engine[ATargetExpressionIsRoutedAsItsLiteralIsState, ATargetExpressionIsRoutedAsItsLiteralIsEvent]) *sce.ScriptSessionFailure {
 	if !p.scriptEngineInitialized {
 		if failure := p.establishScriptSession(); failure != nil {
@@ -576,9 +579,22 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
+	// §scxml-6.4: the values the invoking session handed this one
+	// (`SetParamValueInScriptEngine`), taken by this start and by no later
+	// one. Which of them this session keeps is its own to decide, from the
+	// ids of its top-level `<data>`, written below when it was generated: a
+	// name none of them carries is not added, and a state's `<data>` never
+	// takes a handed value, whatever its id.
+	handed := p.handedValues
+	p.handedValues = nil
+
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
-	// W3C SCXML 5.2/5.3: Initialize tInternal from expr="'#_internal'"
-	{
+	if value, wasHanded := handed["tInternal"]; wasHanded {
+		// §scxml-6.4: tInternal takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "tInternal", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize tInternal from expr="'#_internal'"
 		result, err := engine.EvaluateExpression(sessionID, `"#_internal"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tInternal", result)
@@ -587,8 +603,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "tInternal", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize tKid from expr="'#_kid'"
-	{
+	if value, wasHanded := handed["tKid"]; wasHanded {
+		// §scxml-6.4: tKid takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "tKid", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize tKid from expr="'#_kid'"
 		result, err := engine.EvaluateExpression(sessionID, `"#_kid"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tKid", result)
@@ -597,8 +617,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "tKid", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize tStranger from expr="'#_scxml_nosuch'"
-	{
+	if value, wasHanded := handed["tStranger"]; wasHanded {
+		// §scxml-6.4: tStranger takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "tStranger", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize tStranger from expr="'#_scxml_nosuch'"
 		result, err := engine.EvaluateExpression(sessionID, `"#_scxml_nosuch"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tStranger", result)
@@ -607,8 +631,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "tStranger", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize tParent from expr="'#_parent'"
-	{
+	if value, wasHanded := handed["tParent"]; wasHanded {
+		// §scxml-6.4: tParent takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "tParent", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize tParent from expr="'#_parent'"
 		result, err := engine.EvaluateExpression(sessionID, `"#_parent"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tParent", result)
@@ -617,8 +645,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "tParent", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize tBogus from expr="'bogus'"
-	{
+	if value, wasHanded := handed["tBogus"]; wasHanded {
+		// §scxml-6.4: tBogus takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "tBogus", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize tBogus from expr="'bogus'"
 		result, err := engine.EvaluateExpression(sessionID, `"bogus"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tBogus", result)
@@ -627,8 +659,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "tBogus", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize kidLoc from expr="''"
-	{
+	if value, wasHanded := handed["kidLoc"]; wasHanded {
+		// §scxml-6.4: kidLoc takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "kidLoc", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize kidLoc from expr="''"
 		result, err := engine.EvaluateExpression(sessionID, `""`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kidLoc", result)
@@ -637,8 +673,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "kidLoc", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize internalNow from expr="0"
-	{
+	if value, wasHanded := handed["internalNow"]; wasHanded {
+		// §scxml-6.4: internalNow takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "internalNow", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize internalNow from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "internalNow", result)
@@ -647,8 +687,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "internalNow", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize internalLater from expr="0"
-	{
+	if value, wasHanded := handed["internalLater"]; wasHanded {
+		// §scxml-6.4: internalLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "internalLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize internalLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "internalLater", result)
@@ -657,8 +701,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "internalLater", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize kidNow from expr="0"
-	{
+	if value, wasHanded := handed["kidNow"]; wasHanded {
+		// §scxml-6.4: kidNow takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "kidNow", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize kidNow from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kidNow", result)
@@ -667,8 +715,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "kidNow", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize kidLater from expr="0"
-	{
+	if value, wasHanded := handed["kidLater"]; wasHanded {
+		// §scxml-6.4: kidLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "kidLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize kidLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kidLater", result)
@@ -677,8 +729,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "kidLater", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize sessNow from expr="0"
-	{
+	if value, wasHanded := handed["sessNow"]; wasHanded {
+		// §scxml-6.4: sessNow takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "sessNow", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize sessNow from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sessNow", result)
@@ -687,8 +743,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "sessNow", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize sessLater from expr="0"
-	{
+	if value, wasHanded := handed["sessLater"]; wasHanded {
+		// §scxml-6.4: sessLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "sessLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize sessLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sessLater", result)
@@ -697,8 +757,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "sessLater", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize commErrors from expr="0"
-	{
+	if value, wasHanded := handed["commErrors"]; wasHanded {
+		// §scxml-6.4: commErrors takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "commErrors", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize commErrors from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "commErrors", result)
@@ -707,8 +771,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "commErrors", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize execErrors from expr="0"
-	{
+	if value, wasHanded := handed["execErrors"]; wasHanded {
+		// §scxml-6.4: execErrors takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "execErrors", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize execErrors from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "execErrors", result)
@@ -717,8 +785,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "execErrors", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterStranger from expr="0"
-	{
+	if value, wasHanded := handed["afterStranger"]; wasHanded {
+		// §scxml-6.4: afterStranger takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterStranger", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterStranger from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterStranger", result)
@@ -727,8 +799,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "afterStranger", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterStrangerLater from expr="0"
-	{
+	if value, wasHanded := handed["afterStrangerLater"]; wasHanded {
+		// §scxml-6.4: afterStrangerLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterStrangerLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterStrangerLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterStrangerLater", result)
@@ -737,8 +813,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "afterStrangerLater", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterOrphan from expr="0"
-	{
+	if value, wasHanded := handed["afterOrphan"]; wasHanded {
+		// §scxml-6.4: afterOrphan takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterOrphan", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterOrphan from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterOrphan", result)
@@ -747,8 +827,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "afterOrphan", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterOrphanLater from expr="0"
-	{
+	if value, wasHanded := handed["afterOrphanLater"]; wasHanded {
+		// §scxml-6.4: afterOrphanLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterOrphanLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterOrphanLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterOrphanLater", result)
@@ -757,8 +841,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "afterOrphanLater", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterBogus from expr="0"
-	{
+	if value, wasHanded := handed["afterBogus"]; wasHanded {
+		// §scxml-6.4: afterBogus takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterBogus", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterBogus from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterBogus", result)
@@ -767,8 +855,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 			_ = engine.SetVariable(sessionID, "afterBogus", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize afterBogusLater from expr="0"
-	{
+	if value, wasHanded := handed["afterBogusLater"]; wasHanded {
+		// §scxml-6.4: afterBogusLater takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "afterBogusLater", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize afterBogusLater from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterBogusLater", result)
@@ -778,24 +870,6 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) InitializeDataModel(eng 
 		}
 	}
 
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule. They are applied
-	// before the top-level `<script>`, which reads the datamodel the invocation
-	// started it with. The parent hands them before this session's start
-	// (`SetParamValueInScriptEngine`) and this session applies them, so a
-	// child's session is made by the child.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
 
 	return nil
 }
@@ -902,23 +976,38 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) getVariable(name string)
 	return result
 }
 
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
+// SetParamValueInScriptEngine hands this machine, before its start, the value
+// an invoking session evaluated for one `<param>` or `namelist` name
+// (§scxml-6.4). The invoking session hands every name it evaluated; this
+// machine's start (InitializeDataModel) decides which it keeps, from the ids
+// of its own top-level `<data>`, and declares each kept one as that `<data>`'s
+// initial value in place of its own (docs/adr/0098). Nothing is written to the
+// script session here: the session is the child's own, established by its
+// start (docs/adr/0096).
 //
-// Params are applied by InitializeDataModel after the `<data>` and before the
-// top-level `<script>`, overriding the `<data>` default only for names the
-// child declares, so the session they are applied in is the child's own,
-// established by its start (docs/adr/0096). The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
+// The value crosses as a value: this took the parent's value rendered as Lua
+// source and re-evaluated it here until 2026-08-21, which survived every value
+// a test had tried and lost the ones Lua cannot spell — `ToScriptLiteral`
+// renders a non-finite number as `+Inf`, which is not a Lua expression, so an
 // `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
 func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
+	if p.handedValues == nil {
+		p.handedValues = make(map[string]interface{})
 	}
-	p.pendingParams[name] = value
+	p.handedValues[name] = value
+}
+
+// declareHandedValue declares the top-level `<data>` name with the value an
+// invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
+// `expr`, `src` or content, which is not evaluated. A value the session cannot
+// hold is the error of that `<data>`'s initialization (§scxml-5.3):
+// error.execution, and the `<data>` left unset, as one whose own expression
+// failed is left (docs/adr/0098).
+func (p *ATargetExpressionIsRoutedAsItsLiteralIsPolicy) declareHandedValue(eng *sce.Engine[ATargetExpressionIsRoutedAsItsLiteralIsState, ATargetExpressionIsRoutedAsItsLiteralIsEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
+	if err := engine.SetVariable(sessionID, name, value); err != nil {
+		eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		_ = engine.SetVariable(sessionID, name, nil)
+	}
 }
 
 

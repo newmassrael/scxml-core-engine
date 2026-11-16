@@ -175,7 +175,7 @@ public final class ParamAskerPolicy: InvocablePolicy {
     /// before the machine is built.
     var vJob: UInt32 = 0
     /// W3C SCXML 5.2: the `answered` datamodel variable.
-    var vAnswered: UInt32 = 0
+    var vAnswered: UInt32
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -186,15 +186,24 @@ public final class ParamAskerPolicy: InvocablePolicy {
         public var vAnswered: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vAnswered {
-            vAnswered = value
+        let vAnswered: UInt32
+        if let handed = params.vAnswered {
+            vAnswered = handed
+        } else {
+            vAnswered = 0
         }
+        self.vAnswered = vAnswered
     }
 
     public init() {
+        let vAnswered: UInt32 = 0
+        self.vAnswered = vAnswered
+
         sessionID = drawSessionID()
     }
 

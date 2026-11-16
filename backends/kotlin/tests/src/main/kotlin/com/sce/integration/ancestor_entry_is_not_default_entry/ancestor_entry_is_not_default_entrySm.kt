@@ -379,10 +379,13 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -390,51 +393,45 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'defaulted' with expr
-        try {
-            val initResult_defaulted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "defaulted", initResult_defaulted)
-        } catch (e: Exception) {
-            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='defaulted'> expr failed to evaluate")
+        // §scxml-6.4: 'defaulted' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "defaulted", AncestorEntryIsNotDefaultEntryEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'defaulted' with expr
+            try {
+                engine.setVariable(sid, "defaulted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='defaulted'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'lobbied' with expr
-        try {
-            val initResult_lobbied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "lobbied", initResult_lobbied)
-        } catch (e: Exception) {
-            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='lobbied'> expr failed to evaluate")
+        // §scxml-6.4: 'lobbied' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "lobbied", AncestorEntryIsNotDefaultEntryEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'lobbied' with expr
+            try {
+                engine.setVariable(sid, "lobbied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='lobbied'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'idled' with expr
-        try {
-            val initResult_idled = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "idled", initResult_idled)
-        } catch (e: Exception) {
-            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='idled'> expr failed to evaluate")
+        // §scxml-6.4: 'idled' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "idled", AncestorEntryIsNotDefaultEntryEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'idled' with expr
+            try {
+                engine.setVariable(sid, "idled", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='idled'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'targeted' with expr
-        try {
-            val initResult_targeted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "targeted", initResult_targeted)
-        } catch (e: Exception) {
-            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='targeted'> expr failed to evaluate")
+        // §scxml-6.4: 'targeted' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "targeted", AncestorEntryIsNotDefaultEntryEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'targeted' with expr
+            try {
+                engine.setVariable(sid, "targeted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='targeted'> expr failed to evaluate")
+            }
         }
     }
 

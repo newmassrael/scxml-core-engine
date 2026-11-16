@@ -154,11 +154,11 @@ public final class StaticEnumPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`).
-    var vLayout: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+    var vLayout: StaticEnumViewModeEnum
     /// W3C SCXML 5.2: the `previous` datamodel variable.
-    var vPrevious: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+    var vPrevious: StaticEnumViewModeEnum
     /// W3C SCXML 5.2: the `changes` datamodel variable, published (`sce:direction="out"`).
-    var vChanges: UInt32 = 0
+    var vChanges: UInt32
 
     /// Reports what the published `layout` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -177,15 +177,32 @@ public final class StaticEnumPolicy: InvocablePolicy {
         public var vChanges: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vChanges {
-            vChanges = value
+        let vLayout: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+        let vPrevious: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+        let vChanges: UInt32
+        if let handed = params.vChanges {
+            vChanges = handed
+        } else {
+            vChanges = 0
         }
+        self.vLayout = vLayout
+        self.vPrevious = vPrevious
+        self.vChanges = vChanges
     }
 
     public init() {
+        let vLayout: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+        let vPrevious: StaticEnumViewModeEnum = StaticEnumViewModeEnum.month
+        let vChanges: UInt32 = 0
+        self.vLayout = vLayout
+        self.vPrevious = vPrevious
+        self.vChanges = vChanges
+
         sessionID = drawSessionID()
     }
 

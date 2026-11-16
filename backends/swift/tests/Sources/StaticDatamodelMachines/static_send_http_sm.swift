@@ -107,17 +107,17 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `count` datamodel variable.
-    var vCount: UInt32 = 3
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `ready` datamodel variable.
-    var vReady: Bool = false
+    var vReady: Bool
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String = "idle"
+    var vLabel: String
     /// W3C SCXML 5.2: the `delta` datamodel variable.
-    var vDelta: Int16 = -5
+    var vDelta: Int16
     /// W3C SCXML 5.2: the `ratio` datamodel variable.
-    var vRatio: Double = 1.5
+    var vRatio: Double
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `errors` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -137,30 +137,69 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 3
         }
-        if let value = params.vReady {
-            vReady = value
+        let vReady: Bool
+        if let handed = params.vReady {
+            vReady = handed
+        } else {
+            vReady = false
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "idle"
         }
-        if let value = params.vDelta {
-            vDelta = value
+        let vDelta: Int16
+        if let handed = params.vDelta {
+            vDelta = handed
+        } else {
+            vDelta = -5
         }
-        if let value = params.vRatio {
-            vRatio = value
+        let vRatio: Double
+        if let handed = params.vRatio {
+            vRatio = handed
+        } else {
+            vRatio = 1.5
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vCount = vCount
+        self.vReady = vReady
+        self.vLabel = vLabel
+        self.vDelta = vDelta
+        self.vRatio = vRatio
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vCount: UInt32 = 3
+        let vReady: Bool = false
+        let vLabel: String = "idle"
+        let vDelta: Int16 = -5
+        let vRatio: Double = 1.5
+        let vErrors: UInt32 = 0
+        self.vCount = vCount
+        self.vReady = vReady
+        self.vLabel = vLabel
+        self.vDelta = vDelta
+        self.vRatio = vRatio
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

@@ -321,20 +321,38 @@ class SheetPeerStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.node?.let { vNode = it }
-        params.hub?.let { vHub = it }
-        params.lamport?.let { vLamport = it }
-        params.newKey?.let { vNewKey = it }
-        params.noKey?.let { vNoKey = it }
-        params.noNumber?.let { vNoNumber = it }
-        params.orphans?.let { vOrphans = it }
-        params.refusals?.let { vRefusals = it }
+        vNode = params.node ?: (0.toULong())
+        vHub = params.hub ?: (false)
+        vClock = SheetPeerHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vStamp = SheetPeerHlcRecord(wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vCells = emptyList()
+        vRows = emptyList()
+        vGone = emptyList()
+        vCols = emptyList()
+        vGoneCols = emptyList()
+        vTrail = emptyList()
+        vShown = emptyList()
+        vWrite = SheetPeerLwwCellRecord(row = 0.toULong(), col = 0.toULong(), value = 0, wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong(), op = 0.toUByte(), aRef = false, aRow = 0.toULong(), aCol = 0.toULong(), aVal = 0, bRef = false, bRow = 0.toULong(), bCol = 0.toULong(), bVal = 0)
+        vPlaced = SheetPeerRgaNodeRecord(key = 0.toULong(), after = 0.toULong())
+        vRemoval = SheetPeerRgaGoneRecord(key = 0.toULong(), by = 0.toULong())
+        vLamport = params.lamport ?: (0.toULong())
+        vNewKey = params.newKey ?: (0.toULong())
+        vNoKey = params.noKey ?: (0.toULong())
+        vNoNumber = params.noNumber ?: (0)
+        vOrphans = params.orphans ?: (0.toUInt())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

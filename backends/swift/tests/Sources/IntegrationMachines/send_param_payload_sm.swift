@@ -168,6 +168,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -138,17 +138,17 @@ public final class StaticWireWidePolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `low` datamodel variable, published (`sce:direction="out"`).
-    var vLow: UInt64 = 0
+    var vLow: UInt64
     /// W3C SCXML 5.2: the `smallLow` datamodel variable, published (`sce:direction="out"`).
-    var vSmallLow: Int64 = 0
+    var vSmallLow: Int64
     /// W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`).
-    var vLarge: Bool = false
+    var vLarge: Bool
     /// W3C SCXML 5.2: the `negative` datamodel variable, published (`sce:direction="out"`).
-    var vNegative: Bool = false
+    var vNegative: Bool
     /// W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`).
-    var vRelays: UInt32 = 0
+    var vRelays: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `low` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -188,30 +188,69 @@ public final class StaticWireWidePolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vLow {
-            vLow = value
+        let vLow: UInt64
+        if let handed = params.vLow {
+            vLow = handed
+        } else {
+            vLow = 0
         }
-        if let value = params.vSmallLow {
-            vSmallLow = value
+        let vSmallLow: Int64
+        if let handed = params.vSmallLow {
+            vSmallLow = handed
+        } else {
+            vSmallLow = 0
         }
-        if let value = params.vLarge {
-            vLarge = value
+        let vLarge: Bool
+        if let handed = params.vLarge {
+            vLarge = handed
+        } else {
+            vLarge = false
         }
-        if let value = params.vNegative {
-            vNegative = value
+        let vNegative: Bool
+        if let handed = params.vNegative {
+            vNegative = handed
+        } else {
+            vNegative = false
         }
-        if let value = params.vRelays {
-            vRelays = value
+        let vRelays: UInt32
+        if let handed = params.vRelays {
+            vRelays = handed
+        } else {
+            vRelays = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vLow = vLow
+        self.vSmallLow = vSmallLow
+        self.vLarge = vLarge
+        self.vNegative = vNegative
+        self.vRelays = vRelays
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vLow: UInt64 = 0
+        let vSmallLow: Int64 = 0
+        let vLarge: Bool = false
+        let vNegative: Bool = false
+        let vRelays: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vLow = vLow
+        self.vSmallLow = vSmallLow
+        self.vLarge = vLarge
+        self.vNegative = vNegative
+        self.vRelays = vRelays
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

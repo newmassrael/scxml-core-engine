@@ -678,9 +678,10 @@ type StaticComposedTextPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticComposedTextPolicy creates a new policy with default values.
@@ -806,39 +807,81 @@ type StaticComposedTextInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticComposedTextPolicy) AcceptParams(params StaticComposedTextInvokeParams) {
-	if params.VNoteIsAb != nil {
-		p.vNoteIsAb = *params.VNoteIsAb
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticComposedTextPolicy) AcceptParams(handed StaticComposedTextInvokeParams) {
+	var vNoteIsAb bool
+	if handed.VNoteIsAb != nil {
+		vNoteIsAb = *handed.VNoteIsAb
+	} else {
+		vNoteIsAb = false
 	}
-	if params.VNoteLen != nil {
-		p.vNoteLen = *params.VNoteLen
+	var vNoteLen uint32
+	if handed.VNoteLen != nil {
+		vNoteLen = *handed.VNoteLen
+	} else {
+		vNoteLen = 0
 	}
-	if params.VFirstLabelIsAb != nil {
-		p.vFirstLabelIsAb = *params.VFirstLabelIsAb
+	var vFirstLabelIsAb bool
+	if handed.VFirstLabelIsAb != nil {
+		vFirstLabelIsAb = *handed.VFirstLabelIsAb
+	} else {
+		vFirstLabelIsAb = false
 	}
-	if params.VLabelsAb != nil {
-		p.vLabelsAb = *params.VLabelsAb
+	var vLabelsAb uint32
+	if handed.VLabelsAb != nil {
+		vLabelsAb = *handed.VLabelsAb
+	} else {
+		vLabelsAb = 0
 	}
-	if params.VFirstTagsAb != nil {
-		p.vFirstTagsAb = *params.VFirstTagsAb
+	var vFirstTagsAb uint32
+	if handed.VFirstTagsAb != nil {
+		vFirstTagsAb = *handed.VFirstTagsAb
+	} else {
+		vFirstTagsAb = 0
 	}
-	if params.VWordsAb != nil {
-		p.vWordsAb = *params.VWordsAb
+	var vWordsAb uint32
+	if handed.VWordsAb != nil {
+		vWordsAb = *handed.VWordsAb
+	} else {
+		vWordsAb = 0
 	}
-	if params.VLastLabel != nil {
-		p.vLastLabel = *params.VLastLabel
+	var vLastLabel string
+	if handed.VLastLabel != nil {
+		vLastLabel = *handed.VLastLabel
+	} else {
+		vLastLabel = ""
 	}
-	if params.VBlobBytes != nil {
-		p.vBlobBytes = *params.VBlobBytes
+	var vBlobBytes uint32
+	if handed.VBlobBytes != nil {
+		vBlobBytes = *handed.VBlobBytes
+	} else {
+		vBlobBytes = 0
 	}
-	if params.VBlobsAb != nil {
-		p.vBlobsAb = *params.VBlobsAb
+	var vBlobsAb uint32
+	if handed.VBlobsAb != nil {
+		vBlobsAb = *handed.VBlobsAb
+	} else {
+		vBlobsAb = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vNoteIsAb = vNoteIsAb
+	p.vNoteLen = vNoteLen
+	p.vFirstLabelIsAb = vFirstLabelIsAb
+	p.vLabelsAb = vLabelsAb
+	p.vFirstTagsAb = vFirstTagsAb
+	p.vWordsAb = vWordsAb
+	p.vLastLabel = vLastLabel
+	p.vBlobBytes = vBlobBytes
+	p.vBlobsAb = vBlobsAb
+	p.vRefusals = vRefusals
 }
 
 

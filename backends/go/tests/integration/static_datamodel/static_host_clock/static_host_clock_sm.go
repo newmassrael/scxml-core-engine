@@ -652,9 +652,10 @@ type StaticHostClockPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostClockPolicy creates a new policy with default values.
@@ -737,24 +738,46 @@ type StaticHostClockInvokeParams struct {
 	VUtcOffsetS *int32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostClockPolicy) AcceptParams(params StaticHostClockInvokeParams) {
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostClockPolicy) AcceptParams(handed StaticHostClockInvokeParams) {
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
-	if params.VUtcMs != nil {
-		p.vUtcMs = *params.VUtcMs
+	var vUtcMs int64
+	if handed.VUtcMs != nil {
+		vUtcMs = *handed.VUtcMs
+	} else {
+		vUtcMs = 0
 	}
-	if params.VMonotonicMs != nil {
-		p.vMonotonicMs = *params.VMonotonicMs
+	var vMonotonicMs int64
+	if handed.VMonotonicMs != nil {
+		vMonotonicMs = *handed.VMonotonicMs
+	} else {
+		vMonotonicMs = 0
 	}
-	if params.VZoneId != nil {
-		p.vZoneId = *params.VZoneId
+	var vZoneId string
+	if handed.VZoneId != nil {
+		vZoneId = *handed.VZoneId
+	} else {
+		vZoneId = ""
 	}
-	if params.VUtcOffsetS != nil {
-		p.vUtcOffsetS = *params.VUtcOffsetS
+	var vUtcOffsetS int32
+	if handed.VUtcOffsetS != nil {
+		vUtcOffsetS = *handed.VUtcOffsetS
+	} else {
+		vUtcOffsetS = 0
 	}
+	p.vOutcome = vOutcome
+	p.vUtcMs = vUtcMs
+	p.vMonotonicMs = vMonotonicMs
+	p.vZoneId = vZoneId
+	p.vUtcOffsetS = vUtcOffsetS
 }
 
 

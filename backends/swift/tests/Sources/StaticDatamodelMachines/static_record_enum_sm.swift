@@ -190,15 +190,15 @@ public final class StaticRecordEnumPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord(layout: StaticRecordEnumViewModeEnum.month, zoom: 1)
+    var vShown: StaticRecordEnumViewRecord
     /// W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`).
-    var vSeen: [StaticRecordEnumViewRecord] = []
+    var vSeen: [StaticRecordEnumViewRecord]
     /// W3C SCXML 5.2: the `weeks` datamodel variable, published (`sce:direction="out"`).
-    var vWeeks: UInt32 = 0
+    var vWeeks: UInt32
     /// W3C SCXML 5.2: the `flips` datamodel variable, published (`sce:direction="out"`).
-    var vFlips: UInt32 = 0
+    var vFlips: UInt32
     /// W3C SCXML 5.2: the `leads` datamodel variable, published (`sce:direction="out"`).
-    var vLeads: UInt32 = 0
+    var vLeads: UInt32
 
     /// Reports what the published `shown` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -231,21 +231,50 @@ public final class StaticRecordEnumPolicy: InvocablePolicy {
         public var vLeads: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vWeeks {
-            vWeeks = value
+        let vShown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord(layout: StaticRecordEnumViewModeEnum.month, zoom: 1)
+        let vSeen: [StaticRecordEnumViewRecord] = []
+        let vWeeks: UInt32
+        if let handed = params.vWeeks {
+            vWeeks = handed
+        } else {
+            vWeeks = 0
         }
-        if let value = params.vFlips {
-            vFlips = value
+        let vFlips: UInt32
+        if let handed = params.vFlips {
+            vFlips = handed
+        } else {
+            vFlips = 0
         }
-        if let value = params.vLeads {
-            vLeads = value
+        let vLeads: UInt32
+        if let handed = params.vLeads {
+            vLeads = handed
+        } else {
+            vLeads = 0
         }
+        self.vShown = vShown
+        self.vSeen = vSeen
+        self.vWeeks = vWeeks
+        self.vFlips = vFlips
+        self.vLeads = vLeads
     }
 
     public init() {
+        let vShown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord(layout: StaticRecordEnumViewModeEnum.month, zoom: 1)
+        let vSeen: [StaticRecordEnumViewRecord] = []
+        let vWeeks: UInt32 = 0
+        let vFlips: UInt32 = 0
+        let vLeads: UInt32 = 0
+        self.vShown = vShown
+        self.vSeen = vSeen
+        self.vWeeks = vWeeks
+        self.vFlips = vFlips
+        self.vLeads = vLeads
+
         sessionID = drawSessionID()
     }
 

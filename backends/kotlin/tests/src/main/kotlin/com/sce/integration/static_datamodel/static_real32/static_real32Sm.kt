@@ -88,17 +88,24 @@ class StaticReal32StateMachine(
         var total: Float? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.level?.let { vLevel = it }
-        params.tenth?.let { vTenth = it }
-        params.drift?.let { vDrift = it }
-        params.wide?.let { vWide = it }
-        params.total?.let { vTotal = it }
+        vLevel = params.level ?: (16777216.0f)
+        vTenth = params.tenth ?: (0.1f)
+        vDrift = params.drift ?: (0.0f)
+        vWide = params.wide ?: (0.0)
+        vSamples = emptyList()
+        vTotal = params.total ?: (0.0f)
     }
 
     /** The published variables as one immutable value, in declaration order. */

@@ -133,6 +133,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

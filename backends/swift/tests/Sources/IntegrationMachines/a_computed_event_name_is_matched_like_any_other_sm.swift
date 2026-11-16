@@ -173,6 +173,7 @@ public final class AComputedEventNameIsMatchedLikeAnyOtherPolicy: InvocablePolic
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

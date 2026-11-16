@@ -158,19 +158,19 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticPayloadBytesFramedRecord = StaticPayloadBytesFramedRecord(sensor: 1, frame: Array("ab".utf8))
+    var vLast: StaticPayloadBytesFramedRecord
     /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
-    var vHeld: [UInt8] = Array("z".utf8)
+    var vHeld: [UInt8]
     /// W3C SCXML 5.2: the `frames` datamodel variable, published (`sce:direction="out"`).
-    var vFrames: [StaticPayloadBytesFramedRecord] = []
+    var vFrames: [StaticPayloadBytesFramedRecord]
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
-    var vSize: UInt32 = 0
+    var vSize: UInt32
     /// W3C SCXML 5.2: the `matches` datamodel variable, published (`sce:direction="out"`).
-    var vMatches: UInt32 = 0
+    var vMatches: UInt32
     /// W3C SCXML 5.2: the `misses` datamodel variable, published (`sce:direction="out"`).
-    var vMisses: UInt32 = 0
+    var vMisses: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `last` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -212,24 +212,63 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSize {
-            vSize = value
+        let vLast: StaticPayloadBytesFramedRecord = StaticPayloadBytesFramedRecord(sensor: 1, frame: Array("ab".utf8))
+        let vHeld: [UInt8] = Array("z".utf8)
+        let vFrames: [StaticPayloadBytesFramedRecord] = []
+        let vSize: UInt32
+        if let handed = params.vSize {
+            vSize = handed
+        } else {
+            vSize = 0
         }
-        if let value = params.vMatches {
-            vMatches = value
+        let vMatches: UInt32
+        if let handed = params.vMatches {
+            vMatches = handed
+        } else {
+            vMatches = 0
         }
-        if let value = params.vMisses {
-            vMisses = value
+        let vMisses: UInt32
+        if let handed = params.vMisses {
+            vMisses = handed
+        } else {
+            vMisses = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vLast = vLast
+        self.vHeld = vHeld
+        self.vFrames = vFrames
+        self.vSize = vSize
+        self.vMatches = vMatches
+        self.vMisses = vMisses
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vLast: StaticPayloadBytesFramedRecord = StaticPayloadBytesFramedRecord(sensor: 1, frame: Array("ab".utf8))
+        let vHeld: [UInt8] = Array("z".utf8)
+        let vFrames: [StaticPayloadBytesFramedRecord] = []
+        let vSize: UInt32 = 0
+        let vMatches: UInt32 = 0
+        let vMisses: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vLast = vLast
+        self.vHeld = vHeld
+        self.vFrames = vFrames
+        self.vSize = vSize
+        self.vMatches = vMatches
+        self.vMisses = vMisses
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

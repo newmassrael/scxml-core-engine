@@ -653,9 +653,10 @@ type StaticHostHttpPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostHttpPolicy creates a new policy with default values.
@@ -741,33 +742,67 @@ type StaticHostHttpInvokeParams struct {
 	VResponseBody *string
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostHttpPolicy) AcceptParams(params StaticHostHttpInvokeParams) {
-	if params.VMethod != nil {
-		p.vMethod = *params.VMethod
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostHttpPolicy) AcceptParams(handed StaticHostHttpInvokeParams) {
+	var vMethod string
+	if handed.VMethod != nil {
+		vMethod = *handed.VMethod
+	} else {
+		vMethod = ""
 	}
-	if params.VUrl != nil {
-		p.vUrl = *params.VUrl
+	var vUrl string
+	if handed.VUrl != nil {
+		vUrl = *handed.VUrl
+	} else {
+		vUrl = ""
 	}
-	if params.VRequestHeaders != nil {
-		p.vRequestHeaders = *params.VRequestHeaders
+	var vRequestHeaders string
+	if handed.VRequestHeaders != nil {
+		vRequestHeaders = *handed.VRequestHeaders
+	} else {
+		vRequestHeaders = ""
 	}
-	if params.VRequestBody != nil {
-		p.vRequestBody = *params.VRequestBody
+	var vRequestBody string
+	if handed.VRequestBody != nil {
+		vRequestBody = *handed.VRequestBody
+	} else {
+		vRequestBody = ""
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
-	if params.VStatus != nil {
-		p.vStatus = *params.VStatus
+	var vStatus uint16
+	if handed.VStatus != nil {
+		vStatus = *handed.VStatus
+	} else {
+		vStatus = 0
 	}
-	if params.VResponseHeaders != nil {
-		p.vResponseHeaders = *params.VResponseHeaders
+	var vResponseHeaders string
+	if handed.VResponseHeaders != nil {
+		vResponseHeaders = *handed.VResponseHeaders
+	} else {
+		vResponseHeaders = ""
 	}
-	if params.VResponseBody != nil {
-		p.vResponseBody = *params.VResponseBody
+	var vResponseBody string
+	if handed.VResponseBody != nil {
+		vResponseBody = *handed.VResponseBody
+	} else {
+		vResponseBody = ""
 	}
+	p.vMethod = vMethod
+	p.vUrl = vUrl
+	p.vRequestHeaders = vRequestHeaders
+	p.vRequestBody = vRequestBody
+	p.vOutcome = vOutcome
+	p.vStatus = vStatus
+	p.vResponseHeaders = vResponseHeaders
+	p.vResponseBody = vResponseBody
 }
 
 

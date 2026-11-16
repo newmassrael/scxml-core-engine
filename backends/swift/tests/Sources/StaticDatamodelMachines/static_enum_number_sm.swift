@@ -183,13 +183,13 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `number` datamodel variable, published (`sce:direction="out"`).
-    var vNumber: Int64 = 0
+    var vNumber: Int64
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
-    var vStatus: StaticEnumNumberStatusEnum = StaticEnumNumberStatusEnum.open
+    var vStatus: StaticEnumNumberStatusEnum
     /// W3C SCXML 5.2: the `checks` datamodel variable, published (`sce:direction="out"`).
-    var vChecks: UInt32 = 0
+    var vChecks: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `number` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -218,21 +218,46 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNumber {
-            vNumber = value
+        let vNumber: Int64
+        if let handed = params.vNumber {
+            vNumber = handed
+        } else {
+            vNumber = 0
         }
-        if let value = params.vChecks {
-            vChecks = value
+        let vStatus: StaticEnumNumberStatusEnum = StaticEnumNumberStatusEnum.open
+        let vChecks: UInt32
+        if let handed = params.vChecks {
+            vChecks = handed
+        } else {
+            vChecks = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vNumber = vNumber
+        self.vStatus = vStatus
+        self.vChecks = vChecks
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vNumber: Int64 = 0
+        let vStatus: StaticEnumNumberStatusEnum = StaticEnumNumberStatusEnum.open
+        let vChecks: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vNumber = vNumber
+        self.vStatus = vStatus
+        self.vChecks = vChecks
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

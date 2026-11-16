@@ -107,25 +107,25 @@ public final class StaticBlockEndsPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `a` datamodel variable, published (`sce:direction="out"`).
-    var vA: UInt8 = 250
+    var vA: UInt8
     /// W3C SCXML 5.2: the `b` datamodel variable, published (`sce:direction="out"`).
-    var vB: UInt8 = 0
+    var vB: UInt8
     /// W3C SCXML 5.2: the `afterAssign` datamodel variable, published (`sce:direction="out"`).
-    var vAfterAssign: UInt8 = 0
+    var vAfterAssign: UInt8
     /// W3C SCXML 5.2: the `thenRan` datamodel variable, published (`sce:direction="out"`).
-    var vThenRan: UInt8 = 0
+    var vThenRan: UInt8
     /// W3C SCXML 5.2: the `elseRan` datamodel variable, published (`sce:direction="out"`).
-    var vElseRan: UInt8 = 0
+    var vElseRan: UInt8
     /// W3C SCXML 5.2: the `afterIf` datamodel variable, published (`sce:direction="out"`).
-    var vAfterIf: UInt8 = 0
+    var vAfterIf: UInt8
     /// W3C SCXML 5.2: the `inBranch` datamodel variable, published (`sce:direction="out"`).
-    var vInBranch: UInt8 = 0
+    var vInBranch: UInt8
     /// W3C SCXML 5.2: the `afterBranch` datamodel variable, published (`sce:direction="out"`).
-    var vAfterBranch: UInt8 = 0
+    var vAfterBranch: UInt8
     /// W3C SCXML 5.2: the `afterOk` datamodel variable, published (`sce:direction="out"`).
-    var vAfterOk: UInt8 = 0
+    var vAfterOk: UInt8
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt8 = 0
+    var vErrors: UInt8
 
     /// Reports what the published `a` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -185,42 +185,105 @@ public final class StaticBlockEndsPolicy: InvocablePolicy {
         public var vErrors: UInt8? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vA {
-            vA = value
+        let vA: UInt8
+        if let handed = params.vA {
+            vA = handed
+        } else {
+            vA = 250
         }
-        if let value = params.vB {
-            vB = value
+        let vB: UInt8
+        if let handed = params.vB {
+            vB = handed
+        } else {
+            vB = 0
         }
-        if let value = params.vAfterAssign {
-            vAfterAssign = value
+        let vAfterAssign: UInt8
+        if let handed = params.vAfterAssign {
+            vAfterAssign = handed
+        } else {
+            vAfterAssign = 0
         }
-        if let value = params.vThenRan {
-            vThenRan = value
+        let vThenRan: UInt8
+        if let handed = params.vThenRan {
+            vThenRan = handed
+        } else {
+            vThenRan = 0
         }
-        if let value = params.vElseRan {
-            vElseRan = value
+        let vElseRan: UInt8
+        if let handed = params.vElseRan {
+            vElseRan = handed
+        } else {
+            vElseRan = 0
         }
-        if let value = params.vAfterIf {
-            vAfterIf = value
+        let vAfterIf: UInt8
+        if let handed = params.vAfterIf {
+            vAfterIf = handed
+        } else {
+            vAfterIf = 0
         }
-        if let value = params.vInBranch {
-            vInBranch = value
+        let vInBranch: UInt8
+        if let handed = params.vInBranch {
+            vInBranch = handed
+        } else {
+            vInBranch = 0
         }
-        if let value = params.vAfterBranch {
-            vAfterBranch = value
+        let vAfterBranch: UInt8
+        if let handed = params.vAfterBranch {
+            vAfterBranch = handed
+        } else {
+            vAfterBranch = 0
         }
-        if let value = params.vAfterOk {
-            vAfterOk = value
+        let vAfterOk: UInt8
+        if let handed = params.vAfterOk {
+            vAfterOk = handed
+        } else {
+            vAfterOk = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt8
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vA = vA
+        self.vB = vB
+        self.vAfterAssign = vAfterAssign
+        self.vThenRan = vThenRan
+        self.vElseRan = vElseRan
+        self.vAfterIf = vAfterIf
+        self.vInBranch = vInBranch
+        self.vAfterBranch = vAfterBranch
+        self.vAfterOk = vAfterOk
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vA: UInt8 = 250
+        let vB: UInt8 = 0
+        let vAfterAssign: UInt8 = 0
+        let vThenRan: UInt8 = 0
+        let vElseRan: UInt8 = 0
+        let vAfterIf: UInt8 = 0
+        let vInBranch: UInt8 = 0
+        let vAfterBranch: UInt8 = 0
+        let vAfterOk: UInt8 = 0
+        let vErrors: UInt8 = 0
+        self.vA = vA
+        self.vB = vB
+        self.vAfterAssign = vAfterAssign
+        self.vThenRan = vThenRan
+        self.vElseRan = vElseRan
+        self.vAfterIf = vAfterIf
+        self.vInBranch = vInBranch
+        self.vAfterBranch = vAfterBranch
+        self.vAfterOk = vAfterOk
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

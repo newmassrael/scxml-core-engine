@@ -510,9 +510,10 @@ type StaticForeachPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticForeachPolicy creates a new policy with default values.
@@ -620,30 +621,62 @@ type StaticForeachInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticForeachPolicy) AcceptParams(params StaticForeachInvokeParams) {
-	if params.VTotal != nil {
-		p.vTotal = *params.VTotal
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticForeachPolicy) AcceptParams(handed StaticForeachInvokeParams) {
+	var vPicked []uint8 = nil
+	var vTotal uint32
+	if handed.VTotal != nil {
+		vTotal = *handed.VTotal
+	} else {
+		vTotal = 0
 	}
-	if params.VWeighted != nil {
-		p.vWeighted = *params.VWeighted
+	var vWeighted uint32
+	if handed.VWeighted != nil {
+		vWeighted = *handed.VWeighted
+	} else {
+		vWeighted = 0
 	}
-	if params.VSmall != nil {
-		p.vSmall = *params.VSmall
+	var vSmall uint8
+	if handed.VSmall != nil {
+		vSmall = *handed.VSmall
+	} else {
+		vSmall = 0
 	}
-	if params.VCrossings != nil {
-		p.vCrossings = *params.VCrossings
+	var vCrossings uint32
+	if handed.VCrossings != nil {
+		vCrossings = *handed.VCrossings
+	} else {
+		vCrossings = 0
 	}
-	if params.VVisited != nil {
-		p.vVisited = *params.VVisited
+	var vVisited uint32
+	if handed.VVisited != nil {
+		vVisited = *handed.VVisited
+	} else {
+		vVisited = 0
 	}
-	if params.VFinished != nil {
-		p.vFinished = *params.VFinished
+	var vFinished uint32
+	if handed.VFinished != nil {
+		vFinished = *handed.VFinished
+	} else {
+		vFinished = 0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vPicked = vPicked
+	p.vTotal = vTotal
+	p.vWeighted = vWeighted
+	p.vSmall = vSmall
+	p.vCrossings = vCrossings
+	p.vVisited = vVisited
+	p.vFinished = vFinished
+	p.vErrors = vErrors
 }
 
 

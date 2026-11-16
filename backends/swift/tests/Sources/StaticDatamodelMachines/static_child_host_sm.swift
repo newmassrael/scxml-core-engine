@@ -165,7 +165,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
-    var vCompleted: UInt32 = 0
+    var vCompleted: UInt32
 
     /// Reports what the published `completed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -180,15 +180,24 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         public var vCompleted: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCompleted {
-            vCompleted = value
+        let vCompleted: UInt32
+        if let handed = params.vCompleted {
+            vCompleted = handed
+        } else {
+            vCompleted = 0
         }
+        self.vCompleted = vCompleted
     }
 
     public init(actions: any StaticChildHostActions) {
+        let vCompleted: UInt32 = 0
+        self.vCompleted = vCompleted
+
         self.actions = actions
         sessionID = drawSessionID()
     }

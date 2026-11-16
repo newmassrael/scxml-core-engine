@@ -102,6 +102,7 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

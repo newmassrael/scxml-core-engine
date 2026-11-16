@@ -445,25 +445,38 @@ class StaticUnionStateMachine(
         var pickedWidth: UShort? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.radius?.let { vRadius = it }
-        params.width?.let { vWidth = it }
-        params.height?.let { vHeight = it }
-        params.labels?.let { vLabels = it }
-        params.points?.let { vPoints = it }
-        params.dots?.let { vDots = it }
-        params.manyRadius?.let { vManyRadius = it }
-        params.manyWidth?.let { vManyWidth = it }
-        params.manyShapes?.let { vManyShapes = it }
-        params.maybeWidth?.let { vMaybeWidth = it }
-        params.refusals?.let { vRefusals = it }
-        params.picks?.let { vPicks = it }
-        params.pickedWidth?.let { vPickedWidth = it }
+        vBuilt = StaticUnionUnionShapeUnion.RECT(StaticUnionRectRecord(width = 1.toUShort(), height = 2.toUShort()))
+        vKept = null
+        vLastKind = StaticUnionKindEnum.DOT
+        vRadius = params.radius ?: (0.toUShort())
+        vWidth = params.width ?: (0.toUShort())
+        vHeight = params.height ?: (0.toUShort())
+        vLabels = params.labels ?: (0.toUInt())
+        vPoints = params.points ?: (0.toUInt())
+        vDots = params.dots ?: (0.toUInt())
+        vManyRadius = params.manyRadius ?: (0.toUShort())
+        vManyWidth = params.manyWidth ?: (0.toUShort())
+        vManyShapes = params.manyShapes ?: (0.toUInt())
+        vMaybeWidth = params.maybeWidth ?: (0.toUShort())
+        vRefusals = params.refusals ?: (0.toUInt())
+        vLifted = null
+        vLiftWhy = null
+        vPicked = StaticUnionUnionShapeUnion.DOT
+        vPickedMaybe = null
+        vPicks = params.picks ?: (0.toUInt())
+        vPickedWidth = params.pickedWidth ?: (0.toUShort())
     }
 
     /** The published variables as one immutable value, in declaration order. */

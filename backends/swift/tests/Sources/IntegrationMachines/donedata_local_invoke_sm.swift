@@ -117,6 +117,7 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

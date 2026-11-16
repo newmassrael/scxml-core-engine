@@ -109,6 +109,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

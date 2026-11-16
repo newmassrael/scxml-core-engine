@@ -336,16 +336,26 @@ class RecordListParentStateMachine(
         var confirmedCount: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.told?.let { vTold = it }
-        params.refusedCount?.let { vRefusedCount = it }
-        params.pendingCount?.let { vPendingCount = it }
-        params.confirmedCount?.let { vConfirmedCount = it }
+        vTold = params.told ?: (0.toUInt())
+        vShown = RecordListParentToldRecord(id = 0.toUInt(), field = 0.toUShort(), count = 0.toUInt(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vOthers = emptyList()
+        vOther = RecordListParentToldValueRecord(id = 0.toUInt(), field = 0.toUShort(), ordinal = 0.toUInt(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+        vRefused = null
+        vRefusedCount = params.refusedCount ?: (0.toUInt())
+        vPendingCount = params.pendingCount ?: (0.toUInt())
+        vConfirmedCount = params.confirmedCount ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

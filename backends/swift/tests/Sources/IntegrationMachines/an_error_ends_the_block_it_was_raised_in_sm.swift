@@ -112,6 +112,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

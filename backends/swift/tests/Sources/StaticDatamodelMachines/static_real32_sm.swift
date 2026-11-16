@@ -110,17 +110,17 @@ public final class StaticReal32Policy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`).
-    var vLevel: Float = 16777216.0
+    var vLevel: Float
     /// W3C SCXML 5.2: the `tenth` datamodel variable.
-    var vTenth: Float = 0.1
+    var vTenth: Float
     /// W3C SCXML 5.2: the `drift` datamodel variable, published (`sce:direction="out"`).
-    var vDrift: Float = 0.0
+    var vDrift: Float
     /// W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`).
-    var vWide: Double = 0.0
+    var vWide: Double
     /// W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`).
-    var vSamples: [Float] = []
+    var vSamples: [Float]
     /// W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`).
-    var vTotal: Float = 0.0
+    var vTotal: Float
 
     /// Reports what the published `level` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -155,27 +155,64 @@ public final class StaticReal32Policy: InvocablePolicy {
         public var vTotal: Float? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vLevel {
-            vLevel = value
+        let vLevel: Float
+        if let handed = params.vLevel {
+            vLevel = handed
+        } else {
+            vLevel = 16777216.0
         }
-        if let value = params.vTenth {
-            vTenth = value
+        let vTenth: Float
+        if let handed = params.vTenth {
+            vTenth = handed
+        } else {
+            vTenth = 0.1
         }
-        if let value = params.vDrift {
-            vDrift = value
+        let vDrift: Float
+        if let handed = params.vDrift {
+            vDrift = handed
+        } else {
+            vDrift = 0.0
         }
-        if let value = params.vWide {
-            vWide = value
+        let vWide: Double
+        if let handed = params.vWide {
+            vWide = handed
+        } else {
+            vWide = 0.0
         }
-        if let value = params.vTotal {
-            vTotal = value
+        let vSamples: [Float] = []
+        let vTotal: Float
+        if let handed = params.vTotal {
+            vTotal = handed
+        } else {
+            vTotal = 0.0
         }
+        self.vLevel = vLevel
+        self.vTenth = vTenth
+        self.vDrift = vDrift
+        self.vWide = vWide
+        self.vSamples = vSamples
+        self.vTotal = vTotal
     }
 
     public init() {
+        let vLevel: Float = 16777216.0
+        let vTenth: Float = 0.1
+        let vDrift: Float = 0.0
+        let vWide: Double = 0.0
+        let vSamples: [Float] = []
+        let vTotal: Float = 0.0
+        self.vLevel = vLevel
+        self.vTenth = vTenth
+        self.vDrift = vDrift
+        self.vWide = vWide
+        self.vSamples = vSamples
+        self.vTotal = vTotal
+
         sessionID = drawSessionID()
     }
 

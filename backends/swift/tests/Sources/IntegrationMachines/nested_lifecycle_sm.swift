@@ -141,6 +141,7 @@ public final class NestedLifecyclePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -202,15 +202,15 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: StaticWholePayloadViewRecord = StaticWholePayloadViewRecord(layout: StaticWholePayloadViewModeEnum.month, zoom: 1)
+    var vShown: StaticWholePayloadViewRecord
     /// W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`).
-    var vSeen: [StaticWholePayloadViewRecord] = []
+    var vSeen: [StaticWholePayloadViewRecord]
     /// W3C SCXML 5.2: the `updates` datamodel variable, published (`sce:direction="out"`).
-    var vUpdates: UInt32 = 0
+    var vUpdates: UInt32
     /// W3C SCXML 5.2: the `agendas` datamodel variable, published (`sce:direction="out"`).
-    var vAgendas: UInt32 = 0
+    var vAgendas: UInt32
     /// W3C SCXML 5.2: the `others` datamodel variable, published (`sce:direction="out"`).
-    var vOthers: UInt32 = 0
+    var vOthers: UInt32
 
     /// Reports what the published `shown` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -243,21 +243,50 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
         public var vOthers: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vUpdates {
-            vUpdates = value
+        let vShown: StaticWholePayloadViewRecord = StaticWholePayloadViewRecord(layout: StaticWholePayloadViewModeEnum.month, zoom: 1)
+        let vSeen: [StaticWholePayloadViewRecord] = []
+        let vUpdates: UInt32
+        if let handed = params.vUpdates {
+            vUpdates = handed
+        } else {
+            vUpdates = 0
         }
-        if let value = params.vAgendas {
-            vAgendas = value
+        let vAgendas: UInt32
+        if let handed = params.vAgendas {
+            vAgendas = handed
+        } else {
+            vAgendas = 0
         }
-        if let value = params.vOthers {
-            vOthers = value
+        let vOthers: UInt32
+        if let handed = params.vOthers {
+            vOthers = handed
+        } else {
+            vOthers = 0
         }
+        self.vShown = vShown
+        self.vSeen = vSeen
+        self.vUpdates = vUpdates
+        self.vAgendas = vAgendas
+        self.vOthers = vOthers
     }
 
     public init() {
+        let vShown: StaticWholePayloadViewRecord = StaticWholePayloadViewRecord(layout: StaticWholePayloadViewModeEnum.month, zoom: 1)
+        let vSeen: [StaticWholePayloadViewRecord] = []
+        let vUpdates: UInt32 = 0
+        let vAgendas: UInt32 = 0
+        let vOthers: UInt32 = 0
+        self.vShown = vShown
+        self.vSeen = vSeen
+        self.vUpdates = vUpdates
+        self.vAgendas = vAgendas
+        self.vOthers = vOthers
+
         sessionID = drawSessionID()
     }
 

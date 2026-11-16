@@ -230,53 +230,53 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`).
-    var vDue: Int64? = nil
+    var vDue: Int64?
     /// W3C SCXML 5.2: the `other` datamodel variable, published (`sce:direction="out"`).
-    var vOther: Int64? = 7
+    var vOther: Int64?
     /// W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`).
-    var vTitle: String? = nil
+    var vTitle: String?
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
-    var vStatus: StaticOptionalStatusEnum? = StaticOptionalStatusEnum.open
+    var vStatus: StaticOptionalStatusEnum?
     /// W3C SCXML 5.2: the `item` datamodel variable, published (`sce:direction="out"`).
-    var vItem: StaticOptionalDueRecord = StaticOptionalDueRecord(id: 0, due: nil, title: "first", status: nil)
+    var vItem: StaticOptionalDueRecord
     /// W3C SCXML 5.2: the `items` datamodel variable, published (`sce:direction="out"`).
-    var vItems: [StaticOptionalDueRecord] = []
+    var vItems: [StaticOptionalDueRecord]
     /// W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`).
-    var vDays: Int64 = 0
+    var vDays: Int64
     /// W3C SCXML 5.2: the `following` datamodel variable, published (`sce:direction="out"`).
-    var vFollowing: Int64 = 0
+    var vFollowing: Int64
     /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: Bool = false
+    var vLate: Bool
     /// W3C SCXML 5.2: the `early` datamodel variable, published (`sce:direction="out"`).
-    var vEarly: Bool = false
+    var vEarly: Bool
     /// W3C SCXML 5.2: the `label` datamodel variable, published (`sce:direction="out"`).
-    var vLabel: String = ""
+    var vLabel: String
     /// W3C SCXML 5.2: the `plain` datamodel variable, published (`sce:direction="out"`).
-    var vPlain: StaticOptionalStatusEnum = StaticOptionalStatusEnum.open
+    var vPlain: StaticOptionalStatusEnum
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
-    var vKept: Int64 = 0
+    var vKept: Int64
     /// W3C SCXML 5.2: the `listed` datamodel variable, published (`sce:direction="out"`).
-    var vListed: Int64 = 0
+    var vListed: Int64
     /// W3C SCXML 5.2: the `missing` datamodel variable, published (`sce:direction="out"`).
-    var vMissing: UInt32 = 0
+    var vMissing: UInt32
     /// W3C SCXML 5.2: the `same` datamodel variable, published (`sce:direction="out"`).
-    var vSame: Bool = false
+    var vSame: Bool
     /// W3C SCXML 5.2: the `absent` datamodel variable, published (`sce:direction="out"`).
-    var vAbsent: Bool = false
+    var vAbsent: Bool
     /// W3C SCXML 5.2: the `statusDone` datamodel variable, published (`sce:direction="out"`).
-    var vStatusDone: Bool = false
+    var vStatusDone: Bool
     /// W3C SCXML 5.2: the `echoed` datamodel variable, published (`sce:direction="out"`).
-    var vEchoed: Int64 = 0
+    var vEchoed: Int64
     /// W3C SCXML 5.2: the `echoTitle` datamodel variable, published (`sce:direction="out"`).
-    var vEchoTitle: String? = nil
+    var vEchoTitle: String?
     /// W3C SCXML 5.2: the `echoStatus` datamodel variable, published (`sce:direction="out"`).
-    var vEchoStatus: StaticOptionalStatusEnum? = nil
+    var vEchoStatus: StaticOptionalStatusEnum?
     /// W3C SCXML 5.2: the `fallbacks` datamodel variable, published (`sce:direction="out"`).
-    var vFallbacks: UInt32 = 0
+    var vFallbacks: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
     /// W3C SCXML 5.2: the `huge` datamodel variable.
-    var vHuge: Int64 = 4294967296
+    var vHuge: Int64
 
     /// Reports what the published `due` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -397,69 +397,206 @@ public final class StaticOptionalPolicy: InvocablePolicy {
         public var vHuge: Int64? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vDue {
-            vDue = value
+        let vDue: Int64?
+        if let handed = params.vDue {
+            vDue = handed
+        } else {
+            vDue = nil
         }
-        if let value = params.vOther {
-            vOther = value
+        let vOther: Int64?
+        if let handed = params.vOther {
+            vOther = handed
+        } else {
+            vOther = 7
         }
-        if let value = params.vTitle {
-            vTitle = value
+        let vTitle: String?
+        if let handed = params.vTitle {
+            vTitle = handed
+        } else {
+            vTitle = nil
         }
-        if let value = params.vDays {
-            vDays = value
+        let vStatus: StaticOptionalStatusEnum? = StaticOptionalStatusEnum.open
+        let vItem: StaticOptionalDueRecord = StaticOptionalDueRecord(id: 0, due: nil, title: "first", status: nil)
+        let vItems: [StaticOptionalDueRecord] = []
+        let vDays: Int64
+        if let handed = params.vDays {
+            vDays = handed
+        } else {
+            vDays = 0
         }
-        if let value = params.vFollowing {
-            vFollowing = value
+        let vFollowing: Int64
+        if let handed = params.vFollowing {
+            vFollowing = handed
+        } else {
+            vFollowing = 0
         }
-        if let value = params.vLate {
-            vLate = value
+        let vLate: Bool
+        if let handed = params.vLate {
+            vLate = handed
+        } else {
+            vLate = false
         }
-        if let value = params.vEarly {
-            vEarly = value
+        let vEarly: Bool
+        if let handed = params.vEarly {
+            vEarly = handed
+        } else {
+            vEarly = false
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = ""
         }
-        if let value = params.vKept {
-            vKept = value
+        let vPlain: StaticOptionalStatusEnum = StaticOptionalStatusEnum.open
+        let vKept: Int64
+        if let handed = params.vKept {
+            vKept = handed
+        } else {
+            vKept = 0
         }
-        if let value = params.vListed {
-            vListed = value
+        let vListed: Int64
+        if let handed = params.vListed {
+            vListed = handed
+        } else {
+            vListed = 0
         }
-        if let value = params.vMissing {
-            vMissing = value
+        let vMissing: UInt32
+        if let handed = params.vMissing {
+            vMissing = handed
+        } else {
+            vMissing = 0
         }
-        if let value = params.vSame {
-            vSame = value
+        let vSame: Bool
+        if let handed = params.vSame {
+            vSame = handed
+        } else {
+            vSame = false
         }
-        if let value = params.vAbsent {
-            vAbsent = value
+        let vAbsent: Bool
+        if let handed = params.vAbsent {
+            vAbsent = handed
+        } else {
+            vAbsent = false
         }
-        if let value = params.vStatusDone {
-            vStatusDone = value
+        let vStatusDone: Bool
+        if let handed = params.vStatusDone {
+            vStatusDone = handed
+        } else {
+            vStatusDone = false
         }
-        if let value = params.vEchoed {
-            vEchoed = value
+        let vEchoed: Int64
+        if let handed = params.vEchoed {
+            vEchoed = handed
+        } else {
+            vEchoed = 0
         }
-        if let value = params.vEchoTitle {
-            vEchoTitle = value
+        let vEchoTitle: String?
+        if let handed = params.vEchoTitle {
+            vEchoTitle = handed
+        } else {
+            vEchoTitle = nil
         }
-        if let value = params.vFallbacks {
-            vFallbacks = value
+        let vEchoStatus: StaticOptionalStatusEnum? = nil
+        let vFallbacks: UInt32
+        if let handed = params.vFallbacks {
+            vFallbacks = handed
+        } else {
+            vFallbacks = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
-        if let value = params.vHuge {
-            vHuge = value
+        let vHuge: Int64
+        if let handed = params.vHuge {
+            vHuge = handed
+        } else {
+            vHuge = 4294967296
         }
+        self.vDue = vDue
+        self.vOther = vOther
+        self.vTitle = vTitle
+        self.vStatus = vStatus
+        self.vItem = vItem
+        self.vItems = vItems
+        self.vDays = vDays
+        self.vFollowing = vFollowing
+        self.vLate = vLate
+        self.vEarly = vEarly
+        self.vLabel = vLabel
+        self.vPlain = vPlain
+        self.vKept = vKept
+        self.vListed = vListed
+        self.vMissing = vMissing
+        self.vSame = vSame
+        self.vAbsent = vAbsent
+        self.vStatusDone = vStatusDone
+        self.vEchoed = vEchoed
+        self.vEchoTitle = vEchoTitle
+        self.vEchoStatus = vEchoStatus
+        self.vFallbacks = vFallbacks
+        self.vErrors = vErrors
+        self.vHuge = vHuge
     }
 
     public init() {
+        let vDue: Int64? = nil
+        let vOther: Int64? = 7
+        let vTitle: String? = nil
+        let vStatus: StaticOptionalStatusEnum? = StaticOptionalStatusEnum.open
+        let vItem: StaticOptionalDueRecord = StaticOptionalDueRecord(id: 0, due: nil, title: "first", status: nil)
+        let vItems: [StaticOptionalDueRecord] = []
+        let vDays: Int64 = 0
+        let vFollowing: Int64 = 0
+        let vLate: Bool = false
+        let vEarly: Bool = false
+        let vLabel: String = ""
+        let vPlain: StaticOptionalStatusEnum = StaticOptionalStatusEnum.open
+        let vKept: Int64 = 0
+        let vListed: Int64 = 0
+        let vMissing: UInt32 = 0
+        let vSame: Bool = false
+        let vAbsent: Bool = false
+        let vStatusDone: Bool = false
+        let vEchoed: Int64 = 0
+        let vEchoTitle: String? = nil
+        let vEchoStatus: StaticOptionalStatusEnum? = nil
+        let vFallbacks: UInt32 = 0
+        let vErrors: UInt32 = 0
+        let vHuge: Int64 = 4294967296
+        self.vDue = vDue
+        self.vOther = vOther
+        self.vTitle = vTitle
+        self.vStatus = vStatus
+        self.vItem = vItem
+        self.vItems = vItems
+        self.vDays = vDays
+        self.vFollowing = vFollowing
+        self.vLate = vLate
+        self.vEarly = vEarly
+        self.vLabel = vLabel
+        self.vPlain = vPlain
+        self.vKept = vKept
+        self.vListed = vListed
+        self.vMissing = vMissing
+        self.vSame = vSame
+        self.vAbsent = vAbsent
+        self.vStatusDone = vStatusDone
+        self.vEchoed = vEchoed
+        self.vEchoTitle = vEchoTitle
+        self.vEchoStatus = vEchoStatus
+        self.vFallbacks = vFallbacks
+        self.vErrors = vErrors
+        self.vHuge = vHuge
+
         sessionID = drawSessionID()
     }
 

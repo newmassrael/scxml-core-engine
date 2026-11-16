@@ -590,9 +590,10 @@ type StaticSendParamsPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticSendParamsPolicy creates a new policy with default values.
@@ -685,36 +686,74 @@ type StaticSendParamsInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticSendParamsPolicy) AcceptParams(params StaticSendParamsInvokeParams) {
-	if params.VCount != nil {
-		p.vCount = *params.VCount
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticSendParamsPolicy) AcceptParams(handed StaticSendParamsInvokeParams) {
+	var vCount uint32
+	if handed.VCount != nil {
+		vCount = *handed.VCount
+	} else {
+		vCount = 3
 	}
-	if params.VSmall != nil {
-		p.vSmall = *params.VSmall
+	var vSmall uint8
+	if handed.VSmall != nil {
+		vSmall = *handed.VSmall
+	} else {
+		vSmall = 250
 	}
-	if params.VLabel != nil {
-		p.vLabel = *params.VLabel
+	var vLabel string
+	if handed.VLabel != nil {
+		vLabel = *handed.VLabel
+	} else {
+		vLabel = "tally"
 	}
-	if params.VTotal != nil {
-		p.vTotal = *params.VTotal
+	var vTotal uint32
+	if handed.VTotal != nil {
+		vTotal = *handed.VTotal
+	} else {
+		vTotal = 0
 	}
-	if params.VOk != nil {
-		p.vOk = *params.VOk
+	var vOk bool
+	if handed.VOk != nil {
+		vOk = *handed.VOk
+	} else {
+		vOk = false
 	}
-	if params.VTag != nil {
-		p.vTag = *params.VTag
+	var vTag string
+	if handed.VTag != nil {
+		vTag = *handed.VTag
+	} else {
+		vTag = ""
 	}
-	if params.VPartialTotal != nil {
-		p.vPartialTotal = *params.VPartialTotal
+	var vPartialTotal uint32
+	if handed.VPartialTotal != nil {
+		vPartialTotal = *handed.VPartialTotal
+	} else {
+		vPartialTotal = 0
 	}
-	if params.VPartialPart != nil {
-		p.vPartialPart = *params.VPartialPart
+	var vPartialPart uint8
+	if handed.VPartialPart != nil {
+		vPartialPart = *handed.VPartialPart
+	} else {
+		vPartialPart = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vCount = vCount
+	p.vSmall = vSmall
+	p.vLabel = vLabel
+	p.vTotal = vTotal
+	p.vOk = vOk
+	p.vTag = vTag
+	p.vPartialTotal = vPartialTotal
+	p.vPartialPart = vPartialPart
+	p.vRefusals = vRefusals
 }
 
 

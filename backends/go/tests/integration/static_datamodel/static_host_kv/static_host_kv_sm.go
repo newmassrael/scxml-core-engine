@@ -1092,9 +1092,10 @@ type StaticHostKvPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostKvPolicy creates a new policy with default values.
@@ -1207,42 +1208,88 @@ type StaticHostKvInvokeParams struct {
 	VNext *string
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostKvPolicy) AcceptParams(params StaticHostKvInvokeParams) {
-	if params.VKey != nil {
-		p.vKey = *params.VKey
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostKvPolicy) AcceptParams(handed StaticHostKvInvokeParams) {
+	var vKey string
+	if handed.VKey != nil {
+		vKey = *handed.VKey
+	} else {
+		vKey = ""
 	}
-	if params.VValue != nil {
-		p.vValue = *params.VValue
+	var vValue string
+	if handed.VValue != nil {
+		vValue = *handed.VValue
+	} else {
+		vValue = ""
 	}
-	if params.VAfter != nil {
-		p.vAfter = *params.VAfter
+	var vAfter string
+	if handed.VAfter != nil {
+		vAfter = *handed.VAfter
+	} else {
+		vAfter = ""
 	}
-	if params.VPrefix != nil {
-		p.vPrefix = *params.VPrefix
+	var vPrefix string
+	if handed.VPrefix != nil {
+		vPrefix = *handed.VPrefix
+	} else {
+		vPrefix = ""
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
-	if params.VFound != nil {
-		p.vFound = *params.VFound
+	var vFound bool
+	if handed.VFound != nil {
+		vFound = *handed.VFound
+	} else {
+		vFound = false
 	}
-	if params.VGot != nil {
-		p.vGot = *params.VGot
+	var vGot string
+	if handed.VGot != nil {
+		vGot = *handed.VGot
+	} else {
+		vGot = ""
 	}
-	if params.VReplaced != nil {
-		p.vReplaced = *params.VReplaced
+	var vReplaced bool
+	if handed.VReplaced != nil {
+		vReplaced = *handed.VReplaced
+	} else {
+		vReplaced = false
 	}
-	if params.VExisted != nil {
-		p.vExisted = *params.VExisted
+	var vExisted bool
+	if handed.VExisted != nil {
+		vExisted = *handed.VExisted
+	} else {
+		vExisted = false
 	}
-	if params.VNextFound != nil {
-		p.vNextFound = *params.VNextFound
+	var vNextFound bool
+	if handed.VNextFound != nil {
+		vNextFound = *handed.VNextFound
+	} else {
+		vNextFound = false
 	}
-	if params.VNext != nil {
-		p.vNext = *params.VNext
+	var vNext string
+	if handed.VNext != nil {
+		vNext = *handed.VNext
+	} else {
+		vNext = ""
 	}
+	p.vKey = vKey
+	p.vValue = vValue
+	p.vAfter = vAfter
+	p.vPrefix = vPrefix
+	p.vOutcome = vOutcome
+	p.vFound = vFound
+	p.vGot = vGot
+	p.vReplaced = vReplaced
+	p.vExisted = vExisted
+	p.vNextFound = vNextFound
+	p.vNext = vNext
 }
 
 

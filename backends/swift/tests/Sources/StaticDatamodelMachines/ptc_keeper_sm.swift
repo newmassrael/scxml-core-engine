@@ -130,6 +130,7 @@ public final class PtcKeeperPolicy: InvocablePolicy {
     }
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -100,6 +100,7 @@ public final class CancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy: Inv
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

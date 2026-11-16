@@ -450,9 +450,10 @@ type StaticCancelExprPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticCancelExprPolicy creates a new policy with default values.
@@ -521,24 +522,46 @@ type StaticCancelExprInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticCancelExprPolicy) AcceptParams(params StaticCancelExprInvokeParams) {
-	if params.VWhich != nil {
-		p.vWhich = *params.VWhich
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticCancelExprPolicy) AcceptParams(handed StaticCancelExprInvokeParams) {
+	var vWhich string
+	if handed.VWhich != nil {
+		vWhich = *handed.VWhich
+	} else {
+		vWhich = "a"
 	}
-	if params.VScale != nil {
-		p.vScale = *params.VScale
+	var vScale uint32
+	if handed.VScale != nil {
+		vScale = *handed.VScale
+	} else {
+		vScale = 3
 	}
-	if params.VAFired != nil {
-		p.vAFired = *params.VAFired
+	var vAFired uint32
+	if handed.VAFired != nil {
+		vAFired = *handed.VAFired
+	} else {
+		vAFired = 0
 	}
-	if params.VBFired != nil {
-		p.vBFired = *params.VBFired
+	var vBFired uint32
+	if handed.VBFired != nil {
+		vBFired = *handed.VBFired
+	} else {
+		vBFired = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vWhich = vWhich
+	p.vScale = vScale
+	p.vAFired = vAFired
+	p.vBFired = vBFired
+	p.vRefusals = vRefusals
 }
 
 

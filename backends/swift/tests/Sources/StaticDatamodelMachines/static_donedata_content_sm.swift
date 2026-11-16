@@ -124,9 +124,9 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String = "tally"
+    var vLabel: String
 
     /// Reports what the published `count` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -142,18 +142,33 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
         public var vLabel: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "tally"
         }
+        self.vCount = vCount
+        self.vLabel = vLabel
     }
 
     public init() {
+        let vCount: UInt32 = 0
+        let vLabel: String = "tally"
+        self.vCount = vCount
+        self.vLabel = vLabel
+
         sessionID = drawSessionID()
     }
 

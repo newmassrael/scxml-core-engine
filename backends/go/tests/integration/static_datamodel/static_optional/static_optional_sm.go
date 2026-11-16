@@ -1035,9 +1035,10 @@ type StaticOptionalPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticOptionalPolicy creates a new policy with default values.
@@ -1278,66 +1279,154 @@ type StaticOptionalInvokeParams struct {
 	VHuge *int64
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticOptionalPolicy) AcceptParams(params StaticOptionalInvokeParams) {
-	if params.VDue.IsPresent() {
-		p.vDue = params.VDue
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticOptionalPolicy) AcceptParams(handed StaticOptionalInvokeParams) {
+	var vDue optional.Of[int64]
+	if handed.VDue.IsPresent() {
+		vDue = handed.VDue
+	} else {
+		vDue = optional.None[int64]()
 	}
-	if params.VOther.IsPresent() {
-		p.vOther = params.VOther
+	var vOther optional.Of[int64]
+	if handed.VOther.IsPresent() {
+		vOther = handed.VOther
+	} else {
+		vOther = optional.Some[int64](7)
 	}
-	if params.VTitle.IsPresent() {
-		p.vTitle = params.VTitle
+	var vTitle optional.Of[string]
+	if handed.VTitle.IsPresent() {
+		vTitle = handed.VTitle
+	} else {
+		vTitle = optional.None[string]()
 	}
-	if params.VDays != nil {
-		p.vDays = *params.VDays
+	var vStatus optional.Of[StaticOptionalStatusEnum] = optional.Some[StaticOptionalStatusEnum](StaticOptionalStatusEnumOpen)
+	var vItem StaticOptionalDueRecord = StaticOptionalDueRecord{id: 0, due: optional.None[int64](), title: optional.Some[string]("first"), status: optional.None[StaticOptionalStatusEnum]()}
+	var vItems []StaticOptionalDueRecord = nil
+	var vDays int64
+	if handed.VDays != nil {
+		vDays = *handed.VDays
+	} else {
+		vDays = 0
 	}
-	if params.VFollowing != nil {
-		p.vFollowing = *params.VFollowing
+	var vFollowing int64
+	if handed.VFollowing != nil {
+		vFollowing = *handed.VFollowing
+	} else {
+		vFollowing = 0
 	}
-	if params.VLate != nil {
-		p.vLate = *params.VLate
+	var vLate bool
+	if handed.VLate != nil {
+		vLate = *handed.VLate
+	} else {
+		vLate = false
 	}
-	if params.VEarly != nil {
-		p.vEarly = *params.VEarly
+	var vEarly bool
+	if handed.VEarly != nil {
+		vEarly = *handed.VEarly
+	} else {
+		vEarly = false
 	}
-	if params.VLabel != nil {
-		p.vLabel = *params.VLabel
+	var vLabel string
+	if handed.VLabel != nil {
+		vLabel = *handed.VLabel
+	} else {
+		vLabel = ""
 	}
-	if params.VKept != nil {
-		p.vKept = *params.VKept
+	var vPlain StaticOptionalStatusEnum = StaticOptionalStatusEnumOpen
+	var vKept int64
+	if handed.VKept != nil {
+		vKept = *handed.VKept
+	} else {
+		vKept = 0
 	}
-	if params.VListed != nil {
-		p.vListed = *params.VListed
+	var vListed int64
+	if handed.VListed != nil {
+		vListed = *handed.VListed
+	} else {
+		vListed = 0
 	}
-	if params.VMissing != nil {
-		p.vMissing = *params.VMissing
+	var vMissing uint32
+	if handed.VMissing != nil {
+		vMissing = *handed.VMissing
+	} else {
+		vMissing = 0
 	}
-	if params.VSame != nil {
-		p.vSame = *params.VSame
+	var vSame bool
+	if handed.VSame != nil {
+		vSame = *handed.VSame
+	} else {
+		vSame = false
 	}
-	if params.VAbsent != nil {
-		p.vAbsent = *params.VAbsent
+	var vAbsent bool
+	if handed.VAbsent != nil {
+		vAbsent = *handed.VAbsent
+	} else {
+		vAbsent = false
 	}
-	if params.VStatusDone != nil {
-		p.vStatusDone = *params.VStatusDone
+	var vStatusDone bool
+	if handed.VStatusDone != nil {
+		vStatusDone = *handed.VStatusDone
+	} else {
+		vStatusDone = false
 	}
-	if params.VEchoed != nil {
-		p.vEchoed = *params.VEchoed
+	var vEchoed int64
+	if handed.VEchoed != nil {
+		vEchoed = *handed.VEchoed
+	} else {
+		vEchoed = 0
 	}
-	if params.VEchoTitle.IsPresent() {
-		p.vEchoTitle = params.VEchoTitle
+	var vEchoTitle optional.Of[string]
+	if handed.VEchoTitle.IsPresent() {
+		vEchoTitle = handed.VEchoTitle
+	} else {
+		vEchoTitle = optional.None[string]()
 	}
-	if params.VFallbacks != nil {
-		p.vFallbacks = *params.VFallbacks
+	var vEchoStatus optional.Of[StaticOptionalStatusEnum] = optional.None[StaticOptionalStatusEnum]()
+	var vFallbacks uint32
+	if handed.VFallbacks != nil {
+		vFallbacks = *handed.VFallbacks
+	} else {
+		vFallbacks = 0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
-	if params.VHuge != nil {
-		p.vHuge = *params.VHuge
+	var vHuge int64
+	if handed.VHuge != nil {
+		vHuge = *handed.VHuge
+	} else {
+		vHuge = 4294967296
 	}
+	p.vDue = vDue
+	p.vOther = vOther
+	p.vTitle = vTitle
+	p.vStatus = vStatus
+	p.vItem = vItem
+	p.vItems = vItems
+	p.vDays = vDays
+	p.vFollowing = vFollowing
+	p.vLate = vLate
+	p.vEarly = vEarly
+	p.vLabel = vLabel
+	p.vPlain = vPlain
+	p.vKept = vKept
+	p.vListed = vListed
+	p.vMissing = vMissing
+	p.vSame = vSame
+	p.vAbsent = vAbsent
+	p.vStatusDone = vStatusDone
+	p.vEchoed = vEchoed
+	p.vEchoTitle = vEchoTitle
+	p.vEchoStatus = vEchoStatus
+	p.vFallbacks = vFallbacks
+	p.vErrors = vErrors
+	p.vHuge = vHuge
 }
 
 

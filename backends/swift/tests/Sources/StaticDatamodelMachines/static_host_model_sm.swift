@@ -362,29 +362,29 @@ public final class StaticHostModelPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `prompt` datamodel variable.
-    var vPrompt: String = ""
+    var vPrompt: String
     /// W3C SCXML 5.2: the `max_tokens` datamodel variable.
-    var vMaxTokens: UInt32 = 0
+    var vMaxTokens: UInt32
     /// W3C SCXML 5.2: the `temperature_milli` datamodel variable.
-    var vTemperatureMilli: UInt16 = 0
+    var vTemperatureMilli: UInt16
     /// W3C SCXML 5.2: the `calls` datamodel variable, published (`sce:direction="out"`).
-    var vCalls: UInt32 = 0
+    var vCalls: UInt32
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `finish` datamodel variable, published (`sce:direction="out"`).
-    var vFinish: String = ""
+    var vFinish: String
     /// W3C SCXML 5.2: the `constrained` datamodel variable, published (`sce:direction="out"`).
-    var vConstrained: Bool = false
+    var vConstrained: Bool
     /// W3C SCXML 5.2: the `answered_by` datamodel variable, published (`sce:direction="out"`).
-    var vAnsweredBy: String = ""
+    var vAnsweredBy: String
     /// W3C SCXML 5.2: the `prompt_tokens` datamodel variable, published (`sce:direction="out"`).
-    var vPromptTokens: UInt32 = 0
+    var vPromptTokens: UInt32
     /// W3C SCXML 5.2: the `answer_tokens` datamodel variable, published (`sce:direction="out"`).
-    var vAnswerTokens: UInt32 = 0
+    var vAnswerTokens: UInt32
     /// W3C SCXML 5.2: the `answer` datamodel variable, published (`sce:direction="out"`).
-    var vAnswer: StaticHostModelAnswerRecord? = nil
+    var vAnswer: StaticHostModelAnswerRecord?
     /// W3C SCXML 5.2: the `why` datamodel variable, published (`sce:direction="out"`).
-    var vWhy: StaticHostModelLiftRefusalRecord? = nil
+    var vWhy: StaticHostModelLiftRefusalRecord?
 
     /// Reports what the published `calls` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -440,42 +440,113 @@ public final class StaticHostModelPolicy: InvocablePolicy {
         public var vAnswerTokens: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vPrompt {
-            vPrompt = value
+        let vPrompt: String
+        if let handed = params.vPrompt {
+            vPrompt = handed
+        } else {
+            vPrompt = ""
         }
-        if let value = params.vMaxTokens {
-            vMaxTokens = value
+        let vMaxTokens: UInt32
+        if let handed = params.vMaxTokens {
+            vMaxTokens = handed
+        } else {
+            vMaxTokens = 0
         }
-        if let value = params.vTemperatureMilli {
-            vTemperatureMilli = value
+        let vTemperatureMilli: UInt16
+        if let handed = params.vTemperatureMilli {
+            vTemperatureMilli = handed
+        } else {
+            vTemperatureMilli = 0
         }
-        if let value = params.vCalls {
-            vCalls = value
+        let vCalls: UInt32
+        if let handed = params.vCalls {
+            vCalls = handed
+        } else {
+            vCalls = 0
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
-        if let value = params.vFinish {
-            vFinish = value
+        let vFinish: String
+        if let handed = params.vFinish {
+            vFinish = handed
+        } else {
+            vFinish = ""
         }
-        if let value = params.vConstrained {
-            vConstrained = value
+        let vConstrained: Bool
+        if let handed = params.vConstrained {
+            vConstrained = handed
+        } else {
+            vConstrained = false
         }
-        if let value = params.vAnsweredBy {
-            vAnsweredBy = value
+        let vAnsweredBy: String
+        if let handed = params.vAnsweredBy {
+            vAnsweredBy = handed
+        } else {
+            vAnsweredBy = ""
         }
-        if let value = params.vPromptTokens {
-            vPromptTokens = value
+        let vPromptTokens: UInt32
+        if let handed = params.vPromptTokens {
+            vPromptTokens = handed
+        } else {
+            vPromptTokens = 0
         }
-        if let value = params.vAnswerTokens {
-            vAnswerTokens = value
+        let vAnswerTokens: UInt32
+        if let handed = params.vAnswerTokens {
+            vAnswerTokens = handed
+        } else {
+            vAnswerTokens = 0
         }
+        let vAnswer: StaticHostModelAnswerRecord? = nil
+        let vWhy: StaticHostModelLiftRefusalRecord? = nil
+        self.vPrompt = vPrompt
+        self.vMaxTokens = vMaxTokens
+        self.vTemperatureMilli = vTemperatureMilli
+        self.vCalls = vCalls
+        self.vOutcome = vOutcome
+        self.vFinish = vFinish
+        self.vConstrained = vConstrained
+        self.vAnsweredBy = vAnsweredBy
+        self.vPromptTokens = vPromptTokens
+        self.vAnswerTokens = vAnswerTokens
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
     }
 
     public init() {
+        let vPrompt: String = ""
+        let vMaxTokens: UInt32 = 0
+        let vTemperatureMilli: UInt16 = 0
+        let vCalls: UInt32 = 0
+        let vOutcome: String = ""
+        let vFinish: String = ""
+        let vConstrained: Bool = false
+        let vAnsweredBy: String = ""
+        let vPromptTokens: UInt32 = 0
+        let vAnswerTokens: UInt32 = 0
+        let vAnswer: StaticHostModelAnswerRecord? = nil
+        let vWhy: StaticHostModelLiftRefusalRecord? = nil
+        self.vPrompt = vPrompt
+        self.vMaxTokens = vMaxTokens
+        self.vTemperatureMilli = vTemperatureMilli
+        self.vCalls = vCalls
+        self.vOutcome = vOutcome
+        self.vFinish = vFinish
+        self.vConstrained = vConstrained
+        self.vAnsweredBy = vAnsweredBy
+        self.vPromptTokens = vPromptTokens
+        self.vAnswerTokens = vAnswerTokens
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
+
         sessionID = drawSessionID()
     }
 

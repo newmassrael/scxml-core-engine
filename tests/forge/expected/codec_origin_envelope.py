@@ -7,21 +7,89 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedText, BoundedTuple
 from .codec_origin_leaf import CodecOriginLeaf
+from . import codec_origin_leaf as sce_codec_origin_leaf
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecOriginEnvelopeNoteText(BoundedText):
+    """The ``note`` element of :class:`CodecOriginEnvelope`, 0 to 16 UTF-8 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 16
+
+
+class CodecOriginEnvelopeItemsList(BoundedTuple):
+    """The ``items`` element of :class:`CodecOriginEnvelope`, 0 to 3 entries,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 3
+
+
+class CodecOriginEnvelopeSource(Protocol):
+    """The elements a value of :class:`CodecOriginEnvelope` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def hdr(self) -> int: ...
+
+    @property
+    def note(self) -> CodecOriginEnvelopeNoteText: ...
+
+    @property
+    def required(self) -> sce_codec_origin_leaf.CodecOriginLeafSource: ...
+
+    @property
+    def optional(self) -> Optional[sce_codec_origin_leaf.CodecOriginLeafSource]: ...
+
+    @property
+    def items(self) -> CodecOriginEnvelopeItemsList: ...
+
+
+def encode_source(src: CodecOriginEnvelopeSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecOriginEnvelope` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``m``, ``note_len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_note_len = len(src.note.encode("utf-8"))
+    _d_m = len(src.items)
+    _c_hdr = src.hdr
+    _c_hdr = (_c_hdr & ~0x1) | (0x1 if src.optional is not None else 0)
+    w.write_u8(_c_hdr & 0xFF)
+    w.write_u8(_d_note_len & 0xFF)
+    w.write_bytes(src.note.encode("utf-8"))
+    w.write_u8(_d_m & 0xFF)
+    sce_codec_origin_leaf.encode_source(src.required, w)
+    if src.optional is not None:
+        sce_codec_origin_leaf.encode_source(src.optional, w)
+    for _entry in src.items:
+        sce_codec_origin_leaf.encode_source(_entry, w)
 
 
 @dataclass
 class CodecOriginEnvelope:
     hdr: int = 0
-    note_len: int = 0
-    note: str = ""
-    m: int = 0
-    required: CodecOriginLeaf = b""
+    note: CodecOriginEnvelopeNoteText = CodecOriginEnvelopeNoteText()
+    required: CodecOriginLeaf = field(default_factory=CodecOriginLeaf)
     optional: Optional[CodecOriginLeaf] = None
-    items: List[CodecOriginLeaf] = field(default_factory=list)
+    items: CodecOriginEnvelopeItemsList = CodecOriginEnvelopeItemsList()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "note":
+            value = CodecOriginEnvelopeNoteText(value)
+        elif name == "items":
+            value = CodecOriginEnvelopeItemsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecOriginEnvelope]:
@@ -86,9 +154,7 @@ class CodecOriginEnvelope:
             return None
         return cls(
             hdr=f_hdr,
-            note_len=f_note_len,
             note=f_note,
-            m=f_m,
             required=f_required,
             optional=f_optional,
             items=f_items,
@@ -115,31 +181,8 @@ class CodecOriginEnvelope:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.note.encode("utf-8")) > 16:
-            raise LengthOutOfRange()
-        if len(self.items) > 3:
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.hdr & 0xFF)
-        w.write_u8(self.note_len & 0xFF)
-        w.write_bytes(self.note.encode('utf-8'))
-        w.write_u8(self.m & 0xFF)
-        self.required.encode(w)
-        if self.optional is not None:
-            self.optional.encode(w)
-        for _e in self.items:
-            _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

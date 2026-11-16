@@ -122,6 +122,7 @@ public final class EventlessMacrostepIsBoundedPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

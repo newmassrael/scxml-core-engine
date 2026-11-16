@@ -131,6 +131,7 @@ public final class EcmaInGuardPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

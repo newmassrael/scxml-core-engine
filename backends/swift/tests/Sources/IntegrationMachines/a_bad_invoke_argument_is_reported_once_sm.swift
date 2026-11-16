@@ -118,6 +118,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

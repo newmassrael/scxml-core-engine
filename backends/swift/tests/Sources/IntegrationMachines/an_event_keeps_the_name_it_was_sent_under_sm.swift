@@ -116,6 +116,7 @@ public final class AnEventKeepsTheNameItWasSentUnderPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

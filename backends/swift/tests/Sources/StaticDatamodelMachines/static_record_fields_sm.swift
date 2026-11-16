@@ -165,9 +165,9 @@ public final class StaticRecordFieldsPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: StaticRecordFieldsDayRecord = StaticRecordFieldsDayRecord(year: 2026, month: 9, dayOfMonth: 24)
+    var vShown: StaticRecordFieldsDayRecord
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `shown` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -186,15 +186,28 @@ public final class StaticRecordFieldsPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vShown: StaticRecordFieldsDayRecord = StaticRecordFieldsDayRecord(year: 2026, month: 9, dayOfMonth: 24)
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vShown = vShown
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vShown: StaticRecordFieldsDayRecord = StaticRecordFieldsDayRecord(year: 2026, month: 9, dayOfMonth: 24)
+        let vRefusals: UInt32 = 0
+        self.vShown = vShown
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

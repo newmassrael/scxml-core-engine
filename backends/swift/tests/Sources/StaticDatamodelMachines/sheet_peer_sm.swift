@@ -517,45 +517,45 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
-    var vNode: UInt64 = 0
+    var vNode: UInt64
     /// W3C SCXML 5.2: the `hub` datamodel variable, published (`sce:direction="out"`).
-    var vHub: Bool = false
+    var vHub: Bool
     /// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
-    var vClock: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vClock: SheetPeerHlcRecord
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
-    var vStamp: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    var vStamp: SheetPeerHlcRecord
     /// W3C SCXML 5.2: the `cells` datamodel variable, published (`sce:direction="out"`).
-    var vCells: [SheetPeerLwwCellRecord] = []
+    var vCells: [SheetPeerLwwCellRecord]
     /// W3C SCXML 5.2: the `rows` datamodel variable, published (`sce:direction="out"`).
-    var vRows: [SheetPeerRgaNodeRecord] = []
+    var vRows: [SheetPeerRgaNodeRecord]
     /// W3C SCXML 5.2: the `gone` datamodel variable, published (`sce:direction="out"`).
-    var vGone: [SheetPeerRgaGoneRecord] = []
+    var vGone: [SheetPeerRgaGoneRecord]
     /// W3C SCXML 5.2: the `cols` datamodel variable, published (`sce:direction="out"`).
-    var vCols: [SheetPeerRgaNodeRecord] = []
+    var vCols: [SheetPeerRgaNodeRecord]
     /// W3C SCXML 5.2: the `goneCols` datamodel variable, published (`sce:direction="out"`).
-    var vGoneCols: [SheetPeerRgaGoneRecord] = []
+    var vGoneCols: [SheetPeerRgaGoneRecord]
     /// W3C SCXML 5.2: the `trail` datamodel variable.
-    var vTrail: [Int64] = []
+    var vTrail: [Int64]
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: [SheetPeerShownRecord] = []
+    var vShown: [SheetPeerShownRecord]
     /// W3C SCXML 5.2: the `write` datamodel variable.
-    var vWrite: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord(row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0)
+    var vWrite: SheetPeerLwwCellRecord
     /// W3C SCXML 5.2: the `placed` datamodel variable.
-    var vPlaced: SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord(key: 0, after: 0)
+    var vPlaced: SheetPeerRgaNodeRecord
     /// W3C SCXML 5.2: the `removal` datamodel variable.
-    var vRemoval: SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord(key: 0, by: 0)
+    var vRemoval: SheetPeerRgaGoneRecord
     /// W3C SCXML 5.2: the `lamport` datamodel variable, published (`sce:direction="out"`).
-    var vLamport: UInt64 = 0
+    var vLamport: UInt64
     /// W3C SCXML 5.2: the `newKey` datamodel variable.
-    var vNewKey: UInt64 = 0
+    var vNewKey: UInt64
     /// W3C SCXML 5.2: the `noKey` datamodel variable.
-    var vNoKey: UInt64 = 0
+    var vNoKey: UInt64
     /// W3C SCXML 5.2: the `noNumber` datamodel variable.
-    var vNoNumber: Int64 = 0
+    var vNoNumber: Int64
     /// W3C SCXML 5.2: the `orphans` datamodel variable, published (`sce:direction="out"`).
-    var vOrphans: UInt32 = 0
+    var vOrphans: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -621,36 +621,135 @@ public final class SheetPeerPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNode {
-            vNode = value
+        let vNode: UInt64
+        if let handed = params.vNode {
+            vNode = handed
+        } else {
+            vNode = 0
         }
-        if let value = params.vHub {
-            vHub = value
+        let vHub: Bool
+        if let handed = params.vHub {
+            vHub = handed
+        } else {
+            vHub = false
         }
-        if let value = params.vLamport {
-            vLamport = value
+        let vClock: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vCells: [SheetPeerLwwCellRecord] = []
+        let vRows: [SheetPeerRgaNodeRecord] = []
+        let vGone: [SheetPeerRgaGoneRecord] = []
+        let vCols: [SheetPeerRgaNodeRecord] = []
+        let vGoneCols: [SheetPeerRgaGoneRecord] = []
+        let vTrail: [Int64] = []
+        let vShown: [SheetPeerShownRecord] = []
+        let vWrite: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord(row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0)
+        let vPlaced: SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord(key: 0, after: 0)
+        let vRemoval: SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord(key: 0, by: 0)
+        let vLamport: UInt64
+        if let handed = params.vLamport {
+            vLamport = handed
+        } else {
+            vLamport = 0
         }
-        if let value = params.vNewKey {
-            vNewKey = value
+        let vNewKey: UInt64
+        if let handed = params.vNewKey {
+            vNewKey = handed
+        } else {
+            vNewKey = 0
         }
-        if let value = params.vNoKey {
-            vNoKey = value
+        let vNoKey: UInt64
+        if let handed = params.vNoKey {
+            vNoKey = handed
+        } else {
+            vNoKey = 0
         }
-        if let value = params.vNoNumber {
-            vNoNumber = value
+        let vNoNumber: Int64
+        if let handed = params.vNoNumber {
+            vNoNumber = handed
+        } else {
+            vNoNumber = 0
         }
-        if let value = params.vOrphans {
-            vOrphans = value
+        let vOrphans: UInt32
+        if let handed = params.vOrphans {
+            vOrphans = handed
+        } else {
+            vOrphans = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vNode = vNode
+        self.vHub = vHub
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vCells = vCells
+        self.vRows = vRows
+        self.vGone = vGone
+        self.vCols = vCols
+        self.vGoneCols = vGoneCols
+        self.vTrail = vTrail
+        self.vShown = vShown
+        self.vWrite = vWrite
+        self.vPlaced = vPlaced
+        self.vRemoval = vRemoval
+        self.vLamport = vLamport
+        self.vNewKey = vNewKey
+        self.vNoKey = vNoKey
+        self.vNoNumber = vNoNumber
+        self.vOrphans = vOrphans
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vNode: UInt64 = 0
+        let vHub: Bool = false
+        let vClock: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vStamp: SheetPeerHlcRecord = SheetPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+        let vCells: [SheetPeerLwwCellRecord] = []
+        let vRows: [SheetPeerRgaNodeRecord] = []
+        let vGone: [SheetPeerRgaGoneRecord] = []
+        let vCols: [SheetPeerRgaNodeRecord] = []
+        let vGoneCols: [SheetPeerRgaGoneRecord] = []
+        let vTrail: [Int64] = []
+        let vShown: [SheetPeerShownRecord] = []
+        let vWrite: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord(row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0)
+        let vPlaced: SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord(key: 0, after: 0)
+        let vRemoval: SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord(key: 0, by: 0)
+        let vLamport: UInt64 = 0
+        let vNewKey: UInt64 = 0
+        let vNoKey: UInt64 = 0
+        let vNoNumber: Int64 = 0
+        let vOrphans: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vNode = vNode
+        self.vHub = vHub
+        self.vClock = vClock
+        self.vStamp = vStamp
+        self.vCells = vCells
+        self.vRows = vRows
+        self.vGone = vGone
+        self.vCols = vCols
+        self.vGoneCols = vGoneCols
+        self.vTrail = vTrail
+        self.vShown = vShown
+        self.vWrite = vWrite
+        self.vPlaced = vPlaced
+        self.vRemoval = vRemoval
+        self.vLamport = vLamport
+        self.vNewKey = vNewKey
+        self.vNoKey = vNoKey
+        self.vNoNumber = vNoNumber
+        self.vOrphans = vOrphans
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

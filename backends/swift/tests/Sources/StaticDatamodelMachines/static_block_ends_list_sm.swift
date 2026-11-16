@@ -104,11 +104,11 @@ public final class StaticBlockEndsListPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: [UInt8] = []
+    var vPicked: [UInt8]
     /// W3C SCXML 5.2: the `afterAppend` datamodel variable, published (`sce:direction="out"`).
-    var vAfterAppend: UInt8 = 0
+    var vAfterAppend: UInt8
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt8 = 0
+    var vErrors: UInt8
 
     /// Reports what the published `picked` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -132,18 +132,37 @@ public final class StaticBlockEndsListPolicy: InvocablePolicy {
         public var vErrors: UInt8? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vAfterAppend {
-            vAfterAppend = value
+        let vPicked: [UInt8] = []
+        let vAfterAppend: UInt8
+        if let handed = params.vAfterAppend {
+            vAfterAppend = handed
+        } else {
+            vAfterAppend = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt8
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vPicked = vPicked
+        self.vAfterAppend = vAfterAppend
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vPicked: [UInt8] = []
+        let vAfterAppend: UInt8 = 0
+        let vErrors: UInt8 = 0
+        self.vPicked = vPicked
+        self.vAfterAppend = vAfterAppend
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

@@ -111,11 +111,11 @@ public final class StaticCounterPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `ready` datamodel variable, published (`sce:direction="out"`).
-    var vReady: Bool = false
+    var vReady: Bool
     /// W3C SCXML 5.2: the `step` datamodel variable.
-    var vStep: UInt32 = 1
+    var vStep: UInt32
 
     /// Reports what the published `count` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -136,21 +136,42 @@ public final class StaticCounterPolicy: InvocablePolicy {
         public var vStep: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vReady {
-            vReady = value
+        let vReady: Bool
+        if let handed = params.vReady {
+            vReady = handed
+        } else {
+            vReady = false
         }
-        if let value = params.vStep {
-            vStep = value
+        let vStep: UInt32
+        if let handed = params.vStep {
+            vStep = handed
+        } else {
+            vStep = 1
         }
+        self.vCount = vCount
+        self.vReady = vReady
+        self.vStep = vStep
     }
 
     public init() {
+        let vCount: UInt32 = 0
+        let vReady: Bool = false
+        let vStep: UInt32 = 1
+        self.vCount = vCount
+        self.vReady = vReady
+        self.vStep = vStep
+
         sessionID = drawSessionID()
     }
 

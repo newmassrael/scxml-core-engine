@@ -208,24 +208,32 @@ class StaticComposedSendStateMachine(
         var countedHops: UByte? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.deliveries?.let { vDeliveries = it }
-        params.itemCount?.let { vItemCount = it }
-        params.tagCount?.let { vTagCount = it }
-        params.idSum?.let { vIdSum = it }
-        params.cellSum?.let { vCellSum = it }
-        params.levelCount?.let { vLevelCount = it }
-        params.firstMaybe?.let { vFirstMaybe = it }
-        params.lateSum?.let { vLateSum = it }
-        params.refusals?.let { vRefusals = it }
-        params.countedDeliveries?.let { vCountedDeliveries = it }
-        params.countedSum?.let { vCountedSum = it }
-        params.countedHops?.let { vCountedHops = it }
+        vDeliveries = params.deliveries ?: (0.toUInt())
+        vItemCount = params.itemCount ?: (0.toUInt())
+        vTagCount = params.tagCount ?: (0.toUInt())
+        vIdSum = params.idSum ?: (0.toUInt())
+        vCellSum = params.cellSum ?: (0.toUInt())
+        vLevelCount = params.levelCount ?: (0.toUInt())
+        vFirstMaybe = params.firstMaybe ?: (null)
+        vLateSum = params.lateSum ?: (0.toUInt())
+        vLate = emptyList()
+        vRefusals = params.refusals ?: (0.toUInt())
+        vHeld = emptyList()
+        vCountedDeliveries = params.countedDeliveries ?: (0.toUInt())
+        vCountedSum = params.countedSum ?: (0.toUInt())
+        vCountedHops = params.countedHops ?: (0.toUByte())
     }
 
     /** The published variables as one immutable value, in declaration order. */

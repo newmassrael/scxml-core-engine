@@ -276,9 +276,9 @@ public final class StatechartShapeCrossingPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shape` datamodel variable, published (`sce:direction="out"`).
-    var vShape: StatechartShapeCrossingUnionShapeMinimalUnion = StatechartShapeCrossingUnionShapeMinimalUnion.circle(StatechartShapeCrossingRadiusRecord(radius: 2))
+    var vShape: StatechartShapeCrossingUnionShapeMinimalUnion
     /// W3C SCXML 5.2: the `extent` datamodel variable, published (`sce:direction="out"`).
-    var vExtent: UInt16 = 0
+    var vExtent: UInt16
 
     /// Reports what the published `shape` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -297,15 +297,28 @@ public final class StatechartShapeCrossingPolicy: InvocablePolicy {
         public var vExtent: UInt16? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vExtent {
-            vExtent = value
+        let vShape: StatechartShapeCrossingUnionShapeMinimalUnion = StatechartShapeCrossingUnionShapeMinimalUnion.circle(StatechartShapeCrossingRadiusRecord(radius: 2))
+        let vExtent: UInt16
+        if let handed = params.vExtent {
+            vExtent = handed
+        } else {
+            vExtent = 0
         }
+        self.vShape = vShape
+        self.vExtent = vExtent
     }
 
     public init() {
+        let vShape: StatechartShapeCrossingUnionShapeMinimalUnion = StatechartShapeCrossingUnionShapeMinimalUnion.circle(StatechartShapeCrossingRadiusRecord(radius: 2))
+        let vExtent: UInt16 = 0
+        self.vShape = vShape
+        self.vExtent = vExtent
+
         sessionID = drawSessionID()
     }
 

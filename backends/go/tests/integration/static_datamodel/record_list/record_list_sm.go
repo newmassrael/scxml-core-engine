@@ -3341,9 +3341,10 @@ type RecordListPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewRecordListPolicy creates a new policy with default values.
@@ -3583,105 +3584,295 @@ type RecordListInvokeParams struct {
 	VWithdrawFrom *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *RecordListPolicy) AcceptParams(params RecordListInvokeParams) {
-	if params.VNode != nil {
-		p.vNode = *params.VNode
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *RecordListPolicy) AcceptParams(handed RecordListInvokeParams) {
+	var vNode uint64
+	if handed.VNode != nil {
+		vNode = *handed.VNode
+	} else {
+		vNode = 0
 	}
-	if params.VJournal != nil {
-		p.vJournal = *params.VJournal
+	var vJournal bool
+	if handed.VJournal != nil {
+		vJournal = *handed.VJournal
+	} else {
+		vJournal = true
 	}
-	if params.VShareId != nil {
-		p.vShareId = *params.VShareId
+	var vClock RecordListHlcRecord = RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp RecordListHlcRecord = RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vDot RecordListHlcRecord = RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vAdds []RecordListEntryRecord = nil
+	var vOne []RecordListEntryRecord = nil
+	var vEntry RecordListEntryRecord = RecordListEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0}
+	var vValues []RecordListValueRecord = nil
+	var vHeld RecordListValueRecord = RecordListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vShareId uint32
+	if handed.VShareId != nil {
+		vShareId = *handed.VShareId
+	} else {
+		vShareId = 0
 	}
-	if params.VShareField != nil {
-		p.vShareField = *params.VShareField
+	var vShareField uint16
+	if handed.VShareField != nil {
+		vShareField = *handed.VShareField
+	} else {
+		vShareField = 0
 	}
-	if params.VWasLive != nil {
-		p.vWasLive = *params.VWasLive
+	var vWasLive bool
+	if handed.VWasLive != nil {
+		vWasLive = *handed.VWasLive
+	} else {
+		vWasLive = false
 	}
-	if params.VPresent != nil {
-		p.vPresent = *params.VPresent
+	var vPresent bool
+	if handed.VPresent != nil {
+		vPresent = *handed.VPresent
+	} else {
+		vPresent = false
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
-	if params.VRoomValues != nil {
-		p.vRoomValues = *params.VRoomValues
+	var vRoomValues uint32
+	if handed.VRoomValues != nil {
+		vRoomValues = *handed.VRoomValues
+	} else {
+		vRoomValues = 0
 	}
-	if params.VFull != nil {
-		p.vFull = *params.VFull
+	var vFull uint32
+	if handed.VFull != nil {
+		vFull = *handed.VFull
+	} else {
+		vFull = 0
 	}
-	if params.VDenied != nil {
-		p.vDenied = *params.VDenied
+	var vRoster []RecordListMemberRecord = nil
+	var vDenied uint32
+	if handed.VDenied != nil {
+		vDenied = *handed.VDenied
+	} else {
+		vDenied = 0
 	}
-	if params.VForbidden != nil {
-		p.vForbidden = *params.VForbidden
+	var vForbidden bool
+	if handed.VForbidden != nil {
+		vForbidden = *handed.VForbidden
+	} else {
+		vForbidden = false
 	}
-	if params.VAuthorized != nil {
-		p.vAuthorized = *params.VAuthorized
+	var vAuthorized bool
+	if handed.VAuthorized != nil {
+		vAuthorized = *handed.VAuthorized
+	} else {
+		vAuthorized = true
 	}
-	if params.VAnnounce != nil {
-		p.vAnnounce = *params.VAnnounce
+	var vAnnounce bool
+	if handed.VAnnounce != nil {
+		vAnnounce = *handed.VAnnounce
+	} else {
+		vAnnounce = false
 	}
-	if params.VAnnounced != nil {
-		p.vAnnounced = *params.VAnnounced
+	var vAnnounced uint32
+	if handed.VAnnounced != nil {
+		vAnnounced = *handed.VAnnounced
+	} else {
+		vAnnounced = 0
 	}
-	if params.VListed != nil {
-		p.vListed = *params.VListed
+	var vMoved []uint64 = nil
+	var vListed bool
+	if handed.VListed != nil {
+		vListed = *handed.VListed
+	} else {
+		vListed = false
 	}
-	if params.VOrdinal != nil {
-		p.vOrdinal = *params.VOrdinal
+	var vLive []RecordListValueRecord = nil
+	var vOrdinal uint32
+	if handed.VOrdinal != nil {
+		vOrdinal = *handed.VOrdinal
+	} else {
+		vOrdinal = 0
 	}
-	if params.VHolding != nil {
-		p.vHolding = *params.VHolding
+	var vEmpty RecordListValueRecord = RecordListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vStaged []RecordListStagedRecord = nil
+	var vStaging RecordListStagedRecord = RecordListStagedRecord{kind: 0, id: 0, field: 0, value: 0, text: ""}
+	var vHolding bool
+	if handed.VHolding != nil {
+		vHolding = *handed.VHolding
+	} else {
+		vHolding = false
 	}
-	if params.VClosingNow != nil {
-		p.vClosingNow = *params.VClosingNow
+	var vClosingNow int64
+	if handed.VClosingNow != nil {
+		vClosingNow = *handed.VClosingNow
+	} else {
+		vClosingNow = 0
 	}
-	if params.VSpoiled != nil {
-		p.vSpoiled = *params.VSpoiled
+	var vSpoiled bool
+	if handed.VSpoiled != nil {
+		vSpoiled = *handed.VSpoiled
+	} else {
+		vSpoiled = false
 	}
-	if params.VProbing != nil {
-		p.vProbing = *params.VProbing
+	var vProbing bool
+	if handed.VProbing != nil {
+		vProbing = *handed.VProbing
+	} else {
+		vProbing = false
 	}
-	if params.VGone != nil {
-		p.vGone = *params.VGone
+	var vGone uint32
+	if handed.VGone != nil {
+		vGone = *handed.VGone
+	} else {
+		vGone = 0
 	}
-	if params.VWrites != nil {
-		p.vWrites = *params.VWrites
+	var vWrites uint32
+	if handed.VWrites != nil {
+		vWrites = *handed.VWrites
+	} else {
+		vWrites = 0
 	}
-	if params.VCovered != nil {
-		p.vCovered = *params.VCovered
+	var vCovered bool
+	if handed.VCovered != nil {
+		vCovered = *handed.VCovered
+	} else {
+		vCovered = false
 	}
-	if params.VNamedId != nil {
-		p.vNamedId = *params.VNamedId
+	var vProbe RecordListRefusalEnum = RecordListRefusalEnumChangeTooLarge
+	var vSpoiledFor RecordListRefusalEnum = RecordListRefusalEnumChangeTooLarge
+	var vNamedId uint32
+	if handed.VNamedId != nil {
+		vNamedId = *handed.VNamedId
+	} else {
+		vNamedId = 0
 	}
-	if params.VNamedField != nil {
-		p.vNamedField = *params.VNamedField
+	var vNamedField uint16
+	if handed.VNamedField != nil {
+		vNamedField = *handed.VNamedField
+	} else {
+		vNamedField = 0
 	}
-	if params.VTook != nil {
-		p.vTook = *params.VTook
+	var vNamedKind RecordListCommandEnum = RecordListCommandEnumEdit
+	var vTaking []RecordListOpRecord = nil
+	var vTook uint32
+	if handed.VTook != nil {
+		vTook = *handed.VTook
+	} else {
+		vTook = 0
 	}
-	if params.VRestoring != nil {
-		p.vRestoring = *params.VRestoring
+	var vOp RecordListOpRecord = RecordListOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vRestoring bool
+	if handed.VRestoring != nil {
+		vRestoring = *handed.VRestoring
+	} else {
+		vRestoring = false
 	}
-	if params.VTentative != nil {
-		p.vTentative = *params.VTentative
+	var vTentative bool
+	if handed.VTentative != nil {
+		vTentative = *handed.VTentative
+	} else {
+		vTentative = false
 	}
-	if params.VClosingCommand != nil {
-		p.vClosingCommand = *params.VClosingCommand
+	var vClosingCommand uint64
+	if handed.VClosingCommand != nil {
+		vClosingCommand = *handed.VClosingCommand
+	} else {
+		vClosingCommand = 0
 	}
-	if params.VClosedOps != nil {
-		p.vClosedOps = *params.VClosedOps
+	var vOffered []RecordListOpRecord = nil
+	var vOfferedAt RecordListHlcRecord = RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vRefusedFor RecordListRefusalEnum = RecordListRefusalEnumPeerRefused
+	var vClosedOps uint32
+	if handed.VClosedOps != nil {
+		vClosedOps = *handed.VClosedOps
+	} else {
+		vClosedOps = 0
 	}
-	if params.VProvisionalFound != nil {
-		p.vProvisionalFound = *params.VProvisionalFound
+	var vClosedFor optional.Of[RecordListRefusalEnum] = optional.None[RecordListRefusalEnum]()
+	var vClosedAt RecordListHlcRecord = RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vProvisional []RecordListProvisionalRecord = nil
+	var vProvisionalKept []RecordListProvisionalRecord = nil
+	var vStanding RecordListProvisionalRecord = RecordListProvisionalRecord{wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListCommandEnumEdit}
+	var vProvisionalFound bool
+	if handed.VProvisionalFound != nil {
+		vProvisionalFound = *handed.VProvisionalFound
+	} else {
+		vProvisionalFound = false
 	}
-	if params.VWithdrawFrom != nil {
-		p.vWithdrawFrom = *params.VWithdrawFrom
+	var vWithdrawFrom uint32
+	if handed.VWithdrawFrom != nil {
+		vWithdrawFrom = *handed.VWithdrawFrom
+	} else {
+		vWithdrawFrom = 0
 	}
+	var vUndo []RecordListUndoRecord = nil
+	var vUndoKept []RecordListUndoRecord = nil
+	var vUndoing RecordListUndoRecord = RecordListUndoRecord{atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	p.vNode = vNode
+	p.vJournal = vJournal
+	p.vClock = vClock
+	p.vStamp = vStamp
+	p.vDot = vDot
+	p.vAdds = vAdds
+	p.vOne = vOne
+	p.vEntry = vEntry
+	p.vValues = vValues
+	p.vHeld = vHeld
+	p.vShareId = vShareId
+	p.vShareField = vShareField
+	p.vWasLive = vWasLive
+	p.vPresent = vPresent
+	p.vRefusals = vRefusals
+	p.vRoomValues = vRoomValues
+	p.vFull = vFull
+	p.vRoster = vRoster
+	p.vDenied = vDenied
+	p.vForbidden = vForbidden
+	p.vAuthorized = vAuthorized
+	p.vAnnounce = vAnnounce
+	p.vAnnounced = vAnnounced
+	p.vMoved = vMoved
+	p.vListed = vListed
+	p.vLive = vLive
+	p.vOrdinal = vOrdinal
+	p.vEmpty = vEmpty
+	p.vStaged = vStaged
+	p.vStaging = vStaging
+	p.vHolding = vHolding
+	p.vClosingNow = vClosingNow
+	p.vSpoiled = vSpoiled
+	p.vProbing = vProbing
+	p.vGone = vGone
+	p.vWrites = vWrites
+	p.vCovered = vCovered
+	p.vProbe = vProbe
+	p.vSpoiledFor = vSpoiledFor
+	p.vNamedId = vNamedId
+	p.vNamedField = vNamedField
+	p.vNamedKind = vNamedKind
+	p.vTaking = vTaking
+	p.vTook = vTook
+	p.vOp = vOp
+	p.vRestoring = vRestoring
+	p.vTentative = vTentative
+	p.vClosingCommand = vClosingCommand
+	p.vOffered = vOffered
+	p.vOfferedAt = vOfferedAt
+	p.vRefusedFor = vRefusedFor
+	p.vClosedOps = vClosedOps
+	p.vClosedFor = vClosedFor
+	p.vClosedAt = vClosedAt
+	p.vProvisional = vProvisional
+	p.vProvisionalKept = vProvisionalKept
+	p.vStanding = vStanding
+	p.vProvisionalFound = vProvisionalFound
+	p.vWithdrawFrom = vWithdrawFrom
+	p.vUndo = vUndo
+	p.vUndoKept = vUndoKept
+	p.vUndoing = vUndoing
 }
 
 

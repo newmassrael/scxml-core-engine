@@ -153,11 +153,11 @@ public final class StaticHostCallPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `attempts` datamodel variable.
-    var vAttempts: UInt32 = 0
+    var vAttempts: UInt32
     /// W3C SCXML 5.2: the `due` datamodel variable.
-    var vDue: Int32? = nil
+    var vDue: Int32?
     /// W3C SCXML 5.2: the `urgent` datamodel variable.
-    var vUrgent: Bool? = nil
+    var vUrgent: Bool?
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -170,21 +170,42 @@ public final class StaticHostCallPolicy: InvocablePolicy {
         public var vUrgent: Bool? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vAttempts {
-            vAttempts = value
+        let vAttempts: UInt32
+        if let handed = params.vAttempts {
+            vAttempts = handed
+        } else {
+            vAttempts = 0
         }
-        if let value = params.vDue {
-            vDue = value
+        let vDue: Int32?
+        if let handed = params.vDue {
+            vDue = handed
+        } else {
+            vDue = nil
         }
-        if let value = params.vUrgent {
-            vUrgent = value
+        let vUrgent: Bool?
+        if let handed = params.vUrgent {
+            vUrgent = handed
+        } else {
+            vUrgent = nil
         }
+        self.vAttempts = vAttempts
+        self.vDue = vDue
+        self.vUrgent = vUrgent
     }
 
     public init(actions: any StaticHostCallActions) {
+        let vAttempts: UInt32 = 0
+        let vDue: Int32? = nil
+        let vUrgent: Bool? = nil
+        self.vAttempts = vAttempts
+        self.vDue = vDue
+        self.vUrgent = vUrgent
+
         self.actions = actions
         sessionID = drawSessionID()
     }

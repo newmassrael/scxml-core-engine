@@ -1505,9 +1505,10 @@ type StaticUnionPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticUnionPolicy creates a new policy with default values.
@@ -1716,48 +1717,116 @@ type StaticUnionInvokeParams struct {
 	VPickedWidth *uint16
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticUnionPolicy) AcceptParams(params StaticUnionInvokeParams) {
-	if params.VRadius != nil {
-		p.vRadius = *params.VRadius
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticUnionPolicy) AcceptParams(handed StaticUnionInvokeParams) {
+	var vBuilt StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnionRect(StaticUnionRectRecord{width: 1, height: 2})
+	var vKept optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vLastKind StaticUnionKindEnum = StaticUnionKindEnumDot
+	var vRadius uint16
+	if handed.VRadius != nil {
+		vRadius = *handed.VRadius
+	} else {
+		vRadius = 0
 	}
-	if params.VWidth != nil {
-		p.vWidth = *params.VWidth
+	var vWidth uint16
+	if handed.VWidth != nil {
+		vWidth = *handed.VWidth
+	} else {
+		vWidth = 0
 	}
-	if params.VHeight != nil {
-		p.vHeight = *params.VHeight
+	var vHeight uint16
+	if handed.VHeight != nil {
+		vHeight = *handed.VHeight
+	} else {
+		vHeight = 0
 	}
-	if params.VLabels != nil {
-		p.vLabels = *params.VLabels
+	var vLabels uint32
+	if handed.VLabels != nil {
+		vLabels = *handed.VLabels
+	} else {
+		vLabels = 0
 	}
-	if params.VPoints != nil {
-		p.vPoints = *params.VPoints
+	var vPoints uint32
+	if handed.VPoints != nil {
+		vPoints = *handed.VPoints
+	} else {
+		vPoints = 0
 	}
-	if params.VDots != nil {
-		p.vDots = *params.VDots
+	var vDots uint32
+	if handed.VDots != nil {
+		vDots = *handed.VDots
+	} else {
+		vDots = 0
 	}
-	if params.VManyRadius != nil {
-		p.vManyRadius = *params.VManyRadius
+	var vManyRadius uint16
+	if handed.VManyRadius != nil {
+		vManyRadius = *handed.VManyRadius
+	} else {
+		vManyRadius = 0
 	}
-	if params.VManyWidth != nil {
-		p.vManyWidth = *params.VManyWidth
+	var vManyWidth uint16
+	if handed.VManyWidth != nil {
+		vManyWidth = *handed.VManyWidth
+	} else {
+		vManyWidth = 0
 	}
-	if params.VManyShapes != nil {
-		p.vManyShapes = *params.VManyShapes
+	var vManyShapes uint32
+	if handed.VManyShapes != nil {
+		vManyShapes = *handed.VManyShapes
+	} else {
+		vManyShapes = 0
 	}
-	if params.VMaybeWidth != nil {
-		p.vMaybeWidth = *params.VMaybeWidth
+	var vMaybeWidth uint16
+	if handed.VMaybeWidth != nil {
+		vMaybeWidth = *handed.VMaybeWidth
+	} else {
+		vMaybeWidth = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
-	if params.VPicks != nil {
-		p.vPicks = *params.VPicks
+	var vLifted optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vLiftWhy optional.Of[StaticUnionLiftRefusalRecord] = optional.None[StaticUnionLiftRefusalRecord]()
+	var vPicked StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnionDot()
+	var vPickedMaybe optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vPicks uint32
+	if handed.VPicks != nil {
+		vPicks = *handed.VPicks
+	} else {
+		vPicks = 0
 	}
-	if params.VPickedWidth != nil {
-		p.vPickedWidth = *params.VPickedWidth
+	var vPickedWidth uint16
+	if handed.VPickedWidth != nil {
+		vPickedWidth = *handed.VPickedWidth
+	} else {
+		vPickedWidth = 0
 	}
+	p.vBuilt = vBuilt
+	p.vKept = vKept
+	p.vLastKind = vLastKind
+	p.vRadius = vRadius
+	p.vWidth = vWidth
+	p.vHeight = vHeight
+	p.vLabels = vLabels
+	p.vPoints = vPoints
+	p.vDots = vDots
+	p.vManyRadius = vManyRadius
+	p.vManyWidth = vManyWidth
+	p.vManyShapes = vManyShapes
+	p.vMaybeWidth = vMaybeWidth
+	p.vRefusals = vRefusals
+	p.vLifted = vLifted
+	p.vLiftWhy = vLiftWhy
+	p.vPicked = vPicked
+	p.vPickedMaybe = vPickedMaybe
+	p.vPicks = vPicks
+	p.vPickedWidth = vPickedWidth
 }
 
 

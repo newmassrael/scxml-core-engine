@@ -106,9 +106,9 @@ public final class StaticInvokeOptionalSceSynthInvokeLiftedPolicy: InvocablePoli
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `size` datamodel variable.
-    var vSize: Int32? = nil
+    var vSize: Int32?
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String? = nil
+    var vLabel: String?
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -120,18 +120,33 @@ public final class StaticInvokeOptionalSceSynthInvokeLiftedPolicy: InvocablePoli
         public var vLabel: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSize {
-            vSize = value
+        let vSize: Int32?
+        if let handed = params.vSize {
+            vSize = handed
+        } else {
+            vSize = nil
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String?
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = nil
         }
+        self.vSize = vSize
+        self.vLabel = vLabel
     }
 
     public init() {
+        let vSize: Int32? = nil
+        let vLabel: String? = nil
+        self.vSize = vSize
+        self.vLabel = vLabel
+
         sessionID = drawSessionID()
     }
 

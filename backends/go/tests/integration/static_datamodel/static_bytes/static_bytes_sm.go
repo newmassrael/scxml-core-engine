@@ -467,9 +467,10 @@ type StaticBytesPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticBytesPolicy creates a new policy with default values.
@@ -559,21 +560,43 @@ type StaticBytesInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticBytesPolicy) AcceptParams(params StaticBytesInvokeParams) {
-	if params.VSize != nil {
-		p.vSize = *params.VSize
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticBytesPolicy) AcceptParams(handed StaticBytesInvokeParams) {
+	var vFrame []byte = []byte{0x61, 0x62}
+	var vTail []byte = []byte{0x78, 0x79}
+	var vSize uint32
+	if handed.VSize != nil {
+		vSize = *handed.VSize
+	} else {
+		vSize = 0
 	}
-	if params.VMatches != nil {
-		p.vMatches = *params.VMatches
+	var vMatches uint32
+	if handed.VMatches != nil {
+		vMatches = *handed.VMatches
+	} else {
+		vMatches = 0
 	}
-	if params.VMisses != nil {
-		p.vMisses = *params.VMisses
+	var vMisses uint32
+	if handed.VMisses != nil {
+		vMisses = *handed.VMisses
+	} else {
+		vMisses = 0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vFrame = vFrame
+	p.vTail = vTail
+	p.vSize = vSize
+	p.vMatches = vMatches
+	p.vMisses = vMisses
+	p.vErrors = vErrors
 }
 
 

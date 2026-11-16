@@ -654,9 +654,10 @@ type StaticStateAlgorithmOptionalPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticStateAlgorithmOptionalPolicy creates a new policy with default values.
@@ -750,27 +751,57 @@ type StaticStateAlgorithmOptionalInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticStateAlgorithmOptionalPolicy) AcceptParams(params StaticStateAlgorithmOptionalInvokeParams) {
-	if params.VToday != nil {
-		p.vToday = *params.VToday
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticStateAlgorithmOptionalPolicy) AcceptParams(handed StaticStateAlgorithmOptionalInvokeParams) {
+	var vGoals []StaticStateAlgorithmOptionalGoalRecord = nil
+	var vDraft StaticStateAlgorithmOptionalGoalRecord = StaticStateAlgorithmOptionalGoalRecord{id: 0, day: optional.None[int64](), weight: 0}
+	var vToday int64
+	if handed.VToday != nil {
+		vToday = *handed.VToday
+	} else {
+		vToday = 100
 	}
-	if params.VFirst.IsPresent() {
-		p.vFirst = params.VFirst
+	var vFirst optional.Of[int64]
+	if handed.VFirst.IsPresent() {
+		vFirst = handed.VFirst
+	} else {
+		vFirst = optional.None[int64]()
 	}
-	if params.VLeft.IsPresent() {
-		p.vLeft = params.VLeft
+	var vLeft optional.Of[int64]
+	if handed.VLeft.IsPresent() {
+		vLeft = handed.VLeft
+	} else {
+		vLeft = optional.Some[int64](0)
 	}
-	if params.VUndated != nil {
-		p.vUndated = *params.VUndated
+	var vUndated uint32
+	if handed.VUndated != nil {
+		vUndated = *handed.VUndated
+	} else {
+		vUndated = 0
 	}
-	if params.VTotal != nil {
-		p.vTotal = *params.VTotal
+	var vTotal int64
+	if handed.VTotal != nil {
+		vTotal = *handed.VTotal
+	} else {
+		vTotal = 0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vGoals = vGoals
+	p.vDraft = vDraft
+	p.vToday = vToday
+	p.vFirst = vFirst
+	p.vLeft = vLeft
+	p.vUndated = vUndated
+	p.vTotal = vTotal
+	p.vErrors = vErrors
 }
 
 

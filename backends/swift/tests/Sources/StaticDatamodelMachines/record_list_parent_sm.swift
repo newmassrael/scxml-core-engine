@@ -640,21 +640,21 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `told` datamodel variable, published (`sce:direction="out"`).
-    var vTold: UInt32 = 0
+    var vTold: UInt32
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: RecordListParentToldRecord = RecordListParentToldRecord(id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vShown: RecordListParentToldRecord
     /// W3C SCXML 5.2: the `others` datamodel variable, published (`sce:direction="out"`).
-    var vOthers: [RecordListParentToldValueRecord] = []
+    var vOthers: [RecordListParentToldValueRecord]
     /// W3C SCXML 5.2: the `other` datamodel variable.
-    var vOther: RecordListParentToldValueRecord = RecordListParentToldValueRecord(id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    var vOther: RecordListParentToldValueRecord
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
-    var vRefused: RecordListParentRefusedRecord? = nil
+    var vRefused: RecordListParentRefusedRecord?
     /// W3C SCXML 5.2: the `refusedCount` datamodel variable, published (`sce:direction="out"`).
-    var vRefusedCount: UInt32 = 0
+    var vRefusedCount: UInt32
     /// W3C SCXML 5.2: the `pendingCount` datamodel variable, published (`sce:direction="out"`).
-    var vPendingCount: UInt32 = 0
+    var vPendingCount: UInt32
     /// W3C SCXML 5.2: the `confirmedCount` datamodel variable, published (`sce:direction="out"`).
-    var vConfirmedCount: UInt32 = 0
+    var vConfirmedCount: UInt32
 
     /// Reports what the published `told` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -696,24 +696,67 @@ public final class RecordListParentPolicy: InvocablePolicy {
         public var vConfirmedCount: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vTold {
-            vTold = value
+        let vTold: UInt32
+        if let handed = params.vTold {
+            vTold = handed
+        } else {
+            vTold = 0
         }
-        if let value = params.vRefusedCount {
-            vRefusedCount = value
+        let vShown: RecordListParentToldRecord = RecordListParentToldRecord(id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vOthers: [RecordListParentToldValueRecord] = []
+        let vOther: RecordListParentToldValueRecord = RecordListParentToldValueRecord(id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vRefused: RecordListParentRefusedRecord? = nil
+        let vRefusedCount: UInt32
+        if let handed = params.vRefusedCount {
+            vRefusedCount = handed
+        } else {
+            vRefusedCount = 0
         }
-        if let value = params.vPendingCount {
-            vPendingCount = value
+        let vPendingCount: UInt32
+        if let handed = params.vPendingCount {
+            vPendingCount = handed
+        } else {
+            vPendingCount = 0
         }
-        if let value = params.vConfirmedCount {
-            vConfirmedCount = value
+        let vConfirmedCount: UInt32
+        if let handed = params.vConfirmedCount {
+            vConfirmedCount = handed
+        } else {
+            vConfirmedCount = 0
         }
+        self.vTold = vTold
+        self.vShown = vShown
+        self.vOthers = vOthers
+        self.vOther = vOther
+        self.vRefused = vRefused
+        self.vRefusedCount = vRefusedCount
+        self.vPendingCount = vPendingCount
+        self.vConfirmedCount = vConfirmedCount
     }
 
     public init() {
+        let vTold: UInt32 = 0
+        let vShown: RecordListParentToldRecord = RecordListParentToldRecord(id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vOthers: [RecordListParentToldValueRecord] = []
+        let vOther: RecordListParentToldValueRecord = RecordListParentToldValueRecord(id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+        let vRefused: RecordListParentRefusedRecord? = nil
+        let vRefusedCount: UInt32 = 0
+        let vPendingCount: UInt32 = 0
+        let vConfirmedCount: UInt32 = 0
+        self.vTold = vTold
+        self.vShown = vShown
+        self.vOthers = vOthers
+        self.vOther = vOther
+        self.vRefused = vRefused
+        self.vRefusedCount = vRefusedCount
+        self.vPendingCount = vPendingCount
+        self.vConfirmedCount = vConfirmedCount
+
         sessionID = drawSessionID()
     }
 

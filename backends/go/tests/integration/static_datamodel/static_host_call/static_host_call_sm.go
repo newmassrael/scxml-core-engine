@@ -423,9 +423,10 @@ type StaticHostCallPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostCallPolicy creates a new policy with default values.
@@ -476,18 +477,32 @@ type StaticHostCallInvokeParams struct {
 	VUrgent optional.Of[bool]
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostCallPolicy) AcceptParams(params StaticHostCallInvokeParams) {
-	if params.VAttempts != nil {
-		p.vAttempts = *params.VAttempts
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostCallPolicy) AcceptParams(handed StaticHostCallInvokeParams) {
+	var vAttempts uint32
+	if handed.VAttempts != nil {
+		vAttempts = *handed.VAttempts
+	} else {
+		vAttempts = 0
 	}
-	if params.VDue.IsPresent() {
-		p.vDue = params.VDue
+	var vDue optional.Of[int32]
+	if handed.VDue.IsPresent() {
+		vDue = handed.VDue
+	} else {
+		vDue = optional.None[int32]()
 	}
-	if params.VUrgent.IsPresent() {
-		p.vUrgent = params.VUrgent
+	var vUrgent optional.Of[bool]
+	if handed.VUrgent.IsPresent() {
+		vUrgent = handed.VUrgent
+	} else {
+		vUrgent = optional.None[bool]()
 	}
+	p.vAttempts = vAttempts
+	p.vDue = vDue
+	p.vUrgent = vUrgent
 }
 
 

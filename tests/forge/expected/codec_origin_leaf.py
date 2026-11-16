@@ -7,15 +7,51 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecOriginLeafDataBytes(BoundedBytes):
+    """The ``data`` element of :class:`CodecOriginLeaf`, 0 to 16 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 16
+
+
+class CodecOriginLeafSource(Protocol):
+    """The elements a value of :class:`CodecOriginLeaf` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def data(self) -> CodecOriginLeafDataBytes: ...
+
+
+def encode_source(src: CodecOriginLeafSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecOriginLeaf` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_len = len(src.data)
+    w.write_u8(_d_len & 0xFF)
+    w.write_bytes(src.data)
 
 
 @dataclass
 class CodecOriginLeaf:
-    len: int = 0
-    data: bytes = b""
+    data: CodecOriginLeafDataBytes = CodecOriginLeafDataBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each byte string and text is held to its bound wherever it is
+        # set, where the value is made and after (docs/adr/0081 §2),
+        # whatever it was handed.
+        if name == "data":
+            value = CodecOriginLeafDataBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecOriginLeaf]:
@@ -40,7 +76,6 @@ class CodecOriginLeaf:
         except CodecError:
             return None
         value = cls(
-            len=f_len,
             data=f_data,
         )
         try:
@@ -54,14 +89,8 @@ class CodecOriginLeaf:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.data) > 16:
-            raise LengthOutOfRange()
-        w.write_u8(self.len & 0xFF)
-        w.write_bytes(self.data)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

@@ -110,6 +110,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePol
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -514,9 +514,10 @@ type AiLoopPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewAiLoopPolicy creates a new policy with default values.
@@ -796,8 +797,10 @@ func (p *AiLoopPolicy) establishScriptSession() *sce.ScriptSessionFailure {
 // It is the one place a session is made (establishScriptSession), and a
 // session that cannot be established is its answer: nothing of the datamodel is
 // touched and the start is refused (docs/adr/0096). The order after it is the
-// document's: its `<data>`, then the invoke params its parent handed it, then
-// its top-level `<script>`.
+// document's (docs/adr/0098): its top-level `<data>`, each taking the value an
+// invoking session handed for it in place of its own; the early-bound `<data>`
+// of its states; its top-level `<script>`. The initial configuration is
+// entered after this returns, so its `<onentry>` reads the handed values too.
 func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEvent]) *sce.ScriptSessionFailure {
 	if !p.scriptEngineInitialized {
 		if failure := p.establishScriptSession(); failure != nil {
@@ -811,9 +814,22 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
+	// §scxml-6.4: the values the invoking session handed this one
+	// (`SetParamValueInScriptEngine`), taken by this start and by no later
+	// one. Which of them this session keeps is its own to decide, from the
+	// ids of its top-level `<data>`, written below when it was generated: a
+	// name none of them carries is not added, and a state's `<data>` never
+	// takes a handed value, whatever its id.
+	handed := p.handedValues
+	p.handedValues = nil
+
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
-	// W3C SCXML 5.2/5.3: Initialize north_star from expr="'(edit me) the outcome this loop exists to reach'"
-	{
+	if value, wasHanded := handed["north_star"]; wasHanded {
+		// §scxml-6.4: north_star takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "north_star", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize north_star from expr="'(edit me) the outcome this loop exists to reach'"
 		result, err := engine.EvaluateExpression(sessionID, `"(edit me) the outcome this loop exists to reach"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "north_star", result)
@@ -822,8 +838,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "north_star", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize milestone from expr="'(edit me) the next checkpoint on the way there'"
-	{
+	if value, wasHanded := handed["milestone"]; wasHanded {
+		// §scxml-6.4: milestone takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "milestone", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize milestone from expr="'(edit me) the next checkpoint on the way there'"
 		result, err := engine.EvaluateExpression(sessionID, `"(edit me) the next checkpoint on the way there"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "milestone", result)
@@ -832,8 +852,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "milestone", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize reference from expr="'(edit me) paths, URLs or repos to consult'"
-	{
+	if value, wasHanded := handed["reference"]; wasHanded {
+		// §scxml-6.4: reference takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "reference", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize reference from expr="'(edit me) paths, URLs or repos to consult'"
 		result, err := engine.EvaluateExpression(sessionID, `"(edit me) paths, URLs or repos to consult"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "reference", result)
@@ -842,8 +866,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "reference", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize start_prompt from expr="'North star: ' + north_star + '\x5Cn' +                 'Milestone: ' + milestone + '\x5Cn' +                 'Reference: ' + reference + '\x5Cn' +                 'Report what you did and what is left.'"
-	{
+	if value, wasHanded := handed["start_prompt"]; wasHanded {
+		// §scxml-6.4: start_prompt takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "start_prompt", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize start_prompt from expr="'North star: ' + north_star + '\x5Cn' +                 'Milestone: ' + milestone + '\x5Cn' +                 'Reference: ' + reference + '\x5Cn' +                 'Report what you did and what is left.'"
 		result, err := engine.EvaluateExpression(sessionID, `(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(("North star: " .. _scxml_tostring(north_star))) .. "\n")) .. "Milestone: "), milestone)) .. "\n")) .. "Reference: "), reference)) .. "\n")) .. "Report what you did and what is left.")`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "start_prompt", result)
@@ -852,8 +880,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "start_prompt", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize turn_prompt from expr="'Continue toward: ' + milestone + '\x5Cn' +                 'Do the next smallest thing that is verifiable, then report.'"
-	{
+	if value, wasHanded := handed["turn_prompt"]; wasHanded {
+		// §scxml-6.4: turn_prompt takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "turn_prompt", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize turn_prompt from expr="'Continue toward: ' + milestone + '\x5Cn' +                 'Do the next smallest thing that is verifiable, then report.'"
 		result, err := engine.EvaluateExpression(sessionID, `(_scxml_tostring((_scxml_tostring(("Continue toward: " .. _scxml_tostring(milestone))) .. "\n")) .. "Do the next smallest thing that is verifiable, then report.")`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turn_prompt", result)
@@ -862,8 +894,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "turn_prompt", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize end_prompt from expr="'Summarise what changed, what was verified, and what is left open.'"
-	{
+	if value, wasHanded := handed["end_prompt"]; wasHanded {
+		// §scxml-6.4: end_prompt takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "end_prompt", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize end_prompt from expr="'Summarise what changed, what was verified, and what is left open.'"
 		result, err := engine.EvaluateExpression(sessionID, `"Summarise what changed, what was verified, and what is left open."`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "end_prompt", result)
@@ -872,8 +908,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "end_prompt", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize done_marker from expr="'MILESTONE REACHED'"
-	{
+	if value, wasHanded := handed["done_marker"]; wasHanded {
+		// §scxml-6.4: done_marker takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "done_marker", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize done_marker from expr="'MILESTONE REACHED'"
 		result, err := engine.EvaluateExpression(sessionID, `"MILESTONE REACHED"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "done_marker", result)
@@ -882,8 +922,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "done_marker", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize screen_rules from expr="[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]"
-	{
+	if value, wasHanded := handed["screen_rules"]; wasHanded {
+		// §scxml-6.4: screen_rules takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "screen_rules", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize screen_rules from expr="[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]"
 		result, err := engine.EvaluateExpression(sessionID, `{{["when"] = "design-decision", ["keys"] = "Escape", ["text"] = "Ignore cost. Rethink for the most durable answer, then proceed."}, {["when"] = "design-proposal", ["keys"] = "Escape", ["text"] = "Ignore cost. Rethink for the most durable answer, then proceed."}, {["when"] = "multiple-choice", ["keys"] = "Escape", ["text"] = "Ignore cost. Rethink for the most durable answer, then proceed."}}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screen_rules", result)
@@ -892,8 +936,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "screen_rules", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize screen_permissions from expr="false"
-	{
+	if value, wasHanded := handed["screen_permissions"]; wasHanded {
+		// §scxml-6.4: screen_permissions takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "screen_permissions", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize screen_permissions from expr="false"
 		result, err := engine.EvaluateExpression(sessionID, `false`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screen_permissions", result)
@@ -902,8 +950,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "screen_permissions", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize max_turns from expr="40"
-	{
+	if value, wasHanded := handed["max_turns"]; wasHanded {
+		// §scxml-6.4: max_turns takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "max_turns", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize max_turns from expr="40"
 		result, err := engine.EvaluateExpression(sessionID, `40`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "max_turns", result)
@@ -912,8 +964,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "max_turns", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize reflect_every from expr="8"
-	{
+	if value, wasHanded := handed["reflect_every"]; wasHanded {
+		// §scxml-6.4: reflect_every takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "reflect_every", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize reflect_every from expr="8"
 		result, err := engine.EvaluateExpression(sessionID, `8`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "reflect_every", result)
@@ -922,8 +978,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "reflect_every", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize max_restarts from expr="6"
-	{
+	if value, wasHanded := handed["max_restarts"]; wasHanded {
+		// §scxml-6.4: max_restarts takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "max_restarts", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize max_restarts from expr="6"
 		result, err := engine.EvaluateExpression(sessionID, `6`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "max_restarts", result)
@@ -932,8 +992,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "max_restarts", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize turns from expr="0"
-	{
+	if value, wasHanded := handed["turns"]; wasHanded {
+		// §scxml-6.4: turns takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "turns", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize turns from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turns", result)
@@ -942,8 +1006,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "turns", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize turns_since_reflect from expr="0"
-	{
+	if value, wasHanded := handed["turns_since_reflect"]; wasHanded {
+		// §scxml-6.4: turns_since_reflect takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "turns_since_reflect", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize turns_since_reflect from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turns_since_reflect", result)
@@ -952,8 +1020,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "turns_since_reflect", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize screened from expr="0"
-	{
+	if value, wasHanded := handed["screened"]; wasHanded {
+		// §scxml-6.4: screened takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "screened", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize screened from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screened", result)
@@ -962,8 +1034,12 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 			_ = engine.SetVariable(sessionID, "screened", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize restarts from expr="0"
-	{
+	if value, wasHanded := handed["restarts"]; wasHanded {
+		// §scxml-6.4: restarts takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "restarts", value)
+	} else {
+		// W3C SCXML 5.2/5.3: Initialize restarts from expr="0"
 		result, err := engine.EvaluateExpression(sessionID, `0`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "restarts", result)
@@ -973,24 +1049,6 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		}
 	}
 
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule. They are applied
-	// before the top-level `<script>`, which reads the datamodel the invocation
-	// started it with. The parent hands them before this session's start
-	// (`SetParamValueInScriptEngine`) and this session applies them, so a
-	// child's session is made by the child.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
 
 	return nil
 }
@@ -1097,23 +1155,38 @@ func (p *AiLoopPolicy) getVariable(name string) interface{} {
 	return result
 }
 
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
+// SetParamValueInScriptEngine hands this machine, before its start, the value
+// an invoking session evaluated for one `<param>` or `namelist` name
+// (§scxml-6.4). The invoking session hands every name it evaluated; this
+// machine's start (InitializeDataModel) decides which it keeps, from the ids
+// of its own top-level `<data>`, and declares each kept one as that `<data>`'s
+// initial value in place of its own (docs/adr/0098). Nothing is written to the
+// script session here: the session is the child's own, established by its
+// start (docs/adr/0096).
 //
-// Params are applied by InitializeDataModel after the `<data>` and before the
-// top-level `<script>`, overriding the `<data>` default only for names the
-// child declares, so the session they are applied in is the child's own,
-// established by its start (docs/adr/0096). The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
+// The value crosses as a value: this took the parent's value rendered as Lua
+// source and re-evaluated it here until 2026-08-21, which survived every value
+// a test had tried and lost the ones Lua cannot spell — `ToScriptLiteral`
+// renders a non-finite number as `+Inf`, which is not a Lua expression, so an
 // `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
 func (p *AiLoopPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
+	if p.handedValues == nil {
+		p.handedValues = make(map[string]interface{})
 	}
-	p.pendingParams[name] = value
+	p.handedValues[name] = value
+}
+
+// declareHandedValue declares the top-level `<data>` name with the value an
+// invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
+// `expr`, `src` or content, which is not evaluated. A value the session cannot
+// hold is the error of that `<data>`'s initialization (§scxml-5.3):
+// error.execution, and the `<data>` left unset, as one whose own expression
+// failed is left (docs/adr/0098).
+func (p *AiLoopPolicy) declareHandedValue(eng *sce.Engine[AiLoopState, AiLoopEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
+	if err := engine.SetVariable(sessionID, name, value); err != nil {
+		eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		_ = engine.SetVariable(sessionID, name, nil)
+	}
 }
 
 

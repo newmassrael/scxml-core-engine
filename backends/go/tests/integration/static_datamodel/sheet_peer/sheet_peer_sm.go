@@ -1820,9 +1820,10 @@ type SheetPeerPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewSheetPeerPolicy creates a new policy with default values.
@@ -1978,33 +1979,91 @@ type SheetPeerInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *SheetPeerPolicy) AcceptParams(params SheetPeerInvokeParams) {
-	if params.VNode != nil {
-		p.vNode = *params.VNode
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *SheetPeerPolicy) AcceptParams(handed SheetPeerInvokeParams) {
+	var vNode uint64
+	if handed.VNode != nil {
+		vNode = *handed.VNode
+	} else {
+		vNode = 0
 	}
-	if params.VHub != nil {
-		p.vHub = *params.VHub
+	var vHub bool
+	if handed.VHub != nil {
+		vHub = *handed.VHub
+	} else {
+		vHub = false
 	}
-	if params.VLamport != nil {
-		p.vLamport = *params.VLamport
+	var vClock SheetPeerHlcRecord = SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp SheetPeerHlcRecord = SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vCells []SheetPeerLwwCellRecord = nil
+	var vRows []SheetPeerRgaNodeRecord = nil
+	var vGone []SheetPeerRgaGoneRecord = nil
+	var vCols []SheetPeerRgaNodeRecord = nil
+	var vGoneCols []SheetPeerRgaGoneRecord = nil
+	var vTrail []int64 = nil
+	var vShown []SheetPeerShownRecord = nil
+	var vWrite SheetPeerLwwCellRecord = SheetPeerLwwCellRecord{row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0}
+	var vPlaced SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord{key: 0, after: 0}
+	var vRemoval SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord{key: 0, by: 0}
+	var vLamport uint64
+	if handed.VLamport != nil {
+		vLamport = *handed.VLamport
+	} else {
+		vLamport = 0
 	}
-	if params.VNewKey != nil {
-		p.vNewKey = *params.VNewKey
+	var vNewKey uint64
+	if handed.VNewKey != nil {
+		vNewKey = *handed.VNewKey
+	} else {
+		vNewKey = 0
 	}
-	if params.VNoKey != nil {
-		p.vNoKey = *params.VNoKey
+	var vNoKey uint64
+	if handed.VNoKey != nil {
+		vNoKey = *handed.VNoKey
+	} else {
+		vNoKey = 0
 	}
-	if params.VNoNumber != nil {
-		p.vNoNumber = *params.VNoNumber
+	var vNoNumber int64
+	if handed.VNoNumber != nil {
+		vNoNumber = *handed.VNoNumber
+	} else {
+		vNoNumber = 0
 	}
-	if params.VOrphans != nil {
-		p.vOrphans = *params.VOrphans
+	var vOrphans uint32
+	if handed.VOrphans != nil {
+		vOrphans = *handed.VOrphans
+	} else {
+		vOrphans = 0
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vNode = vNode
+	p.vHub = vHub
+	p.vClock = vClock
+	p.vStamp = vStamp
+	p.vCells = vCells
+	p.vRows = vRows
+	p.vGone = vGone
+	p.vCols = vCols
+	p.vGoneCols = vGoneCols
+	p.vTrail = vTrail
+	p.vShown = vShown
+	p.vWrite = vWrite
+	p.vPlaced = vPlaced
+	p.vRemoval = vRemoval
+	p.vLamport = vLamport
+	p.vNewKey = vNewKey
+	p.vNoKey = vNoKey
+	p.vNoNumber = vNoNumber
+	p.vOrphans = vOrphans
+	p.vRefusals = vRefusals
 }
 
 

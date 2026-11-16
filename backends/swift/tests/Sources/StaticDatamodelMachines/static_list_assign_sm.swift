@@ -109,17 +109,17 @@ public final class StaticListAssignPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: [UInt8] = []
+    var vShown: [UInt8]
     /// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
-    var vFirst: UInt8 = 10
+    var vFirst: UInt8
     /// W3C SCXML 5.2: the `few` datamodel variable, published (`sce:direction="out"`).
-    var vFew: [UInt8] = []
+    var vFew: [UInt8]
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
-    var vSize: UInt32 = 0
+    var vSize: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `shown` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -157,24 +157,59 @@ public final class StaticListAssignPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vFirst {
-            vFirst = value
+        let vShown: [UInt8] = []
+        let vFirst: UInt8
+        if let handed = params.vFirst {
+            vFirst = handed
+        } else {
+            vFirst = 10
         }
-        if let value = params.vCount {
-            vCount = value
+        let vFew: [UInt8] = []
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vSize {
-            vSize = value
+        let vSize: UInt32
+        if let handed = params.vSize {
+            vSize = handed
+        } else {
+            vSize = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vShown = vShown
+        self.vFirst = vFirst
+        self.vFew = vFew
+        self.vCount = vCount
+        self.vSize = vSize
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vShown: [UInt8] = []
+        let vFirst: UInt8 = 10
+        let vFew: [UInt8] = []
+        let vCount: UInt32 = 0
+        let vSize: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vShown = vShown
+        self.vFirst = vFirst
+        self.vFew = vFew
+        self.vCount = vCount
+        self.vSize = vSize
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

@@ -157,17 +157,17 @@ public final class StaticRenderPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `note` datamodel variable, published (`sce:direction="out"`).
-    var vNote: String = ""
+    var vNote: String
     /// W3C SCXML 5.2: the `who` datamodel variable, published (`sce:direction="out"`).
-    var vWho: String = "ann"
+    var vWho: String
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: Int16 = 0
+    var vCount: Int16
     /// W3C SCXML 5.2: the `view` datamodel variable, published (`sce:direction="out"`).
-    var vView: StaticRenderViewModeEnum = StaticRenderViewModeEnum.month
+    var vView: StaticRenderViewModeEnum
     /// W3C SCXML 5.2: the `said` datamodel variable, published (`sce:direction="out"`).
-    var vSaid: String = "hi"
+    var vSaid: String
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `note` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -206,27 +206,64 @@ public final class StaticRenderPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNote {
-            vNote = value
+        let vNote: String
+        if let handed = params.vNote {
+            vNote = handed
+        } else {
+            vNote = ""
         }
-        if let value = params.vWho {
-            vWho = value
+        let vWho: String
+        if let handed = params.vWho {
+            vWho = handed
+        } else {
+            vWho = "ann"
         }
-        if let value = params.vCount {
-            vCount = value
+        let vCount: Int16
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vSaid {
-            vSaid = value
+        let vView: StaticRenderViewModeEnum = StaticRenderViewModeEnum.month
+        let vSaid: String
+        if let handed = params.vSaid {
+            vSaid = handed
+        } else {
+            vSaid = "hi"
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vNote = vNote
+        self.vWho = vWho
+        self.vCount = vCount
+        self.vView = vView
+        self.vSaid = vSaid
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vNote: String = ""
+        let vWho: String = "ann"
+        let vCount: Int16 = 0
+        let vView: StaticRenderViewModeEnum = StaticRenderViewModeEnum.month
+        let vSaid: String = "hi"
+        let vRefusals: UInt32 = 0
+        self.vNote = vNote
+        self.vWho = vWho
+        self.vCount = vCount
+        self.vView = vView
+        self.vSaid = vSaid
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

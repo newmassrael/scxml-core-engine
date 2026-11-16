@@ -170,23 +170,23 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `draft` datamodel variable.
-    var vDraft: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+    var vDraft: StaticRecordListIndexDayRecord
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+    var vPicked: StaticRecordListIndexDayRecord
     /// W3C SCXML 5.2: the `days` datamodel variable.
-    var vDays: [StaticRecordListIndexDayRecord] = []
+    var vDays: [StaticRecordListIndexDayRecord]
     /// W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`).
-    var vCursor: Int32 = 0
+    var vCursor: Int32
     /// W3C SCXML 5.2: the `day` datamodel variable, published (`sce:direction="out"`).
-    var vDay: UInt8 = 0
+    var vDay: UInt8
     /// W3C SCXML 5.2: the `year` datamodel variable, published (`sce:direction="out"`).
-    var vYear: UInt16 = 0
+    var vYear: UInt16
     /// W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`).
-    var vSum: UInt32 = 0
+    var vSum: UInt32
     /// W3C SCXML 5.2: the `ordered` datamodel variable, published (`sce:direction="out"`).
-    var vOrdered: Bool = false
+    var vOrdered: Bool
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `picked` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -230,30 +230,81 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCursor {
-            vCursor = value
+        let vDraft: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+        let vPicked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+        let vDays: [StaticRecordListIndexDayRecord] = []
+        let vCursor: Int32
+        if let handed = params.vCursor {
+            vCursor = handed
+        } else {
+            vCursor = 0
         }
-        if let value = params.vDay {
-            vDay = value
+        let vDay: UInt8
+        if let handed = params.vDay {
+            vDay = handed
+        } else {
+            vDay = 0
         }
-        if let value = params.vYear {
-            vYear = value
+        let vYear: UInt16
+        if let handed = params.vYear {
+            vYear = handed
+        } else {
+            vYear = 0
         }
-        if let value = params.vSum {
-            vSum = value
+        let vSum: UInt32
+        if let handed = params.vSum {
+            vSum = handed
+        } else {
+            vSum = 0
         }
-        if let value = params.vOrdered {
-            vOrdered = value
+        let vOrdered: Bool
+        if let handed = params.vOrdered {
+            vOrdered = handed
+        } else {
+            vOrdered = false
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vDraft = vDraft
+        self.vPicked = vPicked
+        self.vDays = vDays
+        self.vCursor = vCursor
+        self.vDay = vDay
+        self.vYear = vYear
+        self.vSum = vSum
+        self.vOrdered = vOrdered
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vDraft: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2026, month: 1, dayOfMonth: 1)
+        let vPicked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year: 2000, month: 1, dayOfMonth: 1)
+        let vDays: [StaticRecordListIndexDayRecord] = []
+        let vCursor: Int32 = 0
+        let vDay: UInt8 = 0
+        let vYear: UInt16 = 0
+        let vSum: UInt32 = 0
+        let vOrdered: Bool = false
+        let vRefusals: UInt32 = 0
+        self.vDraft = vDraft
+        self.vPicked = vPicked
+        self.vDays = vDays
+        self.vCursor = vCursor
+        self.vDay = vDay
+        self.vYear = vYear
+        self.vSum = vSum
+        self.vOrdered = vOrdered
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

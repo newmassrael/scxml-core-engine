@@ -109,6 +109,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -1044,9 +1044,10 @@ type StaticHostNotifyPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticHostNotifyPolicy creates a new policy with default values.
@@ -1132,33 +1133,67 @@ type StaticHostNotifyInvokeParams struct {
 	VExisted *bool
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticHostNotifyPolicy) AcceptParams(params StaticHostNotifyInvokeParams) {
-	if params.VId != nil {
-		p.vId = *params.VId
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticHostNotifyPolicy) AcceptParams(handed StaticHostNotifyInvokeParams) {
+	var vId string
+	if handed.VId != nil {
+		vId = *handed.VId
+	} else {
+		vId = ""
 	}
-	if params.VTitle != nil {
-		p.vTitle = *params.VTitle
+	var vTitle string
+	if handed.VTitle != nil {
+		vTitle = *handed.VTitle
+	} else {
+		vTitle = ""
 	}
-	if params.VBody != nil {
-		p.vBody = *params.VBody
+	var vBody string
+	if handed.VBody != nil {
+		vBody = *handed.VBody
+	} else {
+		vBody = ""
 	}
-	if params.VAtMs != nil {
-		p.vAtMs = *params.VAtMs
+	var vAtMs int64
+	if handed.VAtMs != nil {
+		vAtMs = *handed.VAtMs
+	} else {
+		vAtMs = 0
 	}
-	if params.VOutcome != nil {
-		p.vOutcome = *params.VOutcome
+	var vOutcome string
+	if handed.VOutcome != nil {
+		vOutcome = *handed.VOutcome
+	} else {
+		vOutcome = ""
 	}
-	if params.VPermission != nil {
-		p.vPermission = *params.VPermission
+	var vPermission string
+	if handed.VPermission != nil {
+		vPermission = *handed.VPermission
+	} else {
+		vPermission = ""
 	}
-	if params.VStatus != nil {
-		p.vStatus = *params.VStatus
+	var vStatus string
+	if handed.VStatus != nil {
+		vStatus = *handed.VStatus
+	} else {
+		vStatus = ""
 	}
-	if params.VExisted != nil {
-		p.vExisted = *params.VExisted
+	var vExisted bool
+	if handed.VExisted != nil {
+		vExisted = *handed.VExisted
+	} else {
+		vExisted = false
 	}
+	p.vId = vId
+	p.vTitle = vTitle
+	p.vBody = vBody
+	p.vAtMs = vAtMs
+	p.vOutcome = vOutcome
+	p.vPermission = vPermission
+	p.vStatus = vStatus
+	p.vExisted = vExisted
 }
 
 

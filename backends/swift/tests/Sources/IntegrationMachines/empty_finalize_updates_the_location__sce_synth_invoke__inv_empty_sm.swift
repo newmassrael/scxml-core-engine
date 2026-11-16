@@ -108,6 +108,7 @@ public final class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy: 
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -136,23 +136,23 @@ public final class StaticListIndexPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
-    var vPicked: [UInt8] = []
+    var vPicked: [UInt8]
     /// W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`).
-    var vCursor: Int32 = 0
+    var vCursor: Int32
     /// W3C SCXML 5.2: the `under` datamodel variable, published (`sce:direction="out"`).
-    var vUnder: UInt8 = 0
+    var vUnder: UInt8
     /// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
-    var vFirst: UInt8 = 0
+    var vFirst: UInt8
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: UInt8 = 0
+    var vLast: UInt8
     /// W3C SCXML 5.2: the `ordered` datamodel variable, published (`sce:direction="out"`).
-    var vOrdered: Bool = false
+    var vOrdered: Bool
     /// W3C SCXML 5.2: the `room` datamodel variable, published (`sce:direction="out"`).
-    var vRoom: Bool = false
+    var vRoom: Bool
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
-    var vCount: UInt32 = 0
+    var vCount: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `picked` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -206,36 +206,91 @@ public final class StaticListIndexPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vCursor {
-            vCursor = value
+        let vPicked: [UInt8] = []
+        let vCursor: Int32
+        if let handed = params.vCursor {
+            vCursor = handed
+        } else {
+            vCursor = 0
         }
-        if let value = params.vUnder {
-            vUnder = value
+        let vUnder: UInt8
+        if let handed = params.vUnder {
+            vUnder = handed
+        } else {
+            vUnder = 0
         }
-        if let value = params.vFirst {
-            vFirst = value
+        let vFirst: UInt8
+        if let handed = params.vFirst {
+            vFirst = handed
+        } else {
+            vFirst = 0
         }
-        if let value = params.vLast {
-            vLast = value
+        let vLast: UInt8
+        if let handed = params.vLast {
+            vLast = handed
+        } else {
+            vLast = 0
         }
-        if let value = params.vOrdered {
-            vOrdered = value
+        let vOrdered: Bool
+        if let handed = params.vOrdered {
+            vOrdered = handed
+        } else {
+            vOrdered = false
         }
-        if let value = params.vRoom {
-            vRoom = value
+        let vRoom: Bool
+        if let handed = params.vRoom {
+            vRoom = handed
+        } else {
+            vRoom = false
         }
-        if let value = params.vCount {
-            vCount = value
+        let vCount: UInt32
+        if let handed = params.vCount {
+            vCount = handed
+        } else {
+            vCount = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vPicked = vPicked
+        self.vCursor = vCursor
+        self.vUnder = vUnder
+        self.vFirst = vFirst
+        self.vLast = vLast
+        self.vOrdered = vOrdered
+        self.vRoom = vRoom
+        self.vCount = vCount
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vPicked: [UInt8] = []
+        let vCursor: Int32 = 0
+        let vUnder: UInt8 = 0
+        let vFirst: UInt8 = 0
+        let vLast: UInt8 = 0
+        let vOrdered: Bool = false
+        let vRoom: Bool = false
+        let vCount: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vPicked = vPicked
+        self.vCursor = vCursor
+        self.vUnder = vUnder
+        self.vFirst = vFirst
+        self.vLast = vLast
+        self.vOrdered = vOrdered
+        self.vRoom = vRoom
+        self.vCount = vCount
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

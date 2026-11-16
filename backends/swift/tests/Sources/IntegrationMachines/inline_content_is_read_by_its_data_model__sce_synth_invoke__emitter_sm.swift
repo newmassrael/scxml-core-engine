@@ -109,6 +109,7 @@ public final class InlineContentIsReadByItsDataModelSceSynthInvokeEmitterPolicy:
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

@@ -651,9 +651,10 @@ type StaticRecordListIndexPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticRecordListIndexPolicy creates a new policy with default values.
@@ -755,27 +756,59 @@ type StaticRecordListIndexInvokeParams struct {
 	VRefusals *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticRecordListIndexPolicy) AcceptParams(params StaticRecordListIndexInvokeParams) {
-	if params.VCursor != nil {
-		p.vCursor = *params.VCursor
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticRecordListIndexPolicy) AcceptParams(handed StaticRecordListIndexInvokeParams) {
+	var vDraft StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord{year: 2026, month: 1, dayOfMonth: 1}
+	var vPicked StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord{year: 2000, month: 1, dayOfMonth: 1}
+	var vDays []StaticRecordListIndexDayRecord = nil
+	var vCursor int32
+	if handed.VCursor != nil {
+		vCursor = *handed.VCursor
+	} else {
+		vCursor = 0
 	}
-	if params.VDay != nil {
-		p.vDay = *params.VDay
+	var vDay uint8
+	if handed.VDay != nil {
+		vDay = *handed.VDay
+	} else {
+		vDay = 0
 	}
-	if params.VYear != nil {
-		p.vYear = *params.VYear
+	var vYear uint16
+	if handed.VYear != nil {
+		vYear = *handed.VYear
+	} else {
+		vYear = 0
 	}
-	if params.VSum != nil {
-		p.vSum = *params.VSum
+	var vSum uint32
+	if handed.VSum != nil {
+		vSum = *handed.VSum
+	} else {
+		vSum = 0
 	}
-	if params.VOrdered != nil {
-		p.vOrdered = *params.VOrdered
+	var vOrdered bool
+	if handed.VOrdered != nil {
+		vOrdered = *handed.VOrdered
+	} else {
+		vOrdered = false
 	}
-	if params.VRefusals != nil {
-		p.vRefusals = *params.VRefusals
+	var vRefusals uint32
+	if handed.VRefusals != nil {
+		vRefusals = *handed.VRefusals
+	} else {
+		vRefusals = 0
 	}
+	p.vDraft = vDraft
+	p.vPicked = vPicked
+	p.vDays = vDays
+	p.vCursor = vCursor
+	p.vDay = vDay
+	p.vYear = vYear
+	p.vSum = vSum
+	p.vOrdered = vOrdered
+	p.vRefusals = vRefusals
 }
 
 

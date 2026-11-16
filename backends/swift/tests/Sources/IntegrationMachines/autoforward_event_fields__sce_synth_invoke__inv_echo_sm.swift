@@ -110,6 +110,7 @@ public final class AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy: InvocableP
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

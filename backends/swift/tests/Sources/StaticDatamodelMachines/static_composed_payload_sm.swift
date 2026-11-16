@@ -200,25 +200,25 @@ public final class StaticComposedPayloadPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `item_count` datamodel variable, published (`sce:direction="out"`).
-    var vItemCount: UInt32 = 0
+    var vItemCount: UInt32
     /// W3C SCXML 5.2: the `tag_count` datamodel variable, published (`sce:direction="out"`).
-    var vTagCount: UInt32 = 0
+    var vTagCount: UInt32
     /// W3C SCXML 5.2: the `word_count` datamodel variable, published (`sce:direction="out"`).
-    var vWordCount: UInt32 = 0
+    var vWordCount: UInt32
     /// W3C SCXML 5.2: the `id_sum` datamodel variable, published (`sce:direction="out"`).
-    var vIdSum: UInt32 = 0
+    var vIdSum: UInt32
     /// W3C SCXML 5.2: the `cell_sum` datamodel variable, published (`sce:direction="out"`).
-    var vCellSum: UInt32 = 0
+    var vCellSum: UInt32
     /// W3C SCXML 5.2: the `cell` datamodel variable, published (`sce:direction="out"`).
-    var vCell: UInt8 = 0
+    var vCell: UInt8
     /// W3C SCXML 5.2: the `first_tags` datamodel variable, published (`sce:direction="out"`).
-    var vFirstTags: UInt32 = 0
+    var vFirstTags: UInt32
     /// W3C SCXML 5.2: the `first_maybe` datamodel variable, published (`sce:direction="out"`).
-    var vFirstMaybe: UInt16? = nil
+    var vFirstMaybe: UInt16?
     /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: [UInt8] = []
+    var vLate: [UInt8]
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `item_count` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -277,39 +277,100 @@ public final class StaticComposedPayloadPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vItemCount {
-            vItemCount = value
+        let vItemCount: UInt32
+        if let handed = params.vItemCount {
+            vItemCount = handed
+        } else {
+            vItemCount = 0
         }
-        if let value = params.vTagCount {
-            vTagCount = value
+        let vTagCount: UInt32
+        if let handed = params.vTagCount {
+            vTagCount = handed
+        } else {
+            vTagCount = 0
         }
-        if let value = params.vWordCount {
-            vWordCount = value
+        let vWordCount: UInt32
+        if let handed = params.vWordCount {
+            vWordCount = handed
+        } else {
+            vWordCount = 0
         }
-        if let value = params.vIdSum {
-            vIdSum = value
+        let vIdSum: UInt32
+        if let handed = params.vIdSum {
+            vIdSum = handed
+        } else {
+            vIdSum = 0
         }
-        if let value = params.vCellSum {
-            vCellSum = value
+        let vCellSum: UInt32
+        if let handed = params.vCellSum {
+            vCellSum = handed
+        } else {
+            vCellSum = 0
         }
-        if let value = params.vCell {
-            vCell = value
+        let vCell: UInt8
+        if let handed = params.vCell {
+            vCell = handed
+        } else {
+            vCell = 0
         }
-        if let value = params.vFirstTags {
-            vFirstTags = value
+        let vFirstTags: UInt32
+        if let handed = params.vFirstTags {
+            vFirstTags = handed
+        } else {
+            vFirstTags = 0
         }
-        if let value = params.vFirstMaybe {
-            vFirstMaybe = value
+        let vFirstMaybe: UInt16?
+        if let handed = params.vFirstMaybe {
+            vFirstMaybe = handed
+        } else {
+            vFirstMaybe = nil
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vLate: [UInt8] = []
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vItemCount = vItemCount
+        self.vTagCount = vTagCount
+        self.vWordCount = vWordCount
+        self.vIdSum = vIdSum
+        self.vCellSum = vCellSum
+        self.vCell = vCell
+        self.vFirstTags = vFirstTags
+        self.vFirstMaybe = vFirstMaybe
+        self.vLate = vLate
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vItemCount: UInt32 = 0
+        let vTagCount: UInt32 = 0
+        let vWordCount: UInt32 = 0
+        let vIdSum: UInt32 = 0
+        let vCellSum: UInt32 = 0
+        let vCell: UInt8 = 0
+        let vFirstTags: UInt32 = 0
+        let vFirstMaybe: UInt16? = nil
+        let vLate: [UInt8] = []
+        let vRefusals: UInt32 = 0
+        self.vItemCount = vItemCount
+        self.vTagCount = vTagCount
+        self.vWordCount = vWordCount
+        self.vIdSum = vIdSum
+        self.vCellSum = vCellSum
+        self.vCell = vCell
+        self.vFirstTags = vFirstTags
+        self.vFirstMaybe = vFirstMaybe
+        self.vLate = vLate
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

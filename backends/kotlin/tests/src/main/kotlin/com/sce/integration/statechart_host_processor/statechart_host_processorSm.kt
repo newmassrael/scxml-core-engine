@@ -264,10 +264,13 @@ class StatechartHostProcessorStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -275,65 +278,63 @@ class StatechartHostProcessorStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'served' with expr
-        try {
-            val initResult_served = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "served", initResult_served)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='served'> expr failed to evaluate")
+        // §scxml-6.4: 'served' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "served", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'served' with expr
+            try {
+                engine.setVariable(sid, "served", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='served'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'refused' with expr
-        try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "refused", initResult_refused)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+        // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "refused", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'refused' with expr
+            try {
+                engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'plain' with expr
-        try {
-            val initResult_plain = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "plain", initResult_plain)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='plain'> expr failed to evaluate")
+        // §scxml-6.4: 'plain' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "plain", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'plain' with expr
+            try {
+                engine.setVariable(sid, "plain", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='plain'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'paramErrors' with expr
-        try {
-            val initResult_paramErrors = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "paramErrors", initResult_paramErrors)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='paramErrors'> expr failed to evaluate")
+        // §scxml-6.4: 'paramErrors' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "paramErrors", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'paramErrors' with expr
+            try {
+                engine.setVariable(sid, "paramErrors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='paramErrors'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'mode' with expr
-        try {
-            val initResult_mode = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pairs\"", "'pairs'"))
-            engine.setVariable(sid, "mode", initResult_mode)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='mode'> expr failed to evaluate")
+        // §scxml-6.4: 'mode' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "mode", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'mode' with expr
+            try {
+                engine.setVariable(sid, "mode", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pairs\"", "'pairs'")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='mode'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'nothing' with expr
-        try {
-            val initResult_nothing = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null"))
-            engine.setVariable(sid, "nothing", initResult_nothing)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+        // §scxml-6.4: 'nothing' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "nothing", StatechartHostProcessorEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'nothing' with expr
+            try {
+                engine.setVariable(sid, "nothing", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+            }
         }
     }
 

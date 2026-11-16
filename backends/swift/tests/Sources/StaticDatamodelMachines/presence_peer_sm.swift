@@ -219,29 +219,29 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
-    var vNode: UInt32 = 0
+    var vNode: UInt32
     /// W3C SCXML 5.2: the `hub` datamodel variable, published (`sce:direction="out"`).
-    var vHub: Bool = false
+    var vHub: Bool
     /// W3C SCXML 5.2: the `ttl` datamodel variable, published (`sce:direction="out"`).
-    var vTtl: UInt32 = 0
+    var vTtl: UInt32
     /// W3C SCXML 5.2: the `lease` datamodel variable, published (`sce:direction="out"`).
-    var vLease: UInt32 = 0
+    var vLease: UInt32
     /// W3C SCXML 5.2: the `online` datamodel variable, published (`sce:direction="out"`).
-    var vOnline: [PresencePeerSeenRecord] = []
+    var vOnline: [PresencePeerSeenRecord]
     /// W3C SCXML 5.2: the `rebuilt` datamodel variable.
-    var vRebuilt: [PresencePeerSeenRecord] = []
+    var vRebuilt: [PresencePeerSeenRecord]
     /// W3C SCXML 5.2: the `entry` datamodel variable.
-    var vEntry: PresencePeerSeenRecord = PresencePeerSeenRecord(client: 0, last: 0, gen: 0)
+    var vEntry: PresencePeerSeenRecord
     /// W3C SCXML 5.2: the `serial` datamodel variable, published (`sce:direction="out"`).
-    var vSerial: UInt32 = 0
+    var vSerial: UInt32
     /// W3C SCXML 5.2: the `known` datamodel variable.
-    var vKnown: Bool = false
+    var vKnown: Bool
     /// W3C SCXML 5.2: the `fresh` datamodel variable.
-    var vFresh: Bool = false
+    var vFresh: Bool
     /// W3C SCXML 5.2: the `lost` datamodel variable, published (`sce:direction="out"`).
-    var vLost: UInt32 = 0
+    var vLost: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -292,39 +292,108 @@ public final class PresencePeerPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vNode {
-            vNode = value
+        let vNode: UInt32
+        if let handed = params.vNode {
+            vNode = handed
+        } else {
+            vNode = 0
         }
-        if let value = params.vHub {
-            vHub = value
+        let vHub: Bool
+        if let handed = params.vHub {
+            vHub = handed
+        } else {
+            vHub = false
         }
-        if let value = params.vTtl {
-            vTtl = value
+        let vTtl: UInt32
+        if let handed = params.vTtl {
+            vTtl = handed
+        } else {
+            vTtl = 0
         }
-        if let value = params.vLease {
-            vLease = value
+        let vLease: UInt32
+        if let handed = params.vLease {
+            vLease = handed
+        } else {
+            vLease = 0
         }
-        if let value = params.vSerial {
-            vSerial = value
+        let vOnline: [PresencePeerSeenRecord] = []
+        let vRebuilt: [PresencePeerSeenRecord] = []
+        let vEntry: PresencePeerSeenRecord = PresencePeerSeenRecord(client: 0, last: 0, gen: 0)
+        let vSerial: UInt32
+        if let handed = params.vSerial {
+            vSerial = handed
+        } else {
+            vSerial = 0
         }
-        if let value = params.vKnown {
-            vKnown = value
+        let vKnown: Bool
+        if let handed = params.vKnown {
+            vKnown = handed
+        } else {
+            vKnown = false
         }
-        if let value = params.vFresh {
-            vFresh = value
+        let vFresh: Bool
+        if let handed = params.vFresh {
+            vFresh = handed
+        } else {
+            vFresh = false
         }
-        if let value = params.vLost {
-            vLost = value
+        let vLost: UInt32
+        if let handed = params.vLost {
+            vLost = handed
+        } else {
+            vLost = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vNode = vNode
+        self.vHub = vHub
+        self.vTtl = vTtl
+        self.vLease = vLease
+        self.vOnline = vOnline
+        self.vRebuilt = vRebuilt
+        self.vEntry = vEntry
+        self.vSerial = vSerial
+        self.vKnown = vKnown
+        self.vFresh = vFresh
+        self.vLost = vLost
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vNode: UInt32 = 0
+        let vHub: Bool = false
+        let vTtl: UInt32 = 0
+        let vLease: UInt32 = 0
+        let vOnline: [PresencePeerSeenRecord] = []
+        let vRebuilt: [PresencePeerSeenRecord] = []
+        let vEntry: PresencePeerSeenRecord = PresencePeerSeenRecord(client: 0, last: 0, gen: 0)
+        let vSerial: UInt32 = 0
+        let vKnown: Bool = false
+        let vFresh: Bool = false
+        let vLost: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vNode = vNode
+        self.vHub = vHub
+        self.vTtl = vTtl
+        self.vLease = vLease
+        self.vOnline = vOnline
+        self.vRebuilt = vRebuilt
+        self.vEntry = vEntry
+        self.vSerial = vSerial
+        self.vKnown = vKnown
+        self.vFresh = vFresh
+        self.vLost = vLost
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

@@ -171,10 +171,13 @@ class Test557StateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -182,40 +185,27 @@ class Test557StateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML B.2: Initialize variable 'var1' with inline content (C++ parseEventData pattern)
-        try {
-            val initResult_var1 = engine.parseDataValue(sid, "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>")
-            engine.setVariable(sid, "var1", initResult_var1)
-        } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, "<data id='var1'> content failed to initialise")
-        }
-        // W3C SCXML 5.3.1: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
-        try {
-            val srcContent_var2 = engine.loadDataFromSrc("file:test557.txt", "resources/557")
-            if (srcContent_var2 != null) {
-                val srcValue_var2 = engine.parseDataValue(sid, srcContent_var2)
-                engine.setVariable(sid, "var2", srcValue_var2)
+        // §scxml-6.4: 'var1' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "var1", Test557Event.Error.Execution)) {
+            // W3C SCXML B.2: Initialize variable 'var1' with inline content (C++ parseEventData pattern)
+            try {
+                engine.setVariable(sid, "var1", engine.parseDataValue(sid, "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>"))
+            } catch (e: Exception) {
+                raisePlatformError(Test557Event.Error.Execution, "<data id='var1'> content failed to initialise")
             }
-        } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, "<data id='var2' src='file:test557.txt'> could not be loaded")
+        }
+        // §scxml-6.4: 'var2' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "var2", Test557Event.Error.Execution)) {
+            // W3C SCXML 5.3.1: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
+            try {
+                engine.loadDataFromSrc("file:test557.txt", "resources/557")?.let { engine.setVariable(sid, "var2", engine.parseDataValue(sid, it)) }
+            } catch (e: Exception) {
+                raisePlatformError(Test557Event.Error.Execution, "<data id='var2' src='file:test557.txt'> could not be loaded")
+            }
         }
     }
 

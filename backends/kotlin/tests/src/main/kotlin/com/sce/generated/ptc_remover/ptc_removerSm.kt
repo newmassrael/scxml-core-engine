@@ -1,0 +1,625 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 982a23a5ec15b8216f29e9e8e4ba6c1047dee0d66671c7835c2776a4de5a13d2
+
+// GENERATED CODE — DO NOT EDIT
+// Source: sce-build/tests/fixtures/test_profile/boundary/ptc_remover.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: ptc_remover.scxml:7 :: _machine
+
+package com.sce.generated.ptc_remover
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface PtcRemoverState : State {
+    data object Asking : PtcRemoverState
+    data object Passed : PtcRemoverState
+    data object Watching : PtcRemoverState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface PtcRemoverEvent : Event {
+    sealed interface Done : PtcRemoverEvent {
+        data object Invoke : Done
+    }
+    sealed interface Error : PtcRemoverEvent {
+        data object Execution : Error
+    }
+    sealed interface Sce : PtcRemoverEvent {
+        sealed interface Test : Sce {
+            data object Snapshot : Test
+        }
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+// ======================================================================
+// The test component the profile's runtime drives (docs/SCE_TEST_PROFILE.md §12.3)
+// ======================================================================
+
+/**
+ * The test component `ptc_remover` as the profile's runtime drives it
+ * (docs/SCE_TEST_PROFILE.md §12.3).
+ *
+ * It owns the machine below, unchanged, and reaches it only through the doors
+ * the engine already has: the machine's sends on a port leave through the
+ * test-port processor and its PTCs through the test-component invoker, both
+ * registered here over the component's runtime context (docs/adr/0084), and
+ * each round's snapshot is the one external event every branch is a
+ * transition on. The runtime never reports a PTC's completion to the engine:
+ * a done branch reads it from the snapshot, so the engine cancels every PTC it
+ * started when the invoking state is exited, which is P9's kill. One thread;
+ * the engine's scheduler takes no part, since a component sends nothing
+ * delayed.
+ *
+ * The machine is built when the component starts, constructed with the
+ * context, and there is none before.
+ */
+class PtcRemoverComponent : com.sce.runtime.test.ComponentMachine {
+    private var sceMachine: PtcRemoverStateMachine? = null
+
+    override fun start(context: com.sce.runtime.test.ComponentContext) {
+        // The session is named by the component, and named rather than drawn.
+        // The name is `mtc` or the id of the `<invoke>` that creates the PTC
+        // (`ComponentContext.create`, which creates nothing under a name its
+        // configuration has no PTC of), and every `<invoke id>` is refused
+        // where its document is parsed unless it is an XML Name, which is an
+        // Nmtoken (docs/adr/0045). Every `sce-static` root takes the session id
+        // its host gives, whether or not it saves (docs/adr/0045, answer 2), so
+        // the component's machine is named by the component.
+        val machine = PtcRemoverStateMachine(sceTestContext = context, sessionId = context.name)
+        // P6: a send on a port is appended to the queue of the port it is
+        // connected to, or handed to the system adapter where it is mapped. A
+        // test-port send always carries its template's value
+        // (`forge::static_lowering`, `StaticTarget::test_message`).
+        machine.registerEventProcessor("http://sce.dev/ext/test-port") { request ->
+            context.send(
+                request.target,
+                com.sce.runtime.test.Message(
+                    request.eventName,
+                    checkNotNull(request.value) { "a test-port send carries its template's value" },
+                ),
+            )
+            emptyList()
+        }
+        // P9: the start of a PTC's invocation creates and starts it, and its
+        // cancel removes it, whether it is still running or already done.
+        machine.registerInvoker("http://sce.dev/ext/test-component") { event ->
+            event.start?.let { context.create(it.invokeId) }
+            event.cancel?.let { context.kill(it.invokeId) }
+            null
+        }
+        machine.initialize()
+        sceMachine = machine
+    }
+
+    // §3.2 step 3: the round's snapshot, on which the machine takes the first
+    // branch whose guard holds (P3) and completes its macrostep (P4), or takes
+    // none and discards the event (§7). The owner's tick runs the macrostep
+    // the event starts.
+    override fun deliverSnapshot() {
+        val machine = sceMachine ?: return
+        machine.send(PtcRemoverEvent.Sce.Test.Snapshot)
+        machine.tick()
+    }
+
+    // P10: the machine entered a top-level `<final>`.
+    override fun terminated(): Boolean = sceMachine?.isInFinalState == true
+}
+
+class PtcRemoverStateMachine(
+    /**
+     * docs/SCE_TEST_PROFILE.md §12.3: the runtime context of the test
+     * component this machine is, which its branches' guards read the round's
+     * snapshot through and its statements call. Given by the component the
+     * runtime drives (PtcRemoverComponent) when it builds the machine,
+     * since the initial state's `<onentry>` may already start a timer or set a
+     * verdict.
+     */
+    private val sceTestContext: com.sce.runtime.test.ComponentContext,
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
+) : StateMachineEngine<PtcRemoverState, PtcRemoverEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
+    /** W3C SCXML 5.2: the `asked` datamodel variable, the machine's own. */
+    private var vAsked: UInt = 3.toUInt()
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var asked: UInt? = null
+    }
+
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
+    fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun acceptParamsPart0(params: InvokeParams) {
+        vAsked = params.asked ?: (3.toUInt())
+    }
+
+    /**
+     * What a host observes: the full active configuration — every active
+     * state, each region of a `<parallel>` included — taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
+     */
+    data class Snapshot(
+        val configuration: Set<PtcRemoverState>,
+        val truncated: Boolean,
+    )
+
+    private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
+        Snapshot(emptySet(), false)
+    )
+
+    /**
+     * The machine as the host sees it: one [Snapshot] per completed macrostep
+     * (W3C SCXML Appendix D), never a state between two microsteps.
+     *
+     * Compose integration: `val s by sm.snapshot.collectAsState()`
+     */
+    val snapshot: kotlinx.coroutines.flow.StateFlow<Snapshot>
+        get() = _snapshot
+
+    override fun onMacrostepComplete(truncated: Boolean) {
+        _snapshot.value = Snapshot(activeConfiguration, truncated)
+    }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
+     */
+    val savedShape: SavedShape = SavedShape(
+        first = "7f5cb8e393ffdbb15c754a46f9276c6b182789052062192611bca0f4adfae571",
+        revised = "df8907622dafce3c537b9091c82e9e32e60cade01266998c12553a97922dd023",
+        format2First = "7f5cb8e393ffdbb15c754a46f9276c6b182789052062192611bca0f4adfae571",
+        format2Revised = "df8907622dafce3c537b9091c82e9e32e60cade01266998c12553a97922dd023",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "asked" to SavedValues.of(vAsked)
+    }
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.uint32(savedGrown.variable("asked"), "asked")
+        return {
+            vAsked = saved1
+        }
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
+        SavedValues.uint32(savedGrown.variable("asked"), "asked")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
+
+    // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
+    // is running, and a restore starts each again from the request it saved. What
+    // it may name is what the document hands to a host.
+    override val staticHostInvokes: List<Triple<String, String, PtcRemoverState>> = listOf(
+        Triple("http://sce.dev/ext/test-component", "listener", PtcRemoverState.Watching),
+    )
+
+    override val initialState: PtcRemoverState = PtcRemoverState.Watching
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: PtcRemoverState): Boolean = when (state) {
+        is PtcRemoverState.Passed -> true
+        else -> false
+    }
+
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<PtcRemoverState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<PtcRemoverState, HistoryId>> =
+            listOf(StateTarget(PtcRemoverState.Watching))
+    }
+
+    private object TransitionsPart0 {
+
+        // W3C SCXML 3.13: asking's transition 0, as the microstep reads it.
+        val transitionAskingAt0 = EnabledTransition<PtcRemoverState, HistoryId>(
+            PtcRemoverState.Asking,
+            listOf(StateTarget(PtcRemoverState.Passed)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: watching's transition 0, as the microstep reads it.
+        val transitionWatchingAt0 = EnabledTransition<PtcRemoverState, HistoryId>(
+            PtcRemoverState.Watching,
+            listOf(StateTarget(PtcRemoverState.Asking)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): PtcRemoverState? = when (stateId) {
+        "asking" -> PtcRemoverState.Asking
+        "passed" -> PtcRemoverState.Passed
+        "watching" -> PtcRemoverState.Watching
+        else -> null
+    }
+
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: PtcRemoverState): String = when (state) {
+        is PtcRemoverState.Asking -> "asking"
+        is PtcRemoverState.Passed -> "passed"
+        is PtcRemoverState.Watching -> "watching"
+    }
+
+
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
+    override fun documentOrderOf(state: PtcRemoverState): Int = when (state) {
+        is PtcRemoverState.Asking -> 1
+        is PtcRemoverState.Passed -> 2
+        is PtcRemoverState.Watching -> 0
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): PtcRemoverEvent? = when (name) {
+        "done.invoke" -> PtcRemoverEvent.Done.Invoke
+        "error.execution" -> PtcRemoverEvent.Error.Execution
+        "sce.test.snapshot" -> PtcRemoverEvent.Sce.Test.Snapshot
+        else -> null
+    }
+
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: PtcRemoverEvent): String? = when (event) {
+        is PtcRemoverEvent.Done.Invoke -> "done.invoke"
+        is PtcRemoverEvent.Error.Execution -> "error.execution"
+        is PtcRemoverEvent.Sce.Test.Snapshot -> "sce.test.snapshot"
+    }
+
+
+    // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
+    // is accepted only through `completeHostInvoke`.
+    override val hostInvokeIds: Set<String> = setOf(
+        "listener",
+    )
+
+
+
+
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(state: PtcRemoverState, event: PtcRemoverEvent?): EnabledTransition<PtcRemoverState, HistoryId>? = when (state) {
+        is PtcRemoverState.Asking -> firstEnabledTransitionOfAsking(state, event)
+        is PtcRemoverState.Watching -> firstEnabledTransitionOfWatching(state, event)
+        else -> null
+    }
+
+
+    // asking's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAsking(state: PtcRemoverState, event: PtcRemoverEvent?): EnabledTransition<PtcRemoverState, HistoryId>? = when {
+        event is PtcRemoverEvent.Sce.Test.Snapshot && sceTestContext.snapshotPresent("peer") -> TransitionsPart0.transitionAskingAt0
+        else -> null
+    }
+
+
+    // watching's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWatching(state: PtcRemoverState, event: PtcRemoverEvent?): EnabledTransition<PtcRemoverState, HistoryId>? = when {
+        event is PtcRemoverEvent.Sce.Test.Snapshot && sceTestContext.timedOut("patience") -> TransitionsPart0.transitionWatchingAt0
+        else -> null
+    }
+
+
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: ptc_remover.scxml:7 :: _machine
+    override fun onEntry(state: PtcRemoverState, isDefaultEntry: Boolean) {
+        when (state) {
+            is PtcRemoverState.Asking -> onEntryOfAsking()
+            is PtcRemoverState.Passed -> onEntryOfPassed()
+            is PtcRemoverState.Watching -> onEntryOfWatching()
+        }
+    }
+
+
+    private fun onEntryOfAsking() {
+                // SCE-MAP: ptc_remover.scxml:25 :: asking :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
+
+
+            if (run send@{
+            val sendData = ""
+            val sendWireParams = emptyMap<String, List<String>>()
+            // W3C SCXML 6.2.5: "http://sce.dev/ext/test-port" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "http://sce.dev/ext/test-port",
+                eventName = "job.request",
+                target = "peer",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_0",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId,
+                // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is
+                // the value of its specific template, handed to the test-port
+                // processor as a value and never as an encoding (docs/adr/0091,
+                // C2), with the writer of its canonical form in the test log
+                // (§12.5). Every other send leaves it null and carries `eventData`.
+                value = com.sce.runtime.test.messageValue(com.sce.generated.request_of.value(vAsked), com.sce.generated.request_of.TYPE) { sceSent -> com.sce.generated.request_of.canonical(sceSent) }
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("http://sce.dev/ext/test-port")) {
+                raisePlatformError(PtcRemoverEvent.Error.Execution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered", "__send_0")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return@run
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+                }
+    }
+
+    private fun onEntryOfPassed() {
+                // SCE-MAP: ptc_remover.scxml:34 :: passed :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+    }
+
+    private fun onEntryOfWatching() {
+                // SCE-MAP: ptc_remover.scxml:18 :: watching :: _state_body
+                // W3C SCXML 3.8: Onentry block 1/1
+                run {
+
+            sceTestContext.startTimer("patience", 1000L)
+                }
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "watching.${System.identityHashCode(this)}.listener"
+                    deferInvoke(PtcRemoverState.Watching, generatedInvokeId) {
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
+                        val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "http://sce.dev/ext/test-component",
+                                invokeId = "listener",
+                                src = "request_listener.scxml",
+                                params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
+                                content = ""                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(PtcRemoverEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: ptc_remover.scxml:7 :: _machine
+    override fun onExit(state: PtcRemoverState) {
+        when (state) {
+            is PtcRemoverState.Asking -> onExitOfAsking()
+            is PtcRemoverState.Passed -> onExitOfPassed()
+            is PtcRemoverState.Watching -> onExitOfWatching()
+        }
+    }
+
+
+    private fun onExitOfAsking() {
+                // SCE-MAP: ptc_remover.scxml:25 :: asking :: _state_body
+    }
+
+    private fun onExitOfPassed() {
+                // SCE-MAP: ptc_remover.scxml:34 :: passed :: _state_body
+    }
+
+    private fun onExitOfWatching() {
+                // SCE-MAP: ptc_remover.scxml:18 :: watching :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(PtcRemoverState.Watching)
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("http://sce.dev/ext/test-component", "listener")
+    }
+
+
+
+    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a branch of the test
+    // component is taken before the microstep exits any state: it removes what
+    // it matched from the round's snapshot, writes its record in the test log,
+    // and holds a message its content reads in the payload member of its
+    // record's event (`Transition::native_take`).
+    override fun takeTransition(source: PtcRemoverState, transitionIndex: Int) {
+        when {
+            source is PtcRemoverState.Asking && transitionIndex == 0 -> {
+                sceTestContext.receive("peer")
+            }
+            source is PtcRemoverState.Watching && transitionIndex == 0 -> {
+                sceTestContext.timeout("patience")
+            }
+        }
+    }
+
+    // Transition Content (W3C SCXML 3.13)
+    // SCE-MAP: ptc_remover.scxml:7 :: _machine
+    override fun executeTransitionContent(source: PtcRemoverState, transitionIndex: Int) {
+        when (source) {
+            is PtcRemoverState.Asking -> transitionContentOfAsking(transitionIndex)
+            else -> {}
+        }
+    }
+
+
+    // The content of `asking`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfAsking(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfAskingAt0()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfAskingAt0() {
+                // SCE-MAP: ptc_remover.scxml:30 :: asking :: _transition_0
+
+            sceTestContext.setverdict(com.sce.runtime.test.Verdict.PASS, "")
+    }
+}

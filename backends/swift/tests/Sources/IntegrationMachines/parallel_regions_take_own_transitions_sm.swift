@@ -135,6 +135,7 @@ public final class ParallelRegionsTakeOwnTransitionsPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

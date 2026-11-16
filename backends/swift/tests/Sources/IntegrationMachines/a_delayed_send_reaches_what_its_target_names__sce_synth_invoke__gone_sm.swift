@@ -110,6 +110,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

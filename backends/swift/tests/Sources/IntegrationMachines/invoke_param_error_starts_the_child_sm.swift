@@ -125,6 +125,7 @@ public final class InvokeParamErrorStartsTheChildPolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

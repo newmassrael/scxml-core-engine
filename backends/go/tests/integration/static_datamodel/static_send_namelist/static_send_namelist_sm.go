@@ -570,9 +570,10 @@ type StaticSendNamelistPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticSendNamelistPolicy creates a new policy with default values.
@@ -651,18 +652,36 @@ type StaticSendNamelistInvokeParams struct {
 	VDeliveries *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticSendNamelistPolicy) AcceptParams(params StaticSendNamelistInvokeParams) {
-	if params.VZoom != nil {
-		p.vZoom = *params.VZoom
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticSendNamelistPolicy) AcceptParams(handed StaticSendNamelistInvokeParams) {
+	var vLayout StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnumWeek
+	var vZoom uint8
+	if handed.VZoom != nil {
+		vZoom = *handed.VZoom
+	} else {
+		vZoom = 3
 	}
-	if params.VLevel != nil {
-		p.vLevel = *params.VLevel
+	var vReceived StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnumMonth
+	var vLevel uint8
+	if handed.VLevel != nil {
+		vLevel = *handed.VLevel
+	} else {
+		vLevel = 0
 	}
-	if params.VDeliveries != nil {
-		p.vDeliveries = *params.VDeliveries
+	var vDeliveries uint32
+	if handed.VDeliveries != nil {
+		vDeliveries = *handed.VDeliveries
+	} else {
+		vDeliveries = 0
 	}
+	p.vLayout = vLayout
+	p.vZoom = vZoom
+	p.vReceived = vReceived
+	p.vLevel = vLevel
+	p.vDeliveries = vDeliveries
 }
 
 

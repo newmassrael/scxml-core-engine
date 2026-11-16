@@ -149,21 +149,21 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `method` datamodel variable.
-    var vMethod: String = ""
+    var vMethod: String
     /// W3C SCXML 5.2: the `url` datamodel variable.
-    var vUrl: String = ""
+    var vUrl: String
     /// W3C SCXML 5.2: the `request_headers` datamodel variable.
-    var vRequestHeaders: String = ""
+    var vRequestHeaders: String
     /// W3C SCXML 5.2: the `request_body` datamodel variable.
-    var vRequestBody: String = ""
+    var vRequestBody: String
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
-    var vOutcome: String = ""
+    var vOutcome: String
     /// W3C SCXML 5.2: the `status` datamodel variable, published (`sce:direction="out"`).
-    var vStatus: UInt16 = 0
+    var vStatus: UInt16
     /// W3C SCXML 5.2: the `response_headers` datamodel variable, published (`sce:direction="out"`).
-    var vResponseHeaders: String = ""
+    var vResponseHeaders: String
     /// W3C SCXML 5.2: the `response_body` datamodel variable, published (`sce:direction="out"`).
-    var vResponseBody: String = ""
+    var vResponseBody: String
 
     /// Reports what the published `outcome` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -197,36 +197,87 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
         public var vResponseBody: String? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vMethod {
-            vMethod = value
+        let vMethod: String
+        if let handed = params.vMethod {
+            vMethod = handed
+        } else {
+            vMethod = ""
         }
-        if let value = params.vUrl {
-            vUrl = value
+        let vUrl: String
+        if let handed = params.vUrl {
+            vUrl = handed
+        } else {
+            vUrl = ""
         }
-        if let value = params.vRequestHeaders {
-            vRequestHeaders = value
+        let vRequestHeaders: String
+        if let handed = params.vRequestHeaders {
+            vRequestHeaders = handed
+        } else {
+            vRequestHeaders = ""
         }
-        if let value = params.vRequestBody {
-            vRequestBody = value
+        let vRequestBody: String
+        if let handed = params.vRequestBody {
+            vRequestBody = handed
+        } else {
+            vRequestBody = ""
         }
-        if let value = params.vOutcome {
-            vOutcome = value
+        let vOutcome: String
+        if let handed = params.vOutcome {
+            vOutcome = handed
+        } else {
+            vOutcome = ""
         }
-        if let value = params.vStatus {
-            vStatus = value
+        let vStatus: UInt16
+        if let handed = params.vStatus {
+            vStatus = handed
+        } else {
+            vStatus = 0
         }
-        if let value = params.vResponseHeaders {
-            vResponseHeaders = value
+        let vResponseHeaders: String
+        if let handed = params.vResponseHeaders {
+            vResponseHeaders = handed
+        } else {
+            vResponseHeaders = ""
         }
-        if let value = params.vResponseBody {
-            vResponseBody = value
+        let vResponseBody: String
+        if let handed = params.vResponseBody {
+            vResponseBody = handed
+        } else {
+            vResponseBody = ""
         }
+        self.vMethod = vMethod
+        self.vUrl = vUrl
+        self.vRequestHeaders = vRequestHeaders
+        self.vRequestBody = vRequestBody
+        self.vOutcome = vOutcome
+        self.vStatus = vStatus
+        self.vResponseHeaders = vResponseHeaders
+        self.vResponseBody = vResponseBody
     }
 
     public init() {
+        let vMethod: String = ""
+        let vUrl: String = ""
+        let vRequestHeaders: String = ""
+        let vRequestBody: String = ""
+        let vOutcome: String = ""
+        let vStatus: UInt16 = 0
+        let vResponseHeaders: String = ""
+        let vResponseBody: String = ""
+        self.vMethod = vMethod
+        self.vUrl = vUrl
+        self.vRequestHeaders = vRequestHeaders
+        self.vRequestBody = vRequestBody
+        self.vOutcome = vOutcome
+        self.vStatus = vStatus
+        self.vResponseHeaders = vResponseHeaders
+        self.vResponseBody = vResponseBody
+
         sessionID = drawSessionID()
     }
 

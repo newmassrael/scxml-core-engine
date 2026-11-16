@@ -436,26 +436,32 @@ class JvmMethodSizeStaticStateMachine(
         var a10: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.steps?.let { vSteps = it }
-        params.entered?.let { vEntered = it }
-        params.left?.let { vLeft = it }
-        params.a0?.let { vA0 = it }
-        params.a1?.let { vA1 = it }
-        params.a2?.let { vA2 = it }
-        params.a3?.let { vA3 = it }
-        params.a4?.let { vA4 = it }
-        params.a5?.let { vA5 = it }
-        params.a6?.let { vA6 = it }
-        params.a7?.let { vA7 = it }
-        params.a8?.let { vA8 = it }
-        params.a9?.let { vA9 = it }
-        params.a10?.let { vA10 = it }
+        vSteps = params.steps ?: (0.toUInt())
+        vEntered = params.entered ?: (0.toUInt())
+        vLeft = params.left ?: (0.toUInt())
+        vA0 = params.a0 ?: (0.toUInt())
+        vA1 = params.a1 ?: (0.toUInt())
+        vA2 = params.a2 ?: (0.toUInt())
+        vA3 = params.a3 ?: (0.toUInt())
+        vA4 = params.a4 ?: (0.toUInt())
+        vA5 = params.a5 ?: (0.toUInt())
+        vA6 = params.a6 ?: (0.toUInt())
+        vA7 = params.a7 ?: (0.toUInt())
+        vA8 = params.a8 ?: (0.toUInt())
+        vA9 = params.a9 ?: (0.toUInt())
+        vA10 = params.a10 ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

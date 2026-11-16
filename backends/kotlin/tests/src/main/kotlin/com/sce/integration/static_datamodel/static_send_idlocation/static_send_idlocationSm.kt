@@ -90,18 +90,24 @@ class StaticSendIdlocationStateMachine(
         var refusals: UInt? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.first?.let { vFirst = it }
-        params.second?.let { vSecond = it }
-        params.scale?.let { vScale = it }
-        params.firstFired?.let { vFirstFired = it }
-        params.secondFired?.let { vSecondFired = it }
-        params.refusals?.let { vRefusals = it }
+        vFirst = params.first ?: ("")
+        vSecond = params.second ?: ("")
+        vScale = params.scale ?: (3.toUInt())
+        vFirstFired = params.firstFired ?: (0.toUInt())
+        vSecondFired = params.secondFired ?: (0.toUInt())
+        vRefusals = params.refusals ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */

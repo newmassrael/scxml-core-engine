@@ -158,9 +158,9 @@ public final class StaticRecordRealPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    var vLast: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor: 1, value: 0.5)
+    var vLast: StaticRecordRealReadingRecord
     /// W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`).
-    var vSum: Double = 0.0
+    var vSum: Double
 
     /// Reports what the published `last` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -179,15 +179,28 @@ public final class StaticRecordRealPolicy: InvocablePolicy {
         public var vSum: Double? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSum {
-            vSum = value
+        let vLast: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor: 1, value: 0.5)
+        let vSum: Double
+        if let handed = params.vSum {
+            vSum = handed
+        } else {
+            vSum = 0.0
         }
+        self.vLast = vLast
+        self.vSum = vSum
     }
 
     public init() {
+        let vLast: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor: 1, value: 0.5)
+        let vSum: Double = 0.0
+        self.vLast = vLast
+        self.vSum = vSum
+
         sessionID = drawSessionID()
     }
 

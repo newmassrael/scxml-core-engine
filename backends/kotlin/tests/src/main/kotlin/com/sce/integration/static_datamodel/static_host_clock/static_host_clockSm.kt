@@ -176,17 +176,23 @@ class StaticHostClockStateMachine(
         var utcOffsetS: Int? = null
     }
 
-    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    /**
+     * §scxml-6.4: give this machine the values [params] carries, each as the
+     * initial value of its variable in place of the one its `<data>` gives, so
+     * that a variable declared after it whose initial value reads it reads the
+     * handed value (docs/adr/0098). Called before [initialize].
+     */
     fun acceptParams(params: InvokeParams) {
         acceptParamsPart0(params)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.outcome?.let { vOutcome = it }
-        params.utcMs?.let { vUtcMs = it }
-        params.monotonicMs?.let { vMonotonicMs = it }
-        params.zoneId?.let { vZoneId = it }
-        params.utcOffsetS?.let { vUtcOffsetS = it }
+        vOutcome = params.outcome ?: ("")
+        vUtcMs = params.utcMs ?: (0)
+        vMonotonicMs = params.monotonicMs ?: (0)
+        vZoneId = params.zoneId ?: ("")
+        vUtcOffsetS = params.utcOffsetS ?: (0)
     }
 
     /** The published variables as one immutable value, in declaration order. */

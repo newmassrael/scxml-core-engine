@@ -114,6 +114,7 @@ public final class DiscardedEventIsObservablePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

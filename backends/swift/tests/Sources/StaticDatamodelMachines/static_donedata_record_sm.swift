@@ -184,13 +184,16 @@ public final class StaticDonedataRecordPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
-    var vShown: StaticDonedataRecordViewRecord = StaticDonedataRecordViewRecord(layout: StaticDonedataRecordViewModeEnum.day, zoom: 2)
+    var vShown: StaticDonedataRecordViewRecord
 
     /// Reports what the published `shown` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var shown: StaticDonedataRecordViewRecord { vShown }
 
     public init() {
+        let vShown: StaticDonedataRecordViewRecord = StaticDonedataRecordViewRecord(layout: StaticDonedataRecordViewModeEnum.day, zoom: 2)
+        self.vShown = vShown
+
         sessionID = drawSessionID()
     }
 

@@ -493,9 +493,10 @@ type StaticRealPolicy struct {
 	// published location reaches it as `#_parent` does (docs/adr/0090); empty
 	// for a session its host started.
 	ParentSessionID    string
-	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
-	// this machine's datamodel init so they override its `<data>` defaults.
-	pendingParams      map[string]interface{}
+	// §scxml-6.4: the values an invoking session handed this machine before
+	// its start, by name; its start takes them, each as the initial value of
+	// the top-level `<data>` it names (docs/adr/0098).
+	handedValues       map[string]interface{}
 }
 
 // NewStaticRealPolicy creates a new policy with default values.
@@ -582,27 +583,55 @@ type StaticRealInvokeParams struct {
 	VErrors *uint32
 }
 
-// AcceptParams gives this machine the values params carries, in place of the
-// ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
-func (p *StaticRealPolicy) AcceptParams(params StaticRealInvokeParams) {
-	if params.VLevel != nil {
-		p.vLevel = *params.VLevel
+// AcceptParams gives this machine the values handed carries, each as the
+// initial value of its variable in place of the one its `<data>` gives, so
+// that a variable declared after it whose initial value reads it reads the
+// handed value (§scxml-6.4, docs/adr/0098). Called before it initializes.
+func (p *StaticRealPolicy) AcceptParams(handed StaticRealInvokeParams) {
+	var vLevel float64
+	if handed.VLevel != nil {
+		vLevel = *handed.VLevel
+	} else {
+		vLevel = 0.5
 	}
-	if params.VRate != nil {
-		p.vRate = *params.VRate
+	var vRate float64
+	if handed.VRate != nil {
+		vRate = *handed.VRate
+	} else {
+		vRate = 1.5
 	}
-	if params.VTotal != nil {
-		p.vTotal = *params.VTotal
+	var vTotal float64
+	if handed.VTotal != nil {
+		vTotal = *handed.VTotal
+	} else {
+		vTotal = 0.0
 	}
-	if params.VTenth != nil {
-		p.vTenth = *params.VTenth
+	var vTenth float64
+	if handed.VTenth != nil {
+		vTenth = *handed.VTenth
+	} else {
+		vTenth = 0.1
 	}
-	if params.VDrift != nil {
-		p.vDrift = *params.VDrift
+	var vDrift float64
+	if handed.VDrift != nil {
+		vDrift = *handed.VDrift
+	} else {
+		vDrift = 0.0
 	}
-	if params.VErrors != nil {
-		p.vErrors = *params.VErrors
+	var vSamples []float64 = nil
+	var vErrors uint32
+	if handed.VErrors != nil {
+		vErrors = *handed.VErrors
+	} else {
+		vErrors = 0
 	}
+	p.vLevel = vLevel
+	p.vRate = vRate
+	p.vTotal = vTotal
+	p.vTenth = vTenth
+	p.vDrift = vDrift
+	p.vSamples = vSamples
+	p.vErrors = vErrors
 }
 
 

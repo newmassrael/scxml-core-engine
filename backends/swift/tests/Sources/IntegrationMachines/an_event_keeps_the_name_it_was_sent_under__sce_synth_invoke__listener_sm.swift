@@ -111,6 +111,7 @@ public final class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

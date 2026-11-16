@@ -109,6 +109,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

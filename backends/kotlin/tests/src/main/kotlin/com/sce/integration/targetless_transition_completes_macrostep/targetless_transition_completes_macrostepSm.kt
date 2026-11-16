@@ -284,10 +284,13 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -295,65 +298,63 @@ class TargetlessTransitionCompletesMacrostepStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'quiet' with expr
-        try {
-            val initResult_quiet = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "quiet", initResult_quiet)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='quiet'> expr failed to evaluate")
+        // §scxml-6.4: 'quiet' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "quiet", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'quiet' with expr
+            try {
+                engine.setVariable(sid, "quiet", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='quiet'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'armed' with expr
-        try {
-            val initResult_armed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "armed", initResult_armed)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
+        // §scxml-6.4: 'armed' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "armed", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'armed' with expr
+            try {
+                engine.setVariable(sid, "armed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'chained' with expr
-        try {
-            val initResult_chained = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "chained", initResult_chained)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='chained'> expr failed to evaluate")
+        // §scxml-6.4: 'chained' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "chained", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'chained' with expr
+            try {
+                engine.setVariable(sid, "chained", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='chained'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'polished' with expr
-        try {
-            val initResult_polished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "polished", initResult_polished)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='polished'> expr failed to evaluate")
+        // §scxml-6.4: 'polished' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "polished", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'polished' with expr
+            try {
+                engine.setVariable(sid, "polished", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='polished'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'answered' with expr
-        try {
-            val initResult_answered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "answered", initResult_answered)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
+        // §scxml-6.4: 'answered' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "answered", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'answered' with expr
+            try {
+                engine.setVariable(sid, "answered", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'entries' with expr
-        try {
-            val initResult_entries = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "entries", initResult_entries)
-        } catch (e: Exception) {
-            raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
+        // §scxml-6.4: 'entries' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "entries", TargetlessTransitionCompletesMacrostepEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'entries' with expr
+            try {
+                engine.setVariable(sid, "entries", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(TargetlessTransitionCompletesMacrostepEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
+            }
         }
     }
 

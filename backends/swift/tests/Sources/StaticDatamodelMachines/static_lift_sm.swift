@@ -330,15 +330,15 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `answer` datamodel variable, published (`sce:direction="out"`).
-    var vAnswer: StaticLiftAnswerRecord? = nil
+    var vAnswer: StaticLiftAnswerRecord?
     /// W3C SCXML 5.2: the `why` datamodel variable, published (`sce:direction="out"`).
-    var vWhy: StaticLiftLiftRefusalRecord? = nil
+    var vWhy: StaticLiftLiftRefusalRecord?
     /// W3C SCXML 5.2: the `said` datamodel variable, published (`sce:direction="out"`).
-    var vSaid: String = ""
+    var vSaid: String
     /// W3C SCXML 5.2: the `lifts` datamodel variable, published (`sce:direction="out"`).
-    var vLifts: UInt32 = 0
+    var vLifts: UInt32
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
-    var vErrors: UInt32 = 0
+    var vErrors: UInt32
 
     /// Reports what the published `answer` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -371,21 +371,50 @@ public final class StaticLiftPolicy: InvocablePolicy {
         public var vErrors: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vSaid {
-            vSaid = value
+        let vAnswer: StaticLiftAnswerRecord? = nil
+        let vWhy: StaticLiftLiftRefusalRecord? = nil
+        let vSaid: String
+        if let handed = params.vSaid {
+            vSaid = handed
+        } else {
+            vSaid = ""
         }
-        if let value = params.vLifts {
-            vLifts = value
+        let vLifts: UInt32
+        if let handed = params.vLifts {
+            vLifts = handed
+        } else {
+            vLifts = 0
         }
-        if let value = params.vErrors {
-            vErrors = value
+        let vErrors: UInt32
+        if let handed = params.vErrors {
+            vErrors = handed
+        } else {
+            vErrors = 0
         }
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
+        self.vSaid = vSaid
+        self.vLifts = vLifts
+        self.vErrors = vErrors
     }
 
     public init() {
+        let vAnswer: StaticLiftAnswerRecord? = nil
+        let vWhy: StaticLiftLiftRefusalRecord? = nil
+        let vSaid: String = ""
+        let vLifts: UInt32 = 0
+        let vErrors: UInt32 = 0
+        self.vAnswer = vAnswer
+        self.vWhy = vWhy
+        self.vSaid = vSaid
+        self.vLifts = vLifts
+        self.vErrors = vErrors
+
         sessionID = drawSessionID()
     }
 

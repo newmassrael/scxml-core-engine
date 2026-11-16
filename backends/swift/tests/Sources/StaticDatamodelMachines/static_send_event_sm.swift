@@ -110,15 +110,15 @@ public final class StaticSendEventPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `name` datamodel variable.
-    var vName: String = "ping"
+    var vName: String
     /// W3C SCXML 5.2: the `scale` datamodel variable.
-    var vScale: UInt32 = 3
+    var vScale: UInt32
     /// W3C SCXML 5.2: the `pings` datamodel variable, published (`sce:direction="out"`).
-    var vPings: UInt32 = 0
+    var vPings: UInt32
     /// W3C SCXML 5.2: the `pongs` datamodel variable, published (`sce:direction="out"`).
-    var vPongs: UInt32 = 0
+    var vPongs: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `pings` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -145,27 +145,60 @@ public final class StaticSendEventPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vName {
-            vName = value
+        let vName: String
+        if let handed = params.vName {
+            vName = handed
+        } else {
+            vName = "ping"
         }
-        if let value = params.vScale {
-            vScale = value
+        let vScale: UInt32
+        if let handed = params.vScale {
+            vScale = handed
+        } else {
+            vScale = 3
         }
-        if let value = params.vPings {
-            vPings = value
+        let vPings: UInt32
+        if let handed = params.vPings {
+            vPings = handed
+        } else {
+            vPings = 0
         }
-        if let value = params.vPongs {
-            vPongs = value
+        let vPongs: UInt32
+        if let handed = params.vPongs {
+            vPongs = handed
+        } else {
+            vPongs = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vName = vName
+        self.vScale = vScale
+        self.vPings = vPings
+        self.vPongs = vPongs
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vName: String = "ping"
+        let vScale: UInt32 = 3
+        let vPings: UInt32 = 0
+        let vPongs: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vName = vName
+        self.vScale = vScale
+        self.vPings = vPings
+        self.vPongs = vPongs
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 

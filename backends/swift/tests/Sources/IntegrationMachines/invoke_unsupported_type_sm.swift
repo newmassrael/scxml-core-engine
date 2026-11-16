@@ -105,6 +105,7 @@ public final class InvokeUnsupportedTypePolicy: InvocablePolicy {
     public var parentEventQueue: ParentEventQueue?
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

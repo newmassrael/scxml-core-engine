@@ -999,10 +999,13 @@ class StatechartHostInvokerStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -1010,212 +1013,252 @@ class StatechartHostInvokerStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'started' with expr
-        try {
-            val initResult_started = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "started", initResult_started)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
+        // §scxml-6.4: 'started' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "started", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'started' with expr
+            try {
+                engine.setVariable(sid, "started", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'started2' with expr
-        try {
-            val initResult_started2 = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "started2", initResult_started2)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started2'> expr failed to evaluate")
+        // §scxml-6.4: 'started2' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "started2", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'started2' with expr
+            try {
+                engine.setVariable(sid, "started2", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started2'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'refused' with expr
-        try {
-            val initResult_refused = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "refused", initResult_refused)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+        // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "refused", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'refused' with expr
+            try {
+                engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'ended' with expr
-        try {
-            val initResult_ended = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "ended", initResult_ended)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='ended'> expr failed to evaluate")
+        // §scxml-6.4: 'ended' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "ended", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'ended' with expr
+            try {
+                engine.setVariable(sid, "ended", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='ended'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'entered' with expr
-        try {
-            val initResult_entered = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "entered", initResult_entered)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='entered'> expr failed to evaluate")
+        // §scxml-6.4: 'entered' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "entered", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'entered' with expr
+            try {
+                engine.setVariable(sid, "entered", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='entered'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'destination' with expr
-        try {
-            val initResult_destination = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pane://dyn\"", "'pane://dyn'"))
-            engine.setVariable(sid, "destination", initResult_destination)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='destination'> expr failed to evaluate")
+        // §scxml-6.4: 'destination' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "destination", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'destination' with expr
+            try {
+                engine.setVariable(sid, "destination", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pane://dyn\"", "'pane://dyn'")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='destination'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'n' with expr
-        try {
-            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
-            engine.setVariable(sid, "n", initResult_n)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
+        // §scxml-6.4: 'n' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "n", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'n' with expr
+            try {
+                engine.setVariable(sid, "n", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'dropped' with expr
-        try {
-            val initResult_dropped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "dropped", initResult_dropped)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='dropped'> expr failed to evaluate")
+        // §scxml-6.4: 'dropped' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "dropped", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'dropped' with expr
+            try {
+                engine.setVariable(sid, "dropped", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='dropped'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'doneId' with expr
-        try {
-            val initResult_doneId = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''"))
-            engine.setVariable(sid, "doneId", initResult_doneId)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='doneId'> expr failed to evaluate")
+        // §scxml-6.4: 'doneId' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "doneId", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'doneId' with expr
+            try {
+                engine.setVariable(sid, "doneId", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='doneId'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'matched' with expr
-        try {
-            val initResult_matched = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "matched", initResult_matched)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='matched'> expr failed to evaluate")
+        // §scxml-6.4: 'matched' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "matched", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'matched' with expr
+            try {
+                engine.setVariable(sid, "matched", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='matched'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'slot' with expr
-        try {
-            val initResult_slot = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"id\"] = \"\", [\"sid\"] = \"\"}", "({ id: '', sid: '' })"))
-            engine.setVariable(sid, "slot", initResult_slot)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slot'> expr failed to evaluate")
+        // §scxml-6.4: 'slot' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "slot", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'slot' with expr
+            try {
+                engine.setVariable(sid, "slot", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"id\"] = \"\", [\"sid\"] = \"\"}", "({ id: '', sid: '' })")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slot'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'slotted' with expr
-        try {
-            val initResult_slotted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "slotted", initResult_slotted)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slotted'> expr failed to evaluate")
+        // §scxml-6.4: 'slotted' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "slotted", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'slotted' with expr
+            try {
+                engine.setVariable(sid, "slotted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slotted'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'pinged' with expr
-        try {
-            val initResult_pinged = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "pinged", initResult_pinged)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='pinged'> expr failed to evaluate")
+        // §scxml-6.4: 'pinged' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "pinged", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'pinged' with expr
+            try {
+                engine.setVariable(sid, "pinged", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='pinged'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'leaked' with expr
-        try {
-            val initResult_leaked = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "leaked", initResult_leaked)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='leaked'> expr failed to evaluate")
+        // §scxml-6.4: 'leaked' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "leaked", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'leaked' with expr
+            try {
+                engine.setVariable(sid, "leaked", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='leaked'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'lost' with expr
-        try {
-            val initResult_lost = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "lost", initResult_lost)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='lost'> expr failed to evaluate")
+        // §scxml-6.4: 'lost' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "lost", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'lost' with expr
+            try {
+                engine.setVariable(sid, "lost", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='lost'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'expired' with expr
-        try {
-            val initResult_expired = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "expired", initResult_expired)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='expired'> expr failed to evaluate")
+        // §scxml-6.4: 'expired' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "expired", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'expired' with expr
+            try {
+                engine.setVariable(sid, "expired", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='expired'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'finished' with expr
-        try {
-            val initResult_finished = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "finished", initResult_finished)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='finished'> expr failed to evaluate")
+        // §scxml-6.4: 'finished' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "finished", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'finished' with expr
+            try {
+                engine.setVariable(sid, "finished", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='finished'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'misdated' with expr
-        try {
-            val initResult_misdated = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "misdated", initResult_misdated)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='misdated'> expr failed to evaluate")
+        // §scxml-6.4: 'misdated' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "misdated", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'misdated' with expr
+            try {
+                engine.setVariable(sid, "misdated", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='misdated'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'granted' with expr
-        try {
-            val initResult_granted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "granted", initResult_granted)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='granted'> expr failed to evaluate")
+        // §scxml-6.4: 'granted' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "granted", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'granted' with expr
+            try {
+                engine.setVariable(sid, "granted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='granted'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'denied' with expr
-        try {
-            val initResult_denied = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "denied", initResult_denied)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='denied'> expr failed to evaluate")
+        // §scxml-6.4: 'denied' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "denied", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'denied' with expr
+            try {
+                engine.setVariable(sid, "denied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='denied'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'unreadable' with expr
-        try {
-            val initResult_unreadable = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "unreadable", initResult_unreadable)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unreadable'> expr failed to evaluate")
+        // §scxml-6.4: 'unreadable' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "unreadable", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'unreadable' with expr
+            try {
+                engine.setVariable(sid, "unreadable", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unreadable'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'scope' with expr
-        try {
-            val initResult_scope = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"storage\"", "'storage'"))
-            engine.setVariable(sid, "scope", initResult_scope)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='scope'> expr failed to evaluate")
+        // §scxml-6.4: 'scope' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "scope", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'scope' with expr
+            try {
+                engine.setVariable(sid, "scope", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"storage\"", "'storage'")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='scope'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'level' with expr
-        try {
-            val initResult_level = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2"))
-            engine.setVariable(sid, "level", initResult_level)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='level'> expr failed to evaluate")
+        // §scxml-6.4: 'level' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "level", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'level' with expr
+            try {
+                engine.setVariable(sid, "level", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='level'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'failed' with expr
-        try {
-            val initResult_failed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "failed", initResult_failed)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
+        // §scxml-6.4: 'failed' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "failed", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'failed' with expr
+            try {
+                engine.setVariable(sid, "failed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'overturned' with expr
-        try {
-            val initResult_overturned = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "overturned", initResult_overturned)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='overturned'> expr failed to evaluate")
+        // §scxml-6.4: 'overturned' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "overturned", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'overturned' with expr
+            try {
+                engine.setVariable(sid, "overturned", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='overturned'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'unstarted' with expr
-        try {
-            val initResult_unstarted = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "unstarted", initResult_unstarted)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unstarted'> expr failed to evaluate")
+        // §scxml-6.4: 'unstarted' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "unstarted", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'unstarted' with expr
+            try {
+                engine.setVariable(sid, "unstarted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unstarted'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'revived' with expr
-        try {
-            val initResult_revived = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "revived", initResult_revived)
-        } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='revived'> expr failed to evaluate")
+        // §scxml-6.4: 'revived' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "revived", StatechartHostInvokerEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'revived' with expr
+            try {
+                engine.setVariable(sid, "revived", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='revived'> expr failed to evaluate")
+            }
         }
     }
 

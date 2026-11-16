@@ -926,10 +926,13 @@ class AiLoopStateMachine(
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -937,135 +940,153 @@ class AiLoopStateMachine(
 
         declareVariablesPart0(engine, sid)
 
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
     }
 
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart0(engine: ScxmlScriptEngine, sid: String) {
-        // W3C SCXML 5.3: Initialize variable 'north_star' with expr
-        try {
-            val initResult_northStar = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the outcome this loop exists to reach\"", "'(edit me) the outcome this loop exists to reach'"))
-            engine.setVariable(sid, "north_star", initResult_northStar)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='north_star'> expr failed to evaluate")
+        // §scxml-6.4: 'north_star' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "north_star", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'north_star' with expr
+            try {
+                engine.setVariable(sid, "north_star", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the outcome this loop exists to reach\"", "'(edit me) the outcome this loop exists to reach'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='north_star'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'milestone' with expr
-        try {
-            val initResult_milestone = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the next checkpoint on the way there\"", "'(edit me) the next checkpoint on the way there'"))
-            engine.setVariable(sid, "milestone", initResult_milestone)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='milestone'> expr failed to evaluate")
+        // §scxml-6.4: 'milestone' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "milestone", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'milestone' with expr
+            try {
+                engine.setVariable(sid, "milestone", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the next checkpoint on the way there\"", "'(edit me) the next checkpoint on the way there'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='milestone'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'reference' with expr
-        try {
-            val initResult_reference = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) paths, URLs or repos to consult\"", "'(edit me) paths, URLs or repos to consult'"))
-            engine.setVariable(sid, "reference", initResult_reference)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reference'> expr failed to evaluate")
+        // §scxml-6.4: 'reference' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "reference", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'reference' with expr
+            try {
+                engine.setVariable(sid, "reference", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) paths, URLs or repos to consult\"", "'(edit me) paths, URLs or repos to consult'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reference'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'start_prompt' with expr
-        try {
-            val initResult_startPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'"))
-            engine.setVariable(sid, "start_prompt", initResult_startPrompt)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='start_prompt'> expr failed to evaluate")
+        // §scxml-6.4: 'start_prompt' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "start_prompt", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'start_prompt' with expr
+            try {
+                engine.setVariable(sid, "start_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='start_prompt'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'turn_prompt' with expr
-        try {
-            val initResult_turnPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'"))
-            engine.setVariable(sid, "turn_prompt", initResult_turnPrompt)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turn_prompt'> expr failed to evaluate")
+        // §scxml-6.4: 'turn_prompt' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "turn_prompt", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'turn_prompt' with expr
+            try {
+                engine.setVariable(sid, "turn_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turn_prompt'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'end_prompt' with expr
-        try {
-            val initResult_endPrompt = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"Summarise what changed, what was verified, and what is left open.\"", "'Summarise what changed, what was verified, and what is left open.'"))
-            engine.setVariable(sid, "end_prompt", initResult_endPrompt)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='end_prompt'> expr failed to evaluate")
+        // §scxml-6.4: 'end_prompt' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "end_prompt", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'end_prompt' with expr
+            try {
+                engine.setVariable(sid, "end_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"Summarise what changed, what was verified, and what is left open.\"", "'Summarise what changed, what was verified, and what is left open.'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='end_prompt'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'done_marker' with expr
-        try {
-            val initResult_doneMarker = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"MILESTONE REACHED\"", "'MILESTONE REACHED'"))
-            engine.setVariable(sid, "done_marker", initResult_doneMarker)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='done_marker'> expr failed to evaluate")
+        // §scxml-6.4: 'done_marker' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "done_marker", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'done_marker' with expr
+            try {
+                engine.setVariable(sid, "done_marker", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"MILESTONE REACHED\"", "'MILESTONE REACHED'")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='done_marker'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'screen_rules' with expr
-        try {
-            val initResult_screenRules = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}", "[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]"))
-            engine.setVariable(sid, "screen_rules", initResult_screenRules)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_rules'> expr failed to evaluate")
+        // §scxml-6.4: 'screen_rules' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "screen_rules", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'screen_rules' with expr
+            try {
+                engine.setVariable(sid, "screen_rules", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}", "[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_rules'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'screen_permissions' with expr
-        try {
-            val initResult_screenPermissions = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false"))
-            engine.setVariable(sid, "screen_permissions", initResult_screenPermissions)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_permissions'> expr failed to evaluate")
+        // §scxml-6.4: 'screen_permissions' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "screen_permissions", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'screen_permissions' with expr
+            try {
+                engine.setVariable(sid, "screen_permissions", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_permissions'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'max_turns' with expr
-        try {
-            val initResult_maxTurns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("40", "40"))
-            engine.setVariable(sid, "max_turns", initResult_maxTurns)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_turns'> expr failed to evaluate")
+        // §scxml-6.4: 'max_turns' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "max_turns", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'max_turns' with expr
+            try {
+                engine.setVariable(sid, "max_turns", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("40", "40")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_turns'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'reflect_every' with expr
-        try {
-            val initResult_reflectEvery = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8"))
-            engine.setVariable(sid, "reflect_every", initResult_reflectEvery)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reflect_every'> expr failed to evaluate")
+        // §scxml-6.4: 'reflect_every' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "reflect_every", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'reflect_every' with expr
+            try {
+                engine.setVariable(sid, "reflect_every", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reflect_every'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'max_restarts' with expr
-        try {
-            val initResult_maxRestarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6"))
-            engine.setVariable(sid, "max_restarts", initResult_maxRestarts)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_restarts'> expr failed to evaluate")
+        // §scxml-6.4: 'max_restarts' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "max_restarts", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'max_restarts' with expr
+            try {
+                engine.setVariable(sid, "max_restarts", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_restarts'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'turns' with expr
-        try {
-            val initResult_turns = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "turns", initResult_turns)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns'> expr failed to evaluate")
+        // §scxml-6.4: 'turns' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "turns", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'turns' with expr
+            try {
+                engine.setVariable(sid, "turns", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'turns_since_reflect' with expr
-        try {
-            val initResult_turnsSinceReflect = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "turns_since_reflect", initResult_turnsSinceReflect)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns_since_reflect'> expr failed to evaluate")
+        // §scxml-6.4: 'turns_since_reflect' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "turns_since_reflect", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'turns_since_reflect' with expr
+            try {
+                engine.setVariable(sid, "turns_since_reflect", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns_since_reflect'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'screened' with expr
-        try {
-            val initResult_screened = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "screened", initResult_screened)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screened'> expr failed to evaluate")
+        // §scxml-6.4: 'screened' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "screened", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'screened' with expr
+            try {
+                engine.setVariable(sid, "screened", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screened'> expr failed to evaluate")
+            }
         }
-        // W3C SCXML 5.3: Initialize variable 'restarts' with expr
-        try {
-            val initResult_restarts = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
-            engine.setVariable(sid, "restarts", initResult_restarts)
-        } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<data id='restarts'> expr failed to evaluate")
+        // §scxml-6.4: 'restarts' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "restarts", AiLoopEvent.Error.Execution)) {
+            // W3C SCXML 5.3: Initialize variable 'restarts' with expr
+            try {
+                engine.setVariable(sid, "restarts", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
+            } catch (e: Exception) {
+                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='restarts'> expr failed to evaluate")
+            }
         }
     }
 

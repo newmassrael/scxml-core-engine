@@ -124,6 +124,7 @@ public final class IdlerPolicy: InvocablePolicy {
     }
 
     public init() {
+
         sessionID = drawSessionID()
     }
 

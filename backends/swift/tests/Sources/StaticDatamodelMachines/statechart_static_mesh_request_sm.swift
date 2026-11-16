@@ -118,17 +118,17 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `load` datamodel variable.
-    var vLoad: UInt32 = 3
+    var vLoad: UInt32
     /// W3C SCXML 5.2: the `label` datamodel variable.
-    var vLabel: String = "idle"
+    var vLabel: String
     /// W3C SCXML 5.2: the `peer` datamodel variable.
-    var vPeer: String = "#motor"
+    var vPeer: String
     /// W3C SCXML 5.2: the `answered` datamodel variable, published (`sce:direction="out"`).
-    var vAnswered: UInt32 = 0
+    var vAnswered: UInt32
     /// W3C SCXML 5.2: the `failed` datamodel variable, published (`sce:direction="out"`).
-    var vFailed: UInt32 = 0
+    var vFailed: UInt32
     /// W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`).
-    var vRefused: UInt32 = 0
+    var vRefused: UInt32
 
     /// Reports what the published `answered` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -156,30 +156,69 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
         public var vRefused: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vLoad {
-            vLoad = value
+        let vLoad: UInt32
+        if let handed = params.vLoad {
+            vLoad = handed
+        } else {
+            vLoad = 3
         }
-        if let value = params.vLabel {
-            vLabel = value
+        let vLabel: String
+        if let handed = params.vLabel {
+            vLabel = handed
+        } else {
+            vLabel = "idle"
         }
-        if let value = params.vPeer {
-            vPeer = value
+        let vPeer: String
+        if let handed = params.vPeer {
+            vPeer = handed
+        } else {
+            vPeer = "#motor"
         }
-        if let value = params.vAnswered {
-            vAnswered = value
+        let vAnswered: UInt32
+        if let handed = params.vAnswered {
+            vAnswered = handed
+        } else {
+            vAnswered = 0
         }
-        if let value = params.vFailed {
-            vFailed = value
+        let vFailed: UInt32
+        if let handed = params.vFailed {
+            vFailed = handed
+        } else {
+            vFailed = 0
         }
-        if let value = params.vRefused {
-            vRefused = value
+        let vRefused: UInt32
+        if let handed = params.vRefused {
+            vRefused = handed
+        } else {
+            vRefused = 0
         }
+        self.vLoad = vLoad
+        self.vLabel = vLabel
+        self.vPeer = vPeer
+        self.vAnswered = vAnswered
+        self.vFailed = vFailed
+        self.vRefused = vRefused
     }
 
     public init() {
+        let vLoad: UInt32 = 3
+        let vLabel: String = "idle"
+        let vPeer: String = "#motor"
+        let vAnswered: UInt32 = 0
+        let vFailed: UInt32 = 0
+        let vRefused: UInt32 = 0
+        self.vLoad = vLoad
+        self.vLabel = vLabel
+        self.vPeer = vPeer
+        self.vAnswered = vAnswered
+        self.vFailed = vFailed
+        self.vRefused = vRefused
+
         sessionID = drawSessionID()
     }
 

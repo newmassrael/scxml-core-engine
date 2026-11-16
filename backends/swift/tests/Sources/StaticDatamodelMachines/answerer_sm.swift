@@ -128,7 +128,7 @@ public final class AnswererPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `asked` datamodel variable.
-    var vAsked: UInt32 = 42
+    var vAsked: UInt32
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -139,15 +139,24 @@ public final class AnswererPolicy: InvocablePolicy {
         public var vAsked: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vAsked {
-            vAsked = value
+        let vAsked: UInt32
+        if let handed = params.vAsked {
+            vAsked = handed
+        } else {
+            vAsked = 42
         }
+        self.vAsked = vAsked
     }
 
     public init() {
+        let vAsked: UInt32 = 42
+        self.vAsked = vAsked
+
         sessionID = drawSessionID()
     }
 

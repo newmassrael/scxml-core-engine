@@ -186,13 +186,13 @@ public final class StaticPayloadRelayPolicy: InvocablePolicy {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`).
-    var vLayout: StaticPayloadRelayViewModeEnum = StaticPayloadRelayViewModeEnum.month
+    var vLayout: StaticPayloadRelayViewModeEnum
     /// W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`).
-    var vZoom: UInt8 = 0
+    var vZoom: UInt8
     /// W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`).
-    var vRelays: UInt32 = 0
+    var vRelays: UInt32
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
-    var vRefusals: UInt32 = 0
+    var vRefusals: UInt32
 
     /// Reports what the published `layout` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -221,21 +221,46 @@ public final class StaticPayloadRelayPolicy: InvocablePolicy {
         public var vRefusals: UInt32? = nil
     }
 
-    /// Gives this machine the values `params` carries, in place of the ones its
-    /// `<data>` gave. Called before the machine starts.
+    /// Gives this machine the values `params` carries, each as the initial value of its
+    /// variable in place of the one its `<data>` gives, so that a variable declared after
+    /// it whose initial value reads it reads the handed value (§scxml-6.4,
+    /// docs/adr/0098). Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vZoom {
-            vZoom = value
+        let vLayout: StaticPayloadRelayViewModeEnum = StaticPayloadRelayViewModeEnum.month
+        let vZoom: UInt8
+        if let handed = params.vZoom {
+            vZoom = handed
+        } else {
+            vZoom = 0
         }
-        if let value = params.vRelays {
-            vRelays = value
+        let vRelays: UInt32
+        if let handed = params.vRelays {
+            vRelays = handed
+        } else {
+            vRelays = 0
         }
-        if let value = params.vRefusals {
-            vRefusals = value
+        let vRefusals: UInt32
+        if let handed = params.vRefusals {
+            vRefusals = handed
+        } else {
+            vRefusals = 0
         }
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vRelays = vRelays
+        self.vRefusals = vRefusals
     }
 
     public init() {
+        let vLayout: StaticPayloadRelayViewModeEnum = StaticPayloadRelayViewModeEnum.month
+        let vZoom: UInt8 = 0
+        let vRelays: UInt32 = 0
+        let vRefusals: UInt32 = 0
+        self.vLayout = vLayout
+        self.vZoom = vZoom
+        self.vRelays = vRelays
+        self.vRefusals = vRefusals
+
         sessionID = drawSessionID()
     }
 
