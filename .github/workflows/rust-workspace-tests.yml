@@ -87,6 +87,8 @@ on:
       - '.github/workflows/rust-workspace-tests.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # What says which shard runs which part of the suite.
+      - 'scripts/lib/workspace_shards.py'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
@@ -232,6 +234,8 @@ on:
       - '.github/workflows/rust-workspace-tests.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
+      # What says which shard runs which part of the suite.
+      - 'scripts/lib/workspace_shards.py'
       # The Kotlin runtime jars the statechart smoke tests compile against
       # are built here with Gradle, whose version catalog, wrapper and
       # settings live at the root rather than under backends/.
@@ -384,10 +388,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The suite in four shards, one job each. Run whole, it outgrew one job:
+  # on 293defb01c (job 132834013098) it built for 29 minutes and tested for
+  # 132, and the job ended at its 170-minute ceiling before the last package
+  # had run; the two runs before it ended the same way. Each job runs the
+  # workspace-tests gate with `SCE_WORKSPACE_SHARD`, which hands it one shard
+  # (scripts/lib/workspace_shards.py says how the units are read from cargo
+  # and spread); `hook_ci_parity` holds the four together to every target the
+  # unsharded suite runs, each in one shard, and reads the shard count from
+  # the matrix and the variable below, which must agree. The ceiling is the
+  # whole suite's until a sharded run is measured.
   test:
-    name: cargo test --workspace --features cli,sce-rust-mesh/wss
+    name: cargo test --workspace --features cli,sce-rust-mesh/wss (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
     timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [1, 2, 3, 4]
     # This lane exhausted the runner disk while running the workspace suite.
     # Omit DWARF from test artifacts, including linked standard-library
     # objects. Keep function symbols, panic locations, and the normal test
@@ -568,6 +587,7 @@ jobs:
       env:
         SCE_REQUIRE_TOOLS: "1"
         SCE_GATE_NO_FAIL_FAST: "1"
+        SCE_WORKSPACE_SHARD: ${{ matrix.shard }}/4
       run: scripts/gate workspace-tests
 
     - name: Report build disk usage

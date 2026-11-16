@@ -61,18 +61,66 @@ case "${SCE_GATE_NO_FAIL_FAST:-}" in
     *) FAIL_FAST=(--no-fail-fast); sce_gate_step "reporting every failure (--no-fail-fast)" ;;
 esac
 
+# The machine generated for every build of a product line is built under each
+# feature set of that product line and held to the machine the set's variant
+# generates alone (docs/adr/0057 §6, §9). The sweep built the crate under no
+# feature, the first set; a test cannot choose its own features, so the other
+# two are built here. `session-unicast-accept` is named alone: the manifest
+# implies the feature it requires, which is the edge of the model.
+product_line_sets() {
+    local features
+    for features in session-unicast session-unicast-accept; do
+        cargo test -p sce-feature-conformance --features "$features" ${FAIL_FAST+"${FAIL_FAST[@]}"} \
+            || sce_gate_fail "cargo test -p sce-feature-conformance --features $features"
+    done
+}
+
+# ONE SHARD OF THE SUITE, when `SCE_WORKSPACE_SHARD=k/N` asks for one: the CI
+# lane runs the suite as N jobs, one shard each (rust-workspace-tests.yml), since
+# it outgrew one job. scripts/lib/workspace_shards.py reads the units from cargo
+# and spreads them; a unit is an integration test target, run with `--test`, or
+# `core`, which is the rest of what the unsharded sweep below runs: the library
+# and binary unit tests, the doc tests (`--doc` cannot be asked with another
+# target), the examples it builds, and the product-line sets. `hook_ci_parity`
+# holds the shards' union to the unsharded sweep. Unset, the gate runs the whole
+# suite, which is what a push and a developer run.
+if [[ -n "${SCE_WORKSPACE_SHARD:-}" ]]; then
+    shard_units="$(python3 scripts/lib/workspace_shards.py \
+        --features cli,sce-rust-mesh/wss "$SCE_WORKSPACE_SHARD")" \
+        || sce_gate_cannot_run "scripts/lib/workspace_shards.py could not name shard $SCE_WORKSPACE_SHARD"
+    selection=()
+    core=0
+    while IFS= read -r unit; do
+        case "$unit" in
+            core) core=1 ;;
+            "test "*) selection+=(--test "${unit#test }") ;;
+            "") ;;
+            *) sce_gate_cannot_run "scripts/lib/workspace_shards.py named a unit it does not define: $unit" ;;
+        esac
+    done <<<"$shard_units"
+    told="shard $SCE_WORKSPACE_SHARD: $(( ${#selection[@]} / 2 )) integration test target(s)"
+    if (( core )); then
+        selection=(--lib --bins ${selection[@]+"${selection[@]}"})
+        told="$told, and the core"
+    fi
+    sce_gate_step "$told"
+    if (( ${#selection[@]} )); then
+        cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} "${selection[@]}" \
+            || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss (shard $SCE_WORKSPACE_SHARD)"
+    fi
+    if (( core )); then
+        cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} --doc \
+            || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss --doc"
+        cargo build --workspace --features cli,sce-rust-mesh/wss --examples \
+            || sce_gate_fail "cargo build --workspace --features cli,sce-rust-mesh/wss --examples"
+        product_line_sets
+    fi
+    exit 0
+fi
+
 # `sce-rust-mesh/wss`: the WebSocket binding's tests open real sockets on
 # loopback, and they sit behind a non-default feature the sweep must ask for.
 cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} \
     || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss"
 
-# The machine generated for every build of a product line is built under each
-# feature set of that product line and held to the machine the set's variant
-# generates alone (docs/adr/0057 §6, §9). The sweep above built the crate under
-# no feature, the first set; a test cannot choose its own features, so the other
-# two are built here. `session-unicast-accept` is named alone: the manifest
-# implies the feature it requires, which is the edge of the model.
-for features in session-unicast session-unicast-accept; do
-    cargo test -p sce-feature-conformance --features "$features" ${FAIL_FAST+"${FAIL_FAST[@]}"} \
-        || sce_gate_fail "cargo test -p sce-feature-conformance --features $features"
-done
+product_line_sets

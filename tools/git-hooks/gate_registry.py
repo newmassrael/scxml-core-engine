@@ -961,6 +961,9 @@ GATES: dict[str, dict] = {
         # and sce-build's unit tests read at run time — every engine is held to
         # them — so an edit to a table alone has to start the suite that reads it.
         "extra": [
+            # What spreads the suite over the lane's shards
+            # (`SCE_WORKSPACE_SHARD`), which the gate script runs.
+            "scripts/lib/workspace_shards.py",
             "docs/SCE_ACCEPTED_SUBSET.md",
             "schemas/**",
             "apis/**",

@@ -1503,3 +1503,233 @@ fn a_gate_that_builds_against_third_party_is_preflighted_for_submodules() {
         needing.len()
     );
 }
+
+// ── The sharded lane runs what the unsharded suite runs ─────────────────────
+//
+// rust-workspace-tests.yml runs the workspace suite as N jobs, one shard each
+// (`SCE_WORKSPACE_SHARD=k/N`, read by scripts/gates/workspace-tests.sh), and a
+// push runs it whole. The lane is no weaker than the push only if the shards
+// together run every target the whole suite runs, and a target in no shard is
+// the silent kind of loss this file exists to refuse: no job reports a target it
+// was never given. So the union is derived here from cargo, by a reading of its
+// own, and held to what scripts/lib/workspace_shards.py hands each shard.
+
+const WORKSPACE_LANE: &str = ".github/workflows/rust-workspace-tests.yml";
+const WORKSPACE_GATE: &str = "scripts/gates/workspace-tests.sh";
+const SHARD_HELPER: &str = "scripts/lib/workspace_shards.py";
+
+/// The shard count the lane declares: the `N` of `SCE_WORKSPACE_SHARD: ${{
+/// matrix.shard }}/N`, and the matrix's `shard:` list, which must be `1..=N`.
+fn workspace_lane_shards(workflow: &str) -> (usize, Vec<usize>) {
+    let count = workflow
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .find_map(|l| l.trim().strip_prefix("SCE_WORKSPACE_SHARD:"))
+        .and_then(|v| v.trim().rsplit('/').next().map(str::to_string))
+        .and_then(|n| n.trim().parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            panic!("{WORKSPACE_LANE} sets no `SCE_WORKSPACE_SHARD: ${{{{ matrix.shard }}}}/N`")
+        });
+    let listed = workflow
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .find_map(|l| l.trim().strip_prefix("shard:"))
+        .map(|list| {
+            list.trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .filter_map(|n| n.trim().parse::<usize>().ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| panic!("{WORKSPACE_LANE} declares no `shard:` matrix"));
+    (count, listed)
+}
+
+/// The features the gate hands the shard helper, written after `--features` on
+/// the line that runs it.
+fn shard_helper_features(gate: &str) -> String {
+    let joined = gate.replace("\\\n", " ");
+    let line = joined
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .find(|l| l.contains(SHARD_HELPER) && l.contains("--features"))
+        .unwrap_or_else(|| panic!("{WORKSPACE_GATE} runs {SHARD_HELPER} with no `--features`"));
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    let at = tokens
+        .iter()
+        .position(|t| *t == "--features")
+        .expect("the line holds `--features`");
+    tokens
+        .get(at + 1)
+        .expect("`--features` is followed by its list")
+        .to_string()
+}
+
+/// Every unit the unsharded suite runs, read from `cargo metadata` resolved with
+/// `features`: `core`, and `test <name>` for each integration test target of a
+/// workspace member that is not `test = false` and whose `required-features`
+/// the resolve enables, which are the ones `cargo test --workspace` runs.
+fn units_the_whole_suite_runs(features: &str) -> BTreeSet<String> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let out = std::process::Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--features", features])
+        .current_dir(repo_root())
+        .output()
+        .expect("cargo metadata runs");
+    assert!(
+        out.status.success(),
+        "cargo metadata --features {features} failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("cargo metadata prints JSON");
+    let members: BTreeSet<&str> = metadata["workspace_members"]
+        .as_array()
+        .expect("workspace_members")
+        .iter()
+        .filter_map(|m| m.as_str())
+        .collect();
+    let enabled: BTreeMap<&str, BTreeSet<&str>> = metadata["resolve"]["nodes"]
+        .as_array()
+        .expect("resolve.nodes")
+        .iter()
+        .map(|node| {
+            let id = node["id"].as_str().expect("a node id");
+            let features: BTreeSet<&str> = node["features"]
+                .as_array()
+                .map(|f| f.iter().filter_map(|x| x.as_str()).collect())
+                .unwrap_or_default();
+            (id, features)
+        })
+        .collect();
+    let mut units = BTreeSet::from(["core".to_string()]);
+    for package in metadata["packages"].as_array().expect("packages") {
+        let id = package["id"].as_str().expect("a package id");
+        if !members.contains(id) {
+            continue;
+        }
+        for target in package["targets"].as_array().expect("targets") {
+            let is_test = target["kind"]
+                .as_array()
+                .is_some_and(|k| k.len() == 1 && k[0] == "test");
+            if !is_test || target["test"].as_bool() == Some(false) {
+                continue;
+            }
+            let runs = target["required-features"]
+                .as_array()
+                .map(|required| {
+                    required
+                        .iter()
+                        .filter_map(|f| f.as_str())
+                        .all(|f| enabled.get(id).is_some_and(|on| on.contains(f)))
+                })
+                .unwrap_or(true);
+            if runs {
+                units.insert(format!(
+                    "test {}",
+                    target["name"].as_str().expect("a target name")
+                ));
+            }
+        }
+    }
+    units
+}
+
+/// The lane's matrix and its variable name one shard count, and the gate is
+/// the one that reads the variable and hands it to the helper.
+#[test]
+fn the_workspace_lane_and_its_gate_agree_on_the_shards() {
+    let (count, listed) = workspace_lane_shards(&read(WORKSPACE_LANE));
+    assert!(
+        count >= 2,
+        "{WORKSPACE_LANE} runs the suite in {count} shard(s); one is the whole suite"
+    );
+    assert_eq!(
+        listed,
+        (1..=count).collect::<Vec<_>>(),
+        "{WORKSPACE_LANE}'s `shard:` matrix is not 1..={count}, the count its \
+         `SCE_WORKSPACE_SHARD` names: a shard it lists past the count is refused by the \
+         helper, and one it leaves out runs in no job"
+    );
+    let gate = read(WORKSPACE_GATE);
+    assert!(
+        gate.contains("SCE_WORKSPACE_SHARD") && gate.contains(SHARD_HELPER),
+        "{WORKSPACE_GATE} no longer reads SCE_WORKSPACE_SHARD and hands it to \
+         {SHARD_HELPER}, so the lane's jobs would each run the whole suite"
+    );
+    let suite_features: BTreeSet<String> = workspace_suite_invocations(&gate)
+        .iter()
+        .filter_map(|cmd| {
+            let tokens: Vec<&str> = cmd.split_whitespace().collect();
+            let at = tokens.iter().position(|t| *t == "--features")?;
+            // A failure message quotes the command it names, so its last
+            // token carries the closing quote.
+            tokens.get(at + 1).map(|f| {
+                f.trim_matches(|c| c == '"' || c == '(' || c == ')')
+                    .to_string()
+            })
+        })
+        .collect();
+    let helper_features = shard_helper_features(&gate);
+    assert_eq!(
+        suite_features,
+        BTreeSet::from([helper_features.clone()]),
+        "the shard helper resolves the targets with `--features {helper_features}` and the \
+         suite runs them with {suite_features:?}: a target whose required features differ \
+         between the two is in no shard, or asked for and refused"
+    );
+}
+
+/// Every unit the whole suite runs is in exactly one shard of the lane, and no
+/// shard holds a unit the whole suite does not run.
+#[test]
+fn every_target_the_workspace_suite_runs_is_in_exactly_one_shard() {
+    let (count, _) = workspace_lane_shards(&read(WORKSPACE_LANE));
+    let features = shard_helper_features(&read(WORKSPACE_GATE));
+    let expected = units_the_whole_suite_runs(&features);
+    assert!(
+        expected.len() > 500,
+        "cargo metadata names only {} unit(s) of the workspace suite; the reading broke",
+        expected.len()
+    );
+
+    let mut seen: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for shard in 1..=count {
+        let out = std::process::Command::new("python3")
+            .arg(SHARD_HELPER)
+            .args(["--features", &features, &format!("{shard}/{count}")])
+            .current_dir(repo_root())
+            .output()
+            .expect("python3 runs the shard helper");
+        assert!(
+            out.status.success(),
+            "{SHARD_HELPER} {shard}/{count} failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let units: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        assert!(!units.is_empty(), "shard {shard} of {count} runs nothing");
+        for unit in units {
+            seen.entry(unit).or_default().push(shard);
+        }
+    }
+
+    let twice: Vec<String> = seen
+        .iter()
+        .filter(|(_, shards)| shards.len() > 1)
+        .map(|(unit, shards)| format!("{unit} in shards {shards:?}"))
+        .collect();
+    let missing: Vec<&String> = expected.iter().filter(|u| !seen.contains_key(*u)).collect();
+    let extra: Vec<&String> = seen.keys().filter(|u| !expected.contains(*u)).collect();
+    assert!(
+        twice.is_empty() && missing.is_empty() && extra.is_empty(),
+        "the {count} shards of {WORKSPACE_LANE} are not the whole suite, each target once:\n\
+         in more than one shard: {twice:?}\n\
+         in no shard (the whole suite runs it, the lane does not): {missing:?}\n\
+         in a shard and not in the whole suite: {extra:?}"
+    );
+}
