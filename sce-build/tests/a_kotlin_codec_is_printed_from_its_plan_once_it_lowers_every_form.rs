@@ -552,16 +552,83 @@ fn an_input_the_value_says_is_read_off_it_and_not_handed() {
     );
 }
 
-/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a variant, a CBOR map and a group that holds a
-/// length the value states beside its content each name their form.
+/// A variant is presented as the arm the value holds, each arm a source of its
+/// codec: the encode derives the tag field from the arm, the catch-all's tag
+/// read off the class of the tags no arm names, and writes the arm by its
+/// codec's own encode; the decode makes the catch-all's tag by that class's
+/// factory.
 ///
-/// Turns red where `kotlin_source::positional_forms` stops naming a variant or
-/// a group, or `unlowered_forms` a CBOR map.
+/// Turns red where `kotlin_source::positional_forms` names a variant of
+/// printed arms unlowered, `arm_tag` reads the tag other than off the arm,
+/// `derived_fields` leaves the tag field to the value, `render` declares no
+/// class of the catch-all's tag, or the template holds an arm as its data
+/// class rather than its source.
+#[test]
+fn a_variant_derives_its_tag_from_the_arm_and_writes_the_arm_by_its_codec() {
+    assert!(unlowered("codec_variant_dispatch").is_empty());
+    let text = resource_file("codec_variant_dispatch");
+    holds(
+        "codec_variant_dispatch",
+        &text,
+        &[
+            "interface CodecVariantDispatchSource {\n    val body: CodecVariantDispatchVariant\n}\n",
+            "    data class CodecVariantSessionOpen(val body: \
+             com.sce.generated.codec_variant_session_open.CodecVariantSessionOpenSource)",
+            "    data class Default(val tag: CodecVariantDispatchUnknownTag, val body: \
+             com.sce.generated.codec_variant_session_close.CodecVariantSessionCloseSource)",
+            "value class CodecVariantDispatchUnknownTag private constructor(val tag: UByte) {\n",
+            "                in 0x1u..0x2u -> null\n",
+            "            val _r_body = src.body\n",
+            "            val _t_body: ULong = when (val _b = _r_body) {\n\
+             \x20               is CodecVariantDispatchVariant.CodecVariantSessionOpen -> 0x1uL\n\
+             \x20               is CodecVariantDispatchVariant.CodecVariantSessionClose -> 0x2uL\n\
+             \x20               is CodecVariantDispatchVariant.Default -> _b.tag.wide\n\
+             \x20           }\n",
+            "            val _d_msg_id = _t_body.toUByte()\n",
+            "                is CodecVariantDispatchVariant.CodecVariantSessionOpen -> \
+             CodecVariantSessionOpen.encodeSource(_b.body, w)?.let { return it }\n",
+            "CodecVariantDispatchUnknownTag.of(msg_id) ?: return null",
+            "    override var body: CodecVariantDispatchVariant = ",
+        ],
+    );
+    holds_none("codec_variant_dispatch", &text, &["var msg_id: UByte"]);
+}
+
+/// A parent whose carrier's bits the arm of an embedded body's variant fills
+/// derives them from the arm the body holds, read through the body's source.
+///
+/// Turns red where `kotlin_source::encode_source` reads the parent tag other
+/// than off the arm of the body's variant, or folds it into the carrier other
+/// than in place of the bits the value presents.
+#[test]
+fn a_parent_tag_is_derived_from_the_arm_its_body_holds() {
+    assert!(unlowered("codec_source_parent_tag").is_empty());
+    let text = resource_file("codec_source_parent_tag");
+    holds(
+        "codec_source_parent_tag",
+        &text,
+        &[
+            "            var _p_hdr_kind: ULong = 0x0uL\n\
+             \x20           when (_e_body.body) {\n\
+             \x20               is CodecSourceLeafVariant.CodecVariantSessionOpen -> \
+             _p_hdr_kind = _p_hdr_kind or 0x0uL\n\
+             \x20               is CodecSourceLeafVariant.CodecVariantSessionClose -> \
+             _p_hdr_kind = _p_hdr_kind or 0x1uL\n\
+             \x20           }\n",
+            "_u_hdr = (_u_hdr and 0x1u.inv()) or ((_p_hdr_kind and 0x1uL).toUInt() shl 0)\n",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
+/// template's encode whole: a CBOR map and a group that holds a length the
+/// value states beside its content each name their form.
+///
+/// Turns red where `kotlin_source::positional_forms` stops naming a group, or
+/// `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
         ("codec_present_if_length_ref", "a group"),
     ] {
@@ -750,6 +817,8 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_length_stated",
         "codec_length_ref_dotted_basic",
         "codec_chain_handed_entry",
+        "codec_variant_dispatch",
+        "codec_source_parent_tag",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

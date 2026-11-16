@@ -1419,6 +1419,26 @@ old encode, the old encode and its templates are removed in the same landing.
    which would leave a parent on the template's encode writing its own flag beside a body that says otherwise,
    unchecked; the parameter goes with the template's encode (§6). An input said through a group, a variant, a
    list's law or a body that says it in some values only stays unlowered with those forms.
+
+   *The tenth Kotlin landing, 2026-11-16:* a variant whose arms are codecs Kotlin prints, in each of its shapes: a
+   tag of its own, in a field or a flag of a carrier (`Derive::VariantTag`), a peek byte, which the arm's own
+   header writes, a tag the caller hands, which the caller writes, and an arm a build feature decides, which every
+   Kotlin build keeps as the template does; and a parent whose carrier's bits the arm of an embedded body's
+   variant fills (`Derive::ParentTag`). The source presents the arm as `body`, the template's sealed class
+   `{Codec}Variant`, each of whose arms holds `{Arm}Source` as a list holds `{Entry}Source`, so a source of the
+   arm's codec and not its data class alone is an arm. The catch-all holds its tag in `{Codec}UnknownTag`, the
+   refinement of R3 as §2 gives it Kotlin: a value class whose `of` makes a value only of a tag the bits hold and
+   no arm names, so the encode refuses nothing of it and the decode, which reaches the catch-all only under such
+   a tag, makes it by `of`. The encode reads the arm once, derives the tag as a `ULong` by an exhaustive `when`
+   over the sealed class into the tag field or folds it into the carrier, and writes the arm by its codec's
+   `encodeSource`; a parent reads each body's arm through the body's source and folds the arm's tag, masked, into
+   its carrier. The name of an arm is made in one place (`generator::variant_arm_name`), which the templates and
+   the printer read. Considered and refused: arms that hold the arm's data class, which would hold a source the
+   encode reads to one class where §2 gives a value any class that presents it, and a catch-all tag of the bare
+   number, which the encode would have to refuse where an arm names it, a refusal the analysis does not name. The
+   case printer states a variant as the arm's class made of its codec's data class, compares the arm, its body
+   element by element and the catch-all's tag, and hands a caller-tag codec's decode the case's tag. An input the
+   arms say (R4d, R4e), and a check of an input at an arm, stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

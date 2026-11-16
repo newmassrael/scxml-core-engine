@@ -1424,6 +1424,18 @@ pub(crate) fn kotlin_forge_package(snake: &str) -> String {
     format!("{KOTLIN_FORGE_PACKAGE_ROOT}.{snake}")
 }
 
+/// The name a variant's arm is declared by in every backend's template: the
+/// arm whose codec is imported as `codec` after that alias, and the catch-all,
+/// `None`, as `Default`. The one place the name is made: the templates read it
+/// as `variant_name`, and a printer that writes a match over the arms reads it
+/// here.
+pub(crate) fn variant_arm_name(codec: Option<&str>) -> String {
+    match codec {
+        Some(alias) => filters::to_pascal_case(alias.to_string()),
+        None => "Default".to_string(),
+    }
+}
+
 /// The declaration `name` of the unit of the forge document `document`,
 /// written by its package (`com.sce.generated.<snake>.<name>`): how a Kotlin
 /// unit names a declaration of another document where a name of its own, or a
@@ -15187,6 +15199,7 @@ fn render_codec(
                 "encode": printed.encode,
                 "inline": printed.inline,
                 "said_held": printed.said_held,
+                "unknown_tag": printed.unknown_tag,
             }),
         );
     }
@@ -15728,7 +15741,7 @@ fn render_codec(
             .map(|arm| {
                 let body_type =
                     resolve_variant_arm_body_type(&m.name, &arm.body_alias, imports, lang)?;
-                let variant_name = filters::to_pascal_case(arm.body_alias.clone());
+                let variant_name = variant_arm_name(Some(&arm.body_alias));
                 let value_literal = format!("{}{}", arm.value, arm_value_suffix);
                 let body_decoder = resolve_variant_arm_decoder(&arm.body_alias, lang);
                 let body_encoder = resolve_variant_arm_encoder(&arm.body_alias, lang);
@@ -15963,7 +15976,7 @@ fn render_codec(
                     body_encode_args_with_leading_comma,
                 ) = combine_arm_call_args(&default_flag_bind_args);
                 let mut obj = serde_json::Map::new();
-                obj.insert("variant_name".into(), "Default".to_string().into());
+                obj.insert("variant_name".into(), variant_arm_name(None).into());
                 // Owned-projection mirror for the default arm. The match
                 // destructures `{ tag, body }`; `owned_body_into` is the
                 // full field-init fragment so the non-borrowed case emits

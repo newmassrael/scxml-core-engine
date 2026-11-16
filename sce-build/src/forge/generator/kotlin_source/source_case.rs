@@ -17,10 +17,10 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members,
-    CodecPath as RustCodecPath, HeldCodecs,
+    variant_choice, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
-use super::{list_class, refinement_class};
+use super::{arm_class, list_class, refinement_class, unknown_tag_class};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// Where a codec's Kotlin value is: the package of the document that declares
@@ -82,10 +82,11 @@ pub(crate) struct SourceCase {
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
 /// the flag inputs `inputs` states, each to the decode and those the value does
-/// not say to the encode. A codec whose case hands it a caller's tag (`tag`),
-/// or that holds a group or a variant, is one the Kotlin printer does not
-/// print, and its case is refused by name; so is a source that states an
-/// element the value does not present or leaves out one it does.
+/// not say to the encode, and the decode the tag its caller hands it (`tag`)
+/// where its variant has no tag of its own. A codec that holds a group is one
+/// the Kotlin printer does not print, and its case is refused by name; so is a
+/// source that states an element the value does not present or leaves out one
+/// it does, and a tag that is not the one of the arm the source holds.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -104,11 +105,6 @@ pub(crate) fn source_case(
             encode_inputs.push(format!("{value}u"));
         }
     }
-    if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
-        return Err("a Kotlin case states no variant yet: the Kotlin printer \
-                    prints no codec that holds one"
-            .to_string());
-    }
     if !plan.groups().is_empty() {
         return Err("a Kotlin case states no group yet: the Kotlin printer \
                     prints no codec that holds one"
@@ -120,6 +116,22 @@ pub(crate) fn source_case(
         if let Some(holds) = element_holds(element, DECODED, VALUE, 0, held)? {
             checks.push((element.field.id.clone(), holds));
         }
+    }
+    if plan.model.variant.is_some() {
+        checks.push((
+            VARIANT_MEMBER.to_string(),
+            variant_holds(plan, DECODED, VALUE, 0, held)?,
+        ));
+    }
+    if let Some(tag) = case_tag(plan, source, tag)? {
+        // The decode takes the tag after the flag inputs, and the value made
+        // and the value decoded under it both answer it (`tag`): it is what a
+        // caller writes for the arm the value holds.
+        decode_inputs.push(format!("{tag}u"));
+        checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!("{VALUE}.tag.toUInt() == {tag}u && {DECODED}.tag.toUInt() == {tag}u"),
+        ));
     }
     Ok(SourceCase {
         literal,
@@ -160,11 +172,7 @@ fn element_holds(
         Value::Body { codec } => {
             let (d, v) = (format!("d{depth}"), format!("v{depth}"));
             let inner = held.read(codec, &mut |plan, _, held| {
-                let mut holds = Vec::new();
-                for element in &plan.elements {
-                    holds.extend(element_holds(element, &d, &v, depth + 1, held)?);
-                }
-                Ok(holds.join(" && "))
+                Ok(value_holds(plan, &d, &v, depth + 1, held)?.join(" && "))
             })?;
             match (inner.is_empty(), optional) {
                 // The body presents nothing: only whether it is there.
@@ -205,8 +213,66 @@ fn element_holds(
     }))
 }
 
+/// Kotlin `Boolean` expressions that each hold when `decoded` and `value`, two
+/// sources of the codec `plan`, present the same of one element, or hold the
+/// same arm of its variant; empty where the codec presents nothing to compare.
+/// `depth` names the values a body is compared through.
+fn value_holds(
+    plan: &EncodePlan<'_>,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<Vec<String>, String> {
+    let mut holds = Vec::new();
+    for element in &plan.elements {
+        holds.extend(element_holds(element, decoded, value, depth, held)?);
+    }
+    if plan.model.variant.is_some() {
+        holds.push(variant_holds(plan, decoded, value, depth, held)?);
+    }
+    Ok(holds)
+}
+
+/// A Kotlin `Boolean` expression that holds when `decoded` and `value`, two
+/// sources of the codec `plan`, hold the same arm of its variant with the same
+/// body, compared element by element, and for the catch-all the same tag. The
+/// `when` is exhaustive over the sealed class the codec's file declares.
+fn variant_holds(
+    plan: &EncodePlan<'_>,
+    decoded: &str,
+    value: &str,
+    depth: usize,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let (x, y) = (format!("vx{depth}"), format!("vy{depth}"));
+    let path = CodecPath::new(&plan.model.name);
+    let mut cases = Vec::new();
+    for arm in &plan.arms {
+        let class = path.qualified(&arm_class(&path.type_name, arm.tag.map(|_| arm.codec)));
+        let (bx, by) = (format!("{x}.body"), format!("{y}.body"));
+        let mut same = vec![format!("{y} is {class}")];
+        if arm.tag.is_none() {
+            same.push(format!("{x}.tag.tag == {y}.tag.tag"));
+        }
+        let body = held.read(arm.codec, &mut |plan, _, held| {
+            Ok(value_holds(plan, &bx, &by, depth + 1, held)?.join(" && "))
+        })?;
+        if !body.is_empty() {
+            same.push(body);
+        }
+        cases.push(format!("is {class} -> {}", same.join(" && ")));
+    }
+    Ok(format!(
+        "{decoded}.{VARIANT_MEMBER}.let {{ {x} -> {value}.{VARIANT_MEMBER}.let {{ {y} -> \
+         when ({x}) {{ {} }} }} }}",
+        cases.join("; ")
+    ))
+}
+
 /// The value of the codec `plan` at `path` that `source` states, made by its
-/// data class's constructor, each element by its name.
+/// data class's constructor, each element by its name, and the arm of its
+/// variant as `body`.
 fn value_literal(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -234,11 +300,48 @@ fn value_literal(
         };
         args.push(format!("{} = {value}", l.codec_field_id(id)));
     }
+    if plan.model.variant.is_some() {
+        let json = object
+            .get(VARIANT_MEMBER)
+            .ok_or_else(|| format!("the source states no `{VARIANT_MEMBER}`, the variant's arm"))?;
+        let arm = variant_literal(plan, path, json, held)
+            .map_err(|e| format!("`{VARIANT_MEMBER}`: {e}"))?;
+        args.push(format!("{VARIANT_MEMBER} = {arm}"));
+    }
     Ok(format!(
         "{}({})",
         path.qualified(&path.type_name),
         args.join(", ")
     ))
+}
+
+/// The arm of the variant a source states, as [`variant_choice`] reads it: the
+/// class of the sealed class that holds the arm, made of the arm's codec's
+/// data class, and for the catch-all the tag it holds, made by the factory of
+/// the class of the tags no arm names.
+fn variant_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let (chosen, body) = variant_choice(plan, json)?;
+    let value = held.read(chosen.codec, &mut |plan, held_path, held| {
+        value_literal(plan, &held_codec(held_path), body, held)
+    })?;
+    let arm = plan.arms[chosen.index].tag.map(|_| chosen.codec);
+    let class = path.qualified(&arm_class(&path.type_name, arm));
+    Ok(match chosen.default_tag {
+        None => format!("{class}({value})"),
+        Some(tag) => {
+            let ty = crate::forge::codec_totality::tag_type(plan.model);
+            format!(
+                "{class}(tag = {}.of({})!!, body = {value})",
+                path.qualified(&unknown_tag_class(&path.type_name)),
+                integer_literal(i128::from(tag), &ty)?
+            )
+        }
+    })
 }
 
 /// One value of the abstract type `value` of the element `field` of the codec
@@ -349,11 +452,7 @@ fn list_holds(
         format!("v{}", depth + 1),
     );
     let inner = held.read(codec, &mut |plan, _, held| {
-        let mut holds = Vec::new();
-        for element in &plan.elements {
-            holds.extend(element_holds(element, &d, &v, depth + 2, held)?);
-        }
-        Ok(holds.join(" && "))
+        Ok(value_holds(plan, &d, &v, depth + 2, held)?.join(" && "))
     })?;
     let sizes = format!("{decoded}.size == {value}.size");
     Ok(if inner.is_empty() {

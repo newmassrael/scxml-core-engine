@@ -2418,3 +2418,19 @@ codecs whose value says a flag input: the one field gated on the input alone, or
   disagrees with what the value says, so `encodeToByteArray(...)` answers `ByteArray?` for such a codec. Hand what
   the value says, or call `encodeSource` and hand nothing for it.
 
+## A printed Kotlin codec derives its variant's tag from the arm it holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs with a variant whose arms are printed codecs: a tag of their own, a peek byte, a tag the caller hands, and a
+parent whose carrier's bits the arm of an embedded body's variant fills (`<sce:variant-dispatch>`).
+
+- The value no longer holds the tag field (`msg_id` and the like): the encode writes the tag of the arm `body`
+  holds. Drop the field from a constructor call and stop setting it; read the arm instead (`value.body is
+  {Codec}Variant.{Arm}`). A carrier flag the tag or a parent tag fills is written whatever its bits hold.
+- Each arm of `{Codec}Variant` holds `{Arm}Source`, the arm codec's interface, where it held the arm's data class.
+  A data class still makes one (`{Codec}Variant.{Arm}({Arm}(...))`); a read of a derived element of the arm, or
+  a call of its `encode`, goes through the arm's own data class (`(arm.body as {Arm})`), or `{Arm}.encodeSource`.
+- The catch-all, `{Codec}Variant.Default`, holds its tag as `{Codec}UnknownTag`, which only
+  `{Codec}UnknownTag.of(tag)` makes, answering `null` for a tag an arm names or the bits do not hold; read the
+  number as `.tag.tag`. A caller-tag codec's `tag` answers the number as before.
+
