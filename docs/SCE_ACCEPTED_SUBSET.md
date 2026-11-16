@@ -4483,9 +4483,9 @@ and replayed the fixtures, and the refusals were removed when the last of them d
 
 Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
-`accept_params`, C++ a nested `InvokeParams` (a `std::optional` per variable) and
-`acceptParams`, each variable `null` / `None` / empty when nothing is handed it and
-keeping the value its `<data>` gave it (the slot of a variable declared
+`accept_params`, Go `<Machine>InvokeParams` and `AcceptParams`, C++ a nested
+`InvokeParams` (a `std::optional` per variable) and `acceptParams`, each slot `null` /
+`None` / empty when nothing is handed its variable (the slot of a variable declared
 `optional<T>` is that backend's one optional type itself, `Option<T>`, `T?`,
 `std::optional<T>`, `optional.Of[T]` or `Optional[T]`, and not a second one inside
 it: see "A child's optional variable" below); C11 has no such object, and the invoking
@@ -4493,7 +4493,17 @@ machine writes the values into the child's own variables between the two steps i
 start takes (`<machine>_invoked_begin`, `<machine>_invoked_enter`, described with C11
 below).
 The invoking machine builds one from its fields and gives it to the child before
-the child starts. A value that cannot be
+the child starts. A handed value is its variable's initial value, in place of the one
+its `<data>` declares (§scxml-6.4, docs/adr/0098): `accept_params` declares the
+variables again in document order, each handed one with its value and every other one
+with its own initial value, so a variable declared after a handed one and initialized
+from it reads the handed value. An initial value of a static variable can neither fail
+nor act (one that could is refused where it is written), so the second declaration of
+an unhanded variable is not observable. The parent types each value against the
+variable it lands in, which a static child declares and a script-engine child does
+not: that is why a static child is handed a typed object and a script-engine child is
+handed every name its parent evaluated, to take what its own top-level `<data>`
+declares (docs/adr/0098, "The typed `InvokeParams` of a static child"). A value that cannot be
 computed — a checked integer operation that overflows — is the evaluation that
 failed (W3C SCXML 5.7.1): `error.execution` is raised when the document declares
 it, that one value is left out, and the child still starts. The witness is
