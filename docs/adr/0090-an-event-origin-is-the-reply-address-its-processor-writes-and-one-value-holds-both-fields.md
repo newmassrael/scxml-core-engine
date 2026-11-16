@@ -3,7 +3,10 @@
 - Status: Accepted (2026-11-06). On 2026-11-06 the owner chose this structure over keeping the boundary conversion.
   The owner had asked for the most correct long-term structure, with cost ignored, and was given three options:
   keep `publishedOrigin` and patch its cases, convert to the published spelling where the event is raised, or carry
-  one typed value that the delivering processor writes. Nothing has landed yet; Order of work lists the steps.
+  one typed value that the delivering processor writes. Order of work lists the steps.
+  Steps 2 to 7 landed (2026-11-06 to 2026-11-08): each runtime carries the pair its processors write (87ec16bdf8
+  for C++, then Rust, Go, Kotlin, Python, Swift and C11), every backend writes and reads saved-state format 3, and
+  `publishedOrigin` and its ports are deleted (4a7adad90d). No step of the order of work is open.
 - Date: 2026-11-06
 - Amends:
   - ADR 0084 (the processor door). A host ending or a host-posted event names its origin as the pair defined here,

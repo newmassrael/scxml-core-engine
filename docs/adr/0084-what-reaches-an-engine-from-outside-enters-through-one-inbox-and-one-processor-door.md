@@ -24,6 +24,15 @@
   own inbox, found through a directory the tree keeps, and a test on `static_invoke_ending_order.scxml` in each such
   runtime's inbox conformance test holds a child's queue to arrival order. Recorded, with each runtime's directory,
   in D2 as amended at step 10.
+  Follow-ups closed (2026-11-16). The work this ADR's record carried as owed after step 10 is done: a child
+  session's queue against the root's inbox is step 10; the C++ W3C runner reports a listener that cannot bind as an
+  error and fails the run; no in-process W3C listener is told a port (the C++ runner's, the Kotlin harness's and the
+  Python conftest's bind one the kernel assigns unless `SCE_W3C_HTTP_PORT` names one), and the Node echo server the
+  gates and the `verify` action start takes a port the kernel assigns and hands it on through `SCE_W3C_HTTP_PORT`; the
+  content readings are one reading per data model, and an event's origin is ADR 0090's pair. Kotlin's coroutine mode
+  now runs the synchronous loop's steps, recorded in D2 (the bullet on the end of a run, as amended on this date).
+  What stays on a fixed default is an out-of-process listener whose port two processes must agree before either
+  starts: the C11 ctest fixture binds the port the tree was configured with (`-DSCE_W3C_HTTP_PORT`).
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -249,7 +258,14 @@ host is the arrangement measured above to fail.
 - What the inbox holds when a run ends (a top-level final, or the host's stop) is applied then, by the same operations,
   as a direct call would be at that moment: an event joins the external queue of a machine that will not dequeue it and
   is counted as unseen (§scxml-3.13), and an ending finds its invocation over and is refused by the token check. No
-  runtime drops a held input. What differs is a post that arrives after the end (decided at step 4):
+  runtime drops a held input. Amended 2026-11-16: what the external queue itself holds when a run reaches its
+  top-level final is counted then, in either of Kotlin's modes. Its coroutine mode left it for the host's stop to
+  count, so a run that had ended answered none; both modes now count it where the run ends
+  (`flushPendingFinalState`). The same round gave the two modes one external-event step (`processNextExternalEvent`)
+  after which both complete the macrostep by one body, with the microstep ceiling released only where an event comes
+  off the external queue, as on every other engine: the coroutine mode had released it after a scheduled act too, and
+  completed no macrostep after a refused delivery. What differs is a post that arrives after the end (decided at
+  step 4):
   - A runtime that can close without waiting for a post in flight closes the inbox at the end and refuses later posts:
     C++, Kotlin, Go, Python and Swift.
   - A runtime whose owner cannot wait for a post in flight (a bare-metal owner sharing one core with its posters, at a
