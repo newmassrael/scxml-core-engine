@@ -1862,6 +1862,44 @@ old encode, the old encode and its templates are removed in the same landing.
    C++ one is, since no expression gives one, and an assignment to a member of a group is refused for that reason
    rather than as a derived number. The arm of a variant is named by one function, `variant_arm_name`, which the
    template's `variant_name`, the Rust and Go printers and the Kotlin and Go parents read.
+   *The C11 interface, decided 2026-11-16 under the rule of 2026-10-26 (the textbook structure, decided without
+   asking).* A C11 value presents its elements to its encode through a table of functions, `{codec}_source_t`, one
+   member `T (*element)(const void *ctx)` for each element the value presents, in declaration order, each handed
+   the context pointer the table is passed with. This is C's own interface: a table of operations beside the object
+   it operates on (Schreiner, *Object-Oriented Programming with ANSI-C*, 1993, ch. 2), the shape of every driver
+   table of a C kernel. The encode is a function over any source, `{codec}_encode_source(src, ctx, w)`, which reads
+   each element once and derives every other element of the frame from them. The table and the context are passed
+   apart, and not as one struct of pointers: a table is `static const`, one for each type, which a build places in
+   read-only memory, so presenting a value costs it no RAM (the budgets of docs/adr/0049 and 0057), and any record
+   of a consumer's own layout is a source by a table of its own, with no copy into the codec's struct. The codec's
+   struct is one source, by the table `{codec}_value_source()` answers, whose context is a `const {codec}_t *`, and
+   `{codec}_encode` is the encode over that table; the struct, its members and its decode stay as C holds a value
+   with no allocator, and lose only what the encode derives (§3). The encode answers the runtime's status: a total
+   codec's only `SCE_FORGE_CODEC_BUFFER_OVERFLOW`, the sink's own failure. A refinement (§2) is a struct made by one
+   function that returns a status, and lands with the first form that has one. Considered and refused: one struct
+   holding both the context and the functions, which puts a table's pointers in the RAM of every value presented;
+   the codec's struct as the interface, which is the builder that stores derived elements and presents no record
+   of another layout without a copy; and one reader keyed by an element's index (`get(ctx, id, out)`), which loses
+   each element's type to a `void *`.
+
+   *The first C11 landing, 2026-11-16:* the positional codecs whose elements are integers, flag sets and enums,
+   each always there, of which the encode derives nothing, that take no flag input and whose encode refuses
+   nothing, written by the packed bytes and whole fixed fields of a positional layout and the whole fixed fields
+   and variable-length integers of a streamed one (`c11_source::unlowered` names the first form any other codec
+   uses; such a codec keeps the template's encode whole, §6). Each is printed from its plan
+   (`sce-build/src/forge/generator/c11_source.rs`): the table, the value's readers `{codec}_value_<element>` and
+   its table, and the encode over a source, whose writes are the template's byte expressions over the locals each
+   element was read into (`encode_whole_field_read_as`, `encode_byte_read_by`, `vle_encode_block`). No consumer's
+   code changes, as these codecs derive nothing. The C11 harness runs each printed codec's `sources`
+   (`c11_source::source_case`): the case zeroes a static value of the struct and sets each member by a statement,
+   since a C value is made by setting its members and a struct that holds a large array is no literal on a stack;
+   it encodes the value through `{codec}_value_source()`, compares the bytes, decodes them, and compares each
+   member. A refused case is held to the status `EncodeFailure::symbol` names for C11 (the runtime's
+   `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` and `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`; it has no status for an
+   inconsistent source yet) and to a writer it left at its start. The census
+   `a_c11_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a printed header, that every codec of the
+   resources is printed exactly where the printer lowers every form of it, and a consumer's record of its own layout
+   encoded through a table of its own to the value's bytes.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
