@@ -22,7 +22,7 @@
 //! What the generated components do when they run is held by
 //! `backends/rust/tests/tests/a_test_component_runs_through_its_doors.rs`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_rust.sh`) and runs them through
+//! `scripts/materialize.sh rust-static-datamodel`) and runs them through
 //! `sce_rust_runtime::test::TestCaseRun`.
 
 use std::path::{Path, PathBuf};

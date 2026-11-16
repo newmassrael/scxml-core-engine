@@ -54,7 +54,7 @@ on:
       - 'sce-build/tests/common/**'
       - 'sce-build/tests/fixtures/static_datamodel/**'
       # The test profile's templates and the documents they name, which
-      # `scripts/regen_static_datamodel_swift.sh` generates into the machines' target.
+      # `tools/codegen/trees/swift-static-datamodel.toml` generates into the machines' target.
       - 'sce-build/tests/fixtures/test_profile/**'
       # The corpus's orders_suite and nested_suite, generated into the same target and
       # replayed from their traces under `test_profile/runs/` by
@@ -71,10 +71,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'scripts/test_swift_backend.sh'
-      - 'scripts/regen_swift_statecharts.sh'
-      - 'scripts/regen_static_datamodel_swift.sh'
-      - 'scripts/regen_swift_ecmascript.sh'
-      - 'scripts/regen_swift_integration.sh'
+      - 'scripts/materialize.sh'
+      - 'tools/codegen/trees/**'
       - 'scripts/regen_swift_feature_conformance.sh'
       - 'tests/product_line/**'
       - 'integration_resources/**'

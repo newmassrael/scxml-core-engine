@@ -18,7 +18,7 @@
 mutation_tests -p sce-rust-tests --test a_composed_value_is_sent_by_its_name
 mutation_targets sce-build/src/forge/static_lowering.rs backends/rust/forge-runtime/src/algorithm.rs
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_composed_send_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
 
 mutation_case "the param that holds the count is written as one that cannot fail" <<'PY'

@@ -22,7 +22,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_bytes_wire/static_bytes_wire_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
 
 mutation_case "a byte slice crosses as the string of its own bytes" <<'PY'

@@ -26,7 +26,7 @@
 //! What the generated components do when they run is held by
 //! `backends/swift/tests/Tests/StaticDatamodelTests/ATestComponentRunsThroughItsDoorsTests.swift`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_swift.sh`) and runs them through
+//! `scripts/materialize.sh swift-static-datamodel`) and runs them through
 //! `SceTestProfile.TestCaseRun`.
 
 use std::path::{Path, PathBuf};

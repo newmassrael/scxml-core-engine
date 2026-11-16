@@ -28,7 +28,7 @@ mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/runtime/src/event_payload.rs
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_payload_bytes_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
 
 mutation_case "a byte string past its place's bound is not refused" <<'PY'

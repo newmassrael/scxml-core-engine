@@ -35,7 +35,7 @@ mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/runtime/src/saved_state.rs
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_bytes_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
 
 # The variable's `SceBytes<N>` holds the bound in its type (docs/adr/0086,

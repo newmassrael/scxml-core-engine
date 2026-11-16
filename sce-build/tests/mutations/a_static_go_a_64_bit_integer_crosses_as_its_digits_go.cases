@@ -19,7 +19,7 @@ mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/runtime/event_payload.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_wire_wide/static_wire_wide_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
 
 mutation_case "a signed 64-bit param is written as a JSON number" <<'PY'

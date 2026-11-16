@@ -16,7 +16,7 @@
 #   scripts/regen_corpus_expected_logs.sh --check   exit 1 where one differs
 #
 # Requires:
-#   the generated Rust trees of the suites (scripts/regen_static_datamodel_rust.sh),
+#   the generated Rust trees of the suites (scripts/materialize.sh rust-static-datamodel),
 #   which the runner programs of sce-rust-tests are built from.
 
 set -euo pipefail

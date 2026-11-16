@@ -21,7 +21,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/test_a_child_is_given_its_host_by_its_parent.py
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets tools/codegen/templates/python/invoke_methods.py.jinja2
 mutation_oracles backends/python/tests/integration/static_datamodel/test_a_child_is_given_its_host_by_its_parent.py sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
 

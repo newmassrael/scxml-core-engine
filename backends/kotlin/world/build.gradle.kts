@@ -49,7 +49,8 @@ val hostedMachines = listOf("todo_peer", "record_list")
 
 val generatedTree = rootProject.file("backends/kotlin/tests/src/main/kotlin/com/sce")
 
-// Where scripts/regen_static_datamodel_kotlin.sh writes each machine: a directory of its
+// Where the kotlin-static-datamodel tree (tools/codegen/trees/kotlin-static-datamodel.toml)
+// writes each machine: a directory of its
 // own, apart from the integration stems that share `com/sce/integration`.
 val machineTree = File(generatedTree, "integration/static_datamodel")
 
@@ -61,7 +62,7 @@ val machineTree = File(generatedTree, "integration/static_datamodel")
 fun importedAlgorithms(directory: File): Set<String> {
     require(directory.isDirectory) {
         "no generated source at $directory: regenerate it with " +
-            "scripts/regen_static_datamodel_kotlin.sh, or remove it from hostedMachines"
+            "scripts/materialize.sh kotlin-static-datamodel, or remove it from hostedMachines"
     }
     val pattern = Regex("""^import com\.sce\.generated\.(\w+)\.\*""")
     return directory.walkTopDown()

@@ -21,7 +21,7 @@
 
 mutation_tests -p sce-rust-tests --test static_scenarios static_send_target
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
 
 mutation_case "a value that is none of the declared routes is let through" <<'PY'

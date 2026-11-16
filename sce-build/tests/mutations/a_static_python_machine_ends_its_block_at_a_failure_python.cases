@@ -12,7 +12,7 @@
 # the author's script text used to be handed to an engine. The values those
 # decide are the ones `scenarios/*.json` state, replayed by
 # `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
-# over the machines `scripts/regen_static_datamodel_python.sh` generates.
+# over the machines the `python-static-datamodel` tree generates.
 #
 # What is easy to get wrong and reads as success: a failed value written anyway
 # is a wrapped number where a variable keeps what it held, and a block that goes
@@ -29,7 +29,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets backends/python/runtime/sce_runtime/event_payload.py
 mutation_runtime_targets tools/codegen/templates/python/_actions.py.jinja2 tools/codegen/templates/python/actions/native_action.py.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/actions/cancel.py.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2 tools/codegen/templates/python/process_transition.py.jinja2 tools/codegen/templates/python/state_machine.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py backends/python/tests/integration/static_datamodel/test_a_static_child_is_handed_its_params.py backends/python/tests/integration/static_datamodel/test_a_static_host_action.py

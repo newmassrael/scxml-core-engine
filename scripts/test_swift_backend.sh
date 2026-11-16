@@ -101,15 +101,14 @@ for package in "${PACKAGES[@]}"; do
             # question is judged by one gate.
             echo "== swift test: backends/swift/forge-runtime"
             (cd backends/swift/forge-runtime && swift test)
-            scripts/regen_static_datamodel_swift.sh
+            scripts/materialize.sh swift-static-datamodel
             echo "== swift test: backends/swift/tests (numerical conformance)"
             (cd backends/swift/tests && swift test --filter MatchesReference)
             ;;
         tests)
-            scripts/regen_swift_statecharts.sh
-            scripts/regen_static_datamodel_swift.sh
-            scripts/regen_swift_ecmascript.sh
-            scripts/regen_swift_integration.sh
+            # The four committed targets of the package, each a declared tree
+            # (tools/codegen/trees/swift-*.toml).
+            scripts/materialize.sh swift-statecharts swift-static-datamodel swift-ecmascript swift-integration
             echo "== swift test: backends/swift/tests"
             # A tree another lane left on this machine is built with the rest, and not run here;
             # the numerical conformance tests are the Forge lane's (`forge` above).

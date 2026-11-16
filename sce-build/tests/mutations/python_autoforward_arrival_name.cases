@@ -27,7 +27,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py
 mutation_oracles backends/python/tests/integration/static_datamodel/test_an_autoforwarded_copy_keeps_the_arrival_name.py
 

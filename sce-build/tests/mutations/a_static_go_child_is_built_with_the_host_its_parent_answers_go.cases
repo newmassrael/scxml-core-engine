@@ -27,7 +27,7 @@ mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/invoke_methods.go.jinja2 sce-build/src/forge/native_action.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host_sm.go backends/go/tests/integration/static_datamodel/static_child_host/static_child_host__sce_synth_invoke__worker_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybrid_sm.go backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_hosted_first_sm.go backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_hosted_second_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/a_child_is_given_its_host_by_its_parent_test.go sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
 
 mutation_case "a child is built with a nil host where it declares acts" <<'PY'

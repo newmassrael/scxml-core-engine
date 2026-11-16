@@ -530,32 +530,19 @@ kotlin_tree_for_language() {
         # language is not the committed one they are the mis-supply the check
         # below refuses.
         #
-        # ⚠ TWO halves. The integration tree is declared
-        # (tools/codegen/trees/kotlin-integration.toml) and written here for
-        # this language the way the W3C tree is. A generation whose manifest
-        # names its engine keeps it in every variant: its document is written
-        # for that engine, and its test hands the machine one that reads it.
-        local kt_root="$tree/backends/kotlin/tests/src/main/kotlin"
-        "$(sce_gate_codegen)" materialize kotlin-integration --script-engine "$language" \
-            --into "$tree" >/dev/null \
-            || sce_gate_fail "generating the Kotlin integration machines for --script-engine $language"
-
-        # The rest of the directory is still written by scripts (the static
-        # datamodel's machines), and those producers are found by WHAT THEY
-        # WRITE, not by what they are called. Measured 2026-08-30: the
-        # per-document script that then regenerated `native_action` emitted the
-        # Rust, Go AND Kotlin trees from one script, so a glob over
-        # `regen_*_kotlin.sh` missed `com/sce/integration/statechart_native_action`
-        # — which would leave exactly one directory in the committed language
-        # and hang this suite for the same reason the whole block exists.
-        local producer
-        for producer in scripts/regen_*.sh; do
-            grep -q 'backends/kotlin/tests/src/main/kotlin}\?/com/sce/integration' "$producer" \
-                || continue
-            SCE_SCRIPT_ENGINE="$language" SCE_SCRIPT_ENGINE_FOR=kotlin \
-            SCE_KOTLIN_GENERATED_ROOT="$kt_root" \
-                bash "$producer" >/dev/null \
-                || sce_gate_fail "$producer failed emitting its Kotlin machines for --script-engine $language"
+        # The integration and static datamodel trees are declared
+        # (tools/codegen/trees/kotlin-integration.toml,
+        # kotlin-static-datamodel.toml) and written here for this language the
+        # way the W3C tree is, so every directory of `com/sce/integration` and
+        # every unit package beside the W3C machines comes from a manifest. A
+        # generation whose manifest names its engine keeps it in every variant:
+        # its document is written for that engine, and its test hands the
+        # machine one that reads it.
+        local kotlin_tree
+        for kotlin_tree in kotlin-integration kotlin-static-datamodel; do
+            "$(sce_gate_codegen)" materialize "$kotlin_tree" --script-engine "$language" \
+                --into "$tree" >/dev/null \
+                || sce_gate_fail "generating the $kotlin_tree tree for --script-engine $language"
         done
 
         # ── Every source that CARRIES a language must be IN the overlay ────

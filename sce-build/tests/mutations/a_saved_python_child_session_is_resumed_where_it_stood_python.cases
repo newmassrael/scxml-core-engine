@@ -30,7 +30,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/test_a_saved_child_session_is_resumed_after_a_restore.py
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets tools/codegen/templates/python/saved_policy.py.jinja2 tools/codegen/templates/python/saved_functions.py.jinja2 backends/python/runtime/sce_runtime/saved_engine.py
 mutation_oracles backends/python/tests/integration/static_datamodel/test_a_saved_child_session_is_resumed_after_a_restore.py sce-build/tests/fixtures/static_datamodel/static_invoke.scxml sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
 

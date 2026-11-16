@@ -24,7 +24,7 @@
 //!
 //! What the generated machine does at run time is held by the scenario
 //! `static_union.json`, replayed over the machine
-//! `scripts/regen_static_datamodel_python.sh` generates by
+//! `scripts/materialize.sh python-static-datamodel` generates by
 //! `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 //! (`test_a_union_payload_is_read_by_its_tag_and_every_union_restores`).
 

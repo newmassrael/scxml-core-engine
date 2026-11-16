@@ -1,0 +1,272 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift machines and units of datamodel="sce-static" (ADR 0097; SCE
+# Accepted Subset §2.15), one SwiftPM target of backends/swift/tests
+# (StaticDatamodelMachines), so their variables really are properties of the
+# policy and every lowered expression really type-checks; the tests beside
+# them replay the shared scenarios with no script engine. Every file of the
+# target is named for its document and the target has no namespace of its
+# own, so two documents of one name are one file: a materialization that
+# finds two different files at one path refuses the tree, which is a defect
+# of the documents, not something to order.
+#
+# Swift lowers the model in part (`STATIC_DATAMODEL_IN_PART`), so a unit is
+# swept for what it is rather than reached through a machine that calls it: a
+# construct Swift gains the lowering of is held to the compiler before a
+# machine reaches it. Every sweep leaves out a document the backend refuses by
+# name (exit status 7, `skip_unsupported`); any other refusal fails the tree.
+# A machine is generated alone, not with its imports: what it imports is in a
+# sweep, and a unit it imports that Swift does not lower yet would otherwise
+# take the machine out with it.
+#
+# Regenerate with `scripts/materialize.sh swift-static-datamodel`.
+
+[tree]
+name = "swift-static-datamodel"
+roots = [
+    "backends/swift/tests/Sources/StaticDatamodelMachines",
+    "backends/swift/tests/Tests/StaticDatamodelTests",
+]
+
+# Every statechart of the fixture directory declared under
+# datamodel="sce-static" that the Swift backend lowers.
+[[generation]]
+each = { files = "sce-build/tests/fixtures/static_datamodel/*.scxml", containing = 'datamodel="sce-static"', as = "machine" }
+arguments = ["generate", "sce-build/tests/fixtures/static_datamodel/{machine}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*_sm.swift"]
+skip_unsupported = true
+
+# The Mesh request (SCE_MESH.md §9.5) of the host-processor fixtures, whose
+# host-run invoke names its peer by a `srcexpr` and hands the router the
+# `_mesh_*` envelope; the statechart that hands an algorithm a union and
+# takes one back (docs/adr/0092, section 6.1 item 7), whose crossings only a
+# compile beside the union's unit holds; and the static child that declares
+# its variables with the values its invoke handed, in document order
+# (docs/adr/0098), an initial value that reads a variable declared before it,
+# which only a compile of the machine holds.
+[[generation]]
+each = { list = [
+    "sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml",
+    "sce-build/tests/fixtures/union/statechart_shape_crossing.scxml",
+    "tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml",
+], as = "document" }
+arguments = ["generate", "{document}", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*_sm.swift"]
+skip_unsupported = true
+
+# The statechart of the standard library a scenario names by its library name
+# (`"machine": "sce:std/shared/record_list"`), when Swift lowers it.
+[[generation]]
+arguments = ["generate", "sce:std/shared/record_list.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*_sm.swift"]
+skip_unsupported = true
+
+# The algorithms statechart_shape_crossing calls, which lie beside it and in
+# no directory a sweep below reads.
+[[generation]]
+each = { list = [
+    "sce-build/tests/fixtures/union/algorithm_shape_extent.scxml",
+    "sce-build/tests/fixtures/union/algorithm_shape_grown.scxml",
+], as = "document" }
+arguments = ["generate", "{document}", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+# The units of the kinds the Swift backend writes as a file each (an
+# algorithm, a condition, a lookup, an interpolation, a filter, a transform, a
+# validator, a timer, an observer, a procedure, a codec and a text template),
+# which the fixture directory, the standard library and the conformance
+# catalog declare. A kind Swift gains is added to each of the three lists.
+[[generation]]
+each = { files = "sce-build/tests/fixtures/static_datamodel/*.scxml", containing = [
+    'sce:kind="algorithm"', 'sce:kind="condition"', 'sce:kind="lookup"',
+    'sce:kind="interpolation"', 'sce:kind="filter"', 'sce:kind="transform"',
+    'sce:kind="validator"', 'sce:kind="timer"', 'sce:kind="observer"',
+    'sce:kind="procedure"', 'sce:kind="codec"', 'sce:kind="text-template"',
+], as = "unit" }
+arguments = ["generate", "sce-build/tests/fixtures/static_datamodel/{unit}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+[[generation]]
+each = { paths = "*/*.scxml", under = "stdlib", containing = [
+    'sce:kind="algorithm"', 'sce:kind="condition"', 'sce:kind="lookup"',
+    'sce:kind="interpolation"', 'sce:kind="filter"', 'sce:kind="transform"',
+    'sce:kind="validator"', 'sce:kind="timer"', 'sce:kind="observer"',
+    'sce:kind="procedure"', 'sce:kind="codec"', 'sce:kind="text-template"',
+], as = "unit" }
+arguments = ["generate", "sce:std/{unit}", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+# The catalog's documents are the ones the numerical conformance harness runs
+# on each backend; the directory beside it holds documents that are not
+# fixtures, one invalid on purpose, so the catalog, not the directory, names
+# them.
+[[generation]]
+each = { catalog = "tests/forge/conformance/fixtures.json", containing = [
+    'sce:kind="algorithm"', 'sce:kind="condition"', 'sce:kind="lookup"',
+    'sce:kind="interpolation"', 'sce:kind="filter"', 'sce:kind="transform"',
+    'sce:kind="validator"', 'sce:kind="timer"', 'sce:kind="observer"',
+    'sce:kind="procedure"', 'sce:kind="codec"', 'sce:kind="text-template"',
+], as = "unit" }
+arguments = ["generate", "{unit}", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+# A conformance document of the other backends' oracle the catalog does not
+# list, whose unit a test of the Swift backend reads: a CBOR map with an entry
+# of an open enum.
+[[generation]]
+arguments = ["generate", "tests/forge/conformance/codec_cbor_open_enum/codec_cbor_open_enum.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+# The records, enums and unions the fixture directory, the corpus and the
+# standard library declare: the type a record is handed to an algorithm in,
+# and the type a field or a value holds a variant in, a unit each of the same
+# target, written for what it is.
+[[generation]]
+each = { files = "sce-build/tests/fixtures/static_datamodel/*.scxml", containing = [
+    'sce:kind="event-schema"', 'sce:kind="enum"', 'sce:kind="union"',
+], as = "unit" }
+arguments = ["generate", "sce-build/tests/fixtures/static_datamodel/{unit}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+[[generation]]
+each = { files = "tests/forge/resources/*.scxml", containing = [
+    'sce:kind="event-schema"', 'sce:kind="enum"', 'sce:kind="union"',
+], as = "unit" }
+arguments = ["generate", "tests/forge/resources/{unit}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+[[generation]]
+each = { paths = "*/*.scxml", under = "stdlib", containing = [
+    'sce:kind="event-schema"', 'sce:kind="enum"', 'sce:kind="union"',
+], as = "unit" }
+arguments = ["generate", "sce:std/{unit}", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+skip_unsupported = true
+
+# The broadcast logs (ADR 0062) and the elements they store. A log is sized
+# from the largest number of bytes its element's codec encodes to, which only
+# a compile of the set reads, so each directory is one set (`orchestrate`),
+# never a document alone. A set that is refused is a defect of its documents.
+[[generation]]
+arguments = ["orchestrate", "--language", "swift", "--output-dir", "{out}"]
+set = { paths = "sce-build/tests/fixtures/static_datamodel/broadcast_log/*.scxml", flag = "--forge" }
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# ... the logs over an element whose codec asks its caller for a flag input
+# or a variant tag, which an entry stores beside the bytes (ADR 0062
+# section 4).
+[[generation]]
+arguments = ["orchestrate", "--language", "swift", "--output-dir", "{out}"]
+set = { paths = "tests/forge/conformance/broadcast_log_context/*.scxml", flag = "--forge" }
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# The bounded collections (RFC section synth-5-L) and the codec they hold: the
+# type of a collection's index field is read from its element, which only the
+# set compile has in hand.
+[[generation]]
+arguments = ["orchestrate", "--language", "swift", "--output-dir", "{out}"]
+set = { paths = "tests/forge/conformance/bounded_collection/*.scxml", flag = "--forge" }
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# An algorithm that walks the slots of a bounded collection (RFC section
+# synth-5-A, item C7), with the collection and the codec it holds, one set:
+# the algorithm names the collection's unit and the collection its element's.
+[[generation]]
+arguments = [
+    "orchestrate", "--language", "swift", "--output-dir", "{out}",
+    "--forge", "tests/forge/resources/subscription_entry.scxml",
+    "--forge", "tests/forge/resources/local_sub_table.scxml",
+    "--forge", "tests/forge/resources/algorithm_bc_iter_minimal.scxml",
+]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# The queues (RFC section synth-5-P) and the codec they hold, the fixtures
+# every backend's generated-queue test is built from, one set. The two
+# `intrusive` fixtures are not among them: Swift refuses that storage by name.
+[[generation]]
+arguments = [
+    "orchestrate", "--language", "swift", "--output-dir", "{out}",
+    "--forge", "tests/forge/resources/queue_conformance_event.scxml",
+    "--forge", "tests/forge/resources/queue_conformance_spsc.scxml",
+    "--forge", "tests/forge/resources/queue_conformance_scq.scxml",
+    "--forge", "tests/forge/resources/queue_conformance_segmented.scxml",
+    "--forge", "tests/forge/resources/queue_conformance_segmented_many.scxml",
+]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# The test profile (docs/SCE_TEST_PROFILE.md): the templates
+# ATestTemplateMatchesItsValuesTests.swift matches against values (§11.4,
+# §11.9), with the records, enums and unions they name; the components
+# ATestComponentRunsThroughItsDoorsTests.swift runs (§12.3); and the suites
+# ATestSuiteRunsThroughItsRunnerTests.swift,
+# ARecordReadsBackTheFormItWritesTests.swift and
+# ACorpusSuiteReplaysToItsExpectedLogsTests.swift run (§11.6 to §11.8, §12.2;
+# docs/SCE_TTCN3_LANE.md §10.5, §12.1), with every test case, configuration,
+# component and record each reaches. A Swift record holds no value of an enum
+# of an open set yet, so the trace of every form is the closed-enum one.
+[[generation]]
+arguments = [
+    "generate", "--with-imports",
+    "sce-build/tests/fixtures/test_profile/elapsed_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/every_matcher.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report_of.scxml",
+    "sce-build/tests/fixtures/test_profile/report_within.scxml",
+    "sce-build/tests/fixtures/test_profile/shape_is_circle.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/card_within.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_bounded.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_exact.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_placed_match.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_two.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/voucher_is.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/answerer.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/coordinator.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/idler.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/param_asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/ptc_keeper.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/runtime_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/trace_forms/replays_every_closed_enum_form.scxml",
+    "sce-build/tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/job_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/orders_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/nested_suite.scxml",
+    "-l", "swift", "-o", "{out}",
+]
+place = "backends/swift/tests/Sources/StaticDatamodelMachines"
+keep = ["*.swift"]
+
+# The numerical conformance harness (tests/forge/conformance): the oracle's
+# cases for the units above, held to what each computes. The harness lists the
+# fixtures this backend's generator writes and nothing else
+# (`conformance::lang_supports_fixture`), so it holds the units the sweeps
+# wrote, and a refusal by name leaves a fixture out of both.
+[[generation]]
+arguments = ["generate-conformance", "--language", "swift", "--manifest", "tests/forge/conformance/fixtures.json", "--output-dir", "{out}"]
+place = "backends/swift/tests/Tests/StaticDatamodelTests"
+keep = ["NumericalConformanceTests.swift"]

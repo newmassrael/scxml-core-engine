@@ -28,7 +28,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/invoke_methods.go.jinja2
 mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/a_static_hybrid_invoke_starts_the_candidate_its_value_names_test.go sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
 
 # ── The value names a candidate by its document stem ────────────────

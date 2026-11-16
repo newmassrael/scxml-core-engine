@@ -21,7 +21,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_bytes/static_record_bytes_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
 
 mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'

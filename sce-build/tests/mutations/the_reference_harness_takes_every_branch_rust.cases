@@ -28,7 +28,7 @@
 
 mutation_tests -p sce-rust-scenarios --test host_features harness
 mutation_targets sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml sce-build/tests/fixtures/static_datamodel/enum_harness_code.scxml
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/scenarios/tests/host_features.rs tests/host_features/model_outcome_classes.json tests/host_features/scenarios/static_model_harness_accepted.json tests/host_features/scenarios/static_model_harness_exhausted.json tests/host_features/scenarios/static_model_harness_not_offered.json tests/host_features/scenarios/static_model_harness_repaired.json tests/host_features/scenarios/static_model_harness_timeout.json
 
 # The timeout case gives up at the first call's deadline, and no run enters `retry`.

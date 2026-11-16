@@ -20,7 +20,7 @@
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticSendOverHttpCarriesItsParamsTest'
 mutation_targets tools/codegen/templates/kotlin/actions/send.kt.jinja2 backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_send_http/static_send_httpSm.kt
-mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_regen scripts/materialize.sh kotlin-static-datamodel
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticSendOverHttpCarriesItsParamsTest.kt sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 
 mutation_case "a pair's value is not rendered as the text it spells" <<'PY'

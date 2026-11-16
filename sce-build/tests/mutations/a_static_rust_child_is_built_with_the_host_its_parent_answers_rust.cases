@@ -23,7 +23,7 @@
 
 mutation_tests -p sce-rust-tests --test a_child_is_given_its_host_by_its_parent
 mutation_targets sce-build/src/forge/native_action.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/a_child_is_given_its_host_by_its_parent.rs sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
 
 mutation_case "the parent's host is asked twice for one start" <<'PY'

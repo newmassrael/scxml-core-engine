@@ -119,9 +119,10 @@ sce_gate_step "generating the Python W3C and integration suites"
 # and `tests/integration/` rather than `integration_resources/`, so
 # `generate-integration` never sees them, and the scenario driver that replays
 # them is tracked while their gitignored `_sm.py` modules would be modules
-# nothing produced. The machines are not listed here or in the script: the
-# script asks the generator which of the fixtures it lowers for Python.
-"$SCE_REPO_ROOT/scripts/regen_static_datamodel_python.sh" >/dev/null \
+# nothing produced. The machines are not listed here or in the tree: its
+# manifest (tools/codegen/trees/python-static-datamodel.toml) asks the
+# generator which of the fixtures it lowers for Python.
+"$CODEGEN" materialize python-static-datamodel --into "$SCE_REPO_ROOT" --replace >/dev/null \
     || sce_gate_fail "Python sce-static generation"
 
 LOG="$(mktemp -d)"
