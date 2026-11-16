@@ -2920,3 +2920,27 @@ derive a body's encoded length (`codec_embed_basic`, `codec_zenoh_timestamp_ext`
 - The runtime gains `sce_forge_writer_init_counting()`, a writer that stores nothing and counts. A writer of yours
   built by hand with a `NULL` buffer and room past zero now counts instead of writing through a null pointer.
 
+## A printed C11 codec states a length where its content is absent, and refuses what it cannot carry (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it, against the C runtime's
+`sce/forge/codec.h` of the same landing, which names `SCE_FORGE_CODEC_INCONSISTENT_SOURCE`. The printed set grows by
+the codecs whose encode can refuse a value for a number it derives or a body it holds (`codec_length_shared`,
+`codec_length_stated`, `codec_encoded_length_checked` among the resources; `sce_build::c11_codec_printed_file`
+answers `Some(true)`).
+
+- A length that several byte strings, texts or bodies share is no member of `{codec}_t`; the encode takes it from
+  the first one there and answers `SCE_FORGE_CODEC_INCONSISTENT_SOURCE`, writing nothing, where another says
+  another number. A value that held the length and two contents of different lengths, which wrote a frame no
+  decode reads back as the value, is now refused.
+- A length of gated content the value states while that content is absent (`span_len` beside two gated byte
+  strings) is the member `sce_optional_<type>_t span_len`, not a number. Set `span_len.present` and `.value` only
+  where no content is there; where content is there, leave it absent, or state the number the content says, as
+  any other is refused with `SCE_FORGE_CODEC_INCONSISTENT_SOURCE`. The decode answers it present exactly where no
+  content was on the wire.
+- A number its field may not hold (an encoded length in a 16-bit field) is refused with
+  `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` before the first byte, where the template's encode wrote its low bits.
+- A codec that holds a body whose encode can refuse returns that body's refusal before its own first byte: the
+  encode over a source counts the frame by `{codec}_write_source` first, then writes it. `{codec}_write_source`
+  is a new name in the header; one of yours of that name now collides with it. Test the status `{codec}_encode`
+  returns: a refusing codec's encode now answers more than the two statuses it answered.
+
