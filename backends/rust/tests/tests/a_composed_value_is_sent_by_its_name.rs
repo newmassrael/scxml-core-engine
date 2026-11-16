@@ -5,7 +5,7 @@
 // 5.2), run with no script engine. The committed machine under
 // `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`
-// (regen: `scripts/regen_static_datamodel_rust.sh`).
+// (regen: `scripts/materialize.sh rust-static-datamodel`).
 //
 // The first delivery of `batch.sent` is forwarded to the machine itself: four
 // lists and an optional list named as the parts of the payload they are, and a

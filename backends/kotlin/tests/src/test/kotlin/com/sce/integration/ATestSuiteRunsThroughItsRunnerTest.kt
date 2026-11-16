@@ -7,7 +7,7 @@
 // configurations are the tables sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into
 // `src/main/kotlin/com/sce/generated/` (regen:
-// `scripts/regen_static_datamodel_kotlin.sh`), and the components are the
+// `scripts/materialize.sh kotlin-static-datamodel`), and the components are the
 // machines it writes from the components there. Only the system adapter, which
 // plays the system under test, is written here; the same suite is also replayed
 // from the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5)

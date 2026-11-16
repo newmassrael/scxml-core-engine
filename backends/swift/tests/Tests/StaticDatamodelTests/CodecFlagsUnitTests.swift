@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The flags a codec's carrier names (`sce:flags`), written by `sce-codegen generate -l swift`
-// (`scripts/regen_static_datamodel_swift.sh`) as properties of the struct that read and write bits
+// (`scripts/materialize.sh swift-static-datamodel`) as properties of the struct that read and write bits
 // of the carrier. The units are the documents `tests/forge/resources/codec_flags_basic.scxml`
 // (four single-bit flags of a `uint8` header) and `codec_qos_byte.scxml` (flags of one, two and
 // three bits in one byte). The numerical oracle holds neither (`oracle_eligible` is false), so the

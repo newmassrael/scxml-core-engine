@@ -6,7 +6,7 @@
 // runner is the `main` of its generated unit (§4), made a program by a target of
 // one line under `src/bin/`; the suites are the ones sce-codegen writes into
 // `src/integration/static_datamodel/` (regen:
-// `scripts/regen_static_datamodel_rust.sh`). runtime_suite's own traces are
+// `scripts/materialize.sh rust-static-datamodel`). runtime_suite's own traces are
 // replayed by `a_test_suite_runs_through_its_runner.rs`, beside the rest of what
 // that suite is held to.
 //

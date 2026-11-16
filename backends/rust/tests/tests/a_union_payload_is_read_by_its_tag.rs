@@ -5,7 +5,7 @@
 // (docs/adr/0092, section 6.1), run with no script engine. The committed
 // machine under `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_union.scxml` (regen:
-// `scripts/regen_static_datamodel_rust.sh`).
+// `scripts/materialize.sh rust-static-datamodel`).
 //
 // A delivery is lifted tag first into the machine's own sum (section 4), each
 // branch the tag's test proves reads the fields of its case, a field two cases

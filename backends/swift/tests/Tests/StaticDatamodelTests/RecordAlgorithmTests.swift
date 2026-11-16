@@ -6,7 +6,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The algorithms `sce-codegen generate -l swift` writes over a record of an event
-// schema (`scripts/regen_static_datamodel_swift.sh`): the record is the struct the
+// schema (`scripts/materialize.sh swift-static-datamodel`): the record is the struct the
 // schema's own unit declares, taken and returned by value.
 final class RecordAlgorithmTests: XCTestCase {
     func testAScalarIsReadFromARecord() {

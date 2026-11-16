@@ -5,7 +5,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The conditions `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The conditions `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a named boolean guard is a static function of the caseless enum its own unit declares,
 // called as `Pascal.camel(…)` in the same module.
 final class ConditionUnitTests: XCTestCase {

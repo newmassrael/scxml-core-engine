@@ -5,7 +5,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The transforms `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The transforms `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a formula per output, a static function of the caseless enum its own unit declares. The units
 // are of the conformance corpus; each test reads a document's formula at the values that tell a
 // right spelling from a near one.

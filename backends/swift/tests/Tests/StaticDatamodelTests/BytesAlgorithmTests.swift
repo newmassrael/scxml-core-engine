@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The algorithms `sce-codegen generate -l swift` writes that take a byte string
-// (`scripts/regen_static_datamodel_swift.sh`): the parameter is a `[UInt8]`, its
+// (`scripts/materialize.sh swift-static-datamodel`): the parameter is a `[UInt8]`, its
 // length is `data.count` and a byte is read by its index, and a byte string passed
 // on to another algorithm is the same bytes.
 final class BytesAlgorithmTests: XCTestCase {

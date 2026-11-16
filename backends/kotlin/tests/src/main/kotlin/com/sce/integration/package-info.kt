@@ -19,7 +19,7 @@
  *
  * The `datamodel="sce-static"` machines are a second generated tree and
  * have a package of their own, `com.sce.integration.static_datamodel.<machine>`,
- * written by `scripts/regen_static_datamodel_kotlin.sh` from
+ * written by `scripts/materialize.sh kotlin-static-datamodel` from
  * `sce-build/tests/fixtures/static_datamodel/`, as Rust's
  * `integration::static_datamodel` and Go's `integration/static_datamodel`
  * are: two trees in one directory could not each own it.

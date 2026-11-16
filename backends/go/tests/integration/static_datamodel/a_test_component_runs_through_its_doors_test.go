@@ -6,7 +6,7 @@
 // The machines are the statecharts sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into a package each beside
 // this file, and the records and templates they name into packages of their
-// own beside them (regen: `scripts/regen_static_datamodel_go.sh`), driven only
+// own beside them (regen: `scripts/materialize.sh go-static-datamodel`), driven only
 // through the doors of §12.3; the configuration, the factory of machines and
 // the system adapter are written here.
 //

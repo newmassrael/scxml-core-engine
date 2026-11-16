@@ -11,7 +11,7 @@ import Testing
 // (backends/go/tests/integration/static_datamodel/a_composed_value_is_sent_by_its_name_test.go).
 // The committed machine `static_composed_send_sm.swift` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`
-// (regen: `scripts/regen_static_datamodel_swift.sh`).
+// (regen: `scripts/materialize.sh swift-static-datamodel`).
 //
 // The first delivery of `batch.sent` is forwarded to the machine itself: four lists and an
 // optional list named as the parts of the payload they are, and a list variable the

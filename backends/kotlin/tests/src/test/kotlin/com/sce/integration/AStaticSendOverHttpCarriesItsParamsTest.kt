@@ -8,7 +8,7 @@
 //
 // Fixture: sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 //
-// Regeneration: scripts/regen_static_datamodel_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-static-datamodel
 
 package com.sce.integration
 

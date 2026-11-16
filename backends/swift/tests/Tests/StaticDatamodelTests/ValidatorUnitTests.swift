@@ -6,7 +6,7 @@ import XCTest
 
 @testable import StaticDatamodelMachines
 
-// The validators `sce-codegen generate -l swift` writes (`scripts/regen_static_datamodel_swift.sh`):
+// The validators `sce-codegen generate -l swift` writes (`scripts/materialize.sh swift-static-datamodel`):
 // a class whose `validate` checks one set of inputs against the document's range, rate-of-change
 // and plausibility rules, in that order, and answers the first rule an input fails. It keeps the
 // last value of each input a rate-of-change rule reads, from the last check that passed.

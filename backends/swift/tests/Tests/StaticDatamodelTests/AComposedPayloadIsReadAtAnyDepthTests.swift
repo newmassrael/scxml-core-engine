@@ -11,7 +11,7 @@ import Testing
 // (backends/go/tests/integration/static_datamodel/a_composed_payload_is_read_at_any_depth_test.go).
 // The committed machine `static_composed_payload_sm.swift` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
-// (regen: `scripts/regen_static_datamodel_swift.sh`).
+// (regen: `scripts/materialize.sh swift-static-datamodel`).
 //
 // A delivery whose every list is full is lifted into the machine's own types, and each
 // read at depths 1 to 3 is what a host reads back. A delivery one past a bound at depth 2

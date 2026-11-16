@@ -8,7 +8,7 @@
 // `src/main/kotlin/com/sce/generated/<component>/`, the package a
 // configuration's unit names them by, and the records and templates they name
 // into `src/main/kotlin/com/sce/generated/` too (regen:
-// `scripts/regen_static_datamodel_kotlin.sh`), driven only through the doors of
+// `scripts/materialize.sh kotlin-static-datamodel`), driven only through the doors of
 // §12.3; the configuration, the factory of machines and the system adapter are
 // written here, so that each component is held apart from the generated tables,
 // which `ATestSuiteRunsThroughItsRunnerTest.kt` runs.

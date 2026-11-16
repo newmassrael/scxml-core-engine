@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // The log `sce-codegen orchestrate -l swift` writes for `broadcast_log_swift_ring.scxml`
-// (`scripts/regen_static_datamodel_swift.sh`) over the eleven-byte frame of
+// (`scripts/materialize.sh swift-static-datamodel`) over the eleven-byte frame of
 // `broadcast_log_swift_frame.scxml`: an enum that names the log's constants and gives typed
 // `publish` and `read` over the codec's struct, on the runtime's 64-bit row. What is held here is
 // what the generated module adds to the runtime, whose own contract `BroadcastLogTests` holds: the

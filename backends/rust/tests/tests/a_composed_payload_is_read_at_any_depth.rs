@@ -5,7 +5,7 @@
 // section 6), run with no script engine. The committed machine under
 // `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
-// (regen: `scripts/regen_static_datamodel_rust.sh`).
+// (regen: `scripts/materialize.sh rust-static-datamodel`).
 //
 // A delivery whose every list is full is lifted into the machine's own types,
 // and each read at depths 1 to 3 is what a host reads back. A delivery one
