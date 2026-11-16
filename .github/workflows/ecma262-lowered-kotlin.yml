@@ -95,7 +95,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         # The Lua JNI library is built from a vendored source tree, so this
         # lane needs the submodules its Kotlin siblings declare.
@@ -105,7 +105,7 @@ jobs:
       uses: ./.github/actions/install-rust
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -129,13 +129,13 @@ jobs:
     # machine agree about which JVM Gradle runs on. Changing the number here
     # moves the floor there.
     - name: Setup JDK 17
-      uses: actions/setup-java@v5
+      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
       with:
         distribution: 'temurin'
         java-version: '17'
 
     - name: Cache Gradle
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           ~/.gradle/caches
@@ -153,7 +153,7 @@ jobs:
       run: scripts/gate ecma262-lowered-kotlin
 
     - name: Upload Test Results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: ecma262-lowered-kotlin-results

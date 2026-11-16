@@ -3724,17 +3724,16 @@ def msrv_release(version: str):
 # whole-line comments removed.
 #
 # Two things around the install move too unless they are held. The upstream
-# action is code that runs between the pin and the compiler, so the one
-# action that names it names a commit, not a branch or a tag. And a cache of
-# a Rust `target/` or of cargo's registry built by one release is restored
+# action is code that runs between the pin and the compiler, so it is named
+# by a commit, not a branch or a tag; that holds for every action a lane
+# runs, and `unpinned_action_failures` below is where it is held. And a cache
+# of a Rust `target/` or of cargo's registry built by one release is restored
 # into a run of the next: its key, and every restore-key prefix, carry the
 # hash of `rust-toolchain.toml`, so a move starts each cache afresh instead
 # of dragging the old release's artefacts along for good.
 RUST_INSTALL_ACTION = ".github/actions/install-rust/action.yml"
 # The upstream action the one above delegates the install to; no lane names it.
 RUST_INSTALL_UPSTREAM = "dtolnay/rust-toolchain"
-UPSTREAM_REF = re.compile(r"\buses:\s*" + re.escape(RUST_INSTALL_UPSTREAM) + r"@(\S+)")
-FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 TOOLCHAIN_CACHE_KEY = "hashFiles('rust-toolchain.toml')"
 CACHE_STEP = re.compile(
     r"^\s*(?:-\s+)?uses:\s*(actions/cache(?:/restore|/save)?|Swatinem/rust-cache)@")
@@ -3776,13 +3775,6 @@ def moving_rust_failures(repo_root: Path) -> list[str]:
                     f"which takes the release from {RUST_TOOLCHAIN_FILE}")
             elif RUST_INSTALL_UPSTREAM in line:
                 upstream_pins += 1
-                ref = UPSTREAM_REF.search(line)
-                if not ref or not FULL_COMMIT.fullmatch(ref.group(1)):
-                    failures.append(
-                        f"{rel}:{number} names {RUST_INSTALL_UPSTREAM} at "
-                        f"{ref.group(1) if ref else line.strip()[:60]!r}, not a full "
-                        f"commit: a branch or a tag moves, and the action runs "
-                        f"between {RUST_TOOLCHAIN_FILE} and the compiler")
             if MOVING_RUST_CHANNEL.search(line):
                 failures.append(
                     f"{rel}:{number} names a Rust channel that moves "
@@ -3799,8 +3791,92 @@ def moving_rust_failures(repo_root: Path) -> list[str]:
     if upstream_pins == 0:
         failures.append(
             f"{RUST_INSTALL_ACTION} names {RUST_INSTALL_UPSTREAM} nowhere, so the "
-            f"check that it is pinned to a commit reads nothing and needs re-aiming")
+            f"check that no lane names it but that action reads nothing and needs "
+            f"re-aiming")
     failures.extend(rust_cache_failures(repo_root))
+    return failures
+
+
+# ── The actions a lane runs ───────────────────────────────────────
+#
+# A `uses:` names code that runs inside the job, with the job's token and its
+# checkout. A tag or a branch is a name the action's owner can point at other
+# code at any time, and a run then executes code no commit of this repository
+# chose: release tags moved to a commit that printed the runner's secrets is a
+# supply-chain attack that has happened on exactly this line. So an
+# action from outside this repository is named by the full commit it runs, and
+# the release that commit was taken from follows in a trailing comment, for a
+# reader and for the tool that moves the pin
+# (`uses: actions/checkout@<40 hex> # v6.1.0`). A container (`docker://`) is
+# named by its digest. A local action (`./...`) is this repository's own code,
+# fixed by the commit it is checked out at, and is left alone. A whole-line
+# comment is prose and is not read.
+#
+# The sweep reads every tracked workflow and action file, and a lower bound on
+# what it reads keeps a broken enumeration from passing by reading nothing.
+ACTION_USES = re.compile(
+    r"^\s*(?:-\s+)?uses:\s*(?P<ref>[^\s#]+)\s*(?:#\s*(?P<note>\S.*))?$")
+PINNED_ACTION = re.compile(r"^[^@\s]+@(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+PINNED_IMAGE = re.compile(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$")
+
+
+def unpinned_uses(lines: list[str]) -> list[tuple[int, str]]:
+    """Each `uses:` of a workflow or action file that runs code by a name
+    which moves, as its 1-based line number and what is wrong with it."""
+    found: list[tuple[int, str]] = []
+    for number, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        match = ACTION_USES.match(line)
+        if not match:
+            continue
+        ref = match.group("ref").strip("'\"")
+        if ref.startswith("./"):
+            continue
+        if ref.startswith("docker://"):
+            if not PINNED_IMAGE.match(ref):
+                found.append((number, f"names the image {ref!r} by a tag, not by "
+                                      f"its sha256 digest"))
+            continue
+        if not PINNED_ACTION.match(ref):
+            found.append((number, f"names {ref!r}, not a full commit"))
+        elif not match.group("note"):
+            found.append((number, f"pins {ref} with no trailing `# <release>` "
+                                  f"naming the release that commit is"))
+    return found
+
+
+def unpinned_action_failures(repo_root: Path) -> list[str]:
+    """Where a tracked workflow or action runs an action by a name that moves."""
+    failures: list[str] = []
+    files = 0
+    actions = 0
+    for rel in tracked_paths(repo_root, ".github"):
+        if Path(rel).suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            lines = (repo_root / rel).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        files += 1
+        for line in lines:
+            match = ACTION_USES.match(line)
+            if match and not line.lstrip().startswith("#") \
+                    and not match.group("ref").strip("'\"").startswith("./"):
+                actions += 1
+        for number, why in unpinned_uses(lines):
+            failures.append(
+                f"{rel}:{number} {why}: a tag or a branch is a name the action's "
+                f"owner can point at other code, which then runs with this job's "
+                f"token. Name the commit it resolves to and keep the release in a "
+                f"trailing comment (`gh api repos/<owner>/<repo>/commits/<tag> "
+                f"--jq .sha`)")
+    # Lower bounds, so a sweep that stopped reading cannot pass by reading nothing.
+    if files < 20 or actions < 100:
+        failures.append(
+            f"the sweep read {files} workflow or action file(s) and found {actions} "
+            f"action(s) from outside the repository; a broken enumeration passes by "
+            f"reading nothing")
     return failures
 
 
@@ -5588,6 +5664,36 @@ def self_test(repo_root: Path) -> int:
     cases += 1
     failures.extend(f"every-lane-installs-the-pinned-rust: {f}"
                     for f in moving_rust_failures(repo_root))
+
+    # every-action-is-named-by-its-commit. No workflow or action runs an
+    # action from outside the repository by a tag or a branch (see "The
+    # actions a lane runs" above). The fixture holds the line reader to each
+    # shape it refuses and each it leaves alone, so a reader that stopped
+    # matching cannot pass the sweep below by finding nothing.
+    cases += 1
+    pin, image_digest = "c" * 40, "d" * 64
+    fixture_lines = [
+        "      - uses: actions/checkout@v6",
+        "        uses: actions/cache@main",
+        "    uses: org/repo/.github/workflows/build.yml@v1",
+        "      - uses: docker://alpine:3.20",
+        f"      - uses: actions/checkout@{pin}",
+        '      - uses: "actions/checkout@v6"',
+        f"      - uses: actions/checkout@{pin} # v6.1.0",
+        f"        uses: actions/cache/save@{pin}  # v5.1.0",
+        "      - uses: ./.github/actions/install-rust",
+        "      # uses: actions/checkout@v6",
+        f"      - uses: docker://alpine@sha256:{image_digest}",
+        "        run: echo uses: actions/checkout@v6",
+    ]
+    refused = [number for number, _ in unpinned_uses(fixture_lines)]
+    if refused != [1, 2, 3, 4, 5, 6]:
+        failures.append(
+            f"every-action-is-named-by-its-commit: the fixture's lines 1-6 name "
+            f"an action or an image by a name that moves, or pin one with no "
+            f"release beside it, and 7-12 do not; the reader refused {refused}")
+    failures.extend(f"every-action-is-named-by-its-commit: {f}"
+                    for f in unpinned_action_failures(repo_root))
 
     # every-workspace-member-inherits-the-workspace-lints. The clippy gate's
     # `-D warnings` reaches only what its sweep compiles; the workspace's own

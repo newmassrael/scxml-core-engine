@@ -168,14 +168,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install Rust toolchain
         uses: ./.github/actions/install-rust
 
       - name: Restore cached mnemosyne-cli (pinned rev)
         id: cli-cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cargo/bin/mnemosyne-cli
           key: mnemosyne-cli-${{ env.MNEMOSYNE_REV }}

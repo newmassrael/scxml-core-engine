@@ -57,7 +57,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         submodules: recursive
 
@@ -83,7 +83,7 @@ jobs:
       uses: ./.github/actions/install-rust
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -131,7 +131,7 @@ jobs:
     # no reply to go missing. v0.15.0 is the version the last green run
     # actually installed, so the pin changes nothing but the nondeterminism.
     - name: Install wasm-pack
-      uses: jetli/wasm-pack-action@v0.4.0
+      uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
       with:
         version: 'v0.15.0'
 
@@ -199,7 +199,7 @@ jobs:
         cp -r web/visualizer gh-pages/visualizer/doom/
 
     - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v4
+      uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./gh-pages

@@ -73,8 +73,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Install Dependencies
         # libxml2-dev: the `libxml` crate behind sce-build's XSD validator
         # needs the dev headers at build time (see forge-conformance.yml).
@@ -103,7 +103,7 @@ jobs:
           sudo apt-get install -y libxml2-dev pkg-config
       - uses: ./.github/actions/install-rust
       - name: Cache Cargo
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -126,7 +126,7 @@ jobs:
         # specs cases when sce-spec is, and a skip reads as a pass. Built one
         # step up, so absence is a broken build step, not a reason to judge less.
         run: test -x target/debug/sce-codegen && test -x target/debug/sce-spec
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with

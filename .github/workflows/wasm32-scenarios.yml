@@ -65,7 +65,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
     # The release rust-toolchain.toml pins, which lists the wasm32 target
     # and clippy.
@@ -73,12 +73,12 @@ jobs:
       uses: ./.github/actions/install-rust
 
     - name: Setup Node
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
       with:
         node-version: '22'
 
     - name: Cache Cargo
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -100,7 +100,7 @@ jobs:
 
     - name: Cache wasm-bindgen
       id: bindgen-cache
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.cargo/bin/wasm-bindgen
         key: ${{ runner.os }}-wasm-bindgen-${{ steps.bindgen.outputs.version }}
