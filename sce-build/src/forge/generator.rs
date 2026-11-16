@@ -455,6 +455,14 @@ pub struct ImportContext {
     #[serde(skip)]
     pub cpp_unlowered: Option<String>,
 
+    /// docs/adr/0081 step 4: `true` when the generation is for Python and the
+    /// Python backend prints the imported codec from its plan, so its module
+    /// holds `encode_source` and the `{Codec}Source` it reads, which a printed
+    /// parent writes a body of it through. `false` on every other backend, for
+    /// non-codec imports, and for a codec that keeps the template's encode.
+    #[serde(skip)]
+    pub python_printed: bool,
+
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
     /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
@@ -1527,6 +1535,7 @@ fn resolve_single_import(
         codec_lent_holds: false,
         cpp_printed: false,
         cpp_unlowered: None,
+        python_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -10631,14 +10640,21 @@ fn refuse_cpp_unlowered(
 /// holds each byte string in the class of its bound; any other codec keeps the
 /// template's encode whole.
 pub(crate) fn python_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
-    python_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+    python_source::unlowered(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
+    .is_none()
 }
 
 /// Every form of `m`'s encode plan the Python printer does not lower, as the
 /// clause that names it, in the order the printer meets them; empty where
 /// [`python_codec_printed`].
 pub(crate) fn python_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
-    python_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+    python_source::unlowered_forms(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
 }
 
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
@@ -13474,10 +13490,14 @@ fn render_codec(
     // fields of the value are read off it.
     let python_printed = if matches!(lang, crate::generator::Language::Python) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (python_source::unlowered(&plan), plan) {
+        match (python_source::unlowered(&plan, imports), plan) {
             (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-                let printed =
-                    python_source::render(&p, &l, &filters::to_pascal_case(m.name.clone()));
+                let printed = python_source::render(
+                    &p,
+                    &l,
+                    imports,
+                    &filters::to_pascal_case(m.name.clone()),
+                );
                 Some((p, printed))
             }
             _ => None,
@@ -14852,14 +14872,15 @@ fn render_codec(
                 );
             }
             // docs/adr/0081 §3: a Python value printed from its plan holds no
-            // element the encode derives, and holds each byte string in the
-            // class of its bound, made within it by default.
+            // element the encode derives, holds each byte string and text in
+            // the class of its bound, made within it by default, and makes a
+            // body by default by its codec's class.
             if let Some((plan, printed)) = &python_printed {
                 obj.insert(
                     "derived".into(),
                     python_source::derived_field(plan, &f.id).into(),
                 );
-                if let Some((class, default)) = printed.bounded.get(&f.id) {
+                if let Some((class, default)) = printed.declared.get(&f.id) {
                     obj.insert(type_key.into(), class.clone().into());
                     obj.insert("default_value".into(), default.clone().into());
                 }
@@ -14927,6 +14948,8 @@ fn render_codec(
                 "before": printed.before,
                 "hold": printed.hold,
                 "runtime": printed.runtime,
+                "modules": printed.modules,
+                "factory": printed.factory,
             }),
         );
     }
@@ -48407,6 +48430,7 @@ mod tests {
             codec_lent_holds: false,
             cpp_printed: false,
             cpp_unlowered: None,
+            python_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49335,6 +49359,7 @@ mod tests {
                 codec_lent_holds: false,
                 cpp_printed: false,
                 cpp_unlowered: None,
+                python_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49406,6 +49431,7 @@ mod tests {
                 codec_lent_holds: false,
                 cpp_printed: false,
                 cpp_unlowered: None,
+                python_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

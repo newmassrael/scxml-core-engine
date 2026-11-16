@@ -44,8 +44,13 @@ from sce_forge_runtime.bounded import {{ python_source.runtime }}
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{# docs/adr/0081 step 4: a codec printed from its plan writes a body through its
+   codec's module, imported whole. #}
+{% if python_source.modules %}
+{{ python_source.modules }}
+{% endif %}
 
-from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields or has_tlv_chain_fields else "" }}
+from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields or has_tlv_chain_fields or python_source.factory else "" }}
 from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}
 
 

@@ -208,12 +208,63 @@ fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
     );
 }
 
+/// A body of a printed codec is any source of that codec, written by that
+/// codec's module's `encode_source`, which the printed parent imports whole;
+/// the value makes it by default by its codec's class.
+///
+/// Turns red where `python_source::positional_forms` stops printing a body of
+/// a printed codec, or `encode_source` writes it other than through its
+/// codec's module.
+#[test]
+fn a_body_is_written_by_its_codecs_own_encode_over_a_source() {
+    assert!(unlowered("codec_embed_basic").is_empty());
+    let text = resource_module("codec_embed_basic");
+    holds(
+        "codec_embed_basic",
+        &text,
+        &[
+            "from . import codec_zenoh_locator as sce_codec_zenoh_locator\n",
+            "from dataclasses import dataclass, field\n",
+            "    def locator(self) -> sce_codec_zenoh_locator.CodecZenohLocatorSource: ...\n",
+            "    locator: CodecZenohLocator = field(default_factory=CodecZenohLocator)\n",
+            "    w.write_u8(src.tag & 0xFF)\n",
+            "    sce_codec_zenoh_locator.encode_source(src.locator, w)\n",
+        ],
+    );
+}
+
+/// The encoded length of a body is the length of its frame, encoded once into
+/// a buffer that is then written where the body is.
+///
+/// Turns red where `python_source::encode_source` reads the length off the
+/// value, or writes the body by encoding it a second time.
+#[test]
+fn a_bodys_encoded_length_is_measured_over_the_frame_it_writes() {
+    assert!(unlowered("codec_zenoh_timestamp_ext").is_empty());
+    let text = resource_module("codec_zenoh_timestamp_ext");
+    holds(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &[
+            "    _b_ts = bytearray()\n    \
+             sce_codec_zenoh_timestamp.encode_source(src.ts, BytearraySink(_b_ts))\n    \
+             _d_ext_size = len(_b_ts)\n",
+            "    w.write_vle_u64(_d_ext_size)\n    w.write_bytes(_b_ts)\n",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_timestamp_ext",
+        &text,
+        &["\n    ext_size: ", "src.ext_size"],
+    );
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a body and a CBOR map each name their form, and a
+/// template's encode whole: a list and a CBOR map each name their form, and a
 /// length the value states where its gated content is absent names one.
 ///
-/// Turns red where `python_source::positional_forms` stops naming an embedded
-/// body or a stated length, or `unlowered_forms` a CBOR map.
+/// Turns red where `python_source::positional_forms` stops naming a list or a
+/// stated length, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     assert!(
@@ -221,7 +272,7 @@ fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
         "a length the value states beside gated content is not printed yet"
     );
     for (name, form) in [
-        ("codec_embed_basic", "an embedded body"),
+        ("codec_repeat_basic", "a list of entries"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);

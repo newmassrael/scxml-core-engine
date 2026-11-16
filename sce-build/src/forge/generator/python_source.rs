@@ -32,30 +32,41 @@ pub(super) mod source_case;
 
 /// The first form of `plan` the Python printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
-pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
-    unlowered_forms(plan).into_iter().next()
+pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
+    unlowered_forms(plan, imports).into_iter().next()
 }
 
 /// Every form of `plan` the Python printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
-/// byte strings and texts, each always there or decided by a gate on a flag of
-/// the codec's own; whose every derived element is either the length of one
-/// byte string or text, held in a field of its own that the length fits and
-/// gated beside its content where its content is, or a flag set exactly where
-/// the one field it gates is there; and whose encode refuses nothing. A CBOR
-/// map and a content-line component keep their own templates' encodes.
-pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
+/// byte strings, texts and bodies of codecs it prints that are handed no flag
+/// input, each always there or decided by a gate on a flag of the codec's own;
+/// whose every derived element is either the length of one byte string or
+/// text or the encoded length of one body, held in a field of its own that the
+/// length fits and gated beside its content where its content is, or a flag
+/// set exactly where the one field it gates is there; and whose encode refuses
+/// nothing. A CBOR map and a content-line component keep their own templates'
+/// encodes. `imports` are the codec's own, which say whether a codec it holds
+/// is printed ([`ImportContext::python_printed`]).
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
-        CodecPlan::Positional(plan) => positional_forms(plan),
+        CodecPlan::Positional(plan) => positional_forms(plan, imports),
         CodecPlan::Cbor(_) => vec!["a CBOR map".to_string()],
         CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
     }
 }
 
+/// The import of the codec a body of `plan` holds as `alias`, where the
+/// Python backend prints it from its plan.
+fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i ImportContext> {
+    imports
+        .iter()
+        .find(|import| import.alias == alias && import.python_printed)
+}
+
 /// [`unlowered_forms`] of a positional codec.
-fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
+fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
     if m.variant.is_some() {
@@ -71,7 +82,18 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
             Value::Scalar(SceType::Enum(_)) => {}
             Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
             Value::Bytes(_) | Value::Text(_) => {}
-            Value::Body { .. } => forms.push(format!("field '{id}': an embedded body")),
+            // A body is written by its codec's own `encode_source`, which a
+            // codec the Python backend prints has, handed nothing.
+            Value::Body { codec } => {
+                if printed_import(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a body of `{codec}`, which the Python backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!("field '{id}': a body handed flag inputs"));
+                }
+            }
             Value::List { .. } => forms.push(format!("field '{id}': a list of entries")),
         }
         if element.presence == Presence::Stated {
@@ -170,9 +192,10 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             Measured::Entries { .. } => {
                 forms.push(format!("element '{element}': a count of entries"));
             }
-            Measured::Encoded { .. } => {
-                forms.push(format!("element '{element}': the encoded length of a body"));
-            }
+            Measured::Encoded { refuses: true, .. } => forms.push(format!(
+                "element '{element}': the encoded length of a body whose encode can refuse"
+            )),
+            Measured::Encoded { .. } => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!("element '{element}': a flag a held codec says"));
             }
@@ -275,12 +298,26 @@ pub(super) struct PythonSource {
     /// bound wherever it is set, where the value is made and after; empty
     /// where it presents none.
     pub(super) hold: String,
-    /// For each byte string and text the value presents, by field id, the type
-    /// the value's field is declared as and the default it takes.
-    pub(super) bounded: BTreeMap<String, (String, String)>,
+    /// For each byte string, text and body the value presents, by field id,
+    /// the type the value's field is declared as and the default it takes.
+    pub(super) declared: BTreeMap<String, (String, String)>,
     /// The runtime's classes the module names, joined for its import; empty
     /// where it names none.
     pub(super) runtime: String,
+    /// The modules of the printed codecs the value holds a body of, each
+    /// imported whole under its alias, one statement a line; empty where it
+    /// holds none.
+    pub(super) modules: String,
+    /// Whether a default of the value's fields is made by a factory, a body's
+    /// class, which the module imports `field` of `dataclasses` for.
+    pub(super) factory: bool,
+}
+
+/// The module alias a printed codec's module is imported under where a
+/// printed parent writes a body of it (`python_module_alias`), and the class
+/// of its value.
+fn body_module(import: &ImportContext) -> (String, &str) {
+    (python_module_alias(&import.namespace), &import.type_name)
 }
 
 /// The class a byte string or a text of `struct_name` is held in, the runtime
@@ -311,16 +348,53 @@ fn bounded_class(
 
 /// The Python text of the codec `plan`, whose value's class is `struct_name`;
 /// the plan is one [`unlowered`] answers `None` for.
-pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> PythonSource {
+pub(super) fn render(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> PythonSource {
     let mut before = String::new();
     let mut hold = String::new();
-    let mut bounded = BTreeMap::new();
+    let mut declared = BTreeMap::new();
     let mut runtime: BTreeSet<&'static str> = BTreeSet::new();
+    let mut modules: BTreeSet<String> = BTreeSet::new();
+    let mut factory = false;
     // The type the source presents each element as.
     let mut presented: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let gated = element.presence == Presence::Gated;
+        // A body is any source of its codec, which that codec's module names;
+        // the value holds its codec's value, made by default by its class.
+        if let Value::Body { codec } = &element.value {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a body of a printed codec only");
+            let (alias, class) = body_module(import);
+            modules.insert(format!("from . import {} as {alias}", import.namespace));
+            let source = format!("{alias}.{class}Source");
+            presented.insert(
+                id.clone(),
+                if gated {
+                    format!("Optional[{source}]")
+                } else {
+                    source
+                },
+            );
+            if gated {
+                declared.insert(
+                    id.clone(),
+                    (format!("Optional[{class}]"), "None".to_string()),
+                );
+            } else {
+                factory = true;
+                declared.insert(
+                    id.clone(),
+                    (class.to_string(), format!("field(default_factory={class})")),
+                );
+            }
+            continue;
+        }
         let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
             let ty = l.type_name(&element.field.sce_type).into_owned();
             presented.insert(
@@ -373,7 +447,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> P
             (class.clone(), format!("{class}({fewest})"))
         };
         presented.insert(id.clone(), ty.clone());
-        bounded.insert(id.clone(), (ty, default));
+        declared.insert(id.clone(), (ty, default));
     }
 
     // The source: what the encode reads, each element by the attribute a value
@@ -413,11 +487,13 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> P
         before: format!(
             "{}\n\n\n{}",
             before.trim_end_matches('\n'),
-            encode_source(plan, l, struct_name)
+            encode_source(plan, l, imports, struct_name)
         ),
         hold: hold.trim_end_matches('\n').to_string(),
-        bounded,
+        declared,
         runtime: runtime.into_iter().collect::<Vec<_>>().join(", "),
+        modules: modules.into_iter().collect::<Vec<_>>().join("\n"),
+        factory,
     }
 }
 
@@ -441,7 +517,16 @@ fn indented(body: &str) -> String {
 /// its carrier, then the writes in wire order, each element read off the
 /// source. A function of the module and not a method of the value's class, so
 /// no field of the value, a class attribute, can take its name.
-fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+///
+/// A body whose encoded length the codec carries is encoded once, into a
+/// buffer whose length is the number, and the buffer is what is written where
+/// the body is; any other body is encoded straight into the sink.
+fn encode_source(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+) -> String {
     let numbers = derived_numbers(plan);
     let derived: Vec<String> = numbers.iter().map(|id| format!("``{id}``")).collect();
     let derives = if derived.is_empty() {
@@ -460,6 +545,21 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
          \x20   :class:`BufferOverflow` where it has no room left.\"\"\"\n"
     );
     let source = |id: &str| format!("src.{}", l.codec_field_id(id));
+    // The module whose `encode_source` writes the body `field`.
+    let body_writer = |field: &CodecField| -> String {
+        let Value::Body { codec } = element_of(plan, &field.id)
+            .map(|e| &e.value)
+            .expect("an embedded field is a body the value presents")
+        else {
+            unreachable!("an embedded field is a body")
+        };
+        let import =
+            printed_import(imports, codec).expect("`unlowered` prints a body of a printed codec");
+        format!("{}.encode_source", body_module(import).0)
+    };
+    // The bodies encoded into a buffer first, by field id: those whose length
+    // a number measures.
+    let mut buffered: BTreeSet<String> = BTreeSet::new();
     // Each flag the presence of the fields it gates sets, by its carrier: the
     // flag's mask and the test that sets it.
     let mut folds: BTreeMap<String, Vec<(u64, String)>> = BTreeMap::new();
@@ -469,16 +569,40 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                 let [measure] = number.measures.as_slice() else {
                     unreachable!("`unlowered` prints a number of one measure only");
                 };
-                let Measured::Bytes { field, offset } = &measure.of else {
-                    unreachable!("`unlowered` prints a length of a byte string or a text only");
+                let (content, length) = match &measure.of {
+                    Measured::Bytes { field, offset } => {
+                        let arith = match offset {
+                            Offset::None => String::new(),
+                            Offset::More { by } => format!(" + {by}"),
+                            Offset::Less { by, .. } => format!(" - {by}"),
+                        };
+                        let content = source(&field.id);
+                        let length = format!("len({}){arith}", wire_bytes(field, &content));
+                        (content, length)
+                    }
+                    // The body's frame, encoded once into a buffer the write
+                    // of the body then writes; `None` where it is absent.
+                    Measured::Encoded { body, .. } => {
+                        let content = source(&body.id);
+                        let buffer = format!("_b_{}", l.codec_field_id(&body.id));
+                        let encode = format!(
+                            "{buffer} = bytearray()\n{}({content}, BytearraySink({buffer}))\n",
+                            body_writer(body)
+                        );
+                        if measure.gated {
+                            out.push_str(&format!("    {buffer} = None\n"));
+                            out.push_str(&format!(
+                                "    if {content} is not None:\n{}",
+                                indented(&indented(&encode))
+                            ));
+                        } else {
+                            out.push_str(&indented(&encode));
+                        }
+                        buffered.insert(body.id.clone());
+                        (buffer.clone(), format!("len({buffer})"))
+                    }
+                    _ => unreachable!("`unlowered` prints a length of bytes, text or a body only"),
                 };
-                let arith = match offset {
-                    Offset::None => String::new(),
-                    Offset::More { by } => format!(" + {by}"),
-                    Offset::Less { by, .. } => format!(" - {by}"),
-                };
-                let content = source(&field.id);
-                let length = format!("len({}){arith}", wire_bytes(field, &content));
                 // Zero where a gate leaves the content out, beside which the
                 // length is gated too and not written.
                 let number = if measure.gated {
@@ -603,8 +727,16 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Strin
                     BitSize::Tail | BitSize::LengthRef => {
                         format!("    w.write_bytes({})\n", wire_bytes(field, &read(field)))
                     }
-                    BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        unreachable!("`unlowered` prints no body and no list")
+                    // A body: the buffer its length was measured over, or its
+                    // codec's encode over the source it is presented as.
+                    BitSize::Embed if buffered.contains(&field.id) => {
+                        format!("    w.write_bytes(_b_{})\n", l.codec_field_id(&field.id))
+                    }
+                    BitSize::Embed => {
+                        format!("    {}({}, w)\n", body_writer(field), read(field))
+                    }
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        unreachable!("`unlowered` prints no list")
                     }
                 };
                 out.push_str(&match guard {

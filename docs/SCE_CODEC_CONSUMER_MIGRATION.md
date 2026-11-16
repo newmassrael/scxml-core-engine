@@ -1834,3 +1834,14 @@ codecs that also hold a text, an element a flag of the codec's own gates, or a l
   hand it holds. Stop setting the flag before you encode; a value whose flag disagreed with its element, which the
   encode refused or wrote as it stood, is now written as the element says.
 
+## A printed Python codec derives the encoded length of a body it holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs that hold a body of a codec Python prints, which is handed no flag input.
+
+- A field that holds the encoded length of a body (`sce:length-from`) is gone from the value: the encode writes the
+  length of the frame it writes for the body. Drop it from your constructor calls.
+- A body element defaults to its codec's own default value, made by its class, where it defaulted to `b""`.
+- `encode_source` writes a body through `encode_source` of the body's codec's module, so a source of the parent
+  presents the body as any source of the body's codec (`{Body}Source`).
+

@@ -955,6 +955,15 @@ old encode, the old encode and its templates are removed in the same landing.
    presents, and writes it only where it is there; a length gated beside it is derived as zero where it is absent
    and written where its gate holds, tested on the carrier as the encode writes it. A length the value states where
    its content is absent (§4.6 R4b), a group, and a gate on an input or a chain's entries stay unlowered.
+
+   *The third Python landing, 2026-11-16:* a body of a codec Python prints, handed no flag input, and its encoded
+   length. Whether an import is printed is read as the import is generated (`ImportContext::python_printed`), as
+   C++ reads its own. The printed parent imports the body's module whole under `sce_<snake>` and writes the body by
+   that module's `encode_source`, so a source presents the body as any source of its codec (`{Body}Source`); the
+   value's field defaults to the body's codec's value, made by its class. A length of the body's frame is measured
+   by encoding the body once into a buffer, which is then what is written where the body is: the Python runtime has
+   no counting sink, and the one encode both counts and writes. A body handed flag inputs, or whose encode can
+   refuse, stays unlowered, and so does a codec that holds one.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

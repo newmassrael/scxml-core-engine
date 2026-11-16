@@ -87,16 +87,39 @@ pub(crate) fn source_case(
                     prints no codec that holds one"
             .to_string());
     }
+    let literal = value_literal(plan, path, source, held)?;
+    let l = LangCtx::new(crate::generator::Language::Python, &[]);
+    // A body is its codec's dataclass, compared whole as a dataclass is.
+    let checks = plan
+        .elements
+        .iter()
+        .map(|element| {
+            let attribute = l.codec_field_id(&element.field.id);
+            (
+                element.field.id.clone(),
+                format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
+            )
+        })
+        .collect();
+    Ok(SourceCase { literal, checks })
+}
+
+/// The value of the codec `plan` at `path` that `source` states, made by its
+/// dataclass's constructor, each element by its keyword.
+fn value_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    source: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
     let object = source_members(plan, source)?;
     let l = LangCtx::new(crate::generator::Language::Python, &[]);
     let mut args = Vec::new();
-    let mut checks = Vec::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let json = object
             .get(id)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
-        let attribute = l.codec_field_id(id);
         let value = if json.is_null() {
             if !element.presence.optional() {
                 return Err(format!(
@@ -107,16 +130,9 @@ pub(crate) fn source_case(
         } else {
             member_literal(&element.value, path, json, held).map_err(|e| format!("`{id}`: {e}"))?
         };
-        args.push(format!("{attribute}={value}"));
-        checks.push((
-            id.clone(),
-            format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
-        ));
+        args.push(format!("{}={value}", l.codec_field_id(id)));
     }
-    Ok(SourceCase {
-        literal: format!("{}({})", path.class(), args.join(", ")),
-        checks,
-    })
+    Ok(format!("{}({})", path.class(), args.join(", ")))
 }
 
 /// One value of the abstract type `value` of the codec at `path`, as a Python
@@ -127,9 +143,23 @@ fn member_literal(
     value: &Value<'_>,
     path: &CodecPath,
     json: &serde_json::Value,
-    held: &dyn HeldCodecs,
+    held: &mut dyn HeldCodecs,
 ) -> Result<String, String> {
     match value {
+        // The held codec's dataclass, reached through the module the printed
+        // codec imports it under, `sce_<snake>`, as its encode reaches it.
+        Value::Body { codec } => held.read(codec, &mut |plan, held_path, held| {
+            let snake = held_path
+                .module
+                .rsplit("::")
+                .next()
+                .unwrap_or(&held_path.module);
+            let path = CodecPath {
+                module: format!("{}.{}", path.module, python_module_alias(snake)),
+                type_name: held_path.type_name.clone(),
+            };
+            value_literal(plan, &path, json, held)
+        }),
         Value::Scalar(
             SceType::Uint8
             | SceType::Uint16
@@ -166,9 +196,9 @@ fn member_literal(
             serde_json::to_string(text).map_err(|e| e.to_string())
         }
         Value::Scalar(_) => Err("a float or a bool is not spelled as a Python literal yet".into()),
-        Value::Body { .. } | Value::List { .. } => Err(
-            "a body or a list is not spelled as a Python literal yet: the Python printer \
-             prints no codec that holds one"
+        Value::List { .. } => Err(
+            "a list is not spelled as a Python literal yet: the Python printer prints no \
+             codec that holds one"
                 .into(),
         ),
     }
