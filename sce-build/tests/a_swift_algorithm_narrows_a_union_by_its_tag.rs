@@ -104,6 +104,28 @@ fn a_swift_algorithm_returns_a_union_it_was_given_or_built() {
     assert!(!text.contains("preconditionFailure("), "{text}");
 }
 
+/// A list of unions (docs/adr/0099, "Still open" item 2) is an `Array` of the
+/// union's enum: an element a union local copies is read by `Checked.at`, which
+/// throws `out-of-range` for an index outside it and answers nothing in its
+/// place, a loop walks the array as it was handed over, and the array the body
+/// builds is a `var` each item is appended to.
+#[test]
+fn a_swift_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("_ shapes: [{SHAPE}]"));
+    holds(
+        &at,
+        &format!("let picked: {SHAPE} = (try Checked.at(shapes, at))\n"),
+    );
+    holds(&at, "picked.provenCircle.radius");
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, "for shape in shapes {");
+    holds(&widest, "shape.provenRect.width");
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("var kept: [{SHAPE}] = []\n"));
+    holds(&kept, "kept.append(shape)\n");
+}
+
 /// A file that calls both algorithms, the one's union handed to the other.
 const PROBE: &str = r#"func grownExtent(_ shape: UnionShapeMinimal) -> UInt16 {
     AlgorithmShapeExtent.algorithmShapeExtent(AlgorithmShapeGrown.algorithmShapeGrown(shape, 3))
@@ -160,6 +182,9 @@ fn the_swift_of_an_algorithm_over_a_union_type_checks_under_warnings_as_errors()
         "union_shape_minimal.scxml",
         "algorithm_shape_extent.scxml",
         "algorithm_shape_grown.scxml",
+        // A loop over a list of unions names nothing of the runtime the stand-in
+        // leaves out; the copy from an index reads `Checked.at`.
+        "algorithm_shapes_widest.scxml",
     ] {
         let (file, text) = unit(name);
         let path = dir.path().join(file);

@@ -33118,11 +33118,14 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             })
     }
     // A `list<T>` is an `Array` of the element, of the same elements a value is: a
-    // parameter, a buffer local a body appends to, and the list it returns.
+    // parameter, a buffer local a body appends to, and the list it returns. A union
+    // element is the enum its unit declares, a value as a record's struct is
+    // (docs/adr/0099, "Still open" item 2), read at an index by `Checked.at`, which
+    // answers nothing in place of an element outside the array.
     fn lowered_list(ty: &AlgorithmValueType) -> bool {
         ty.list_elem().is_some_and(|elem| match elem {
             AlgorithmValueType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
-            AlgorithmValueType::Record { .. } => true,
+            AlgorithmValueType::Record { .. } | AlgorithmValueType::Union { .. } => true,
             _ => false,
         })
     }
