@@ -236,8 +236,10 @@ fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
         &[
             "    val seq: UShort?\n",
             "            val _e_seq = src.seq\n",
-            "            val _c_flags = ((_e_flags.toUInt() and 0x1u.inv()) or \
-             (if (_e_seq != null) 0x1u else 0x0u)).toUByte()\n",
+            "            var _u_flags = _e_flags.toUInt()\n",
+            "            _u_flags = (_u_flags and 0x1u.inv()) or \
+             (if (_e_seq != null) 0x1u else 0x0u)\n",
+            "            val _c_flags = _u_flags.toUByte()\n",
             "            w.writeU8(_c_flags.toByte())?.let { return it }\n",
             "            if (_e_seq != null) {\n                w.writeU8(",
         ],
@@ -331,21 +333,93 @@ fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
     );
 }
 
+/// A gate the encode cannot derive the presence from is a check: the value is
+/// held to it before the first byte, tested on the carrier as the encode writes
+/// it, and refused with the runtime's `CodecError.PresentIfMismatch`.
+///
+/// Turns red where `kotlin_source::encode_source` drops the loop over
+/// `plan.gate_checks`, tests the gate on the value's carrier rather than the
+/// one the encode writes, or `positional_forms` names a checked gate unlowered.
+#[test]
+fn a_gate_the_encode_cannot_derive_is_held_to_the_field_it_gates() {
+    assert!(unlowered("codec_present_if_checked").is_empty());
+    let text = resource_file("codec_present_if_checked");
+    holds(
+        "codec_present_if_checked",
+        &text,
+        &[
+            "            _u_flags = (_u_flags and 0x1u.inv()) or \
+             (if (_e_seq != null) 0x1u else 0x0u)\n",
+            "            if ((((_c_flags.toUInt() shr 0) and 0x1u) != 0x0u || \
+             ((_c_flags.toUInt() shr 1) and 0x1u) != 0x0u) != (_e_trailer != null)) {\n\
+             \x20               return CodecError.PresentIfMismatch\n",
+            "    fun encodeToByteArray(): ByteArray? {\n",
+        ],
+    );
+}
+
+/// Two byte strings that share one length each measure it, and a value whose
+/// two differ is refused as an inconsistent source before the first byte.
+///
+/// Turns red where `kotlin_source::derive_number` stops comparing every
+/// measure always there with the first, or takes the number from the second.
+#[test]
+fn a_length_two_byte_strings_share_refuses_two_that_differ() {
+    assert!(unlowered("codec_length_shared").is_empty());
+    let text = resource_file("codec_length_shared");
+    holds(
+        "codec_length_shared",
+        &text,
+        &[
+            "            if (_e_beta.bytes.size != _e_alpha.bytes.size) {\n\
+             \x20               return CodecError.InconsistentSource\n",
+            "            val _d_span_len = _e_alpha.bytes.size",
+        ],
+    );
+    holds_none("codec_length_shared", &text, &["src.span_len"]);
+}
+
+/// The encoded length of a body that can refuse is refused where it does not
+/// fit its field, and a frame that holds a codec that can refuse is written
+/// whole first and handed to the caller's sink only once it is, so a refusal
+/// leaves that sink as it was.
+///
+/// Turns red where `kotlin_source::derive_number` drops the `Narrow::Checked`
+/// test, or `encode_source` writes straight into the caller's sink for a plan
+/// with a `RefusalKind::Child` refusal.
+#[test]
+fn a_frame_that_holds_a_codec_that_can_refuse_is_written_whole_first() {
+    assert!(unlowered("codec_encoded_length_checked").is_empty());
+    let text = resource_file("codec_encoded_length_checked");
+    holds(
+        "codec_encoded_length_checked",
+        &text,
+        &[
+            "            val _l_inner = mutableListOf<Byte>()\n\
+             \x20           CodecLengthShared.encodeSource(_e_inner, MutableListSink(_l_inner))\
+             ?.let { return it }\n\
+             \x20           val _b_inner = _l_inner.toByteArray()\n",
+            "            if (_b_inner.size > 0xFFFF) {\n\
+             \x20               return CodecError.LengthOutOfRange\n",
+            "            val _f = mutableListOf<Byte>()\n            val _s = MutableListSink(_f)\n",
+            "            _s.writeBytes(_b_inner)?.let { return it }\n",
+            "            w.writeBytes(_f.toByteArray())?.let { return it }\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a variant, a CBOR map and a length the value states
-/// where its gated content is absent each name their form.
+/// template's encode whole: a variant, a CBOR map and a group that holds a
+/// length the value states beside its content each name their form.
 ///
 /// Turns red where `kotlin_source::positional_forms` stops naming a variant or
-/// a stated length, or `unlowered_forms` a CBOR map.
+/// a group, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
-        (
-            "codec_present_if_length_ref",
-            "a length the value states where its content is absent",
-        ),
+        ("codec_present_if_length_ref", "a group"),
     ] {
         let forms = unlowered(name);
         assert!(
@@ -423,6 +497,9 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_scout_zid_body",
         "codec_simple_frame",
         "broadcast_log_conformance_record",
+        "codec_present_if_checked",
+        "codec_length_shared",
+        "codec_encoded_length_checked",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

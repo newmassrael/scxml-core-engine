@@ -2361,3 +2361,18 @@ input and held to no law.
   properties read as the data class's did.
 - A field that counts a list is gone from the data class: the encode writes how many entries the list holds.
 
+## A printed Kotlin codec answers the refusals its plan names (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose encode can refuse a value: a gate the encode cannot derive (`CodecError.PresentIfMismatch`), two byte
+strings of one shared length that differ (`CodecError.InconsistentSource`, new in `com.sce.forge.runtime`), a
+derived length past its field (`CodecError.LengthOutOfRange`), and what a codec it holds refuses.
+
+- `encode` and `{Codec}.encodeSource` answer the refusal before they write a byte to the sink, and
+  `encodeToByteArray()` answers `null` for it: keep the `?:` after it for such a codec. A `when` over `CodecError`
+  of your own gains the `InconsistentSource` case.
+- A length two byte strings share, and a length a held codec's frame is measured by, is gone from the data class,
+  as every derived length is.
+- A codec that holds a codec whose encode can refuse writes its frame whole before it hands it to your sink, so a
+  refusal leaves the sink as it was.
+

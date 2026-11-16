@@ -1365,6 +1365,23 @@ old encode, the old encode and its templates are removed in the same landing.
    it was, holds a bare entry's place or is held to a law (R6, R7, R8) stay unlowered. The case printer makes a
    list by its class's `of` over `listOf` of its entries and compares it by its size and each entry element by
    element.
+
+   *The fifth Kotlin landing, 2026-11-16:* an encode that refuses, as the Python refusal landing. `encodeSource`
+   answers each refusal the plan's totality names as the runtime's `CodecError` object of that name, returned
+   before the first byte is written: a gate it cannot derive (`PresentIfMismatch`, tested on the carriers as the
+   encode writes them), measures of one number that disagree (`InconsistentSource`, which the Kotlin runtime
+   gains), a number past its field (`LengthOutOfRange`), and what a codec it holds answers. A number of several
+   measures is the first always there, each other there held to it; where every measure may be absent it is the
+   first one there, a local `Int?`. A frame that holds a codec whose encode can refuse is written whole into a
+   staged sink first and handed to the caller's sink only once it is, as the Python printer stages it, since the
+   Kotlin runtime has no counting sink; a refusal then leaves the caller's sink as it was. A carrier a derived flag
+   is folded into is worked on as a `var` of the unsigned type of its width (`_u_<carrier>`), one statement a
+   flag, and read back as its own type (`_c_<carrier>`), so a flag the encode folds in under a test, as a length
+   held in a flag is, folds in the same way. Considered and refused: a refusal as an exception, which §2 does not
+   give Kotlin; and a counting pass before the write, which would encode each held codec twice where it can refuse.
+   The Kotlin harness runs the codec's `refused` cases (`EncodeFailure::symbol` names each refusal as
+   `com.sce.forge.runtime.CodecError.<Name>`) and holds the sink to empty. An input a held codec says, held to
+   what the codec is handed, stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

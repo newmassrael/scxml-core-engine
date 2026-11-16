@@ -64,10 +64,12 @@
 {% endif %}
 {% endfor %}
                 )
-{% if f.cbor or f.encode_refuses_bound %}
+{% if f.cbor or f.encode_refuses_bound or (f.printed and f.encode_may_fail) %}
                 {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a
                    bounded field (docs/adr/0077 §3), refuses a value past its
-                   declared bound with `null`; every case is in bounds. #}
+                   declared bound with `null`, as an encode printed from its
+                   plan refuses what its plan names (docs/adr/0081 §4); every
+                   case is one a frame carries. #}
                 val encoded = valueObj.encodeToByteArray()
                     ?: error("{{ f.name }} case $i encode refused")
 {% else %}
