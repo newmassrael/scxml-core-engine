@@ -505,13 +505,20 @@ func (r *runState) ptcToCreate(creator, ptc string) (string, bool) {
 
 // kill is the kill of the PTC ptc by killer (P9). A component whose machine is
 // running, up the call stack of this one, is not removed under it: that is a
-// dynamic error.
+// dynamic error. A PTC that is present is removed and the test log records its
+// kill (docs/SCE_TEST_PROFILE.md §12.5); the kill of one that is not present
+// removes nothing and writes nothing.
 func (r *runState) kill(killer, ptc string) {
-	if e, ok := r.entities[ptc]; ok && e.machine == nil {
+	e, ok := r.entities[ptc]
+	if !ok {
+		return
+	}
+	if e.machine == nil {
 		r.fail(killer, fmt.Sprintf("kills '%s', whose machine is running", ptc))
 		return
 	}
 	r.removeEntity(ptc)
+	r.trace(ComponentKilled{Component: ptc})
 }
 
 // removeEntity removes a PTC: its local verdict still counts (-4 §9.29a.2),

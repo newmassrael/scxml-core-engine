@@ -86,6 +86,23 @@ class ComponentCreated:
 
 
 @dataclass(frozen=True)
+class ComponentKilled:
+    """A PTC was killed: the state of the component that created it was
+    exited, which removes it whether it still ran or was already done (P9).
+    The removal of every PTC still present when the MTC terminates (P10), when
+    the guard is reached (P11) or when the run ends in error (P13) is the end
+    of the test case, which ``TestCaseEnded`` records, and writes none."""
+
+    kind: ClassVar[str] = "component-killed"
+
+    #: The PTC.
+    component: str
+
+    def members(self) -> Members:
+        return {"component": self.component}
+
+
+@dataclass(frozen=True)
 class ComponentDone:
     """A component terminated, with its local verdict then (P10)."""
 
@@ -236,6 +253,7 @@ TestLogEvent = Union[
     TestCaseStarted,
     TestCaseEnded,
     ComponentCreated,
+    ComponentKilled,
     ComponentDone,
     MessageSent,
     MessageReceived,

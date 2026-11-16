@@ -76,6 +76,7 @@
         { "$ref": "#/definitions/test-case-started" },
         { "$ref": "#/definitions/test-case-ended" },
         { "$ref": "#/definitions/component-created" },
+        { "$ref": "#/definitions/component-killed" },
         { "$ref": "#/definitions/component-done" },
         { "$ref": "#/definitions/message-sent" },
         { "$ref": "#/definitions/message-received" },
@@ -117,6 +118,17 @@
         "kind": { "const": "component-created" },
         "component": { "$ref": "#/definitions/name" },
         "type": { "$ref": "#/definitions/name" }
+      }
+    },
+    "component-killed": {
+      "description": "A PTC was killed: the state of the component that created it was exited, which removes it whether it still ran or was already done (P9). The removal of every PTC still present when the MTC terminates (P10), when the guard is reached (P11) or when the run ends in error (P13) is the end of the test case, which test-case-ended records, and writes none.",
+      "type": "object",
+      "required": ["at", "kind", "component"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "component-killed" },
+        "component": { "$ref": "#/definitions/name" }
       }
     },
     "component-done": {

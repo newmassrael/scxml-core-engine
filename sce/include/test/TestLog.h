@@ -65,6 +65,16 @@ struct ComponentCreated {
     std::string componentType;
 };
 
+/// A PTC was killed: the state of the component that created it was exited,
+/// which removes it whether it still ran or was already done (P9). The removal
+/// of every PTC still present when the MTC terminates (P10), when the guard is
+/// reached (P11) or when the run ends in error (P13) is the end of the test
+/// case, which TestCaseEnded records, and writes none.
+struct ComponentKilled {
+    static constexpr const char *KIND = "component-killed";
+    std::string component;
+};
+
 /// A component terminated, with its local verdict (P10).
 struct ComponentDone {
     static constexpr const char *KIND = "component-done";
@@ -140,9 +150,9 @@ struct Log {
 
 /// An event of the test log: one of the events of namespace TestLog.
 using TestLogEvent =
-    std::variant<TestLog::TestCaseStarted, TestLog::TestCaseEnded, TestLog::ComponentCreated, TestLog::ComponentDone,
-                 TestLog::MessageSent, TestLog::MessageReceived, TestLog::TimerStarted, TestLog::TimerStopped,
-                 TestLog::TimerTimedOut, TestLog::VerdictSet, TestLog::Log>;
+    std::variant<TestLog::TestCaseStarted, TestLog::TestCaseEnded, TestLog::ComponentCreated, TestLog::ComponentKilled,
+                 TestLog::ComponentDone, TestLog::MessageSent, TestLog::MessageReceived, TestLog::TimerStarted,
+                 TestLog::TimerStopped, TestLog::TimerTimedOut, TestLog::VerdictSet, TestLog::Log>;
 
 /// The record's `kind` in the test log: the TCI event in kebab case.
 inline const char *testLogKind(const TestLogEvent &event) {
@@ -161,6 +171,10 @@ inline void addMembers(SCE::Saved::JsonObject &members, const TestLog::TestCaseE
 inline void addMembers(SCE::Saved::JsonObject &members, const TestLog::ComponentCreated &event) {
     members.set("component", Canonical::text(event.component));
     members.set("type", Canonical::text(event.componentType));
+}
+
+inline void addMembers(SCE::Saved::JsonObject &members, const TestLog::ComponentKilled &event) {
+    members.set("component", Canonical::text(event.component));
 }
 
 inline void addMembers(SCE::Saved::JsonObject &members, const TestLog::ComponentDone &event) {

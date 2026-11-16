@@ -620,7 +620,10 @@ static inline void sce_test_run_create_(sce_test_case_run_t *run, const char *cr
 
 /* The kill of the PTC `ptc` by `killer` (P9). A component whose machine is
    running, up the call stack of this one, is not removed under it: that is a
-   dynamic error. */
+   dynamic error. A PTC that is present is removed and the test log records its
+   kill under the name its configuration lends (docs/SCE_TEST_PROFILE.md
+   §12.5); the kill of one that is not present removes nothing and writes
+   nothing. */
 static inline void sce_test_run_kill_(sce_test_case_run_t *run, const char *killer, const char *ptc) {
     sce_test_entity_t *entity = sce_test_run_find_(run, ptc);
     if (entity == NULL) {
@@ -630,7 +633,9 @@ static inline void sce_test_run_kill_(sce_test_case_run_t *run, const char *kill
         sce_test_run_fail_(run, killer, "kills '%s', whose machine is running", ptc);
         return;
     }
+    const char *const killed = entity->name;
     sce_test_run_remove_(run, entity);
+    sce_test_trace_killed(&run->result.trace, run->now, killed);
 }
 
 /* ── Ports (§2.2, P6) ──────────────────────────────────────────────────── */

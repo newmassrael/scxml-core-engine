@@ -447,18 +447,29 @@ private:
         createEntity(ptc, type->second);
     }
 
+    /// The kill of the PTC @p ptc (P9). A PTC that is present is removed and
+    /// the test log records its kill (docs/SCE_TEST_PROFILE.md §12.5); the
+    /// kill of one that is not present removes nothing and writes nothing.
+    void kill(const std::string &ptc) {
+        if (removeEntity(ptc)) {
+            trace(TestLog::ComponentKilled{ptc});
+        }
+    }
+
     /// Removes a PTC: its local verdict still counts (-4 §9.29a.2), and its
-    /// ports are gone, so a send to one of them is an error.
-    void removeEntity(const std::string &name) {
+    /// ports are gone, so a send to one of them is an error. False when no
+    /// component of that name is present.
+    bool removeEntity(const std::string &name) {
         auto found = entities_.find(name);
         if (found == entities_.end()) {
-            return;
+            return false;
         }
         removedVerdict_ = worse(removedVerdict_, found->second.context->verdict_);
         record(name, LogKind::Kill, "");
         entities_.erase(found);
         order_.erase(std::remove(order_.begin(), order_.end(), name), order_.end());
         done_.erase(name);
+        return true;
     }
 
     // ── Ports (§2.2, P6) ─────────────────────────────────────────────
@@ -612,7 +623,7 @@ inline void ComponentContext::create(const std::string &ptc) {
 }
 
 inline void ComponentContext::kill(const std::string &ptc) {
-    run_.removeEntity(ptc);
+    run_.kill(ptc);
 }
 
 template <typename Read> bool ComponentContext::readModuleParameters(Read &&read) {

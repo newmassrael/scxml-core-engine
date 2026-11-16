@@ -1117,6 +1117,56 @@ class TheTestLogTest {
     }
 
     /**
+     * P9: the kill of a PTC that still runs writes `component-killed` where it
+     * happens, before what the killer does next; a second kill of it finds
+     * nothing present and writes nothing. The MTC's end then removes no PTC,
+     * so the end writes no kill either (P10).
+     */
+    @Test
+    fun `a kill writes its record where it happens`() {
+        val machines = Machines()
+            .with(
+                "Tester",
+                Pair(
+                    { context, _ ->
+                        context.create("echo")
+                        context.startTimer("reply", 10)
+                    },
+                    { context, self ->
+                        if (context.timedOut("reply")) {
+                            context.timeout("reply")
+                            context.kill("echo")
+                            context.kill("echo")
+                            context.setverdict(Verdict.PASS, "")
+                            self.end()
+                        }
+                    },
+                ),
+            )
+            .with("Echo", Pair(idle(), idle()))
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
+        assertEquals(Verdict.PASS, result.verdict)
+        assertEquals(
+            listOf(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
+                "\"timer\":\"reply\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"reply\"},",
+                "{\"at\":\"10\",\"component\":\"echo\",\"kind\":\"component-killed\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"kills_the_echo\",\"verdict\":\"pass\"}",
+            ).joinToString(""),
+            result.canonicalLog("logged_suite", "kills_the_echo"),
+        )
+    }
+
+    /**
      * P13: an error the runtime sets is a verdict without the runtime's own
      * reason, which another runtime would not write alike.
      */

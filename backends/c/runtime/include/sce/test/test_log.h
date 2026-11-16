@@ -78,6 +78,13 @@ typedef enum sce_test_trace_kind_e {
     /** A component was created: the MTC as the test case starts, a PTC by the
         invocation that creates it (P9). */
     SCE_TEST_TRACE_COMPONENT_CREATED,
+    /** A PTC was killed: the state of the component that created it was
+        exited, which removes it whether it still ran or was already done (P9).
+        The removal of every PTC still present when the MTC terminates (P10),
+        when the guard is reached (P11) or when the run ends in error (P13) is
+        the end of the test case, which `SCE_TEST_TRACE_TEST_CASE_ENDED`
+        records, and writes none. */
+    SCE_TEST_TRACE_COMPONENT_KILLED,
     /** A component terminated, with its local verdict (P10). */
     SCE_TEST_TRACE_COMPONENT_DONE,
     /** A component sent a message on a port (P6). */
@@ -107,6 +114,8 @@ static inline const char *sce_test_trace_kind_name(sce_test_trace_kind_t kind) {
         return "test-case-ended";
     case SCE_TEST_TRACE_COMPONENT_CREATED:
         return "component-created";
+    case SCE_TEST_TRACE_COMPONENT_KILLED:
+        return "component-killed";
     case SCE_TEST_TRACE_COMPONENT_DONE:
         return "component-done";
     case SCE_TEST_TRACE_MESSAGE_SENT:
@@ -268,6 +277,13 @@ static inline void sce_test_trace_created(sce_test_trace_t *trace, sce_test_inst
     sce_test_trace_keep_(trace);
 }
 
+/** The PTC `component` was killed (P9). */
+static inline void sce_test_trace_killed(sce_test_trace_t *trace, sce_test_instant_t at, const char *component) {
+    if (sce_test_trace_next_(trace, at, SCE_TEST_TRACE_COMPONENT_KILLED, component) != NULL) {
+        sce_test_trace_keep_(trace);
+    }
+}
+
 /** `component` terminated, its local verdict `verdict` (P10). */
 static inline void sce_test_trace_done(sce_test_trace_t *trace, sce_test_instant_t at, const char *component,
                                        sce_test_verdict_t verdict) {
@@ -391,6 +407,7 @@ static inline void sce_test_trace_write_record(sce_jcs_t *jcs, const sce_test_tr
     }
     switch (record->kind) {
     case SCE_TEST_TRACE_TEST_CASE_STARTED:
+    case SCE_TEST_TRACE_COMPONENT_KILLED:
         break;
     case SCE_TEST_TRACE_TEST_CASE_ENDED:
     case SCE_TEST_TRACE_COMPONENT_DONE:

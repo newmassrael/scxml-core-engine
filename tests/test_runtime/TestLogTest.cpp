@@ -174,6 +174,7 @@ TEST(TheTestLog, EveryKindIsOneTheSchemaNames) {
         TestLog::TestCaseStarted{},
         TestLog::TestCaseEnded{Verdict::None},
         TestLog::ComponentCreated{"", ""},
+        TestLog::ComponentKilled{""},
         TestLog::ComponentDone{"", Verdict::None},
         TestLog::MessageSent{"", "", "", JsonValue()},
         TestLog::MessageReceived{"", "", "", JsonValue()},
@@ -208,6 +209,8 @@ TEST(TheTestLog, ARecordIsWrittenWithTheMembersOfItsKind) {
     EXPECT_EQ(written(TestLog::VerdictSet{"echo", Verdict::Fail, std::string("late")}),
               "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"late\","
               "\"verdict\":\"fail\"}");
+    EXPECT_EQ(written(TestLog::ComponentKilled{"echo"}),
+              "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"component-killed\"}");
     EXPECT_EQ(written(TestLog::MessageReceived{"mtc", "sut", "job_reply",
                                                Canonical::record({{"job", Canonical::integer(std::uint32_t{7})}})}),
               "{\"at\":\"250\",\"component\":\"mtc\",\"kind\":\"message-received\","

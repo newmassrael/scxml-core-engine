@@ -85,6 +85,23 @@ sealed interface TestLogEvent {
         }
     }
 
+    /**
+     * The PTC [component] was killed: the state of the component that created
+     * it was exited, which removes it whether it still ran or was already done
+     * (P9). The removal of every PTC still present when the MTC terminates
+     * (P10), when the guard is reached (P11) or when the run ends in error (P13)
+     * is the end of the test case, which [TestCaseEnded] records, and writes
+     * none.
+     */
+    data class ComponentKilled(val component: String) : TestLogEvent {
+        override val kind: String
+            get() = "component-killed"
+
+        override fun writeMembers(members: MutableMap<String, Any>) {
+            members["component"] = component
+        }
+    }
+
     /** The [component] terminated, with its local [verdict] then (P10). */
     data class ComponentDone(val component: String, val verdict: Verdict) : TestLogEvent {
         override val kind: String

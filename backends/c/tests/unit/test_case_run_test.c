@@ -1915,6 +1915,7 @@ static void the_test_log_a_record_is_written_with_the_members_of_its_kind(void) 
               SCE_TEST_MESSAGE_HELD,
           "the reply fits a message");
     sce_test_trace_message(&shapes, 250, SCE_TEST_TRACE_MESSAGE_RECEIVED, "mtc", "sut", &message);
+    sce_test_trace_killed(&shapes, 250, "echo");
     static const char *const want[] = {
         "{\"at\":\"250\",\"component\":\"mtc\",\"duration_us\":\"1000000\",\"kind\":\"timer-started\","
         "\"timer\":\"reply\"}",
@@ -1923,9 +1924,10 @@ static void the_test_log_a_record_is_written_with_the_members_of_its_kind(void) 
         "\"verdict\":\"fail\"}",
         "{\"at\":\"250\",\"component\":\"mtc\",\"kind\":\"message-received\",\"port\":\"sut\","
         "\"type\":\"job_reply\",\"value\":{\"job\":\"7\"}}",
+        "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"component-killed\"}",
     };
-    CHECK(shapes.count == 4u && shapes.lost == 0u, "%zu records, %zu lost", shapes.count, shapes.lost);
-    for (size_t i = 0u; i < 4u && i < shapes.count; ++i) {
+    CHECK(shapes.count == 5u && shapes.lost == 0u, "%zu records, %zu lost", shapes.count, shapes.lost);
+    for (size_t i = 0u; i < 5u && i < shapes.count; ++i) {
         sce_jcs_t jcs;
         sce_test_trace_write_record(canonical_writer(&jcs), &shapes, &shapes.records[i]);
         CHECK(canonically(&jcs, want[i]), "record %zu wrote %s", i, canonical_out);
@@ -2070,6 +2072,52 @@ static void the_test_log_a_run_writes_each_record_where_its_event_happens(void) 
     CHECK(kept_log.len == strlen(want) && strcmp(kept_log.text, want) == 0, "wrote %s", kept_log.text);
 }
 
+// The MTC kills the echo at the timeout, and again, which finds nothing
+// present, and passes.
+static void kills_echo_twice_at_the_timeout(const sce_test_component_context_t *context, scripted_t *self) {
+    if (sce_test_context_timed_out(context, "reply")) {
+        sce_test_context_timeout(context, "reply");
+        sce_test_context_kill(context, "echo");
+        sce_test_context_kill(context, "echo");
+        sce_test_context_setverdict(context, SCE_TEST_VERDICT_PASS, "");
+        self->ended = true;
+    }
+}
+
+// P9: the kill of a PTC that still runs writes `component-killed` where it
+// happens, before what the killer does next; a second kill of it finds nothing
+// present and writes nothing. The MTC's end then removes no PTC, so the end
+// writes no kill either (P10).
+static void the_test_log_a_kill_writes_its_record_where_it_happens(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(machines_with(&machines, "Tester", creates_echo_and_waits_ten, kills_echo_twice_at_the_timeout),
+                  "Echo", idle, idle);
+    trace_adapter_t adapter;
+    const sce_test_configuration_t configuration = mtc_and_echo();
+    const sce_test_case_result_t *result =
+        run_case(&configuration, &machines, &replaying(&adapter, NULL, 0u)->adapter, NULL);
+    CHECK(result->verdict == SCE_TEST_VERDICT_PASS, "verdict %d", (int)result->verdict);
+    const char *want = "{\"records\":["
+                       "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},"
+                       "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\","
+                       "\"timer\":\"reply\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"reply\"},"
+                       "{\"at\":\"10\",\"component\":\"echo\",\"kind\":\"component-killed\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},"
+                       "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}"
+                       "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+                       "\"test_case\":\"kills_the_echo\",\"verdict\":\"pass\"}";
+    size_t len = 0u;
+    CHECK(sce_test_case_result_canonical_log(result, "logged_suite", "kills_the_echo", canonical_out,
+                                             sizeof(canonical_out), &len) == SCE_TEST_TRACE_WRITTEN &&
+              strcmp(canonical_out, want) == 0,
+          "wrote %s", canonical_out);
+}
+
 // P13: an error the runtime sets is a verdict without the runtime's own reason,
 // which another runtime would not write alike.
 static void the_test_log_an_error_the_runtime_sets_is_logged_without_its_cause(void) {
@@ -2167,6 +2215,7 @@ int main(void) {
     the_test_log_a_record_is_written_with_the_members_of_its_kind();
     the_test_log_a_log_is_its_shape_suite_case_verdict_and_records();
     the_test_log_a_run_writes_each_record_where_its_event_happens();
+    the_test_log_a_kill_writes_its_record_where_it_happens();
     the_test_log_an_error_the_runtime_sets_is_logged_without_its_cause();
     the_test_log_a_test_case_that_cannot_start_logs_its_start_and_end();
     if (failures != 0) {

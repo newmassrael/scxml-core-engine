@@ -41,6 +41,7 @@ from .port import Duration, Instant, Message, Port
 from .testlog import (
     ComponentCreated,
     ComponentDone,
+    ComponentKilled,
     Log,
     MessageReceived,
     MessageSent,
@@ -464,12 +465,17 @@ class _RunState:
     def kill(self, killer: str, ptc: str) -> None:
         """The kill of the PTC ``ptc`` by ``killer`` (P9). A component whose
         machine is running, up the call stack of this one, is not removed under
-        it: that is a dynamic error."""
+        it: that is a dynamic error. A PTC that is present is removed and the
+        test log records its kill (docs/SCE_TEST_PROFILE.md §12.5); the kill of
+        one that is not present removes nothing and writes nothing."""
         entity = self.entities.get(ptc)
-        if entity is not None and entity.machine is None:
+        if entity is None:
+            return
+        if entity.machine is None:
             self.fail(killer, f"kills '{ptc}', whose machine is running")
             return
         self.remove_entity(ptc)
+        self.trace(ComponentKilled(ptc))
 
     def remove_entity(self, name: str) -> None:
         """Remove a PTC: its local verdict still counts (-4 §9.29a.2), and its

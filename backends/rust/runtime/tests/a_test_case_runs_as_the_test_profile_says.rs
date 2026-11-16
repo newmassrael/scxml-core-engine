@@ -1385,6 +1385,54 @@ mod the_test_log {
         );
     }
 
+    /// P9: the kill of a PTC that still runs writes `component-killed` where
+    /// it happens, before what the killer does next; a second kill of it finds
+    /// nothing present and writes nothing. The MTC's end then removes no PTC,
+    /// so the end writes no kill either (P10).
+    #[test]
+    fn a_kill_writes_its_record_where_it_happens() {
+        let machines = Machines::default()
+            .with(
+                "Tester",
+                (
+                    step(|context, _| {
+                        context.create("echo");
+                        context.start_timer("reply", 10);
+                    }),
+                    step(|context, this| {
+                        if context.timed_out("reply") {
+                            context.timeout("reply");
+                            context.kill("echo");
+                            context.kill("echo");
+                            context.setverdict(Verdict::Pass, "");
+                            this.end();
+                        }
+                    }),
+                ),
+            )
+            .with("Echo", (idle(), idle()));
+        let result = run(mtc_and_echo(), &machines, TraceAdapter::default(), None);
+        assert_eq!(result.verdict, Verdict::Pass);
+        assert_eq!(
+            result.canonical_log("logged_suite", "kills_the_echo"),
+            concat!(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
+                "\"timer\":\"reply\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"reply\"},",
+                "{\"at\":\"10\",\"component\":\"echo\",\"kind\":\"component-killed\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"kills_the_echo\",\"verdict\":\"pass\"}",
+            )
+        );
+    }
+
     /// P13: an error the runtime sets is a verdict without the runtime's own
     /// reason, which another runtime would not write alike.
     #[test]

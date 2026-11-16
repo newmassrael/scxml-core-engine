@@ -84,7 +84,8 @@ fn ping_canonical(ping: &Ping) -> sce_rust_runtime::json::Value {
 }
 
 /// The MTC creates the echo, pings it, starts two timers and logs; at the
-/// first timer's timeout it stops the second and passes.
+/// first timer's timeout it stops the second, kills the echo, which is done by
+/// then, and passes.
 fn tester_starts(context: &ComponentContext) -> bool {
     context.create("echo");
     context.send(
@@ -111,6 +112,7 @@ fn tester_waits(context: &ComponentContext) -> bool {
     }
     context.timeout("t");
     context.stop_timer("s");
+    context.kill("echo");
     context.setverdict(Verdict::Pass, "");
     true
 }
@@ -285,6 +287,7 @@ fn the_test_log_schema_rejects_what_the_runtime_does_not_write() {
     let received = position("message-received");
     let started = position("timer-started");
     let verdict = position("verdict-set");
+    let killed = position("component-killed");
     let ended = position("test-case-ended");
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
         let mut instance = valid.clone();
@@ -316,7 +319,20 @@ fn the_test_log_schema_rejects_what_the_runtime_does_not_write() {
         ),
         (
             "a kind TCI's subset here does not have",
-            changed(&|l| l["records"][0]["kind"] = serde_json::json!("component-killed")),
+            changed(&|l| l["records"][0]["kind"] = serde_json::json!("component-stopped")),
+        ),
+        (
+            "a kill without its component",
+            changed(&|l| {
+                l["records"][killed]
+                    .as_object_mut()
+                    .expect("a record")
+                    .remove("component");
+            }),
+        ),
+        (
+            "a kill with the verdict a component's end carries",
+            changed(&|l| l["records"][killed]["verdict"] = serde_json::json!("pass")),
         ),
         (
             "a sent message without its value",

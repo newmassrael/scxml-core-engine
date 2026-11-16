@@ -492,13 +492,19 @@ final class RunState {
     }
 
     /// The kill of the PTC `ptc` by `killer` (P9). A component whose machine is running, up the call
-    /// stack of this one, is not removed under it: that is a dynamic error.
+    /// stack of this one, is not removed under it: that is a dynamic error. A PTC that is present is
+    /// removed and the test log records its kill (docs/SCE_TEST_PROFILE.md §12.5); the kill of one that
+    /// is not present removes nothing and writes nothing.
     func kill(_ killer: String, _ ptc: String) {
-        if let entity = entities[ptc], entity.machine == nil {
+        guard let entity = entities[ptc] else {
+            return
+        }
+        if entity.machine == nil {
             fail(killer, "kills '\(ptc)', whose machine is running")
             return
         }
         removeEntity(ptc)
+        trace(.componentKilled(component: ptc))
     }
 
     /// Removes a PTC: its local verdict still counts (-4 §9.29a.2), and its ports are gone, so a send to

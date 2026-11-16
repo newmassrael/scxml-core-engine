@@ -465,17 +465,19 @@ impl RunState {
 
     /// The kill of the PTC `ptc` by `killer` (P9). A component whose machine
     /// is running, up the call stack of this one, is not removed under it: that
-    /// is a dynamic error.
+    /// is a dynamic error. A PTC that is present is removed and the test log
+    /// records its kill (docs/SCE_TEST_PROFILE.md §12.5); the kill of one that
+    /// is not present removes nothing and writes nothing.
     fn kill(&mut self, killer: &str, ptc: &str) -> Option<Box<dyn ComponentMachine>> {
-        if self
-            .entities
-            .get(ptc)
-            .is_some_and(|entity| entity.machine.is_none())
-        {
+        if self.entities.get(ptc)?.machine.is_none() {
             self.fail(killer, format!("kills '{ptc}', whose machine is running"));
             return None;
         }
-        self.remove_entity(ptc)
+        let machine = self.remove_entity(ptc);
+        self.trace(TestLogEvent::ComponentKilled {
+            component: ptc.to_string(),
+        });
+        machine
     }
 
     /// Removes a PTC: its local verdict still counts (-4 §9.29a.2), and its

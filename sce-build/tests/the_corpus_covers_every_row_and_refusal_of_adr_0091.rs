@@ -71,6 +71,17 @@ const ORDERED: Run = run(ORDERS, "orders_case");
 /// nested_suite's one test case, whose component nests its states.
 const NESTS: Run = run(NESTED, "nested_case");
 
+/// The runs whose component leaves the state that invoked a PTC while the PTC
+/// still runs, which kills it (P9).
+const KILLS_RUNNING: &[Run] = &[
+    run(RUNTIME, "keeps_a_ptc"),
+    run(BOUNDARY, "sends_to_a_removed_ptc"),
+];
+
+/// The runs whose component leaves the state that invoked a PTC once the PTC
+/// is done, which kills it too (P9: whether it still runs or is already done).
+const KILLS_DONE: &[Run] = &[run(RUNTIME, "serves_a_ptc"), COMPLETES];
+
 /// The rows of ADR 0091 §2 and the runs of each aspect.
 const ROWS: &[Row] = &[
     Row {
@@ -321,8 +332,12 @@ const ROWS: &[Row] = &[
                 runs: &[run(RUNTIME, "serves_a_ptc")],
             },
             Aspect {
-                what: "`kill`",
-                runs: &[run(RUNTIME, "keeps_a_ptc")],
+                what: "`kill` of a PTC that still runs",
+                runs: KILLS_RUNNING,
+            },
+            Aspect {
+                what: "`kill` of a PTC that is done",
+                runs: KILLS_DONE,
             },
         ],
     },
@@ -556,6 +571,32 @@ fn every_row_is_run_by_the_corpus() {
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// P9, docs/SCE_TEST_PROFILE.md §12.5: an expected log records
+/// `component-killed` where a component's exit kills a PTC, so the runs whose
+/// logs hold one are the runs of the two `kill` aspects and no other. The
+/// removal of the PTCs still present when the MTC ends (P10), at the guard
+/// (P11) or at a dynamic error (P13) writes none.
+#[test]
+fn the_runs_that_kill_a_ptc_are_the_runs_whose_logs_record_a_kill() {
+    let mut logged = Vec::new();
+    for suite in CORPUS {
+        for (case, _) in test_cases(&suite.path()) {
+            let log = suite.expected_logs().join(format!("{case}.json"));
+            if log.exists() && read(&log).contains("\"kind\":\"component-killed\"") {
+                logged.push(format!("{} {case}", suite.name()));
+            }
+        }
+    }
+    let mut named: Vec<String> = KILLS_RUNNING
+        .iter()
+        .chain(KILLS_DONE)
+        .map(|run| format!("{} {}", run.suite, run.case))
+        .collect();
+    logged.sort();
+    named.sort();
+    assert_eq!(logged, named);
 }
 
 /// Each refusal of ADR 0091 §3 has its cover: the refusal's bullet starts with

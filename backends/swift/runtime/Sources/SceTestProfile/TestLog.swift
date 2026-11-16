@@ -31,6 +31,11 @@ public enum TestLogEvent: Equatable, Sendable {
     /// A component of the type `componentType` was created: the MTC as the test case starts, a PTC by
     /// the invocation that creates it (P9).
     case componentCreated(component: String, componentType: String)
+    /// A PTC was killed: the state of the component that created it was exited, which removes it whether
+    /// it still ran or was already done (P9). The removal of every PTC still present when the MTC
+    /// terminates (P10), when the guard is reached (P11) or when the run ends in error (P13) is the end of
+    /// the test case, which `testCaseEnded` records, and writes none.
+    case componentKilled(component: String)
     /// A component terminated, with its local verdict then (P10).
     case componentDone(component: String, verdict: Verdict)
     /// A component sent a message on a port (P6): its record type's name (`TestValue.typeName`) and its
@@ -59,6 +64,7 @@ public enum TestLogEvent: Equatable, Sendable {
         case .testCaseStarted: return "test-case-started"
         case .testCaseEnded: return "test-case-ended"
         case .componentCreated: return "component-created"
+        case .componentKilled: return "component-killed"
         case .componentDone: return "component-done"
         case .messageSent: return "message-sent"
         case .messageReceived: return "message-received"
@@ -104,6 +110,8 @@ public struct TestLogRecord: Equatable, Sendable {
         case .componentCreated(let component, let componentType):
             members.append(textMember("component", component))
             members.append(textMember("type", componentType))
+        case .componentKilled(let component):
+            members.append(textMember("component", component))
         case .componentDone(let component, let verdict):
             members.append(textMember("component", component))
             members.append(textMember("verdict", verdict.spelling))

@@ -137,6 +137,9 @@ struct TestLogRecordTests {
                 == bytes(
                     "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"verdict-set\","
                         + "\"reason\":\"late\",\"verdict\":\"fail\"}"))
+        #expect(
+            try record(.componentKilled(component: "echo"))
+                == bytes("{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"component-killed\"}"))
         let job = Canonical.record(("job", Canonical.integer(UInt32(7))))
         #expect(
             try record(.messageReceived(component: "mtc", port: "sut", messageType: "job_reply", value: job))
@@ -151,6 +154,7 @@ struct TestLogRecordTests {
             .testCaseStarted,
             .testCaseEnded(verdict: .none),
             .componentCreated(component: "", componentType: ""),
+            .componentKilled(component: ""),
             .componentDone(component: "", verdict: .none),
             .messageSent(component: "", port: "", messageType: "", value: .text("")),
             .messageReceived(component: "", port: "", messageType: "", value: .text("")),
@@ -165,6 +169,7 @@ struct TestLogRecordTests {
                 "test-case-started",
                 "test-case-ended",
                 "component-created",
+                "component-killed",
                 "component-done",
                 "message-sent",
                 "message-received",

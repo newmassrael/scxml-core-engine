@@ -147,6 +147,10 @@ class TestLogRecordTest {
             record(TestLogEvent.VerdictSet("echo", Verdict.FAIL, "late")),
         )
         assertEquals(
+            "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"component-killed\"}",
+            record(TestLogEvent.ComponentKilled("echo")),
+        )
+        assertEquals(
             "{\"at\":\"250\",\"component\":\"mtc\",\"kind\":\"message-received\"," +
                 "\"port\":\"sut\",\"type\":\"job_reply\",\"value\":{\"job\":\"7\"}}",
             record(
@@ -167,6 +171,7 @@ class TestLogRecordTest {
             TestLogEvent.TestCaseStarted,
             TestLogEvent.TestCaseEnded(Verdict.NONE),
             TestLogEvent.ComponentCreated("", ""),
+            TestLogEvent.ComponentKilled(""),
             TestLogEvent.ComponentDone("", Verdict.NONE),
             TestLogEvent.MessageSent("", "", "", ""),
             TestLogEvent.MessageReceived("", "", "", ""),
@@ -181,6 +186,7 @@ class TestLogRecordTest {
                 "test-case-started",
                 "test-case-ended",
                 "component-created",
+                "component-killed",
                 "component-done",
                 "message-sent",
                 "message-received",

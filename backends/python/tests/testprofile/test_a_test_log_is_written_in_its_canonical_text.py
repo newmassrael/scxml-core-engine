@@ -33,6 +33,7 @@ from sce_runtime.testprofile import (  # noqa: E402
 from sce_runtime.testprofile.testlog import (  # noqa: E402
     ComponentCreated,
     ComponentDone,
+    ComponentKilled,
     Log,
     MessageReceived,
     MessageSent,
@@ -144,6 +145,9 @@ class TestTestLogRecord:
             '{"at":"250","component":"echo","kind":"verdict-set","reason":"late",'
             '"verdict":"fail"}'
         )
+        assert record(ComponentKilled("echo")) == (
+            '{"at":"250","component":"echo","kind":"component-killed"}'
+        )
         assert record(
             MessageReceived("mtc", "sut", "job_reply", canonical.record(("job", canonical.integer(7))))
         ) == (
@@ -157,6 +161,7 @@ class TestTestLogRecord:
             TestCaseStarted(),
             TestCaseEnded(Verdict.NONE),
             ComponentCreated("", ""),
+            ComponentKilled(""),
             ComponentDone("", Verdict.NONE),
             MessageSent("", "", "", ""),
             MessageReceived("", "", "", ""),
@@ -170,6 +175,7 @@ class TestTestLogRecord:
             "test-case-started",
             "test-case-ended",
             "component-created",
+            "component-killed",
             "component-done",
             "message-sent",
             "message-received",

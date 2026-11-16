@@ -57,6 +57,16 @@ pub enum TestLogEvent {
         /// Its component type.
         component_type: String,
     },
+    /// A PTC was killed: the state of the component that created it was
+    /// exited, which removes it whether it still ran or was already done (P9).
+    /// The removal of every PTC still present when the MTC terminates (P10),
+    /// when the guard is reached (P11) or when the run ends in error (P13) is
+    /// the end of the test case, which [`TestLogEvent::TestCaseEnded`] records,
+    /// and writes none.
+    ComponentKilled {
+        /// The PTC.
+        component: String,
+    },
     /// A component terminated, with its local verdict (P10).
     ComponentDone {
         /// The component.
@@ -139,6 +149,7 @@ impl TestLogEvent {
             TestLogEvent::TestCaseStarted => "test-case-started",
             TestLogEvent::TestCaseEnded { .. } => "test-case-ended",
             TestLogEvent::ComponentCreated { .. } => "component-created",
+            TestLogEvent::ComponentKilled { .. } => "component-killed",
             TestLogEvent::ComponentDone { .. } => "component-done",
             TestLogEvent::MessageSent { .. } => "message-sent",
             TestLogEvent::MessageReceived { .. } => "message-received",
@@ -178,6 +189,9 @@ impl TestLogRecord {
             } => {
                 members.push(text_member("component", component));
                 members.push(text_member("type", component_type));
+            }
+            TestLogEvent::ComponentKilled { component } => {
+                members.push(text_member("component", component));
             }
             TestLogEvent::ComponentDone { component, verdict } => {
                 members.push(text_member("component", component));
@@ -302,6 +316,10 @@ mod tests {
                 component_type: String::new(),
             }
             .kind(),
+            TestLogEvent::ComponentKilled {
+                component: String::new(),
+            }
+            .kind(),
             TestLogEvent::ComponentDone {
                 component: String::new(),
                 verdict: Verdict::None,
@@ -393,6 +411,12 @@ mod tests {
             }),
             "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"verdict-set\",\
              \"reason\":\"late\",\"verdict\":\"fail\"}"
+        );
+        assert_eq!(
+            written(TestLogEvent::ComponentKilled {
+                component: "echo".to_string(),
+            }),
+            "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"component-killed\"}"
         );
         assert_eq!(
             written(TestLogEvent::MessageReceived {

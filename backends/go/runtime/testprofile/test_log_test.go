@@ -57,6 +57,7 @@ func TestEveryKindIsOneTheSchemaNames(t *testing.T) {
 		TestCaseStarted{},
 		TestCaseEnded{},
 		ComponentCreated{},
+		ComponentKilled{},
 		ComponentDone{},
 		MessageSent{},
 		MessageReceived{},
@@ -91,6 +92,10 @@ func TestARecordIsWrittenWithTheMembersOfItsKind(t *testing.T) {
 		{
 			VerdictSet{Component: "echo", Verdict: VerdictFail, Reason: "late"},
 			`{"at":"250","component":"echo","kind":"verdict-set","reason":"late","verdict":"fail"}`,
+		},
+		{
+			ComponentKilled{Component: "echo"},
+			`{"at":"250","component":"echo","kind":"component-killed"}`,
 		},
 		{
 			MessageReceived{

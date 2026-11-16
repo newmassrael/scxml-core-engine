@@ -443,15 +443,18 @@ internal class RunState(
     /**
      * The kill of the PTC [ptc] by [killer] (P9). A component whose machine is
      * running, up the call stack of this one, is not removed under it: that is a
-     * dynamic error.
+     * dynamic error. A PTC that is present is removed and the test log records
+     * its kill (docs/SCE_TEST_PROFILE.md §12.5); the kill of one that is not
+     * present removes nothing and writes nothing.
      */
     fun kill(killer: String, ptc: String) {
-        val entity = entities[ptc]
-        if (entity != null && entity.machine == null) {
+        val entity = entities[ptc] ?: return
+        if (entity.machine == null) {
             fail(killer, "kills '$ptc', whose machine is running")
             return
         }
         removeEntity(ptc)
+        trace(TestLogEvent.ComponentKilled(ptc))
     }
 
     /**

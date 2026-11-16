@@ -89,6 +89,23 @@ func (e ComponentCreated) writeMembers(members *sce.JSONObject) {
 	members.Set("type", e.ComponentType)
 }
 
+// ComponentKilled is a PTC killed: the state of the component that created it
+// was exited, which removes it whether it still ran or was already done (P9).
+// The removal of every PTC still present when the MTC terminates (P10), when
+// the guard is reached (P11) or when the run ends in error (P13) is the end of
+// the test case, which TestCaseEnded records, and writes none.
+type ComponentKilled struct {
+	// Component is the PTC.
+	Component string
+}
+
+// Kind is `component-killed`.
+func (ComponentKilled) Kind() string { return "component-killed" }
+
+func (e ComponentKilled) writeMembers(members *sce.JSONObject) {
+	members.Set("component", e.Component)
+}
+
 // ComponentDone is a component terminated, with its local verdict (P10).
 type ComponentDone struct {
 	// Component is the component.
