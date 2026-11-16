@@ -106,6 +106,12 @@ field stands on the entry it is missing from) and, when the record carries `actu
 entry or a parent of it that is `actual`. `DeployConfig` keeps the text it was parsed from; the CLI's deploy reader,
 the mesh transport compile and the orchestrator's deploy-side checks place their refusals through it.
 
+Implemented (2026-11-16): the YAML refusal is placed too. `DeployError::Yaml` carries serde's words and, apart from
+them, the row and column `serde_yaml_ng::Error::location` gives (`Yaml { message, at }`); `mark_in` answers that
+place, so the record's `location` holds it, and the ` at line L column C` clause serde writes into its words is
+removed by the numbers it was built from. The record's id is made of the words alone, so it no longer moves when a
+line is added above the refusal.
+
 ### #112 — an arriving event name is matched by its token prefix
 
 Fixed before this ADR: `a6806700fb` (2026-10-04) resolves an arriving name to the longest token prefix the document

@@ -18263,7 +18263,11 @@ mod tests {
             ),
             (
                 "mesh/deploy-parse",
-                DeployError::Yaml("line 3: unexpected token".into()).into(),
+                DeployError::Yaml {
+                    message: "line 3: unexpected token".into(),
+                    at: None,
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:e4569cf099b99bad","code":"mesh/deploy-parse","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml parse error: line 3: unexpected token"}"#,
             ),
             (

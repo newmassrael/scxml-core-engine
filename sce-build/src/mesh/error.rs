@@ -776,9 +776,17 @@ pub enum DeployError {
         source: std::io::Error,
     },
 
-    /// YAML syntax or schema error in deploy.yaml.
-    #[error("deploy.yaml parse error: {0}")]
-    Yaml(String),
+    /// YAML syntax or schema error in deploy.yaml: serde's words for it, and
+    /// the row and column serde read it at apart from them (docs/adr/0106,
+    /// #76), so the place is the record's `location` and the words hold no
+    /// coordinate a consumer would have to parse back out.
+    #[error("deploy.yaml parse error: {message}")]
+    Yaml {
+        /// What serde refused, without the place it gives it.
+        message: String,
+        /// Where serde read the refusal, when it gives a place.
+        at: Option<Mark>,
+    },
 
     /// `version:` field specifies a schema version this compiler does not know.
     /// Prevents silent misinterpretation of fields whose semantics change
@@ -2782,8 +2790,8 @@ impl DeployError {
     /// under it (the lookup stands on the deepest key that was written).
     ///
     /// `None` for the refusals that are about no key: the file could not be
-    /// read, its YAML could not be (serde places that one in its message), or a
-    /// count over the whole deployment ran past a ceiling.
+    /// read, its YAML could not be (it carries the place serde read it at), or
+    /// a count over the whole deployment ran past a ceiling.
     ///
     /// ⚠ No `_` arm: a new refusal decides where it stands here, or the crate
     /// does not build.
@@ -2798,7 +2806,7 @@ impl DeployError {
         let last = |names: &[String]| names.last().cloned().unwrap_or_default();
         Some(match self {
             Self::ReadFile { .. }
-            | Self::Yaml(_)
+            | Self::Yaml { .. }
             | Self::SomeipScxmlInvokeServiceIdOverflow { .. }
             | Self::SomeipLivenessServiceIdOverflow { .. }
             | Self::SomeipMachineLivenessServiceIdOverflow { .. }
@@ -3069,9 +3077,13 @@ impl DeployError {
 
     /// Where in `text`, the deployment this refusal is of, the refusal stands:
     /// the key its [`Self::key_path`] names, or where its `actual` is written
-    /// on that key or a parent of it. `None` for a refusal of no key, and for
-    /// a text the marked reading cannot read.
+    /// on that key or a parent of it. A refusal of the YAML itself stands where
+    /// serde read it, which it carries. `None` for any other refusal of no
+    /// key, and for a text the marked reading cannot read.
     pub fn mark_in(&self, text: &str) -> Option<Mark> {
+        if let Self::Yaml { at, .. } = self {
+            return *at;
+        }
         let path = self.key_path()?;
         let marks = DeployMarks::read(text)?;
         marks.locate(&path, deploy_fields(self).actual.as_deref())
@@ -3768,13 +3780,13 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![path.clone()],
         },
-        DeployError::Yaml(reason) => DiagnosticPayload {
+        DeployError::Yaml { message, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployParse,
             stage: Stage::MeshDeploy,
             actual: None,
             expected: None,
             fix: None,
-            key_fragments: vec![reason.clone()],
+            key_fragments: vec![message.clone()],
         },
         DeployError::UnsupportedVersion { found, supported } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployUnsupportedVersion,

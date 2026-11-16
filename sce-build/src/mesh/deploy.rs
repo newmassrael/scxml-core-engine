@@ -3780,6 +3780,36 @@ pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
     Ok(cfg)
 }
 
+/// serde's refusal of a deployment's YAML as a record (docs/adr/0106, #76):
+/// the place serde read it at, as the record's `location` will carry it, and
+/// serde's words without that place.
+///
+/// `serde_yaml_ng` offers its words only through `Display`, which ends the
+/// sentence of a refusal it places with ` at line L column C` (a refusal of the
+/// YAML syntax puts the same clause after the problem, before its context).
+/// Both numbers are the ones [`serde_yaml_ng::Error::location`] answers, so the
+/// clause removed is the one built from them, never a pattern guessed at; a
+/// refusal at the text's very start, which serde does not place in its words,
+/// keeps them as they are.
+fn yaml_refusal(refused: &serde_yaml_ng::Error, message: String) -> DeployError {
+    let to_u32 = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let at = refused
+        .location()
+        .map(|location| crate::mesh::deploy_marks::Mark {
+            line: to_u32(location.line()),
+            col: to_u32(location.column()),
+        });
+    let message = match at {
+        Some(mark) => message.replacen(
+            &format!(" at line {} column {}", mark.line, mark.col),
+            "",
+            1,
+        ),
+        None => message,
+    };
+    DeployError::Yaml { message, at }
+}
+
 /// Parse deploy.yaml from a string (filesystem-free, testable).
 pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     let mut cfg: DeployConfig = serde_yaml_ng::from_str(content).map_err(|e| {
@@ -3800,7 +3830,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
                 .collect();
             return DeployError::PartitionDuplicateName { name };
         }
-        DeployError::Yaml(msg)
+        yaml_refusal(&e, msg)
     })?;
     cfg.text = Some(std::sync::Arc::from(content));
 
@@ -8195,7 +8225,9 @@ topology:
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
         match err {
-            DeployError::Yaml(msg) => assert!(msg.to_lowercase().contains("mode"), "msg: {msg}"),
+            DeployError::Yaml { message: msg, .. } => {
+                assert!(msg.to_lowercase().contains("mode"), "msg: {msg}")
+            }
             other => panic!("expected Yaml parse error, got {other:?}"),
         }
     }
@@ -8213,7 +8245,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8266,7 +8301,10 @@ version: "1.0"
 topolgy:
   ecu1: { machines: { brake: { source: brake.scxml } } }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8280,7 +8318,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8293,7 +8334,10 @@ topology:
     machines:
       brake: { soruce: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8310,7 +8354,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8328,7 +8375,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     #[test]
@@ -8345,7 +8395,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "#;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     // ── Child sessions (SCE_MESH.md, Child Sessions in Mesh) ──
@@ -8774,7 +8827,10 @@ topology:
     machines:
       brake: { source: brake.scxml }
 "##;
-        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+        assert!(matches!(
+            parse_deploy_str(yaml),
+            Err(DeployError::Yaml { .. })
+        ));
     }
 
     // ── ordering (SCE_MESH.md §mesh-10.6) ──────────────────────────
@@ -8843,7 +8899,7 @@ topology:
 "##;
         let err = parse_deploy_str(yaml).unwrap_err();
         match err {
-            DeployError::Yaml(msg) => {
+            DeployError::Yaml { message: msg, .. } => {
                 assert!(
                     msg.to_lowercase().contains("ordering")
                         || msg.to_lowercase().contains("variant")
@@ -8931,7 +8987,7 @@ topology:
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
         match err {
-            DeployError::Yaml(msg) => assert!(
+            DeployError::Yaml { message: msg, .. } => assert!(
                 msg.to_lowercase().contains("tick_period_ms")
                     || msg.to_lowercase().contains("missing field"),
                 "expected missing-field message about tick_period_ms; got: {msg}"
@@ -8955,7 +9011,7 @@ topology:
           tcik_period_ms: 80
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
-        assert!(matches!(err, DeployError::Yaml(_)));
+        assert!(matches!(err, DeployError::Yaml { .. }));
     }
 
     #[test]
@@ -9472,7 +9528,7 @@ topology:
           leese_ms: 2000
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
-        assert!(matches!(err, DeployError::Yaml(_)));
+        assert!(matches!(err, DeployError::Yaml { .. }));
     }
 
     #[test]
@@ -10613,7 +10669,7 @@ topology:
           max_pendng_per_target: 64
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
-        assert!(matches!(err, DeployError::Yaml(_)));
+        assert!(matches!(err, DeployError::Yaml { .. }));
     }
 
     #[test]
@@ -12509,7 +12565,9 @@ topology:
 "##;
         let result = parse_deploy_str(yaml);
         match result {
-            Err(DeployError::Yaml(reason)) => {
+            Err(DeployError::Yaml {
+                message: reason, ..
+            }) => {
                 assert!(
                     reason.contains("must start with `0x`"),
                     "bare-string rejection must explain the prefix requirement: {reason}"

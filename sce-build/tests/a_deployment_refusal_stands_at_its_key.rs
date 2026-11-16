@@ -101,6 +101,46 @@ topology:
 }
 
 #[test]
+fn a_refusal_of_the_yaml_carries_its_place_apart_from_its_words() {
+    // `topolgy` is no key of a deployment; serde reads the refusal on it, at
+    // the start of row 2.
+    let text = "version: \"1.0\"\ntopolgy: {}\n";
+    let err = refusal(text);
+    let DeployError::Yaml { message, at } = &err else {
+        panic!("the schema refuses the key: {err:?}");
+    };
+    assert_eq!(*at, Some(Mark { line: 2, col: 1 }));
+    assert_eq!(
+        err.mark_in(text),
+        *at,
+        "the record stands where serde read it"
+    );
+    assert!(
+        message.contains("unknown field `topolgy`"),
+        "serde's words stay: {message}"
+    );
+    assert!(
+        !message.contains(" at line "),
+        "the place is the record's location, not part of its words: {message}"
+    );
+}
+
+#[test]
+fn a_refusal_of_the_yaml_syntax_keeps_its_context_without_its_place() {
+    let text = "version: [unterminated\n";
+    let err = refusal(text);
+    let DeployError::Yaml { message, at } = &err else {
+        panic!("the YAML is refused: {err:?}");
+    };
+    let mark = at.expect("serde places a syntax refusal");
+    assert!(
+        !message.contains(&format!(" at line {} column {}", mark.line, mark.col)),
+        "the place serde gives is not repeated in the words: {message}"
+    );
+    assert!(!message.is_empty());
+}
+
+#[test]
 fn a_refusal_of_no_key_is_not_placed() {
     let err = DeployError::SomeipLivenessServiceIdOverflow {
         participant_count: 70_000,

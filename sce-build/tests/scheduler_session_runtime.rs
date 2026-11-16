@@ -130,7 +130,7 @@ fn a_tokio_scheduler_with_no_block_resolves_to_none() {
 fn an_unknown_drive_spelling_is_refused_at_parse() {
     let err = rejection_of(&tokio_with_block("", &["drive: thread-per-core"]));
     assert!(
-        matches!(err, DeployError::Yaml(_)),
+        matches!(err, DeployError::Yaml { .. }),
         "an unknown drive must fail the typed parse, got {err:?}"
     );
 }
@@ -139,7 +139,7 @@ fn an_unknown_drive_spelling_is_refused_at_parse() {
 fn a_block_that_does_not_say_how_it_is_driven_is_refused_at_parse() {
     let err = rejection_of(&tokio_with_block("", &["rx_busy_poll_us: 10"]));
     assert!(
-        matches!(err, DeployError::Yaml(_)),
+        matches!(err, DeployError::Yaml { .. }),
         "a block with no drive must fail the typed parse, got {err:?}"
     );
 }
@@ -151,7 +151,7 @@ fn a_key_the_block_does_not_take_is_refused_at_parse() {
         &["drive: own-thread", "stack_size: 65536"],
     ));
     assert!(
-        matches!(err, DeployError::Yaml(_)),
+        matches!(err, DeployError::Yaml { .. }),
         "an unknown key in the block must fail the typed parse, got {err:?}"
     );
 }
@@ -160,7 +160,7 @@ fn a_key_the_block_does_not_take_is_refused_at_parse() {
 fn the_drive_key_belongs_to_the_block_and_not_to_the_scheduler() {
     let err = rejection_of("          kind: tokio\n          drive: own-thread");
     assert!(
-        matches!(err, DeployError::Yaml(_)),
+        matches!(err, DeployError::Yaml { .. }),
         "a flat drive under scheduler must fail the typed parse, got {err:?}"
     );
 }
