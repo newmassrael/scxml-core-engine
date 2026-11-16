@@ -429,6 +429,12 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
 }
 
+{# docs/adr/0081 step 4: a codec printed from its plan names the table of a
+   source, the value's table and the encode over any source before the value's
+   encode, which is the encode over the value's table. #}
+{% if c11_source %}
+{{ c11_source.before_encode }}
+{% endif %}
 /* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
@@ -436,6 +442,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
  * `{{ c_encode_to_buf_func }}` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ params_after_first_arg }}) {
+{% if c11_source %}
+    return {{ c_struct_snake }}_encode_source({{ c_struct_snake }}_value_source(), self, w);
+{% else %}
 {% if has_parent_flags %}
     /* RFC §synth-5-B: see decode — same parameter, same suppress. */
     (void)parent_flags;
@@ -560,6 +569,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
+{% endif %}
 {% endif %}
 }
 
