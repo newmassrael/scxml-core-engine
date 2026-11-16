@@ -620,6 +620,67 @@ fn a_parent_tag_is_derived_from_the_arm_its_body_holds() {
     );
 }
 
+/// An input the arms of a variant say is read off the arm the value holds, by
+/// that arm's codec's function (docs/adr/0065 §6 R4d); where some arms do not
+/// read it, the value says nothing from them, `null` (R4e), and so does a codec
+/// whose body says it so. A parent holds what such a body says to what it hands
+/// it only where the body says anything.
+///
+/// Turns red where `kotlin_source::said_value` reads an arm's input other than
+/// off the arm, answers a number from an arm that does not read it, the said
+/// function is typed `UByte` where the value may say nothing, `render` refuses
+/// a handed input a value that says nothing of it, or the check of a body that
+/// says it in some values only refuses one that says nothing.
+#[test]
+fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
+    for name in [
+        "codec_every_arm_says",
+        "codec_every_arm_says_parent",
+        "codec_some_arms_say",
+        "codec_some_arms_say_forward",
+        "codec_some_arms_say_parent",
+    ] {
+        assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    }
+    let every = resource_file("codec_every_arm_says");
+    holds(
+        "codec_every_arm_says",
+        &every,
+        &["        fun inputN(src: CodecEveryArmSaysSource): UByte =\n            \
+           when (val _b = src.body) { \
+           is CodecEveryArmSaysVariant.CodecEveryArmSaysFar -> CodecEveryArmSaysFar.inputBare(_b.body); \
+           is CodecEveryArmSaysVariant.CodecEveryArmSaysNear -> CodecEveryArmSaysNear.inputN(_b.body) }"],
+    );
+    let some = resource_file("codec_some_arms_say");
+    holds(
+        "codec_some_arms_say",
+        &some,
+        &[
+            "        fun inputN(src: CodecSomeArmsSaySource): UByte? =\n            \
+             when (val _b = src.body) { \
+             is CodecSomeArmsSayVariant.CodecSomeArmsSayPlain -> null; \
+             is CodecSomeArmsSayVariant.CodecEveryArmSaysNear -> CodecEveryArmSaysNear.inputN(_b.body) }",
+            "        if (inputN(this).let { it != null && it != n }) return \
+             CodecError.PresentIfMismatch\n",
+        ],
+    );
+    let forward = resource_file("codec_some_arms_say_forward");
+    holds(
+        "codec_some_arms_say_forward",
+        &forward,
+        &[
+            "        fun inputN(src: CodecSomeArmsSayForwardSource): UByte? =\n            \
+           CodecSomeArmsSay.inputN(src.body)",
+        ],
+    );
+    let parent = resource_file("codec_some_arms_say_parent");
+    holds(
+        "codec_some_arms_say_parent",
+        &parent,
+        &["            if (CodecSomeArmsSay.inputN(_e_body).let { it != null && it.toUInt() != "],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a CBOR map and a group that holds a length the
 /// value states beside its content each name their form.

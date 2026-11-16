@@ -1439,6 +1439,18 @@ old encode, the old encode and its templates are removed in the same landing.
    case printer states a variant as the arm's class made of its codec's data class, compares the arm, its body
    element by element and the catch-all's tag, and hands a caller-tag codec's decode the case's tag. An input the
    arms say (R4d, R4e), and a check of an input at an arm, stay unlowered.
+
+   *The eleventh Kotlin landing, 2026-11-16:* the rest of R4a that needs no group, chain or law: an input the arms
+   of the variant say, every arm (R4d) or some (R4e), an input a body says in some of its values only, a flag a
+   parent derives from what the arm it holds says (`Measured::ArmSays`), and an input check at an arm or of a codec
+   that says the input in some values only. A said input is read off the arm by an exhaustive `when` over the
+   sealed class, each arm by its codec's `input<Name>`; where the value can say nothing of it the companion's
+   function answers `UByte?`, `null` from an arm that does not read it, as the C++ function answers an empty
+   `std::optional`, so `null` is the absence §2 gives Kotlin and no sentinel number stands for it. The data class's
+   own `encode` and a parent's check hold what is handed to what is said only where something is said, as R4e
+   asks; a check at an arm tests the local the arm is read into, which Kotlin narrows to the arm's class. An input
+   said through a group or a list's law stays with those forms, and so do a check against the entry before and
+   a codec handed what the entry before it was, which only a chain's walk says.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

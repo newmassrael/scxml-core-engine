@@ -96,30 +96,29 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     // An input the value says is read off it, by a function of the companion a
     // parent calls; one it does not say is a parameter of the encode. The
-    // printer reads one a gated field or a body always there says in every
-    // value.
+    // printer reads one a gated field says, one a body always there says in
+    // every value or in some of its values only, and one the arm of the
+    // variant the value holds says (docs/adr/0065 §6 R4d, R4e).
     for said in &plan.said {
         match &plan.roles.inputs[&said.input.name] {
-            InputSource::Gate { .. } | InputSource::Forward { partly: false, .. } => {}
-            _ => forms.push(format!(
-                "input '{}': a flag input the value says through a group, a variant, a list \
-                 or a body that says it in some values only",
+            InputSource::Gate { .. }
+            | InputSource::Forward { .. }
+            | InputSource::EveryArm { .. }
+            | InputSource::SomeArms { .. } => {}
+            InputSource::Group | InputSource::List { .. } => forms.push(format!(
+                "input '{}': a flag input the value says through a group or a list's law",
                 said.input.name
             )),
         }
     }
-    // An input a held codec says, held to what the codec is handed: a body's
-    // or each entry's, against a carrier's bit or an input of the codec's own.
+    // An input a held codec says, held to what the codec is handed: a body's,
+    // each entry's or an arm's, against a carrier's bit or an input of the
+    // codec's own; a codec that says it in some values only disagrees with
+    // nothing where it says nothing.
     for check in &plan.input_checks {
-        let site = matches!(check.site, CheckSite::Embed { .. } | CheckSite::List { .. });
-        let against = matches!(
-            check.against,
-            Against::Carrier { .. } | Against::Input { .. }
-        );
-        if check.partly || !site || !against {
+        if matches!(check.against, Against::PreviousEntry { .. }) {
             forms.push(format!(
-                "element '{}': an input a held codec says, held to what an arm, the entry \
-                 before or a codec that says it in some values only is handed",
+                "element '{}': an input a held codec says, held to what the entry before is",
                 check.at
             ));
         }
@@ -278,12 +277,17 @@ fn number_form(element: &ElementId, number: &Number<'_>, imports: &[ImportContex
     for measure in &number.measures {
         match &measure.of {
             Measured::Bytes { .. } | Measured::Entries { .. } | Measured::Encoded { .. } => {}
-            // What a body says in every value, read by its codec's function.
+            // What a body says in every value, read by its codec's function,
+            // and what the arm the value holds says, read by its codec's.
             Measured::Says { codec, input, .. } if !says_partly(imports, codec, input) => {}
+            Measured::ArmSays { arms }
+                if arms
+                    .iter()
+                    .all(|said| !says_partly(imports, &said.codec, &said.input)) => {}
             Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!(
-                    "element '{element}': a flag a list, an arm or a body that says it in \
-                     some values only says"
+                    "element '{element}': a flag a list's law, or an arm or a body that says \
+                     it in some values only, says"
                 ));
             }
         }
@@ -628,11 +632,18 @@ pub(super) fn render(
             .said
             .iter()
             .map(|said| {
-                format!(
-                    "        if ({} != {}(this)) return CodecError.PresentIfMismatch\n",
+                let (handed, says) = (
                     input_name(&said.input.name),
-                    said_function(&said.input.name)
-                )
+                    said_function(&said.input.name),
+                );
+                // A value that says nothing of the input disagrees with
+                // nothing it is handed (docs/adr/0065 §6 R4e).
+                let test = if plan.roles.says_input_partly(&said.input.name) {
+                    format!("{says}(this).let {{ it != null && it != {handed} }}")
+                } else {
+                    format!("{handed} != {says}(this)")
+                };
+                format!("        if ({test}) return CodecError.PresentIfMismatch\n")
             })
             .collect(),
         held,
@@ -1060,13 +1071,49 @@ fn encode_source(
         body.push_str(&format!(
             "val {} = {}\n",
             input_name(&said.input.name),
-            said_value(plan, imports, &said.input.name, &element)
+            said_value(
+                plan,
+                imports,
+                struct_name,
+                &said.input.name,
+                &element,
+                &|| variant().to_string()
+            )
         ));
     }
-    // A measure of a derived number: what a body says, by its codec's
-    // function, or what the source holds.
+    // A measure of a derived number: what a body or the arm the value holds
+    // says, by its codec's function, or what the source holds.
     let measure_text = |measure: &Measure<'_>| -> MeasureText {
         match &measure.of {
+            // What the arm the value holds says, where it holds one that says
+            // it; an `Int`, zero from any other arm.
+            Measured::ArmSays { arms } => {
+                let said = |i: usize, codec: &str| {
+                    arms.iter().find(|said| said.arm == i).map(|said| {
+                        format!("{codec}.{}(_b.body).toInt()", said_function(&said.input))
+                    })
+                };
+                let arms_there: Vec<String> = arms
+                    .iter()
+                    .map(|said| {
+                        let arm = &plan.arms[said.arm];
+                        format!(
+                            "{} is {}",
+                            variant(),
+                            arm_class(struct_name, arm.tag.map(|_| arm.codec))
+                        )
+                    })
+                    .collect();
+                MeasureText {
+                    size: format!(
+                        "({})",
+                        over_arms(plan, imports, struct_name, variant(), &said, "0")
+                    ),
+                    present: measure
+                        .gated
+                        .then(|| format!("({})", arms_there.join(" || "))),
+                }
+            }
             Measured::Says {
                 body: held, input, ..
             } => {
@@ -1394,12 +1441,20 @@ fn encode_source(
         };
         let import = printed_import(imports, &check.codec)
             .expect("`unlowered` prints a codec it holds printed");
+        // Whether `held` says the input otherwise than it is handed; a codec
+        // that says it in some of its values only disagrees with nothing
+        // where it says nothing (docs/adr/0065 §6 R4e).
         let says = |held: &str| {
-            format!(
-                "{}.{}({held}).toUInt() != {against}",
+            let said = format!(
+                "{}.{}({held})",
                 body_type(import),
                 said_function(&check.input)
-            )
+            );
+            if check.partly {
+                format!("{said}.let {{ it != null && it.toUInt() != {against} }}")
+            } else {
+                format!("{said}.toUInt() != {against}")
+            }
         };
         let fail = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
         match &check.site {
@@ -1426,7 +1481,19 @@ fn encode_source(
                 );
                 body.push_str(&walk);
             }
-            CheckSite::Arm { .. } => unreachable!("`unlowered` prints no variant"),
+            // The arm the value holds, where it is one whose codec says the
+            // input: the local the arm is read into narrows to its class.
+            CheckSite::Arm { arms } => {
+                let held = variant();
+                for &i in arms {
+                    let arm = &plan.arms[i];
+                    body.push_str(&format!(
+                        "if ({held} is {} && {}) {{\n    return {fail}\n}}\n",
+                        arm_class(struct_name, arm.tag.map(|_| arm.codec)),
+                        says(&format!("{held}.body"))
+                    ));
+                }
+            }
         }
     }
     if staged {
@@ -1626,13 +1693,25 @@ fn encode_source(
     // holds this codec derives the flag it binds to the input from, or holds
     // what it hands the codec to (docs/adr/0065 §6 R4a).
     for said in &plan.said {
-        let value = said_value(plan, imports, &said.input.name, &|id: &str| {
-            format!("src.{}", l.codec_field_id(id))
-        });
+        let value = said_value(
+            plan,
+            imports,
+            struct_name,
+            &said.input.name,
+            &|id: &str| format!("src.{}", l.codec_field_id(id)),
+            &|| format!("src.{VARIANT_PROPERTY}"),
+        );
+        // A value that can say nothing of the input answers `null` then
+        // (docs/adr/0065 §6 R4e).
+        let (answer, nothing) = if plan.roles.says_input_partly(&said.input.name) {
+            ("UByte?", ", and `null` where the value says nothing of it")
+        } else {
+            ("UByte", "")
+        };
         text.push_str(&format!(
             "\n\n/// The flag input `{}` a source of [{struct_name}] says, which its encode\n\
-             /// is not handed (docs/adr/0065 §6 R4a).\n\
-             fun {}(src: {struct_name}Source): UByte =\n    {value}",
+             /// is not handed (docs/adr/0065 §6 R4a){nothing}.\n\
+             fun {}(src: {struct_name}Source): {answer} =\n    {value}",
             said.input.name,
             said_function(&said.input.name)
         ));
@@ -1670,6 +1749,44 @@ fn ulong_as(value: &str, ty: &SceType) -> String {
         _ => unreachable!("`unlowered` prints a variant's tag held in an unsigned field only"),
     };
     format!("{value}.{conversion}()")
+}
+
+/// A `when` over `variant`, the arm a value of `plan`, whose data class is
+/// `struct_name`, holds, exhaustive over the sealed class: for the arm at
+/// each place `i`, `each(i, codec)`, `codec` the data class of the arm's codec
+/// and the arm's source `_b.body`, or `otherwise` where it answers `None`. The
+/// arm is named `_b` only where a case reads it.
+fn over_arms(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    struct_name: &str,
+    variant: &str,
+    each: &dyn Fn(usize, &str) -> Option<String>,
+    otherwise: &str,
+) -> String {
+    let mut named = false;
+    let mut cases = Vec::new();
+    for (i, arm) in plan.arms.iter().enumerate() {
+        let import = printed_import(imports, arm.codec)
+            .expect("`unlowered` prints a variant of printed arms only");
+        let case = match each(i, body_type(import)) {
+            Some(case) => {
+                named = true;
+                case
+            }
+            None => otherwise.to_string(),
+        };
+        cases.push(format!(
+            "is {} -> {case}",
+            arm_class(struct_name, arm.tag.map(|_| arm.codec))
+        ));
+    }
+    let subject = if named {
+        format!("val _b = {variant}")
+    } else {
+        variant.to_string()
+    };
+    format!("when ({subject}) {{ {} }}", cases.join("; "))
 }
 
 /// The statement that derives the tag of the arm the value of `plan`, whose
@@ -1728,18 +1845,25 @@ fn held_alias<'p>(plan: &'p EncodePlan<'_>, field: &CodecField) -> &'p str {
     }
 }
 
-/// The flag input `input` the value of `plan` says, as a `UByte` read through
-/// `read`, which names each element it reads: set exactly where the field
-/// gated on it alone is there (clear, for one gated on its clear state), or
-/// what the body always there it hands the input on to says, read by that
-/// body's codec's function (docs/adr/0065 §6 R4a).
+/// The flag input `input` the value of `plan`, whose data class is
+/// `struct_name`, says, as a `UByte` read through `read`, which names each
+/// element it reads, and `variant`, which names the arm the value holds: set
+/// exactly where the field gated on it alone is there (clear, for one gated on
+/// its clear state), what the body always there it hands the input on to says,
+/// or what the arm the value holds says, each read by its codec's function
+/// (docs/adr/0065 §6 R4a, R4d). Where the value can say nothing of the input
+/// (§6 R4e), a `UByte?`: what a body that says it in some of its values only
+/// answers, and `null` from an arm that does not read it.
 fn said_value(
     plan: &EncodePlan<'_>,
     imports: &[ImportContext],
+    struct_name: &str,
     input: &str,
     read: &dyn Fn(&str) -> String,
+    variant: &dyn Fn() -> String,
 ) -> String {
-    match &plan.roles.inputs[input] {
+    let source = &plan.roles.inputs[input];
+    match source {
         InputSource::Gate { field, when_clear } => {
             let (set, clear) = if *when_clear { (0, 1) } else { (1, 0) };
             format!(
@@ -1751,7 +1875,7 @@ fn said_value(
             embed,
             alias,
             input: held,
-            partly: false,
+            ..
         } => {
             let import = printed_import(imports, alias)
                 .expect("`unlowered` prints a codec it holds printed");
@@ -1762,7 +1886,24 @@ fn said_value(
                 read(embed)
             )
         }
-        _ => unreachable!("`unlowered` prints an input a gated field or a body says only"),
+        // What the arm the value holds says, where its codec says the input
+        // `arms` binds on it. Every arm says it where every arm does, so no
+        // case answers otherwise; from any other arm the value says nothing.
+        InputSource::EveryArm { arms } | InputSource::SomeArms { arms } => {
+            let otherwise = if source.is_partial() {
+                "null"
+            } else {
+                "0.toUByte()"
+            };
+            let each = |i: usize, codec: &str| -> Option<String> {
+                arms.get(plan.arms[i].codec)
+                    .map(|held| format!("{codec}.{}(_b.body)", said_function(held)))
+            };
+            over_arms(plan, imports, struct_name, &variant(), &each, otherwise)
+        }
+        InputSource::Group | InputSource::List { .. } => {
+            unreachable!("`unlowered` prints no input a group or a list's law says")
+        }
     }
 }
 

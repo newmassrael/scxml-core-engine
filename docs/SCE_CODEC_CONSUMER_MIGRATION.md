@@ -2434,3 +2434,15 @@ parent whose carrier's bits the arm of an embedded body's variant fills (`<sce:v
   `{Codec}UnknownTag.of(tag)` makes, answering `null` for a tag an arm names or the bits do not hold; read the
   number as `.tag.tag`. A caller-tag codec's `tag` answers the number as before.
 
+## A printed Kotlin codec reads the flag inputs its variant's arms say (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose variant's arms say a flag input, a body that says one in some of its values only, and their parents.
+
+- `{Codec}.input<Name>(src)` answers what the arm `src.body` holds says. Where some arm does not read the input,
+  or a body says it in some of its values only, it answers `UByte?`, `null` where the value says nothing of it:
+  test for `null` before you compare it.
+- `encode(w, input...)` refuses an input you hand only where the value says another; where it says nothing, what
+  you hand is not checked. A parent refuses a body, an entry or an arm that says otherwise than it hands it with
+  `CodecError.PresentIfMismatch`, before a byte is written.
+
