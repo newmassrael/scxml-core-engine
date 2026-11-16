@@ -1621,6 +1621,45 @@ old encode, the old encode and its templates are removed in the same landing.
    `sources` of a CBOR map and of a content-line component (`kotlin_source::cbor::source_case`,
    `kotlin_source::content_line::source_case`), reading the notation where every printer reads it
    (`source_notation`), so every harness of a printed map folds its byte cases.
+
+   *The first Go landing, 2026-11-16:* the positional codecs whose elements are integers, flag sets and enums, each
+   always there, written whole, in bytes they share with other fields, or as a VLE of 16, 32 or 64 bits, which derive
+   no element and whose encode refuses nothing (`go_source::unlowered` names the first form any other codec uses;
+   such a codec keeps the template's encode whole, §6). Each is printed from its plan
+   (`sce-build/src/forge/generator/go_source.rs`):
+   - the source, an interface `{Codec}Source` with one method for each element the value presents, named as the
+     value's field was (`MsgId() uint8`); `*{Codec}` is one, and so is any type with those methods;
+   - the value, a struct whose fields are unexported (`go_source::member`, the field's Go name with its first letter
+     lowered, which a Go keyword cannot be, since the document refuses one), each presented by its method on a
+     pointer receiver, as every other method of a Go codec is. Its flag accessors and setters, its quantity
+     accessors and its decode read and write the unexported field (`field.member` in the template);
+   - the constructor, `Make{Codec}`, which takes every element in declaration order and returns the value, as the C++
+     constructor does. The decision was between this and a keyed `{Codec}Parts` struct: Go has no named arguments,
+     and a keyed literal leaves out an element without a word, so a codec that gains an element would leave its
+     callers building values without it, where a positional call stops building. A refinement a later landing
+     gives an element is a type with an unexported field and its own constructor (§2), so `Make{Codec}` stays a
+     constructor that cannot fail;
+   - the encode over any source, `EncodeSource(src, w) error`, a function of the codec's package, which is one
+     codec's package and so its namespace, as Python's module is: each write of the program, a fixed field's bytes
+     in one `WriteBytes` by the byte expressions the template's encode wrote (`encode_whole_field_read_as`,
+     `encode_byte_read_by`), a VLE by the runtime's writer. `Encode` is `EncodeSource(s, w)`, and `EncodeToBytes`
+     returns the bytes alone, as the plan is total.
+
+   Every reader the generator writes moves with the value (`ImportContext::go_printed`, read as the import is
+   generated): a chain reads a printed entry's identifier by its method, as for C++ (`chain_identifier_masks`); a
+   procedure that assigns an element makes the value again by `Make{Codec}`, each other element read by its method
+   (`rebuilt_element_assign`, the C++ rebuild made one function over the target), and a validator reads an element
+   by its method; a bounded collection and an algorithm over one read a printed element's field by its method. The
+   set of printed elements is Go's own, beside the C++, Swift and Kotlin ones
+   (`ForgeCompileOptions::element_type_go_printed`, `BoundedCollectionResolution::element_go_printed`), and an
+   algorithm reads the set of the backend it is generated for. The hand-written Go tests of the queue and the
+   broadcast log make their elements by `Make{Codec}` and read them by method. The Go harness makes a printed
+   codec's value by `Make{Codec}` from each `cases` row and reads each element back by its method, without the
+   elements the encode derives, as the C++ and Python harnesses did before their case printers; the fixture's
+   `printed` now says so for Go too. `a_go_codec_is_printed_from_its_plan_once_it_lowers_every_form` holds a printed
+   file, the readers above, and that every codec of the resources is printed exactly where the printer lowers every
+   form of it. A list is presented, when its landing comes, as §2 says (`iter.Seq`), which raises the Go modules'
+   `go` directive from 1.22 to 1.23 in that landing.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
