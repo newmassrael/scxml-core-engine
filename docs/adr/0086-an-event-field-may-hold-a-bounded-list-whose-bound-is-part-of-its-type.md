@@ -1233,6 +1233,20 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 6. **Mutation casefiles** under `sce-build/tests/mutations`: each lift's count comparison, the inner text bound, the
    "fits" comparison of bounds, the slot computation, and the CBOR key order and head length.
 
+*As landed (amended 2026-11-16).* Each lane runs section 6 in a harness of its own over `static_composed_payload`
+and `static_composed_send`, the list docs/SCE_ACCEPTED_SUBSET.md keeps beside "Which backend lowers a composed
+value", in place of the scenario of item 2. The walk and Rust's spelling are held by
+`a_composed_value_is_walked_once_per_constructor.cases`, C11's by `a_c11_machine_reads_and_sends_a_composed_value.cases`,
+and every other lane's spelling by a casefile of its own (`a_<lane>_machine_spells_each_composed_constructor.cases`
+for Go, Kotlin, Python, Swift and C++, `an_interpreter_lowering_spells_each_composed_constructor.cases`), each case
+taking away one list bound, one text bound, one lower count, one revision's defaults or one copy. The Interpreter's
+door is held where it runs (`a_static_interpreter_composed_payload_is_read_at_any_depth_ctest.cases`). A C++ machine
+holds each bound twice, in the reader's bound and in the bounded type the reader fills, which reads at most the
+smaller (section 7.4), so a mutant of either alone does not change what the machine does, and the C++ casefile judges
+the spelling's own tests. The scenario of item 2 is not written yet: the replay types a payload by its schema of
+entries (`Holds::of_schema`, `sce-build/src/scenario_replay.rs`), which a schema that holds a composed value has
+none of, and the scenario waits for the checker and the seven drivers to carry a composed payload.
+
 ### 15. A list states its lower count (amended 2026-11-06, answer H)
 
 1. **Why.** Every bound is written in the type (section 1.2), and until this amendment a list's bound was its most
