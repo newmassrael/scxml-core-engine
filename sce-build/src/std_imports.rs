@@ -46,6 +46,16 @@ pub(crate) const GO_FORGE_RUNTIME_PATH: &str = "github.com/newmassrael/sce-forge
 /// names the package ([`go_imports_named_in`]).
 pub(crate) const GO_FORGE_OPTIONAL_PATH: &str = "github.com/newmassrael/sce-forge-runtime/optional";
 
+/// The import path of the Go forge runtime's `codec` package, bound by its own
+/// name: a codec's file always imports it, and a procedure, a validator or an
+/// algorithm imports it where its text names it, as where it makes or reads
+/// the bounded value a codec printed from its plan holds a byte string or a
+/// text in (`codec.MakeBytes`, docs/adr/0081 step 4).
+pub(crate) const GO_FORGE_CODEC_PATH: &str = "github.com/newmassrael/sce-forge-runtime/codec";
+
+/// The name the Go forge runtime's `codec` package is bound by, its own.
+pub(crate) const GO_FORGE_CODEC_NAME: &str = "codec";
+
 /// The import path of the test profile's Go runtime
 /// (`backends/go/runtime/testprofile/`, docs/SCE_TEST_PROFILE.md §12.2): what a
 /// template's unit counts a text's characters through and what a test
@@ -118,6 +128,15 @@ pub(crate) const GO_FORGE_OPTIONAL_NAME: &str = "optional";
 /// holds a value that may be absent, which only its expression emitters know.
 pub fn go_uses_optional(source: &str) -> bool {
     go_names_package(source, GO_FORGE_OPTIONAL_NAME)
+}
+
+/// Whether `source` names the Go forge runtime's `codec` package
+/// ([`GO_FORGE_CODEC_PATH`]), read from the program text as
+/// [`go_uses_optional`] reads the `optional` package's: a body reaches for it
+/// where it makes or reads a printed codec's bounded value, which only the
+/// readers of the codec know.
+pub fn go_uses_codec(source: &str) -> bool {
+    go_names_package(source, GO_FORGE_CODEC_NAME)
 }
 
 /// Whether `source` qualifies a name with `binding.`, where `binding` is not

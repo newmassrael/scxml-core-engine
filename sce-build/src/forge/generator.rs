@@ -37448,22 +37448,12 @@ fn render_procedure_go(
         &[],
         imports,
     )?;
-    // An assign to a byte string or a text of a codec the Go printer prints
-    // makes its bounded value by the forge runtime's `codec` package
-    // (`codec.MakeBytes`, [`rebuilt_element_assign`]), which the procedure
-    // then imports; read off the assigns that make one.
-    let uses_forge_codec = states_with_assigns
-        .iter()
-        .flat_map(|s| s["assign_transitions"].as_array().into_iter().flatten())
-        .flat_map(|tr| tr["assigns"].as_array().into_iter().flatten())
-        .any(|a| !a["made"].is_null());
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
     let serde_json::Value::Object(ctx) = serde_json::json!({
         "package": package,
-        "uses_forge_codec": uses_forge_codec,
         "class_name": &pascal,
         "pascal_name": &pascal,
         "needs_fmt": needs_fmt,
@@ -38662,6 +38652,14 @@ impl LangCtx {
         // through methods names it nowhere. It is read off the text the same way,
         // and a template lists `uses_optional` in its import block.
         //
+        // The runtime's `codec` package is one more: a procedure, a validator
+        // or an algorithm that makes or reads the bounded value a codec
+        // printed from its plan holds a byte string or a text in names
+        // `codec.MakeBytes` or `codec.OptionalBytes` (docs/adr/0081 step 4),
+        // and one that reads no such element names it nowhere. A codec's own
+        // file always imports it. It is read off the text the same way, and a
+        // template lists `uses_forge_codec` in its import block.
+        //
         // C++ and C11 have the same kind of import in the forge runtime's
         // integer header (`sce/forge/algorithm.h`): a `may-fail` body names its
         // checked operations, and ANY body that wraps or saturates names its
@@ -38678,6 +38676,7 @@ impl LangCtx {
         if go {
             ctx.insert("uses_scealgorithm".into(), false.into());
             ctx.insert("uses_optional".into(), false.into());
+            ctx.insert("uses_forge_codec".into(), false.into());
         }
         if c_family {
             ctx.insert("uses_forge_algorithm".into(), false.into());
@@ -38697,6 +38696,9 @@ impl LangCtx {
         let optional = go
             && crate::std_imports::go_uses_optional(&first)
             && !first.contains(crate::std_imports::GO_FORGE_OPTIONAL_PATH);
+        let forge_codec = go
+            && crate::std_imports::go_uses_codec(&first)
+            && !first.contains(crate::std_imports::GO_FORGE_CODEC_PATH);
         let forge_algorithm = c_family
             && !first.contains(crate::std_imports::FORGE_ALGORITHM_HEADER)
             && if matches!(self.lang, crate::generator::Language::Cpp) {
@@ -38704,8 +38706,11 @@ impl LangCtx {
             } else {
                 crate::std_imports::c_uses_forge_algorithm(&first)
             };
-        if used.is_empty() && !runtime && !optional && !forge_algorithm {
+        if used.is_empty() && !runtime && !optional && !forge_codec && !forge_algorithm {
             return Ok(first);
+        }
+        if forge_codec {
+            ctx.insert("uses_forge_codec".into(), true.into());
         }
         if forge_algorithm {
             ctx.insert("uses_forge_algorithm".into(), true.into());
@@ -38748,6 +38753,15 @@ impl LangCtx {
                  `uses_optional` in its imports",
                 self.lang,
                 crate::std_imports::GO_FORGE_OPTIONAL_NAME
+            ))
+            .into());
+        }
+        if forge_codec && !second.contains(crate::std_imports::GO_FORGE_CODEC_PATH) {
+            return Err(GenerateError::TemplateLoad(format!(
+                "the {:?} `{kind}` template emits code that uses `{}` but does not list \
+                 `uses_forge_codec` in its imports",
+                self.lang,
+                crate::std_imports::GO_FORGE_CODEC_NAME
             ))
             .into());
         }

@@ -14,8 +14,11 @@ package {{ package }}
    text by the render door: a float rate-of-change rule names `math.Abs`, and
    the plausibility expression can name `math`, `strconv` or
    `scealgorithm.Choose`. A flag computed here from the rules could not see the
-   expression, and named `math` for a signed rule that never uses it. #}
-{% if all_imports or uses_scealgorithm or std_imports %}
+   expression, and named `math` for a signed rule that never uses it.
+   `uses_forge_codec` is the same fact for the runtime's `codec` package, which
+   a read of a gated byte string or text of a printed codec names
+   (docs/adr/0081). #}
+{% if all_imports or uses_scealgorithm or uses_forge_codec or std_imports %}
 
 import (
 {% for pkg in std_imports %}
@@ -23,6 +26,9 @@ import (
 {% endfor %}
 {% if uses_scealgorithm %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
+{% if uses_forge_codec %}
+	"github.com/newmassrael/sce-forge-runtime/codec"
 {% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

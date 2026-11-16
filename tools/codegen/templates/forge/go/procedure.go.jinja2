@@ -36,8 +36,9 @@ import (
 {% if uses_scealgorithm %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
-{# `uses_forge_codec`: an assign makes the bounded value of a printed codec's
-   byte string or text by the runtime's `codec` package (docs/adr/0081). #}
+{# `uses_forge_codec` is read off the text by the render door: an assign makes
+   the bounded value of a printed codec's byte string or text by the runtime's
+   `codec` package (docs/adr/0081). #}
 {% if uses_forge_codec %}
 	"github.com/newmassrael/sce-forge-runtime/codec"
 {% endif %}

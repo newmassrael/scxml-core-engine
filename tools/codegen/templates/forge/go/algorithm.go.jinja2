@@ -22,8 +22,10 @@ package {{ package }}
    names it for a `may-fail` algorithm's checked operations and for an
    enum-valued conditional alike, so the text decides and `may_fail` does not.
    `uses_optional` is the same fact for the runtime's `optional` package, which
-   a value that may be absent is held in (docs/adr/0055). #}
-{% if all_imports or uses_scealgorithm or uses_optional or std_imports %}
+   a value that may be absent is held in (docs/adr/0055). `uses_forge_codec`
+   is the same fact for the runtime's `codec` package, which a read of a gated
+   byte string or text of a printed codec names (docs/adr/0081). #}
+{% if all_imports or uses_scealgorithm or uses_optional or uses_forge_codec or std_imports %}
 
 import (
 {% for pkg in std_imports %}
@@ -34,6 +36,9 @@ import (
 {% endif %}
 {% if uses_optional %}
 	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
+{% if uses_forge_codec %}
+	"github.com/newmassrael/sce-forge-runtime/codec"
 {% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
