@@ -492,6 +492,23 @@ TEST(AnAlgorithmRunsLoweredUnderTheInterpreter, AUnionIsReadByItsTagAndBuiltAsIt
              {"args": [{"kind": "circle", "radius": 6}, 4], "expected": {"kind": "circle", "radius": 6}},
              {"args": [{"kind": "rect", "width": 1, "height": 2}, 4],
               "expected": {"kind": "rect", "width": 1, "height": 2}}])"},
+        // A list of unions (docs/adr/0099, "Still open" item 2): the element at an
+        // index copied whole and narrowed, out of range past the list; a loop
+        // whose item is narrowed; and a list built of the items that are no dot.
+        {"algorithm_shape_at",
+         R"([{"args": [[{"kind": "dot"}, {"kind": "circle", "radius": 5}], 1], "expected": 5},
+             {"args": [[{"kind": "rect", "width": 3, "height": 7}], 0], "expected": 7},
+             {"args": [[{"kind": "dot"}], 0], "expected": 0},
+             {"args": [[{"kind": "dot"}], 1], "fails": "out-of-range"},
+             {"args": [[], 0], "fails": "out-of-range"}])"},
+        {"algorithm_shapes_widest",
+         R"([{"args": [[]], "expected": 0},
+             {"args": [[{"kind": "dot"}, {"kind": "circle", "radius": 5},
+                        {"kind": "rect", "width": 7, "height": 4}]], "expected": 7}])"},
+        {"algorithm_shapes_kept",
+         R"([{"args": [[{"kind": "dot"}, {"kind": "circle", "radius": 5}]],
+              "expected": [{"kind": "circle", "radius": 5}]},
+             {"args": [[{"kind": "dot"}]], "expected": []}])"},
     };
 
     for (const auto &algorithm : algorithms) {
