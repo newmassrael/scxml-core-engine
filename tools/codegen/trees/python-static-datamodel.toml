@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Python machines of datamodel="sce-static" (ADR 0097; SCE Accepted
+# Subset §2.15): test_static_scenarios.py replays the shared scenarios against
+# them, whose variables really are attributes of the policy and whose every
+# lowered statement really runs with no datamodel in a script engine. One
+# package: a machine imports what it calls as a sibling module (`from . import
+# x`), so every unit is generated beside the others. The package marker and
+# the tests beside the modules are written by hand.
+#
+# Not committed: the modules are ignored by version control and written by
+# the lane that runs them (scripts/gates/w3c-python.sh).
+#
+# Each generation is `generate --with-imports`: the document named, every
+# document it imports, to any depth, the standard library's among them, and
+# every child it starts. What a machine calls is the import closure the
+# generator walks, not a list here.
+#
+# Regenerate with `scripts/materialize.sh python-static-datamodel`.
+
+[tree]
+name = "python-static-datamodel"
+roots = ["backends/python/tests/integration/static_datamodel"]
+committed = false
+
+# Every statechart declared under datamodel="sce-static" that the Python
+# backend lowers, of the fixture directory and of the documents a test keeps
+# beside itself under tests/integration. A refusal by name (exit status 7)
+# leaves the document out; any other fails the tree. The documents a hybrid
+# `<invoke>` declares in `sce:candidates` are generated as children of the
+# machine that starts them, and are no member of their own.
+[[generation]]
+each = { files = "sce-build/tests/fixtures/static_datamodel/*.scxml", containing = 'datamodel="sce-static"', except = [
+    "static_hosted_first",
+    "static_hosted_second",
+    "static_hybrid_first",
+    "static_hybrid_holder",
+    "static_hybrid_second",
+    "static_hybrid_watcher",
+    "static_mesh_relay",
+], as = "machine" }
+arguments = ["generate", "sce-build/tests/fixtures/static_datamodel/{machine}.scxml", "--with-imports", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/static_datamodel"
+keep = ["*.py"]
+skip_unsupported = true
+
+[[generation]]
+each = { files = "tests/integration/*.scxml", containing = 'datamodel="sce-static"', as = "machine" }
+arguments = ["generate", "tests/integration/{machine}.scxml", "--with-imports", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/static_datamodel"
+keep = ["*.py"]
+skip_unsupported = true
+
+# The statechart of the standard library a scenario names by its library name
+# (`"machine": "sce:std/shared/record_list"`), a module of its stem.
+[[generation]]
+arguments = ["generate", "sce:std/shared/record_list.scxml", "--with-imports", "-l", "python", "-o", "{out}"]
+place = "backends/python/tests/integration/static_datamodel"
+keep = ["*.py"]
+
+# The test profile (docs/SCE_TEST_PROFILE.md): the templates
+# test_a_test_template_matches_its_values.py matches against values (§11.4,
+# §11.9), with the records, enums and unions they name (Python's test profile
+# matches a union, `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`); the
+# components test_a_test_component_runs_through_its_doors.py runs (§12.3); the
+# suites test_a_test_suite_runs_through_its_runner.py,
+# test_a_record_reads_back_the_form_it_writes.py and
+# test_a_corpus_suite_replays_to_its_expected_logs.py run (§11.6 to §11.8,
+# §12.2; docs/SCE_TTCN3_LANE.md §10, §12.1), with every test case,
+# configuration, component and record each reaches. The trace of every form is
+# taken twice: the Rust tree's configuration, whose `order_placed` holds a
+# union, and the one the C++ and C11 trees take, whose `order_taken` stands in
+# its place.
+[[generation]]
+arguments = [
+    "generate", "--with-imports",
+    "sce-build/tests/fixtures/test_profile/elapsed_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/every_matcher.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report_of.scxml",
+    "sce-build/tests/fixtures/test_profile/report_within.scxml",
+    "sce-build/tests/fixtures/test_profile/shape_is_circle.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/card_within.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_bounded.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_exact.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_placed_match.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_two.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/voucher_is.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/answerer.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/coordinator.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/idler.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/param_asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/ptc_keeper.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/runtime_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/trace_forms/replays_every_form.scxml",
+    "sce-build/tests/fixtures/test_profile/trace_forms/replays_every_unionless_form.scxml",
+    "sce-build/tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/job_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/orders_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/nested_suite.scxml",
+    "-l", "python", "-o", "{out}",
+]
+place = "backends/python/tests/integration/static_datamodel"
+keep = ["*.py"]

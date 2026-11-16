@@ -22,7 +22,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/actions/send.go.jinja2
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_http/static_send_http_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/a_static_send_over_http_carries_its_params_test.go sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 
 mutation_case "a pair that cannot fail carries no value" <<'PY'

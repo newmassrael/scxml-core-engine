@@ -22,7 +22,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/actions/send.go.jinja2
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_target/static_send_target_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
 
 mutation_case "a value that is none of the declared routes is let through" <<'PY'

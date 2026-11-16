@@ -36,7 +36,7 @@ mutation_targets backends/swift/runtime/Sources/SceRuntime/Engine.swift backends
 mutation_targets tools/codegen/templates/swift/script_engine.swift.jinja2 tools/codegen/templates/swift/invoke_methods.swift.jinja2
 mutation_targets backends/swift/tests/Sources/IntegrationMachines/a_child_may_send_many_events_in_one_tick_sm.swift
 mutation_targets backends/swift/tests/Sources/IntegrationMachines/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty_sm.swift
-mutation_regen scripts/regen_swift_integration.sh
+mutation_regen scripts/materialize.sh swift-integration
 
 # ── The start goes on past a session that failed ────────────────────
 #

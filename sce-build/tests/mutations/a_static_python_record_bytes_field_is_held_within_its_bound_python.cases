@@ -16,7 +16,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets sce-build/src/forge/static_lowering.rs
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
 

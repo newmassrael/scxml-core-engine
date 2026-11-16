@@ -15,7 +15,7 @@
 //! What the generated tables do when they run is held by
 //! `backends/swift/tests/Tests/StaticDatamodelTests/ATestSuiteRunsThroughItsRunnerTests.swift`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_swift.sh`) and runs the suite through
+//! `scripts/materialize.sh swift-static-datamodel`) and runs the suite through
 //! `SceTestProfile.runSuite`.
 
 use std::path::{Path, PathBuf};

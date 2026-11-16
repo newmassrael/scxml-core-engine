@@ -234,8 +234,8 @@ pub fn sites(stem: &str) -> Vec<Site> {
             "backends/c/tests/CMakeLists.txt",
             format!("sce_generate_static_integration_c_test({stem}"),
         ),
-        // Swift writes every stem it lowers in one sweep (`scripts/regen_swift_integration.sh`),
-        // so the site is the machine the sweep wrote for the stem, not a script of its own.
+        // Swift writes every stem it lowers into one target (the swift-integration tree of
+        // tools/codegen/trees), so the site is the machine the tree holds for the stem.
         file(
             Role::Generation(Channel::Swift),
             "Swift generated machine",

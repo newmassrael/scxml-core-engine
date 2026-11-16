@@ -20,7 +20,7 @@
 //! What the generated components do when they run is held by
 //! `backends/kotlin/tests/src/test/kotlin/com/sce/integration/ATestComponentRunsThroughItsDoorsTest.kt`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_kotlin.sh`) and runs them through
+//! `scripts/materialize.sh kotlin-static-datamodel`) and runs them through
 //! `com.sce.runtime.test.TestCaseRun`.
 
 use std::path::{Path, PathBuf};

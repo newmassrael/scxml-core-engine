@@ -29,7 +29,7 @@
 mutation_tests -p sce-rust-tests --test static_scenarios
 mutation_targets tools/codegen/templates/rust/entry_exit_actions.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_donedata_content_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
 
 # ── A value that cannot be computed is the empty string ────────────

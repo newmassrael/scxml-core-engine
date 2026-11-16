@@ -14,7 +14,7 @@
 //! What the generated tables do when they run is held by
 //! `backends/kotlin/tests/src/test/kotlin/com/sce/integration/ATestSuiteRunsThroughItsRunnerTest.kt`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_kotlin.sh`) and runs the suite through
+//! `scripts/materialize.sh kotlin-static-datamodel`) and runs the suite through
 //! `com.sce.runtime.test.runSuite`.
 
 use std::path::{Path, PathBuf};

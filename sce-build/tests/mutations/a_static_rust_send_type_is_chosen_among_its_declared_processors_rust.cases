@@ -25,7 +25,7 @@
 mutation_tests -p sce-rust-tests --test static_scenarios static_send_type
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_send_type_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/static_send_type.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json
 
 mutation_case "no processor is ever the one chosen" <<'PY'

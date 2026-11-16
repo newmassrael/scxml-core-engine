@@ -28,7 +28,7 @@
 //! `backends/python/tests/integration/static_datamodel/test_a_test_suite_runs_through_its_runner.py`
 //! and `test_a_record_reads_back_the_form_it_writes.py` beside it, which
 //! import them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_python.sh`) and run the suite through
+//! `scripts/materialize.sh python-static-datamodel`) and run the suite through
 //! `sce_runtime.testprofile.run_suite`, `run_suite_with_traces` and the
 //! suite's runner program.
 

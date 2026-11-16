@@ -59,7 +59,7 @@ let w3cTargets: [Target] =
 // The machines `sce-codegen generate -l swift` writes, compiled against the Swift
 // runtime, and the tests that drive each through its `Engine`. `StaticMachines` and
 // `StaticDatamodelMachines` hold only generated files
-// (`scripts/regen_swift_statecharts.sh`, `scripts/regen_static_datamodel_swift.sh`);
+// (the trees `tools/codegen/trees/swift-statecharts.toml` and `swift-static-datamodel.toml` declare);
 // what drives them is written by hand beside them. The second is the machines of
 // `datamodel="sce-static"` (docs/SCE_ACCEPTED_SUBSET.md §2.15), which the shared
 // replay scenarios drive. `EcmaScriptMachines` (`scripts/regen_swift_ecmascript.sh`) holds the
@@ -143,7 +143,7 @@ let package = Package(
             ]
         ),
         // The canonical fixtures of `integration_resources/` that the backend lowers
-        // (`scripts/regen_swift_integration.sh`), the Swift channel of the integration suite, and the
+        // (`tools/codegen/trees/swift-integration.toml`), the Swift channel of the integration suite, and the
         // hand-written driver of each. The documents are of every datamodel, so the target links
         // the script engine and the forge runtime alike.
         .target(

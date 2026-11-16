@@ -24,7 +24,7 @@
 //! What the generated components do when they run is held by
 //! `backends/go/tests/integration/static_datamodel/a_test_component_runs_through_its_doors_test.go`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_go.sh`) and runs them through
+//! `scripts/materialize.sh go-static-datamodel`) and runs them through
 //! `testprofile.TestCaseRun`.
 
 use std::path::{Path, PathBuf};

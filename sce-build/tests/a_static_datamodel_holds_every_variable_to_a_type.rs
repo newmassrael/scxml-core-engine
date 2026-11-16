@@ -6125,8 +6125,8 @@ const INTERPRETER: &str = "interpreter";
 /// since the Interpreter's slice of that item, which emptied it a third time.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
-/// Where each backend's regen script commits a machine: the file that exists
-/// only if it did.
+/// Where each backend's static datamodel tree commits a machine: the file that
+/// exists only if it did.
 const COMMITTED_MACHINES: &[(&str, &str)] = &[
     (
         "rust",
@@ -6146,7 +6146,7 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
     ),
 ];
 
-/// The Go mutation casefile declares the machines `scripts/regen_static_datamodel_go.sh`
+/// The Go mutation casefile declares the machines `go-static-datamodel`
 /// commits as targets, because a mutated template reaches the tests only through
 /// them. A machine the script commits and the casefile does not declare is one
 /// the round would regenerate and never restore.
@@ -6250,21 +6250,51 @@ fn the_go_mutation_casefile_names_every_committed_go_machine() {
     assert!(machines > 0, "no committed Go machine to judge");
 }
 
-/// What each regen script reads the standard statecharts the scenarios name with:
-/// a scenario's machine may be a statechart of the standard library, named by its
-/// library name, which no fixture stands for.
-const STANDARD_MACHINES_OF_THE_SCENARIOS: &str = r#"grep -ho '"machine": "sce:std/[^"]*"'"#;
+/// The tree of each backend's static datamodel machines, as
+/// `tools/codegen/trees/<tree>.toml` declares it (ADR 0097).
+const STATIC_DATAMODEL_TREES: [&str; 5] = [
+    "rust-static-datamodel",
+    "kotlin-static-datamodel",
+    "go-static-datamodel",
+    "python-static-datamodel",
+    "swift-static-datamodel",
+];
+
+/// The fixtures a static datamodel tree derives its machines from: every file
+/// of the directory holding this text.
+const STATIC_FIXTURES: &str = "sce-build/tests/fixtures/static_datamodel/*.scxml";
+const STATIC_DATAMODEL: &str = r#"datamodel="sce-static""#;
+
+/// Whether a rule of `manifest` derives its members from the fixture
+/// directory, by the datamodel each declares, rather than from a list.
+fn derives_its_machines(manifest: &sce_build::action::tree::TreeManifest) -> bool {
+    use sce_build::action::tree::Containing;
+    manifest.generation.iter().any(|rule| {
+        rule.each.as_ref().is_some_and(|each| {
+            each.files.as_deref() == Some(STATIC_FIXTURES)
+                && matches!(&each.containing, Some(Containing::One(text)) if text == STATIC_DATAMODEL)
+        })
+    })
+}
+
+/// Whether a generation of `manifest` names the document `document`.
+fn names_document(manifest: &sce_build::action::tree::TreeManifest, document: &str) -> bool {
+    manifest
+        .generation
+        .iter()
+        .any(|rule| rule.arguments.iter().any(|argument| argument == document))
+}
 
 /// A scenario (`fixtures/static_datamodel/scenarios/<name>.json`) is the
 /// behaviour of a sce-static machine, stated once and replayed by every
 /// backend that lowers the model. Which backends those are is ASKED of the
 /// generator — each scenario's machine is checked in every language — not
 /// written here, so a backend that starts lowering the model is held to
-/// every scenario at once. The regen scripts derive their machines from the
-/// fixture directory, and the standard statecharts a scenario names by library
-/// name from the scenarios, so what is held is that they do, and that the machine
-/// is committed where each driver builds it from — or the driver would replay
-/// a machine nobody regenerates.
+/// every scenario at once. Each backend's tree manifest derives its machines
+/// from the fixture directory, and names each standard statechart a scenario
+/// names by its library name, so what is held is that it does, and that the
+/// machine is committed where each driver builds it from — or the driver would
+/// replay a machine nobody regenerates.
 #[test]
 fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
     let root = repo_root();
@@ -6276,11 +6306,11 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
         .collect();
     scenarios.sort();
     assert!(!scenarios.is_empty(), "no scenario to judge");
-    let regen: Vec<String> = ["rust", "kotlin", "go", "python", "swift"]
+    let trees: Vec<sce_build::action::tree::TreeManifest> = STATIC_DATAMODEL_TREES
         .iter()
-        .map(|lang| {
-            std::fs::read_to_string(root.join(format!("scripts/regen_static_datamodel_{lang}.sh")))
-                .expect("a regen script")
+        .map(|name| {
+            sce_build::action::tree::tree(&root, name)
+                .unwrap_or_else(|e| panic!("the tree {name} is declared: {e}"))
         })
         .collect();
     for scenario in &scenarios {
@@ -6307,17 +6337,17 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             std::fs::read_to_string(fixtures.join(format!("{machine}.scxml")))
                 .unwrap_or_else(|_| panic!("{}: no fixture {machine}.scxml", scenario.display()))
         };
-        for script in &regen {
+        for tree in &trees {
+            let name = &tree.tree.name;
             assert!(
-                script.contains(r#"grep -l 'datamodel="sce-static"'"#),
-                "a regen script lists its machines by hand, so {machine} is one it may not commit"
+                derives_its_machines(tree),
+                "{name} lists its machines by hand, so {machine} is one it may not commit"
             );
-            // The standard statecharts a scenario names are read from the scenarios,
-            // as the fixtures are read from their directory.
+            // A standard statechart a scenario names is a document of the tree's own.
             assert!(
-                !standard || script.contains(STANDARD_MACHINES_OF_THE_SCENARIOS),
-                "a regen script does not take the standard statecharts the scenarios name, \
-                 so {machine_name} is one it may not commit"
+                !standard || names_document(tree, &format!("{machine_name}.scxml")),
+                "{name} does not generate {machine_name}, which a scenario names, so its \
+                 driver would replay a machine nobody regenerates"
             );
         }
         let stem = scenario
@@ -6394,7 +6424,7 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             let path = root.join(committed.replace("{m}", machine));
             assert!(
                 path.exists(),
-                "{machine}: its {lang} regen script has not committed {}",
+                "{machine}: its {lang} tree has not committed {}",
                 path.display()
             );
         }

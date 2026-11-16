@@ -149,24 +149,18 @@ step_runtime_c() {
 
 # ── rust-tests: the committed trees of backends/rust/tests ──────────────
 #
-# The W3C and integration trees are declared (ADR 0097): every document, flag
-# and module index of them is in tools/codegen/trees/rust-w3c.toml and
-# rust-integration.toml, and `materialize` writes each as its actions produce
-# it, rustfmt included, removing a generated file no action produces any more.
-# The static datamodel is the step's one tree still written by a script, which
-# formats what it writes the same way.
+# Every tree of the step is declared (ADR 0097): every document, flag and
+# module index of them is in tools/codegen/trees/rust-w3c.toml,
+# rust-integration.toml and rust-static-datamodel.toml, and `materialize`
+# writes each as its actions produce it, rustfmt included, removing a
+# generated file no action produces any more.
 step_rust_tests() {
     require_codegen
 
-    stage "W3C and integration Rust trees"
+    stage "W3C, integration and static datamodel Rust trees"
     "$CODEGEN" materialize rust-w3c --into "$REPO_ROOT" --replace
     "$CODEGEN" materialize rust-integration --into "$REPO_ROOT" --replace
-
-    # datamodel="sce-static" (SCE Accepted Subset §2.15) — the backends that
-    # lower the model (generator.rs `STATIC_DATAMODEL_BACKENDS`); the others
-    # refuse it.
-    stage "Static datamodel Rust tree"
-    scripts/regen_static_datamodel_rust.sh
+    "$CODEGEN" materialize rust-static-datamodel --into "$REPO_ROOT" --replace
 }
 
 # ── kotlin-tests: the committed trees of the Kotlin test modules ────────
@@ -176,20 +170,18 @@ step_rust_tests() {
 # com/sce/generated of backends/kotlin/tests, and its machines have their own
 # directory, com/sce/integration/static_datamodel, beside the integration stems.
 #
-# The W3C and integration trees are declared (ADR 0097): every document, flag
-# and package of them is in tools/codegen/trees/kotlin-w3c.toml and
-# kotlin-integration.toml, and `materialize` writes each as its actions produce
-# it, removing a generated file no action produces any more. The static
-# datamodel is the step's one tree still written by a script.
+# Every tree of the step is declared (ADR 0097): every document, flag and
+# package of them is in tools/codegen/trees/kotlin-w3c.toml,
+# kotlin-integration.toml and kotlin-static-datamodel.toml, and `materialize`
+# writes each as its actions produce it, removing a generated file no action
+# produces any more.
 step_kotlin_tests() {
     require_codegen
 
-    stage "W3C and integration Kotlin trees"
+    stage "W3C, integration and static datamodel Kotlin trees"
     "$CODEGEN" materialize kotlin-w3c --into "$REPO_ROOT" --replace
     "$CODEGEN" materialize kotlin-integration --into "$REPO_ROOT" --replace
-
-    stage "Static datamodel Kotlin tree"
-    scripts/regen_static_datamodel_kotlin.sh
+    "$CODEGEN" materialize kotlin-static-datamodel --into "$REPO_ROOT" --replace
 }
 
 # ── kotlin-method-size: the module of the JVM method-size document ──────
@@ -227,19 +219,16 @@ step_python_w3c() {
 
 # ── go-integration: backends/go/tests/integration ───────────────────────
 #
-# The integration tree is declared (ADR 0097): every document, flag and package
-# of it is in tools/codegen/trees/go-integration.toml, and `materialize` writes
-# it as its actions produce it, removing a generated file no action produces
-# any more. The static datamodel is the step's one tree still written by a
-# script.
+# Both trees are declared (ADR 0097): every document, flag and package of them
+# is in tools/codegen/trees/go-integration.toml and go-static-datamodel.toml,
+# and `materialize` writes each as its actions produce it, removing a
+# generated file no action produces any more.
 step_go_integration() {
     require_codegen
 
-    stage "Integration Go tree"
+    stage "Integration and static datamodel Go trees"
     "$CODEGEN" materialize go-integration --into "$REPO_ROOT" --replace
-
-    stage "Static datamodel Go tree"
-    scripts/regen_static_datamodel_go.sh
+    "$CODEGEN" materialize go-static-datamodel --into "$REPO_ROOT" --replace
 }
 
 # ── python-integration: backends/python/tests/integration (gitignored) ─
@@ -274,22 +263,17 @@ step_python_integration() {
 step_swift_tests() {
     require_codegen
 
-    stage "Integration Swift tree"
-    "$CODEGEN" generate-integration -l swift
-
-    # The Swift backend: its statecharts are the fixtures of
-    # `sce-build/tests/fixtures/swift_statecharts`, a committed tree of its own that
-    # compiles against the Swift runtime.
-    stage "Swift statechart tree"
-    scripts/regen_swift_statecharts.sh
-    # ... and the machines of the static datamodel fixtures it lowers, another target of
-    # the same package.
-    stage "Static datamodel Swift tree"
-    scripts/regen_static_datamodel_swift.sh
-    # ... and the `datamodel="ecmascript"` machines it lowers to Lua, a third target of the
-    # same package: the one that links the `SceLua` engine.
-    stage "ECMAScript Swift tree"
-    scripts/regen_swift_ecmascript.sh
+    # Every tree of the step is declared (ADR 0097), a target each of the Swift
+    # test package: the integration machines, the statecharts of
+    # `sce-build/tests/fixtures/swift_statecharts`, the machines and units of the
+    # static datamodel, and the `datamodel="ecmascript"` machines lowered to Lua,
+    # the target that links the `SceLua` engine. `materialize` writes each as its
+    # actions produce it, removing a generated file no action produces any more.
+    stage "Integration, statechart, static datamodel and ECMAScript Swift trees"
+    "$CODEGEN" materialize swift-integration --into "$REPO_ROOT" --replace
+    "$CODEGEN" materialize swift-statecharts --into "$REPO_ROOT" --replace
+    "$CODEGEN" materialize swift-static-datamodel --into "$REPO_ROOT" --replace
+    "$CODEGEN" materialize swift-ecmascript --into "$REPO_ROOT" --replace
 }
 
 # ── go-round-trip: the forge round-trip Go codec tree ──────────────────

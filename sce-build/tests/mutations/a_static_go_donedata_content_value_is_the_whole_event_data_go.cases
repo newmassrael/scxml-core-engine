@@ -27,7 +27,7 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/entry_exit_actions.go.jinja2
 mutation_targets backends/go/tests/integration/static_datamodel/static_donedata_content/static_donedata_content_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
 
 # ── A value that cannot be computed is the empty string ────────────

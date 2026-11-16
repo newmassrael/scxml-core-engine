@@ -48,7 +48,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_pa
 mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree__sce_synth_invoke__worker_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree_sm.go
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/a_child_sessions_host_invocation_is_served_by_the_trees_host_test.go
 
 # Caught by TestAChildsInvocationReachesTheRootsInvokerAndIsEndedThroughTheRoot (the

@@ -19,7 +19,7 @@
 # with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/test_a_static_send_over_http_carries_its_params.py
-mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_regen scripts/materialize.sh python-static-datamodel
 mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2
 mutation_oracles backends/python/tests/integration/static_datamodel/test_a_static_send_over_http_carries_its_params.py sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 

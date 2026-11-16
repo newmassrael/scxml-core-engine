@@ -25,7 +25,7 @@
 //! What the generated tables do when they run is held by
 //! `backends/go/tests/integration/static_datamodel/a_test_suite_runs_through_its_runner_test.go`,
 //! which compiles them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_go.sh`) and runs the suite through
+//! `scripts/materialize.sh go-static-datamodel`) and runs the suite through
 //! `testprofile.RunSuite`.
 
 use std::path::{Path, PathBuf};

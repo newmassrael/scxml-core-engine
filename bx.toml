@@ -695,22 +695,22 @@ run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ct
 # WHAT IS ONE STEP, AND WHY. A step owns trees, and its parts are one step where a real
 # read-after-write or a shared tree joins them:
 #   - regen-rust-tests: the W3C, integration and static datamodel Rust trees all write into
-#     backends/rust/tests. The first two are declared trees (tools/codegen/trees/rust-w3c.toml,
-#     rust-integration.toml) whose integration stems are a directory each under src/integration,
-#     found at run time, so no output can be declared for each.
-#   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
+#     backends/rust/tests, each a declared tree (tools/codegen/trees/rust-w3c.toml,
+#     rust-integration.toml, rust-static-datamodel.toml) whose integration stems are a directory
+#     each under src/integration, found at run time, so no output can be declared for each.
+#   - regen-kotlin-tests: the static datamodel writes its units as packages under
 #     com/sce/generated of backends/kotlin/tests, and its machines are a directory of their own,
 #     com/sce/integration/static_datamodel, beside the integration stems. The W3C tree is the
-#     module backends/kotlin/w3c, which nothing else writes into. The W3C and integration trees
-#     are declared (tools/codegen/trees/kotlin-w3c.toml, kotlin-integration.toml), the
-#     integration stems a directory each, found at run time.
-#   - regen-go-integration: a declared tree (tools/codegen/trees/go-integration.toml) whose stems are
-#     a directory each under backends/go/tests/integration, found at run time, and the static
-#     datamodel's directory beside them. The W3C Go tree is a directory of its own, and a step of its
-#     own.
-#   - regen-python-integration, regen-swift-tests: the integration fan-out and the per-document
-#     scripts write a directory each into one tree. The W3C Python tree is a directory of its own, and
-#     a step of its own.
+#     module backends/kotlin/w3c, which nothing else writes into. The three trees are declared
+#     (tools/codegen/trees/kotlin-w3c.toml, kotlin-integration.toml,
+#     kotlin-static-datamodel.toml), the integration stems a directory each, found at run time.
+#   - regen-go-integration: declared trees (tools/codegen/trees/go-integration.toml,
+#     go-static-datamodel.toml) whose stems are a directory each under backends/go/tests/integration,
+#     found at run time, and the static datamodel's directory beside them. The W3C Go tree is a
+#     directory of its own, and a step of its own.
+#   - regen-python-integration, regen-swift-tests: declared trees that each write a directory into
+#     one tree (tools/codegen/trees/python-*.toml, swift-*.toml). The W3C Python tree is a directory
+#     of its own, and a step of its own.
 #   - The native-action and host-processor scripts each wrote the Rust, Go and Kotlin trees of one
 #     document, and belonged to no step. They were split by language, each run by its language's step;
 #     the Rust, Go and Kotlin halves are now generations of those languages' integration manifests.
@@ -1642,10 +1642,6 @@ inputs = [
     "tests/mesh/**",
     "scripts/lib/**",
     "scripts/regen_all_committed_trees.sh",
-    "scripts/regen_swift_integration.sh",
-    "scripts/regen_swift_statecharts.sh",
-    "scripts/regen_static_datamodel_swift.sh",
-    "scripts/regen_swift_ecmascript.sh",
     "integration_resources/**",
     "resources/**",
     "tests/forge/conformance/**",

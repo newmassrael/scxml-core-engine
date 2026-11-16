@@ -22,7 +22,7 @@
 mutation_tests -p sce-rust-tests --test a_static_send_over_http_carries_its_params
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_send_http_sm.rs
-mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_regen scripts/materialize.sh rust-static-datamodel
 mutation_oracles backends/rust/tests/tests/a_static_send_over_http_carries_its_params.rs sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 
 mutation_case "a field's value is computed and never put among the pairs" <<'PY'

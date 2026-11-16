@@ -5728,8 +5728,8 @@ of its own, listed here (the same test holds every such backend to a line of
 this list):
 
 <!-- composed-lowering-harnesses: begin -->
-- `rust`: `scripts/regen_static_datamodel_rust.sh` commits the generated
-  machines, and `backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs`
+- `rust`: the tree `tools/codegen/trees/rust-static-datamodel.toml` declares
+  commits the generated machines, and `backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs`
   and `backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs` drive
   them.
 
@@ -5738,17 +5738,19 @@ this list):
   `tests/integration/AComposedPayloadIsReadAtAnyDepthTest.cpp` and
   `tests/integration/AComposedValueIsSentByItsNameTest.cpp` drive them.
 
-- `kotlin`: `scripts/regen_static_datamodel_kotlin.sh` commits the generated
-  machines, and `AComposedPayloadIsReadAtAnyDepthTest.kt` and
+- `kotlin`: the tree `tools/codegen/trees/kotlin-static-datamodel.toml`
+  declares commits the generated machines, and `AComposedPayloadIsReadAtAnyDepthTest.kt` and
   `AComposedValueIsSentByItsNameTest.kt` under
   `backends/kotlin/tests/src/test/kotlin/com/sce/integration/` drive them.
 
-- `go`: `scripts/regen_static_datamodel_go.sh` commits the generated machines,
+- `go`: the tree `tools/codegen/trees/go-static-datamodel.toml` declares
+  commits the generated machines,
   and `a_composed_payload_is_read_at_any_depth_test.go` and
   `a_composed_value_is_sent_by_its_name_test.go` under
   `backends/go/tests/integration/static_datamodel/` drive them.
 
-- `python`: `scripts/regen_static_datamodel_python.sh` generates the machines,
+- `python`: the tree `tools/codegen/trees/python-static-datamodel.toml`
+  declares generates the machines,
   and `test_a_composed_payload_is_read_at_any_depth.py` and
   `test_a_composed_value_is_sent_by_its_name.py` under
   `backends/python/tests/integration/static_datamodel/` drive them.
@@ -5759,8 +5761,8 @@ this list):
   `test_a_composed_text_is_read_as_a_value.c` under
   `backends/c/tests/integration/` drive them.
 
-- `swift`: `scripts/regen_static_datamodel_swift.sh` commits the generated
-  machines, and `AComposedPayloadIsReadAtAnyDepthTests.swift` and
+- `swift`: the tree `tools/codegen/trees/swift-static-datamodel.toml`
+  declares commits the generated machines, and `AComposedPayloadIsReadAtAnyDepthTests.swift` and
   `AComposedValueIsSentByItsNameTests.swift` under
   `backends/swift/tests/Tests/StaticDatamodelTests/` drive them.
 
@@ -6640,9 +6642,10 @@ to the typed list `BuildJSONFromTypedParams` writes: a pair that failed is left
 out and reported, and the message still goes (6.2) — so a receiver reading the
 event through its schema finds the field missing, which is an `error.execution`
 of its own.
-`scripts/regen_static_datamodel_go.sh` commits one package per machine the
-generator lowers for Go — asked of it, not listed — and one per algorithm those
-machines import, read from their `<sce:import kind="algorithm">`, and
+The tree `tools/codegen/trees/go-static-datamodel.toml` declares commits one
+package per machine the generator lowers for Go — asked of it, not listed — and
+one per document those machines import, the import closure the generator walks
+(`generate --with-imports`), and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_wrapping_counter`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
@@ -6716,10 +6719,10 @@ machine is constructed with a script engine, and no lowered expression is
 evaluated by it. Unlike the Rust, Kotlin and Go trees, the generated Python is
 not committed (`backends/python/tests/integration/*/*_sm.py` is ignored, and in
 the `static_datamodel` package every module but its marker and its test):
-`scripts/regen_static_datamodel_python.sh` derives the machines the generator
-lowers — asked of it, not listed — and the algorithms they import, read from
-their `<sce:import kind="algorithm">`, and `scripts/gates/w3c-python.sh` runs it
-before pytest, and
+the tree `tools/codegen/trees/python-static-datamodel.toml` declares derives the
+machines the generator lowers — asked of it, not listed — and the documents they
+import, the import closure the generator walks (`generate --with-imports`), and
+`scripts/gates/w3c-python.sh` materializes it before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
 `static_overflow`, `static_wrapping_counter`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,

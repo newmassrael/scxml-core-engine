@@ -10,7 +10,7 @@
 # transition's guard is the lowered expression itself, and an error ends the
 # block it stands in. The values those decide are the ones `scenarios/*.json`
 # state, replayed by `backends/go/tests/integration/static_datamodel/
-# static_scenarios_test.go` over the machines `scripts/regen_static_datamodel_go.sh`
+# static_scenarios_test.go` over the machines the `go-static-datamodel` tree
 # commits.
 #
 # What is easy to get wrong and reads as success: a failed value written anyway
@@ -40,7 +40,7 @@ mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/invoke_methods.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets_glob 'backends/go/tests/integration/static_datamodel/*/*_sm.go'
-mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_regen scripts/materialize.sh go-static-datamodel
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
 
 # ── A failed statement ends its block ──────────────────────────────

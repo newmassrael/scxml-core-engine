@@ -11,7 +11,7 @@
 //!
 //! - A stem the generator refuses by name (`SWIFT_REFUSED`) is asked of `generate`, which must
 //!   still answer exit status 7 (generate/unsupported-feature). A stem it now writes is an entry to
-//!   delete, and the sweep (`scripts/regen_swift_integration.sh`) writes it by itself.
+//!   delete, and the tree (`tools/codegen/trees/swift-integration.toml`) writes it by itself.
 //! - A stem whose driver is not written yet (`SWIFT_DRIVER_PENDING`) must have no driver: the slice
 //!   that writes one deletes the entry, and an entry beside a driver says the stem is unasserted
 //!   while a test asserts it.
@@ -61,7 +61,7 @@ fn a_stem_swift_refuses_by_name_is_still_refused() {
         written.is_empty(),
         "an exemption of the Swift integration channel is stale ({}):\n  {}\n\nThe generator no \
          longer refuses the stem by name, so the channel can host it: delete its entry from \
-         `SWIFT_REFUSED`, and write its driver (`regen_swift_integration.sh` already writes the \
+         `SWIFT_REFUSED`, and write its driver (the `swift-integration` tree already writes the \
          machine).",
         written.len(),
         written.join("\n  "),

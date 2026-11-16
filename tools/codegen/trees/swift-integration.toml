@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift channel of the integration fixtures (ADR 0097): the machine of
+# every stem of integration_resources the Swift backend lowers, and the
+# machines of the children it writes (`--children`), files of ONE SwiftPM
+# target (IntegrationMachines). Swift needs no package per stem: a child's
+# machine is written beside its parent's and every type is named for its
+# document, so two documents of one name would be one file, which a
+# materialization that finds two different files at one path refuses.
+#
+# A stem the generator refuses by name (exit status 7) is left out: it stands
+# in `SWIFT_REFUSED` (sce-build/tests/common/integration_channels.rs) until it
+# is built, and `a_swift_integration_exemption_still_holds` holds the two to
+# each other. Any other refusal fails the tree. The tests that drive the
+# machines are written by hand.
+#
+# Regenerate with `scripts/materialize.sh swift-integration`.
+
+[tree]
+name = "swift-integration"
+roots = ["backends/swift/tests/Sources/IntegrationMachines"]
+
+# Every fixture of integration_resources: a directory holding the document of
+# its name. A document that declares `sce:transition-function="emit"` writes
+# its function beside its machine (SCE Accepted Subset §2.21).
+[[generation]]
+each = { directories = "integration_resources/*", as = "stem", except = [
+    "a_host_names_its_origin_in_its_own_terms",
+    "an_event_no_processor_delivered_has_no_origin",
+] }
+arguments = ["generate", "integration_resources/{stem}/{stem}.scxml", "-l", "swift", "-o", "{out}", "--children"]
+place = "backends/swift/tests/Sources/IntegrationMachines"
+keep = ["*_sm.swift", "*_transition_function.swift"]
+skip_unsupported = true
+
+# Two stems are generated for a host that serves the `x-sce-host` processor or
+# invoker, as the C++ registration and every other channel declares them;
+# their driver serves that host.
+[[generation]]
+arguments = [
+    "generate", "integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml",
+    "-l", "swift", "-o", "{out}", "--children", "--host-invoker", "x-sce-host",
+]
+place = "backends/swift/tests/Sources/IntegrationMachines"
+keep = ["*_sm.swift", "*_transition_function.swift"]
+skip_unsupported = true
+
+[[generation]]
+arguments = [
+    "generate", "integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml",
+    "-l", "swift", "-o", "{out}", "--children", "--host-processor", "x-sce-host",
+]
+place = "backends/swift/tests/Sources/IntegrationMachines"
+keep = ["*_sm.swift", "*_transition_function.swift"]
+skip_unsupported = true

@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Kotlin machines of datamodel="sce-static" (ADR 0097; SCE Accepted
+# Subset §2.15), compiled as part of `:sce-kotlin-tests`, so their variables
+# really are Kotlin fields and every lowered expression really type-checks;
+# StaticDatamodelTest.kt and the scenario replay drive them with no script
+# engine. A machine is a package of its own,
+# `com.sce.integration.static_datamodel.<machine>`, with the children it
+# starts; every forge unit it imports is the package its import line names,
+# `com.sce.generated.<unit>`, whatever the machine's prefix.
+#
+# Each generation is `generate --with-imports`: the document named, every
+# document it imports, to any depth, the standard library's among them, and
+# every child it starts. What a machine calls is the import closure the
+# generator walks, not a list here.
+#
+# com/sce/generated of :sce-kotlin-tests is this tree's whole: the W3C suite's
+# packages, `test<id>`, are a module of their own, backends/kotlin/w3c
+# (tools/codegen/trees/kotlin-w3c.toml).
+#
+# Regenerate with `scripts/materialize.sh kotlin-static-datamodel`. The
+# w3c-kotlin gate writes the same tree for each script-engine language it runs
+# (`materialize kotlin-static-datamodel --script-engine <language>`).
+
+[tree]
+name = "kotlin-static-datamodel"
+roots = [
+    "backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel",
+    "backends/kotlin/tests/src/main/kotlin/com/sce/generated/*",
+]
+
+# Every statechart of the fixture directory declared under
+# datamodel="sce-static" that the Kotlin backend lowers. A refusal by name
+# (exit status 7) leaves the document out; any other fails the tree. The
+# documents a hybrid `<invoke>` declares in `sce:candidates` are generated as
+# children of the machine that starts them, into its package, and are no
+# member of their own.
+[[generation]]
+each = { files = "sce-build/tests/fixtures/static_datamodel/*.scxml", containing = 'datamodel="sce-static"', except = [
+    "static_hosted_first",
+    "static_hosted_second",
+    "static_hybrid_first",
+    "static_hybrid_holder",
+    "static_hybrid_second",
+    "static_hybrid_watcher",
+    "static_mesh_relay",
+], as = "machine" }
+arguments = [
+    "generate", "sce-build/tests/fixtures/static_datamodel/{machine}.scxml", "--with-imports",
+    "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration.static_datamodel",
+]
+place = "backends/kotlin/tests/src/main/kotlin"
+keep = [
+    "com/sce/integration/static_datamodel/*/*.kt",
+    "com/sce/generated/*/*.kt",
+]
+skip_unsupported = true
+
+# The statechart of the standard library a scenario names by its library name
+# (`"machine": "sce:std/shared/record_list"`), a package of its stem.
+[[generation]]
+arguments = [
+    "generate", "sce:std/shared/record_list.scxml", "--with-imports",
+    "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration.static_datamodel",
+]
+place = "backends/kotlin/tests/src/main/kotlin"
+keep = [
+    "com/sce/integration/static_datamodel/*/*.kt",
+    "com/sce/generated/*/*.kt",
+]
+
+# The test profile (docs/SCE_TEST_PROFILE.md): the templates
+# ATestTemplateMatchesItsValuesTest.kt matches against values (§11.4, §11.9),
+# with the records, enums and unions they name; the components
+# ATestComponentRunsThroughItsDoorsTest.kt runs (§12.3); and the suites
+# ATestSuiteRunsThroughItsRunnerTest.kt, ARecordReadsBackTheFormItWritesTest.kt
+# and ACorpusSuiteReplaysToItsExpectedLogsTest.kt run (§11.6 to §11.8, §12.2;
+# docs/SCE_TTCN3_LANE.md §10, §12.1), with every test case, configuration,
+# component and record each reaches. Generated with no
+# package prefix: a configuration's unit names a component's class in
+# `com.sce.generated.<component>`, since it cannot know a prefix another run
+# chose.
+[[generation]]
+arguments = [
+    "generate", "--with-imports",
+    "sce-build/tests/fixtures/test_profile/elapsed_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/every_matcher.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report.scxml",
+    "sce-build/tests/fixtures/test_profile/job_report_of.scxml",
+    "sce-build/tests/fixtures/test_profile/report_within.scxml",
+    "sce-build/tests/fixtures/test_profile/shape_is_circle.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/card_within.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_bounded.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_line_exact.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/order_placed_match.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_at_most.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/quantity_two.scxml",
+    "sce-build/tests/fixtures/test_profile/imports/voucher_is.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/answerer.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/coordinator.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/idler.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/param_asker.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/ptc_keeper.scxml",
+    "sce-build/tests/fixtures/test_profile/runtime/runtime_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/trace_forms/replays_every_form.scxml",
+    "sce-build/tests/fixtures/test_profile/boundary/boundary_suite.scxml",
+    "sce-build/tests/fixtures/test_profile/job_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/orders_suite.scxml",
+    "sce-build/tests/fixtures/ttcn3_export/nested_suite.scxml",
+    "-l", "kotlin", "-o", "{out}",
+]
+place = "backends/kotlin/tests/src/main/kotlin"
+keep = ["com/sce/generated/*/*.kt"]

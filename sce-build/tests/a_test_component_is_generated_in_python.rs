@@ -24,7 +24,7 @@
 //! What the generated components do when they run is held by
 //! `backends/python/tests/integration/static_datamodel/test_a_test_component_runs_through_its_doors.py`,
 //! which imports them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_python.sh`) and runs them through
+//! `scripts/materialize.sh python-static-datamodel`) and runs them through
 //! `sce_runtime.testprofile.TestCaseRun`.
 
 use std::path::{Path, PathBuf};
