@@ -144,6 +144,7 @@
         "validation/unresolved-placeholder",
         "validation/cross-kind-field-not-found",
         "validation/cross-kind-type-mismatch",
+        "validation/enum-value-not-declared",
         "validation/cross-kind-circular-dependency",
         "validation/transform-output-cycle",
         "algorithm/local-shadows-param",

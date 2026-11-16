@@ -1006,6 +1006,7 @@ references against a real document and drift silently.
 | `validation/empty-value` | `validation` | `add_attribute` |  |
 | `validation/enum-no-variants` | `validation` | no |  |
 | `validation/enum-unsupported-underlying-type` | `validation` | no |  |
+| `validation/enum-value-not-declared` | `validation` | `replace_one_of` |  |
 | `validation/enum-variant-duplicate-name` | `validation` | no |  |
 | `validation/enum-variant-duplicate-value` | `validation` | no |  |
 | `validation/enum-variant-value-overflows-underlying` | `validation` | no |  |

@@ -1114,6 +1114,12 @@ pub enum DiagnosticCode {
     ValidationCrossKindFieldNotFound,
     #[serde(rename = "validation/cross-kind-type-mismatch")]
     ValidationCrossKindTypeMismatch,
+    /// An integer literal met by a field of an imported strict enum that is
+    /// the value of none of its variants. The variants' values are a closed
+    /// set, which rides `fix` (SCE_ERROR_CONTRACT.md §3.2); a value that does
+    /// not fit the enum's carrier at all stays a type mismatch.
+    #[serde(rename = "validation/enum-value-not-declared")]
+    ValidationEnumValueNotDeclared,
     #[serde(rename = "validation/cross-kind-circular-dependency")]
     ValidationCrossKindCircularDependency,
     #[serde(rename = "validation/transform-output-cycle")]
@@ -4045,6 +4051,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // NL→IR Mapping Roadmap Item 2: cross-kind typed binding
         ValidationCrossKindFieldNotFound,
         ValidationCrossKindTypeMismatch,
+        ValidationEnumValueNotDeclared,
         ValidationCrossKindCircularDependency,
         ValidationTransformOutputCycle,
         // Algorithm (SCE Protocol-Synthesis RFC §synth-5-A, item A3)
@@ -5530,6 +5537,7 @@ impl DiagnosticCode {
             // anchor; the rejection contract is SCE-internal.
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
+            | ValidationEnumValueNotDeclared
             | ValidationCrossKindCircularDependency
             // An output cycle is a well-formedness rule about this
             // tree's own forge grammar; no external spec names it.
@@ -5773,6 +5781,7 @@ impl DiagnosticCode {
             | ValidationUnresolvedPlaceholder
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
+            | ValidationEnumValueNotDeclared
             | ValidationCrossKindCircularDependency
             | ValidationTransformOutputCycle
             | AlgorithmLocalShadowsParam
@@ -6309,6 +6318,7 @@ impl DiagnosticCode {
             ValidationUnresolvedPlaceholder => "validation/unresolved-placeholder",
             ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
+            ValidationEnumValueNotDeclared => "validation/enum-value-not-declared",
             ValidationCrossKindCircularDependency => "validation/cross-kind-circular-dependency",
             ValidationTransformOutputCycle => "validation/transform-output-cycle",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
@@ -8135,6 +8145,35 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 importing_name.clone(),
                 alias.clone(),
                 field.clone(),
+            ],
+        },
+        // The literal as written is `actual`; the variants' values are the
+        // closed set it is replaced from, in declaration order.
+        ValidationError::EnumValueNotDeclared {
+            importing_kind,
+            importing_name,
+            alias,
+            field,
+            enum_alias,
+            value,
+            variants,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumValueNotDeclared,
+            stage: Stage::Validation,
+            expected: None,
+            actual: observed.clone(),
+            fix: Fix::ReplaceOneOf {
+                candidates: variants.iter().map(|(_, v)| v.to_string()).collect(),
+            }
+            .with_a_choice_to_offer(),
+            key_fragments: vec![
+                importing_kind.to_string(),
+                importing_name.clone(),
+                alias.clone(),
+                field.clone(),
+                enum_alias.clone(),
+                value.to_string(),
             ],
         },
         ValidationError::CrossKindCircularDependency { cycle } => DiagnosticPayload {
@@ -14091,6 +14130,28 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:08e17a70cb512bdc","code":"validation/cross-kind-type-mismatch","stage":"validation","message":"statechart 'monitor': '_event.data.elapsed_ms' expects 'uint32', got a string literal","expected":["uint32"],"actual":"'late'"}"#,
+            ),
+            (
+                // A literal that fits a strict enum's carrier and is the
+                // value of none of its variants: the values are the
+                // closed set the fix offers, in declaration order.
+                "forge/enum-value-not-declared",
+                ValidationError::EnumValueNotDeclared {
+                    importing_kind: ForgeKind::Statechart,
+                    importing_name: "monitor".into(),
+                    alias: "_event.data".into(),
+                    field: "status".into(),
+                    enum_alias: "Result".into(),
+                    value: 7,
+                    variants: vec![
+                        ("ok".into(), 0),
+                        ("error".into(), 1),
+                        ("timeout".into(), 2),
+                    ],
+                    observed: Some("7".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ff1b12d8fc3b9632","code":"validation/enum-value-not-declared","stage":"validation","message":"statechart 'monitor': '_event.data.status' is of enum 'Result', and integer literal 7 is the value of none of its variants (declared: ok=0, error=1, timeout=2)","actual":"7","fix":{"kind":"replace_one_of","candidates":["0","1","2"]}}"#,
             ),
             (
                 // The cycle is a path SCE joins across documents, which no
@@ -20341,6 +20402,8 @@ mod tests {
             // The imported enum's declared variants — a closed set, which
             // is this bucket's definition, and `expected` stays absent.
             | ExpressionUnknownEnumVariant
+            // The values of a strict enum's variants, for the same reason.
+            | ValidationEnumValueNotDeclared
             // A closed record's declared members, for the same reason.
             | ExpressionUnknownMember
             | MeshDeployUnsupportedVersion
@@ -21804,6 +21867,7 @@ mod tests {
                 | ValidationUnresolvedPlaceholder
                 | ValidationCrossKindFieldNotFound
                 | ValidationCrossKindTypeMismatch
+                | ValidationEnumValueNotDeclared
                 | ValidationCrossKindCircularDependency
                 | ValidationTransformOutputCycle
                 | AlgorithmLocalShadowsParam
@@ -22209,9 +22273,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            537,
+            538,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 537 distinct variants to match the DiagnosticCode \
+             expected 538 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22906,6 +22970,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationBytesMaxSizeViolation
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
+            | ValidationEnumValueNotDeclared
             | ValidationCrossKindCircularDependency
             | ValidationTransformOutputCycle
             | AlgorithmLocalShadowsParam

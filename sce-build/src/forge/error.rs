@@ -4938,6 +4938,37 @@ pub enum ValidationError {
         observed: Option<String>,
     },
 
+    /// An integer literal meets a field an imported strict enum types, fits
+    /// the enum's carrier, and is the value of none of its variants:
+    /// `_event.data.status === 7` against `{ok=0, error=1, timeout=2}`.
+    ///
+    /// ⚠ Its own code, not [`Self::CrossKindTypeMismatch`]: the variants'
+    /// values are a closed set, and a closed set rides `fix` as candidates
+    /// (SCE_ERROR_CONTRACT.md §3.2). Carried in the mismatch's `found` prose
+    /// it reached a consumer as a sentence (`declared: ok=0, error=1`) where
+    /// the contract promises a list. A value that does not fit the carrier
+    /// is still a mismatch: no variant can be meant by it.
+    #[error(
+        "{importing_kind} '{importing_name}': '{alias}.{field}' is of enum '{enum_alias}', \
+         and integer literal {value} is the value of none of its variants (declared: {})",
+        declared_variants(.variants)
+    )]
+    EnumValueNotDeclared {
+        importing_kind: ForgeKind,
+        importing_name: String,
+        alias: String,
+        field: String,
+        /// The `<sce:import kind="enum" as="…">` alias the field's type names.
+        enum_alias: String,
+        /// The literal's value.
+        value: i128,
+        /// The enum's variants, name and value, in declaration order.
+        variants: Vec<(String, i128)>,
+        /// The literal as the author wrote it, the record's `actual`;
+        /// `None` when no source text spells it.
+        observed: Option<String>,
+    },
+
     /// Two operands carrying `sce:quantity=…` annotations on
     /// **different** units meet in an arithmetic or bitwise operator.
     /// Arithmetic between different units is rejected without
@@ -6298,6 +6329,16 @@ fn atomic_width_contradiction_message(
          SCE Protocol-Synthesis RFC §5.P: {rule}. \
          Repair: {repair}."
     )
+}
+
+/// The variants of an enum as [`ValidationError::EnumValueNotDeclared`]
+/// names them, `name=value` in declaration order.
+fn declared_variants(variants: &[(String, i128)]) -> String {
+    variants
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The sentence of [`ValidationError::AttributeRuleViolated`]: the value as

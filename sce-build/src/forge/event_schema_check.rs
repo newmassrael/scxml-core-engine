@@ -1807,15 +1807,12 @@ fn check_comparison_type(
             transition,
             literal,
             diag_label,
-            ValidationError::CrossKindTypeMismatch {
-                importing_kind: ForgeKind::Statechart,
-                importing_name: statechart_name.to_string(),
-                alias: EVENT_DATA_PATH.to_string(),
-                field: field.id.clone(),
-                found: not_declared.found,
-                expected: not_declared.expected,
+            not_declared.refusal(
+                statechart_name,
+                EVENT_DATA_PATH.to_string(),
+                &field.id,
                 observed,
-            },
+            ),
         ));
     }
     Ok(())
@@ -2124,8 +2121,35 @@ fn integer_literal_value(operand: &TypedExpr) -> Option<i128> {
 /// can flow through the same `CrossKindTypeMismatch` reuse precedent
 /// without a new wire code.
 struct EnumVariantNotDeclared {
-    found: String,
-    expected: String,
+    /// The `<sce:import kind="enum" as="…">` alias the field's type names.
+    enum_alias: String,
+    /// The literal's value.
+    value: i128,
+    /// The enum's variants, name and value, in declaration order.
+    variants: Vec<(String, i128)>,
+}
+
+impl EnumVariantNotDeclared {
+    /// The refusal of the literal at a field of `alias` (`_event.data`, or the
+    /// `<send>` the param belongs to) in the statechart `importing_name`.
+    fn refusal(
+        self,
+        importing_name: &str,
+        alias: String,
+        field: &str,
+        observed: Option<String>,
+    ) -> ValidationError {
+        ValidationError::EnumValueNotDeclared {
+            importing_kind: ForgeKind::Statechart,
+            importing_name: importing_name.to_string(),
+            alias,
+            field: field.to_string(),
+            enum_alias: self.enum_alias,
+            value: self.value,
+            variants: self.variants,
+            observed,
+        }
+    }
 }
 
 /// Strict variant membership — check layered atop [`enum_underlying_overflow`]. Returns `Some`
@@ -2169,22 +2193,18 @@ fn enum_variant_not_declared(
     if enum_model.variants.iter().any(|v| v.value == value) {
         return None;
     }
-    // Render the declared variants in declaration order — the IR
-    // preserves `<sce:variant>` ordering and authors typically scan
-    // for the value they meant by recalling the document's natural
-    // order, not by sorting alphabetically.
-    let declared = enum_model
-        .variants
-        .iter()
-        .map(|v| format!("{name}={value}", name = v.name, value = v.value))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // The declared variants in declaration order — the IR preserves
+    // `<sce:variant>` ordering and authors typically scan for the value
+    // they meant by recalling the document's natural order, not by
+    // sorting alphabetically.
     Some(EnumVariantNotDeclared {
-        found: format!(
-            "integer literal {value}, which is not a declared variant of enum '{alias}' (declared: {declared})",
-            alias = enum_ref.alias,
-        ),
-        expected: format!("enum:{alias}", alias = enum_ref.alias),
+        enum_alias: enum_ref.alias.clone(),
+        value,
+        variants: enum_model
+            .variants
+            .iter()
+            .map(|v| (v.name.clone(), v.value))
+            .collect(),
     })
 }
 
@@ -2608,15 +2628,12 @@ fn check_send_param(
             literal,
             action,
             diag_label,
-            ValidationError::CrossKindTypeMismatch {
-                importing_kind: ForgeKind::Statechart,
-                importing_name: statechart_name.to_string(),
-                alias: format!("<send event=\"{}\">", action.event),
-                field: field.id.clone(),
-                found: not_declared.found,
-                expected: not_declared.expected,
+            not_declared.refusal(
+                statechart_name,
+                format!("<send event=\"{}\">", action.event),
+                &field.id,
                 observed,
-            },
+            ),
         ));
     }
     Ok(())

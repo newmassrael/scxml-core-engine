@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
@@ -1282,10 +1283,11 @@ fn positive_enum_literal_at_send_side_boundary_accepts() {
 /// Negative — `_event.data.status === 7` against the `enum:Result`
 /// (uint8 carrier, declared `{ok=0, error=1, timeout=2}`, default
 /// strict). 7 fits the underlying width but is not declared, so the
-/// strict-membership layer rejects with the reused
-/// `validation/cross-kind-type-mismatch` wire code (design lock #2 —
-/// no new code). The diagnostic enumerates the declared variant set
-/// so authors can pick the value they meant.
+/// strict-membership layer rejects with `validation/enum-value-not-declared`,
+/// whose fix offers the declared values as the closed set they are
+/// (SCE_ERROR_CONTRACT.md §3.2). It borrowed
+/// `validation/cross-kind-type-mismatch` until 2026-11-16, with the set
+/// as prose in the message.
 #[test]
 fn negative_enum_variant_not_declared_receive_side_rejects() {
     let dir = tempdir().expect("tempdir");
@@ -1306,29 +1308,37 @@ fn negative_enum_variant_not_declared_receive_side_rejects() {
     )
     .err()
     .expect("orchestrator should reject undeclared variant 7 against strict enum");
+    let record = &err.error.to_diagnostics()[0];
+    assert_eq!(
+        serde_json::to_value(&record.fix).expect("a fix serialises"),
+        serde_json::json!({"kind": "replace_one_of", "candidates": ["0", "1", "2"]}),
+        "the declared values are the candidates, in declaration order"
+    );
+    assert!(record.expected.is_none(), "the set rides fix alone");
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::CrossKindTypeMismatch {
+            ValidationError::EnumValueNotDeclared {
                 field,
-                found,
-                expected,
+                enum_alias,
+                value,
+                variants,
                 alias,
                 ..
             } => {
                 assert_eq!(field, "status");
-                assert_eq!(expected, "enum:Result");
-                assert!(
-                    found.contains("integer literal 7")
-                        && found.contains("not a declared variant")
-                        && found.contains("Result")
-                        && found.contains("ok=0")
-                        && found.contains("error=1")
-                        && found.contains("timeout=2"),
-                    "expected message to name literal 7 + declared variant set; got {found:?}"
+                assert_eq!(enum_alias, "Result");
+                assert_eq!(value, 7);
+                assert_eq!(
+                    variants,
+                    vec![
+                        ("ok".to_string(), 0),
+                        ("error".to_string(), 1),
+                        ("timeout".to_string(), 2)
+                    ]
                 );
                 assert_eq!(alias, "_event.data");
             }
-            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+            other => panic!("expected EnumValueNotDeclared, got {other:?}"),
         },
         other => panic!("expected Validation error, got {other:?}"),
     }
@@ -1359,27 +1369,24 @@ fn negative_enum_variant_not_declared_send_side_rejects() {
     .expect("orchestrator should reject undeclared variant 7 on send param against strict enum");
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::CrossKindTypeMismatch {
+            ValidationError::EnumValueNotDeclared {
                 field,
-                found,
-                expected,
+                enum_alias,
+                value,
                 alias,
                 observed,
                 ..
             } => {
                 assert_eq!(field, "status");
-                assert_eq!(expected, "enum:Result");
-                assert!(
-                    found.contains("integer literal 7") && found.contains("not a declared variant"),
-                    "expected message to name literal 7 + membership reason; got {found:?}"
-                );
+                assert_eq!(enum_alias, "Result");
+                assert_eq!(value, 7);
                 assert_eq!(observed.as_deref(), Some("7"));
                 assert!(
                     alias.contains("send") && alias.contains("job.completed"),
                     "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"
                 );
             }
-            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+            other => panic!("expected EnumValueNotDeclared, got {other:?}"),
         },
         other => panic!("expected Validation error, got {other:?}"),
     }

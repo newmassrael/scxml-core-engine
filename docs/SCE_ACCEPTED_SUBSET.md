@@ -9759,9 +9759,13 @@ imported enum's declared `<sce:variant value="…"/>` set. A
 comparison like `_event.data.status === 7` against an enum
 declaring `{ok=0, error=1, timeout=2}` fits the underlying carrier
 but is not a declared variant, and raises
-`validation/cross-kind-type-mismatch` (same reuse precedent — no
-new wire code). The diagnostic enumerates the declared variant set
-in declaration order so authors can pick the value they meant.
+`validation/enum-value-not-declared`: `actual` is the literal as
+written, and `fix` is `replace_one_of` with the declared values, in
+declaration order, as candidates — the closed set the contract puts
+in `fix` (SCE_ERROR_CONTRACT §3.2). The message names each variant
+with its value. Until 2026-11-16 this borrowed
+`validation/cross-kind-type-mismatch` and carried the set as prose
+in the message, where a consumer could not read it as a list.
 Receive-side and send-side branches share a single membership
 helper so the diagnostic shape is identical on both sites; the
 width-overflow diagnostic always wins when both conditions hold
@@ -10080,7 +10084,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (537 codes)
+## Appendix — `DiagnosticCode` index (538 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10219,6 +10223,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/unresolved-placeholder` | Validation |
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |
+| `validation/enum-value-not-declared` | Validation |
 | `validation/cross-kind-circular-dependency` | Validation |
 | `validation/transform-output-cycle` | Validation |
 | `validation/enum-no-variants` | Validation |
