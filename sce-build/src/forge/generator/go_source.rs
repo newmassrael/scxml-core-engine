@@ -340,16 +340,17 @@ pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
 
 /// What a reader in another package knows of a codec the Go backend prints:
 /// the elements its value presents, in the order `Make{Codec}` takes them, and
-/// the elements its encode derives, each from what it measures. A procedure
-/// and a validator that hold a value of the codec read and make it through
-/// this ([`GoPrinted::read`], [`GoPrinted::rebuilt`]), so neither spells a
-/// printed codec's interface of its own.
+/// the numbers its encode derives into a field, which the value answers by
+/// the method [`wire_method`] names. A procedure, a validator and an
+/// algorithm that hold a value of the codec read and make it through this
+/// ([`GoPrinted::read`], [`GoPrinted::rebuilt`]), so none spells a printed
+/// codec's interface of its own.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GoPrinted {
     /// Each element the value presents, in declaration order.
     presented: Vec<GoPresented>,
-    /// Each element the encode derives as a number.
-    derived: Vec<GoDerived>,
+    /// The field id of each number the encode derives into a field.
+    derived: Vec<String>,
 }
 
 /// One element a printed Go value presents.
@@ -365,21 +366,6 @@ struct GoPresented {
     /// gate decides it, or the value states it only while its content is
     /// absent.
     optional: bool,
-}
-
-/// One element the encode of a printed Go codec derives, which the value
-/// holds no field for: the length of the byte string or text `content`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct GoDerived {
-    /// The field id of the length.
-    id: String,
-    /// The Go type of the length's field.
-    ty: String,
-    /// The field id of the byte string or text it measures.
-    content: String,
-    /// The `sce:length-arith` the wire adds to the count of bytes, spelled as
-    /// a Go term (` + 2`, ` - 1`), empty where it adds nothing.
-    arith: String,
 }
 
 /// A rebuild of a printed Go codec's value with one element assigned: the
@@ -408,7 +394,7 @@ impl GoPrinted {
     /// What a reader outside its package knows of the codec `plan`, whose
     /// value's struct is `struct_name`; the plan is one [`unlowered`]
     /// answers `None` for.
-    pub(crate) fn of(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> Self {
+    pub(crate) fn of(plan: &EncodePlan<'_>, struct_name: &str) -> Self {
         let presented = plan
             .elements
             .iter()
@@ -426,59 +412,25 @@ impl GoPrinted {
                 }
             })
             .collect();
-        let derived = plan
-            .derivations
-            .iter()
-            .filter_map(|derived| {
-                let (ElementId::Field(id), Derive::Number(number)) =
-                    (&derived.element, &derived.by)
-                else {
-                    return None;
-                };
-                // A number of one measure always there, read as the encode
-                // derives it. A number of content a gate decides, or of
-                // several measures, is read by no reader yet.
-                let ([measure], NumberInto::Field { field, .. }) =
-                    (number.measures.as_slice(), &number.into)
-                else {
-                    return None;
-                };
-                let Measured::Bytes {
-                    field: content,
-                    offset,
-                } = &measure.of
-                else {
-                    return None;
-                };
-                if measure.gated {
-                    return None;
-                }
-                Some(GoDerived {
-                    id: id.clone(),
-                    ty: l.type_name(&field.sce_type).into_owned(),
-                    content: content.id.clone(),
-                    arith: length_arith(offset),
-                })
-            })
+        let derived = wire_numbers(plan)
+            .into_iter()
+            .map(|(id, _)| id.to_string())
             .collect();
         GoPrinted { presented, derived }
     }
 
     /// The read of the element `id`, of the type `ty`, of the value `held`:
     /// an element the value presents by its method, a byte string or a text
-    /// as the slice or the string it holds ([`element_read`]); an element the
-    /// encode derives as the encode derives it, from what it measures, since
-    /// the value holds no field for it (docs/adr/0081 §3). A byte string or a
-    /// text a gate decides is read as the optional type of the slice or the
-    /// string, as the template's value held it.
+    /// as the slice or the string it holds ([`element_read`]); a number the
+    /// encode derives into a field by the method that derives it as the
+    /// encode does ([`wire_method`]), since the value holds no field for it
+    /// (docs/adr/0081 §3), and a length the value states while its content is
+    /// absent as the number the frame carries, which that method answers too.
+    /// A byte string or a text a gate decides is read as the optional type of
+    /// the slice or the string, as the template's value held it.
     pub(crate) fn read(&self, held: &str, id: &str, ty: &SceType) -> String {
-        if let Some(derived) = self.derived.iter().find(|d| d.id == id) {
-            return format!(
-                "{}({held}.{}().Len(){})",
-                derived.ty,
-                filters::to_pascal_case(derived.content.clone()),
-                derived.arith
-            );
+        if self.derived.iter().any(|derived| derived == id) {
+            return format!("{held}.{}()", wire_method(id));
         }
         let call = format!("{held}.{}()", filters::to_pascal_case(id.to_string()));
         match self.presented.iter().find(|p| p.id == id) {
@@ -541,6 +493,118 @@ impl GoPrinted {
             value: format!("{make}({})", arguments.join(", ")),
             made,
         })
+    }
+}
+
+/// Each number the encode of `plan` derives into a field, by the field's id,
+/// in the order of the derivations.
+fn wire_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<(&'p str, &'p Number<'m>)> {
+    plan.derivations
+        .iter()
+        .filter_map(|derived| match (&derived.element, &derived.by) {
+            (ElementId::Field(id), Derive::Number(number))
+                if matches!(number.into, NumberInto::Field { .. }) =>
+            {
+                Some((id.as_str(), number))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The method of a printed Go value that answers the number its encode
+/// derives into the field `id`, as the frame carries it: `Wire` and the
+/// field's Go name. The value holds no field for a derived number
+/// (docs/adr/0081 §3), and a length it states while its content is absent is
+/// presented by the method of the field's own name, so the number the frame
+/// carries is a method of another name.
+pub(crate) fn wire_method(id: &str) -> String {
+    format!("Wire{}", filters::to_pascal_case(id.to_string()))
+}
+
+/// The methods of the value `struct_name` that answer each number its encode
+/// derives into a field as the frame carries it ([`wire_method`]), read off
+/// the elements the value holds as the encode reads them off a source: the
+/// first measure always there; where every measure may be absent, the first
+/// one there, and where none is, zero, what the value states, or, for a
+/// length gated beside its content, no number, as the field is then not on
+/// the wire. A value whose measures disagree has no frame, and its encode
+/// refuses it; the method answers its first measure.
+fn wire_methods(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+    let mut out = String::new();
+    let mut seen = BTreeSet::new();
+    for (id, number) in wire_numbers(plan) {
+        if !seen.insert(id) {
+            continue;
+        }
+        let NumberInto::Field { field, absent, .. } = &number.into else {
+            unreachable!("`wire_numbers` keeps a number into a field");
+        };
+        let ty = l.type_name(&field.sce_type).into_owned();
+        let method = wire_method(id);
+        let optional = *absent == Absent::Zero;
+        let returned = if optional {
+            format!("optional.Of[{ty}]")
+        } else {
+            ty.clone()
+        };
+        let wrap = |size: &str| {
+            if optional {
+                format!("optional.Some({ty}({size}))")
+            } else {
+                format!("{ty}({size})")
+            }
+        };
+        let mut body = String::new();
+        match number.measures.iter().find(|measure| !measure.gated) {
+            Some(anchor) => {
+                let size = held_measure(anchor, &held_element(anchor));
+                body.push_str(&format!("\treturn {}\n", wrap(&size)));
+            }
+            None => {
+                for measure in &number.measures {
+                    let size = held_measure(measure, "_v");
+                    body.push_str(&format!(
+                        "\tif _v, ok := {}.Get(); ok {{\n\t\treturn {}\n\t}}\n",
+                        held_element(measure),
+                        wrap(&size)
+                    ));
+                }
+                body.push_str(&match absent {
+                    Absent::Zero => format!("\treturn optional.None[{ty}]()\n"),
+                    Absent::Stated => format!(
+                        "\tif _s, ok := s.{}.Get(); ok {{\n\t\treturn _s\n\t}}\n\treturn 0\n",
+                        member(id)
+                    ),
+                    Absent::Never => "\treturn 0\n".to_string(),
+                    Absent::Group => unreachable!("`unlowered` prints no length a group holds"),
+                });
+            }
+        }
+        out.push_str(&format!(
+            "\n// {method} returns the {id} the frame of the value carries, which the\n\
+             // encode derives from what it measures (docs/adr/0081 §3).\n\
+             func (s *{struct_name}) {method}() {returned} {{\n{body}}}\n"
+        ));
+    }
+    out
+}
+
+/// The field of the value that holds the content `measure` measures.
+fn held_element(measure: &Measure<'_>) -> String {
+    let content = match &measure.of {
+        Measured::Bytes { field, .. } => field,
+        _ => unreachable!("`unlowered` prints a length of byte strings or texts only"),
+    };
+    format!("s.{}", member(&content.id))
+}
+
+/// The number `measure` gives of the content `held` holds, an `int`: the
+/// bytes of a byte string or a text, less or more its `sce:length-arith`.
+fn held_measure(measure: &Measure<'_>, held: &str) -> String {
+    match &measure.of {
+        Measured::Bytes { offset, .. } => format!("{held}.Len(){}", length_arith(offset)),
+        _ => unreachable!("`unlowered` prints a length of byte strings or texts only"),
     }
 }
 
@@ -718,6 +782,7 @@ pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> G
              }}\n"
         ));
     }
+    after.push_str(&wire_methods(plan, l, struct_name));
     after.push('\n');
     after.push_str(&encode_source(plan, l, struct_name));
 

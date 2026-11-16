@@ -187,13 +187,21 @@ fn a_byte_string_is_held_to_its_bound_and_its_length_is_derived() {
             "\t\tpayload: _bPayload,\n",
         ],
     );
-    // The length is no field, no method and no parameter of the value.
+    // The length is no field, no element the source presents and no
+    // parameter of the value: the value answers it by the method that
+    // derives it.
+    holds(
+        "codec_length_ref",
+        &text,
+        &["func (s *CodecLengthRef) WireLen() uint8 {\n\treturn uint8(s.payload.Len())\n}\n"],
+    );
     holds_none(
         "codec_length_ref",
         &text,
         &[
             "\tlen uint8\n",
-            "Len() uint8",
+            "\tLen() uint8",
+            "CodecLengthRef) Len()",
             "len uint8,",
             "\t\tlen: Len,",
             "src.Len()",
@@ -226,7 +234,7 @@ fn a_text_is_held_to_its_bound_and_read_as_its_string() {
     holds_none(
         "keyexpr_entry",
         &text,
-        &["PatternLen() uint8", "\tpatternLen uint8\n"],
+        &["\tPatternLen() uint8", "\tpatternLen uint8\n"],
     );
 }
 
@@ -333,12 +341,58 @@ fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
             "\tif src.Beta().Len() != src.Alpha().Len() {\n\t\treturn codec.ErrInconsistentSource\n\t}\n",
             "\tif src.Alpha().Len() > 0xFF {\n\t\treturn codec.ErrLengthOutOfRange\n\t}\n",
             "\t_dSpanLen := uint8(src.Alpha().Len())\n",
+            "func (s *CodecLengthShared) WireSpanLen() uint8 {\n\treturn uint8(s.alpha.Len())\n}\n",
         ],
     );
     holds_none(
         "codec_length_shared",
         &text,
-        &["SpanLen() uint8", "\tspanLen uint8\n"],
+        &["\tSpanLen() uint8", "\tspanLen uint8\n"],
+    );
+}
+
+/// A length of content a gate decides is answered as the frame carries it:
+/// where the length is gated beside its content, the optional type of the
+/// number, present exactly where the content is; where the value states it
+/// while its content is absent, the first content there, and otherwise what
+/// the value states.
+///
+/// Turns red where `wire_methods` reads a gated content without testing its
+/// presence, answers a length gated beside its content as a bare number, or
+/// stops falling back to what the value states.
+#[test]
+fn a_length_of_gated_content_is_answered_as_the_frame_carries_it() {
+    assert!(unlowered("codec_present_if_string").is_empty());
+    let text = resource_go("codec_present_if_string");
+    holds(
+        "codec_present_if_string",
+        &text,
+        &[
+            "func (s *CodecPresentIfString) WireTextLen() optional.Of[uint8] {\n\
+           \tif _v, ok := s.text.Get(); ok {\n\
+           \t\treturn optional.Some(uint8(_v.Len()))\n\
+           \t}\n\
+           \treturn optional.None[uint8]()\n\
+           }\n",
+        ],
+    );
+    assert!(unlowered("codec_length_stated").is_empty());
+    let text = resource_go("codec_length_stated");
+    holds(
+        "codec_length_stated",
+        &text,
+        &["func (s *CodecLengthStated) WireSpanLen() uint8 {\n\
+           \tif _v, ok := s.alpha.Get(); ok {\n\
+           \t\treturn uint8(_v.Len())\n\
+           \t}\n\
+           \tif _v, ok := s.beta.Get(); ok {\n\
+           \t\treturn uint8(_v.Len())\n\
+           \t}\n\
+           \tif _s, ok := s.spanLen.Get(); ok {\n\
+           \t\treturn _s\n\
+           \t}\n\
+           \treturn 0\n\
+           }\n"],
     );
 }
 
@@ -449,13 +503,14 @@ fn a_procedure_cannot_assign_a_length_a_printed_codec_derives() {
     );
 }
 
-/// A validator reads a length the encode of a printed codec derives as the
-/// encode derives it, from the bytes the value presents, and reads the byte
-/// string as the slice its bounded value holds.
+/// A validator reads a length the encode of a printed codec derives by the
+/// method of the value that derives it as the encode does
+/// (`go_source::wire_method`), as the value holds no field for it.
 ///
-/// Turns red where `GoPrinted::read` reads a derived element by a method the
-/// value does not have, or where `stateful_import_field_renames` stops
-/// reading a printed codec's element through `GoPrinted::read`.
+/// Turns red where `GoPrinted::read` reads a derived element by a method of
+/// the field's own name, which the value does not have, or where
+/// `stateful_import_field_renames` stops reading a printed codec's element
+/// through `GoPrinted::read`.
 #[test]
 fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures() {
     let name = "go_validator_reads_printed_length";
@@ -476,7 +531,7 @@ fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures()
 "#,
     )
     .unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
-    holds(name, &validator, &["uint8(sceSelf.Frame.Payload().Len())"]);
+    holds(name, &validator, &["sceSelf.Frame.WireLen()"]);
     holds_none(name, &validator, &["sceSelf.Frame.Len"]);
 }
 

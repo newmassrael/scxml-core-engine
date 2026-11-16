@@ -4624,14 +4624,6 @@ pub struct ForgeCompileOptions {
     /// C++ compile only; `None` elsewhere, where no field is read by call.
     pub element_type_cpp_printed: Option<std::collections::HashSet<String>>,
 
-    /// docs/adr/0081 step 4: the element-type candidates the Go backend
-    /// prints from their encode plan, by the snake element name of
-    /// [`Self::element_type_field_schemas`]. Such an element presents each
-    /// field through its method, so an algorithm iterating a collection of it
-    /// reads `entry.<field>` as a call. Populated with the schemas, on a Go
-    /// compile only; `None` elsewhere.
-    pub element_type_go_printed: Option<std::collections::HashSet<String>>,
-
     /// docs/adr/0081 step 5: the element-type candidates the Swift backend
     /// prints from their encode plan (`swift_codec_printed_file`), by the snake
     /// element name. Such an element's encode takes no flag input its value
@@ -4647,6 +4639,17 @@ pub struct ForgeCompileOptions {
     /// (`.bytes`, `.text`). Populated with the schemas, on a Kotlin compile
     /// only; `None` elsewhere.
     pub element_type_kotlin_printed: Option<std::collections::HashSet<String>>,
+
+    /// docs/adr/0081 step 4: the element-type candidates the Go backend
+    /// prints from their encode plan, by the snake element name of
+    /// [`Self::element_type_field_schemas`], each with what a reader knows of
+    /// it (`GoPrinted`). Such an element presents each field through its
+    /// method, so an algorithm iterating a collection of it reads each field
+    /// as the codec presents it, a byte string or a text as what its bounded
+    /// value holds and a number the encode derives by the method that derives
+    /// it. Populated with the schemas, on a Go compile only; `None` elsewhere.
+    pub element_type_go_printed:
+        Option<std::collections::HashMap<String, forge::generator::GoPrinted>>,
 
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
@@ -5692,9 +5695,12 @@ fn compile_document_set(
     // Likewise on a Kotlin compile: a reader of such an element reads each
     // byte string and text through the value class of its bound.
     let mut element_type_kotlin_printed: HashSet<String> = HashSet::new();
-    // Likewise on a Go compile: a reader of such an element reads each field
-    // through its method.
-    let mut element_type_go_printed: HashSet<String> = HashSet::new();
+    // Likewise on a Go compile, each with what a reader knows of it: a reader
+    // of such an element reads each field through its method.
+    let mut element_type_go_printed: std::collections::HashMap<
+        String,
+        forge::generator::GoPrinted,
+    > = std::collections::HashMap::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5845,10 +5851,23 @@ fn compile_document_set(
                     {
                         element_type_cpp_printed.insert(filters::to_snake_case(key.clone()));
                     }
-                    if language == generator::Language::Go
-                        && go_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
-                    {
-                        element_type_go_printed.insert(filters::to_snake_case(key.clone()));
+                    // What a reader knows of the printed element, which an
+                    // algorithm reads each of its fields through.
+                    if language == generator::Language::Go {
+                        let reads = read_codec_file_as(
+                            forge_path,
+                            &[],
+                            options,
+                            generator::Language::Go,
+                            |model, imports, _| {
+                                forge::generator::go_codec_printed_reads(&model, imports)
+                            },
+                        )?
+                        .flatten();
+                        if let Some(reads) = reads {
+                            element_type_go_printed
+                                .insert(filters::to_snake_case(key.clone()), reads);
+                        }
                     }
                     if language == generator::Language::Swift
                         && swift_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
@@ -6330,7 +6349,7 @@ fn compile_document_set(
                 element_kotlin_printed: element_type_kotlin_printed
                     .contains(&filters::to_snake_case(bc.element_type.clone())),
                 element_go_printed: element_type_go_printed
-                    .contains(&filters::to_snake_case(bc.element_type.clone())),
+                    .contains_key(&filters::to_snake_case(bc.element_type.clone())),
             },
         );
     }
@@ -6458,14 +6477,14 @@ fn compile_document_set(
         if !element_type_cpp_printed.is_empty() {
             overridden.element_type_cpp_printed = Some(element_type_cpp_printed);
         }
-        if !element_type_go_printed.is_empty() {
-            overridden.element_type_go_printed = Some(element_type_go_printed);
-        }
         if !element_type_swift_printed.is_empty() {
             overridden.element_type_swift_printed = Some(element_type_swift_printed);
         }
         if !element_type_kotlin_printed.is_empty() {
             overridden.element_type_kotlin_printed = Some(element_type_kotlin_printed);
+        }
+        if !element_type_go_printed.is_empty() {
+            overridden.element_type_go_printed = Some(element_type_go_printed);
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);

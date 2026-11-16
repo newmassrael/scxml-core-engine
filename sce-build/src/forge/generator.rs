@@ -54,6 +54,11 @@ mod swift_test_template;
 pub(crate) mod test_tables;
 pub(crate) mod test_template_walk;
 
+/// What a reader in another package knows of a codec the Go backend prints
+/// from its plan (docs/adr/0081 step 4), which a compile's options carry for
+/// the element types an algorithm iterates.
+pub use go_source::GoPrinted;
+
 /// A byte case of the Rust conformance harness, its source a literal of the
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
 pub(crate) use rust_source::{
@@ -10905,14 +10910,9 @@ pub(crate) fn go_codec_printed_reads(
 ) -> Option<go_source::GoPrinted> {
     let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
     match (go_source::unlowered(&plan), plan) {
-        (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-            let l = LangCtx::new(crate::generator::Language::Go, imports);
-            Some(go_source::GoPrinted::of(
-                &p,
-                &l,
-                &filters::to_pascal_case(m.name.clone()),
-            ))
-        }
+        (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => Some(
+            go_source::GoPrinted::of(&p, &filters::to_pascal_case(m.name.clone())),
+        ),
         _ => None,
     }
 }
@@ -40976,9 +40976,34 @@ struct ForeachMembers {
     types: Vec<(String, SceType)>,
     /// `("<item>.<field>", "<len_member>")`, the C11 length sibling.
     lens: Vec<(String, String)>,
-    /// `("<item>.<field>", item, field)`, read through the element's
-    /// accessor on the C++ backend.
-    accessors: Vec<(String, String, String)>,
+    /// Each field read through the element's accessor, on the C++ and the Go
+    /// backends.
+    accessors: Vec<MemberAccessor>,
+}
+
+/// A field of a collection element a backend prints from its plan, which an
+/// algorithm reads through the element's accessor (docs/adr/0081 step 4).
+struct MemberAccessor {
+    /// `"<item>.<field>"`.
+    path: String,
+    /// The foreach item.
+    item: String,
+    /// The element's field.
+    field: String,
+    /// On a Go compile, what a reader knows of the element's codec, which
+    /// reads the field as the codec presents it ([`go_source::GoPrinted::read`]).
+    go: Option<go_source::GoPrinted>,
+}
+
+/// The element types the backend of a compile prints from their plan, by
+/// snake element name: on a C++ or a Kotlin compile their names
+/// (`ForgeCompileOptions::element_type_cpp_printed`,
+/// `ForgeCompileOptions::element_type_kotlin_printed`), and on a Go compile
+/// what a reader knows of each (`ForgeCompileOptions::element_type_go_printed`).
+#[derive(Clone, Copy)]
+struct PrintedElements<'a> {
+    names: Option<&'a std::collections::HashSet<String>>,
+    go: Option<&'a std::collections::HashMap<String, go_source::GoPrinted>>,
 }
 
 /// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
@@ -41000,16 +41025,16 @@ struct ForeachMembers {
 /// tail/fixed `bytes` field. The projection reads this so the borrowed
 /// view carries the *actual* length sibling, never a `_len` guess.
 ///
-/// Where the element is a codec the C++ backend prints from its plan
-/// (`printed`, docs/adr/0081 step 4), it records `(path, item, field)` in
+/// Where the element is a codec the C++ or the Go backend prints from its
+/// plan (`printed`, docs/adr/0081 step 4), it records the field in
 /// `accessors`: such an element presents each field through an accessor, so
-/// C++ reads the path as a call. Walks the same nested-block structure as
-/// [`crate::forge::model::AlgorithmModel::body_bindings`].
+/// the backend reads the path as a call. Walks the same nested-block
+/// structure as [`crate::forge::model::AlgorithmModel::body_bindings`].
 fn collect_bc_foreach_member_types(
     stmts: &[AlgorithmStmt],
     imports: &[ImportContext],
     schemas: &std::collections::HashMap<String, crate::ElementFieldSchema>,
-    printed: Option<&std::collections::HashSet<String>>,
+    printed: PrintedElements<'_>,
     out: &mut ForeachMembers,
 ) {
     for s in stmts {
@@ -41019,14 +41044,20 @@ fn collect_bc_foreach_member_types(
             } => {
                 if let Some(imp) = bounded_collection_import(imports, source) {
                     if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
-                        let by_accessor = printed.is_some_and(|p| p.contains(elem_snake));
+                        let go = printed.go.and_then(|reads| reads.get(elem_snake));
+                        let by_accessor =
+                            printed.names.is_some_and(|p| p.contains(elem_snake)) || go.is_some();
                         if let Some(fields) = schemas.get(elem_snake) {
                             for (fname, fty, len_field) in fields {
                                 let path = format!("{item}.{fname}");
                                 out.types.push((path.clone(), fty.clone()));
                                 if by_accessor {
-                                    out.accessors
-                                        .push((path.clone(), item.clone(), fname.clone()));
+                                    out.accessors.push(MemberAccessor {
+                                        path: path.clone(),
+                                        item: item.clone(),
+                                        field: fname.clone(),
+                                        go: go.cloned(),
+                                    });
                                 }
                                 if matches!(fty, SceType::Bytes | SceType::String) {
                                     let len_member =
@@ -45324,11 +45355,11 @@ pub(crate) struct AlgorithmTypes<'a> {
     pub(crate) borrowed_records: std::collections::HashSet<String>,
     /// `"<name>.<field>"` for a collection element's fields.
     members: Vec<(String, SceType)>,
-    /// `("<name>.<field>", name, field)` for each field of a collection
-    /// element the backend prints from its plan, which C++ reads through the
-    /// element's accessor and Kotlin out of the value class a byte string or
-    /// a text is held in (docs/adr/0081 step 4).
-    member_accessors: Vec<(String, String, String)>,
+    /// Each field of a collection element the backend prints from its plan,
+    /// which C++ and Go read through the element's accessor and Kotlin out of
+    /// the value class a byte string or a text is held in (docs/adr/0081 step
+    /// 4).
+    member_accessors: Vec<MemberAccessor>,
     /// `"<name>.<field>"` for a record's fields, each typed as its schema
     /// declares it — a scalar, or an optional scalar (docs/adr/0055).
     record_members: Vec<(String, EntryType)>,
@@ -45639,13 +45670,15 @@ impl<'a> AlgorithmTypes<'a> {
                 &m.body,
                 imports,
                 schemas,
-                // One of the three is populated, for the backend the
-                // algorithm is generated for.
-                options
-                    .element_type_cpp_printed
-                    .as_ref()
-                    .or(options.element_type_kotlin_printed.as_ref())
-                    .or(options.element_type_go_printed.as_ref()),
+                // One of them is populated, for the backend the algorithm is
+                // generated for.
+                PrintedElements {
+                    names: options
+                        .element_type_cpp_printed
+                        .as_ref()
+                        .or(options.element_type_kotlin_printed.as_ref()),
+                    go: options.element_type_go_printed.as_ref(),
+                },
                 &mut foreach_members,
             );
         }
@@ -46326,30 +46359,40 @@ fn render_algorithm(
     // its plan is presented through the element's accessor (docs/adr/0081
     // step 4), so the item's field is read as a call. The set of printed
     // elements is of the backend this compile is for, and empty on any other.
-    // A Go element presents a byte string or a text as its bounded value, read
-    // as the slice or the string it holds ([`go_source::element_read`]).
+    // A Go element is read as its codec presents the field
+    // ([`go_source::GoPrinted::read`]): a byte string or a text as the slice
+    // or the string its bounded value holds, the optional type of them where a
+    // gate decides it, and a number the encode derives by the method that
+    // derives it.
     if matches!(lang, Language::Cpp | Language::Go) {
-        for (path, item, field) in &types.member_accessors {
-            let call = format!("{}.{}()", l.local_id(item), l.codec_field_id(field));
-            let read = match types.members.iter().find(|(p, _)| p == path) {
-                Some((_, ty)) if matches!(lang, Language::Go) => go_source::element_read(&call, ty),
-                _ => call,
+        for accessor in &types.member_accessors {
+            let held = l.local_id(&accessor.item);
+            let read = match (
+                &accessor.go,
+                types.members.iter().find(|(p, _)| *p == accessor.path),
+            ) {
+                (Some(printed), Some((_, ty))) => printed.read(&held, &accessor.field, ty),
+                _ => format!("{held}.{}()", l.codec_field_id(&accessor.field)),
             };
-            record_renames.push((path.clone(), read));
+            record_renames.push((accessor.path.clone(), read));
         }
     }
     // One the Kotlin backend prints holds a byte string or a text in the value
     // class of its bound, so the item's field is read out of the class.
     if matches!(lang, Language::Kotlin) {
-        for (path, item, field) in &types.member_accessors {
-            let held = match types.members.iter().find(|(p, _)| p == path) {
+        for accessor in &types.member_accessors {
+            let held = match types.members.iter().find(|(p, _)| *p == accessor.path) {
                 Some((_, SceType::Bytes)) => "bytes",
                 Some((_, SceType::String)) => "text",
                 _ => continue,
             };
             record_renames.push((
-                path.clone(),
-                format!("{}.{}.{held}", l.local_id(item), l.codec_field_id(field)),
+                accessor.path.clone(),
+                format!(
+                    "{}.{}.{held}",
+                    l.local_id(&accessor.item),
+                    l.codec_field_id(&accessor.field)
+                ),
             ));
         }
     }
