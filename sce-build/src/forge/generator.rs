@@ -585,6 +585,15 @@ pub struct ImportContext {
     #[serde(skip)]
     pub kotlin_printed: bool,
 
+    /// docs/adr/0081 step 4: `true` when the generation is for C11 and the C11
+    /// backend prints the imported codec from its plan, so its header holds
+    /// `{codec}_encode_source`, the table `{codec}_value_source` answers and
+    /// the pair `{codec}_source_ref_t` a printed parent presents a body of it
+    /// as. `false` on every other backend, for non-codec imports, and for a
+    /// codec that keeps the template's encode.
+    #[serde(skip)]
+    pub c11_printed: bool,
+
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
     /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
@@ -1677,6 +1686,7 @@ fn resolve_single_import(
         python_unlowered: None,
         swift_printed: false,
         kotlin_printed: false,
+        c11_printed: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -49720,6 +49730,7 @@ mod tests {
             python_unlowered: None,
             swift_printed: false,
             kotlin_printed: false,
+            c11_printed: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -50652,6 +50663,7 @@ mod tests {
                 python_unlowered: None,
                 swift_printed: false,
                 kotlin_printed: false,
+                c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -50727,6 +50739,7 @@ mod tests {
                 python_unlowered: None,
                 swift_printed: false,
                 kotlin_printed: false,
+                c11_printed: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
