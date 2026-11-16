@@ -14,8 +14,7 @@ without a suite noticing — the Kotlin one did until 2026-09-13.
 Fixture: ``integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_wildcard_in_document_order_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem wildcard_in_document_order`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ channel already kept the first-entry rule in its runtime; the fixture pins it.
 Fixture: ``integration_resources/late_data_binds_on_first_entry/late_data_binds_on_first_entry.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_late_data_binds_on_first_entry_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

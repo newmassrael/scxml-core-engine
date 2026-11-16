@@ -16,7 +16,7 @@ The Rust, Kotlin and Go halves are `a_static_child_is_handed_its_params.rs`,
 `AStaticChildIsHandedItsParamsTest.kt` and
 `a_static_child_is_handed_its_params_test.go`.
 
-The machines are the ones ``scripts/regen_static_datamodel_python.sh``
+The machines are the ones ``scripts/materialize.sh python-static-datamodel``
 generates; a child is a module beside its parent.
 """
 from __future__ import annotations

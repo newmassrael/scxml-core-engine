@@ -15,8 +15,7 @@ Fixture: integration_resources/nested_lifecycle/nested_lifecycle.scxml
 (canonical, shared with the C++ / Rust / Go / Kotlin / C11 channels).
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_nested_lifecycle_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem nested_lifecycle`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

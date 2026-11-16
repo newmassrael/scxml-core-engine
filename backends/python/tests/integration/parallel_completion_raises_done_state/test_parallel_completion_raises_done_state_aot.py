@@ -14,7 +14,7 @@ reaching their ``<final>`` on one event, in one microstep.
 Fixture: ``integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_parallel_completion_raises_done_state_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

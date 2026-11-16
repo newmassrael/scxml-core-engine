@@ -3,5 +3,5 @@
 """Package marker for the EventSchema native-lowering Python AOT fixture.
 
 See ``backends/python/tests/integration/__init__.py`` for the rationale
-and regen workflow (regen: scripts/regen_event_schema_native_python.sh).
+and regen workflow (regen: scripts/materialize.sh python-integration).
 """

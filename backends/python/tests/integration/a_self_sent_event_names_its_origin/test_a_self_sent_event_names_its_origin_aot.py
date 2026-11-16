@@ -9,7 +9,7 @@ evaluates to nothing raises error.communication and delivers nothing.
 Fixture: ``integration_resources/a_self_sent_event_names_its_origin/a_self_sent_event_names_its_origin.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_self_sent_event_names_its_origin_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

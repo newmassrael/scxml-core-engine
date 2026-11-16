@@ -7,7 +7,7 @@ Fixture: ``integration_resources/a_peer_named_at_run_time_reaches_the_router/
 a_peer_named_at_run_time_reaches_the_router.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_peer_named_at_run_time_reaches_the_router_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -5,7 +5,7 @@
 Fixture: ``integration_resources/a_payload_rides_on_its_own_event/a_payload_rides_on_its_own_event.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_payload_rides_on_its_own_event_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

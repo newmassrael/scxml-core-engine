@@ -13,8 +13,7 @@ Fixture: integration_resources/a_computed_event_name_is_matched_like_any_other/a
 (canonical, shared with the C++ / Rust / Go / Kotlin / C11 channels).
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_computed_event_name_is_matched_like_any_other_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem a_computed_event_name_is_matched_like_any_other`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

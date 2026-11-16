@@ -29,7 +29,7 @@ document-order-earliest active leaf.
 Fixture: ``examples/ai_loop/ai_loop.scxml``
 
 Regeneration (after example or template edit):
-  ``scripts/regen_ai_loop_python.sh``
+  ``tools/codegen/trees/python-integration.toml``
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ State = _sm.AiLoopState
 Event = _sm.AiLoopEvent
 
 # The processor type the committed machine was generated for.
-# ``scripts/regen_ai_loop_python.sh`` passes this same string to
+# ``tools/codegen/trees/python-integration.toml`` passes this same string to
 # ``--host-processor``, and the other four channels register the same one.
 DECLARED_TYPE = "x-sce-host"
 

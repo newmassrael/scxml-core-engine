@@ -7,7 +7,7 @@ and the C11 ``c11_integration_event_schema_native`` tests.
 
 The committed SM (``statechart_minimal_sm.py``) is generated from
 ``sce-build/tests/fixtures/event_schema/statechart_minimal.scxml``
-(regen: ``scripts/regen_event_schema_native_python.sh``). Because it is
+(regen: ``scripts/materialize.sh python-integration``). Because it is
 imported and run here, the generated payload dataclass, the type-erased
 ``EventMetadata.typed_payload`` carrier round-trip, and the per-event
 ``raise_job_completed`` inject seam are really exercised.

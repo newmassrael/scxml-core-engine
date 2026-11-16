@@ -44,7 +44,7 @@ it.
 Fixture: ``sce-build/tests/fixtures/route_rests_on_a_question/route_rests_on_a_question.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_route_rests_on_a_question_python.sh``
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

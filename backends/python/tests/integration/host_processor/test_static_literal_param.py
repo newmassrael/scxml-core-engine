@@ -12,7 +12,7 @@ fields, never failed, which is why the two controls below are asked too.
 
 Fixture: ``sce-build/tests/fixtures/host_processor/statechart_static_literal_param.scxml``,
 generated WITH ``--host-processor x-sce-host`` by
-``scripts/regen_host_processor_python.sh``. The declaration is load-bearing:
+``tools/codegen/trees/python-integration.toml``. The declaration is load-bearing:
 without it codegen emits the refusal and every case would measure it.
 """
 from __future__ import annotations

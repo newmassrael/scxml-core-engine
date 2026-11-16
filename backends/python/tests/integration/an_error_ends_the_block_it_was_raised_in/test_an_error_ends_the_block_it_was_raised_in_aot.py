@@ -5,7 +5,7 @@
 Fixture: ``integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_error_ends_the_block_it_was_raised_in_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

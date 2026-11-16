@@ -14,7 +14,7 @@ a flag that was answered, and ``0`` is a day.
 
 Fixture: ``sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml``,
 a ``datamodel="sce-static"`` machine generated WITH ``--host-invoker x-sce-host``
-by ``scripts/regen_host_processor_python.sh``. The declaration is load-bearing:
+by ``tools/codegen/trees/python-integration.toml``. The declaration is load-bearing:
 without it codegen emits the refusal and every case would measure it.
 """
 from __future__ import annotations

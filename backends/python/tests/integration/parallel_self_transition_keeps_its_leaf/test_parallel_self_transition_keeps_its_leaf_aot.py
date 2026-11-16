@@ -14,7 +14,7 @@ sibling fixture's driver stayed green and this fixture's went red.
 Fixture: ``integration_resources/parallel_self_transition_keeps_its_leaf/parallel_self_transition_keeps_its_leaf.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_parallel_self_transition_keeps_its_leaf_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

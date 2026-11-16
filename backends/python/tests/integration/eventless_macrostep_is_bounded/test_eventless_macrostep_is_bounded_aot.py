@@ -21,7 +21,7 @@
 # Fixture: integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml
 #
 # Regeneration (after fixture or template edit):
-#   scripts/regen_eventless_macrostep_is_bounded_python.sh
+#   scripts/materialize.sh python-integration
 
 from __future__ import annotations
 

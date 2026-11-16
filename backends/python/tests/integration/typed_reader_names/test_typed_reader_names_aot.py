@@ -13,7 +13,7 @@ The generated module importing at all is what shows no keyword was emitted.
 Fixture: ``integration_resources/typed_reader_names/typed_reader_names.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_typed_reader_names_python.sh``
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

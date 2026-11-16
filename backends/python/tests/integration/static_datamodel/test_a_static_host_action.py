@@ -18,7 +18,7 @@ counts.
 The Rust, Kotlin, Go and C++ halves are ``StaticDatamodelTest.kt``,
 ``static_datamodel.rs``, ``static_scenarios_test.go`` and
 ``AStaticHostIsHandedTypedValuesTest.cpp``. The machines are the ones
-``scripts/regen_static_datamodel_python.sh`` generates.
+``scripts/materialize.sh python-static-datamodel`` generates.
 """
 from __future__ import annotations
 

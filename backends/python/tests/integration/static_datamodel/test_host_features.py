@@ -11,7 +11,7 @@ A scenario's ``host`` directives set what the host is like before a step; its
 what it holds afterwards. The expected values are derived from the specification,
 not observed from the host.
 
-The machines are the ones ``scripts/regen_static_datamodel_python.sh`` generates
+The machines are the ones ``scripts/materialize.sh python-static-datamodel`` generates
 beside this file.
 """
 from __future__ import annotations

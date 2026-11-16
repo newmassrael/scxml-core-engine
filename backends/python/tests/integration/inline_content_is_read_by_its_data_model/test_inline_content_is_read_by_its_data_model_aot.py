@@ -12,8 +12,7 @@ engine.
 Fixture: ``integration_resources/inline_content_is_read_by_its_data_model/inline_content_is_read_by_its_data_model.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_inline_content_is_read_by_its_data_model_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem inline_content_is_read_by_its_data_model`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

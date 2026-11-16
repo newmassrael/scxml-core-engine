@@ -11,7 +11,7 @@ is reported when the send is made.
 Fixture: ``integration_resources/a_delayed_send_reaches_what_its_target_names/a_delayed_send_reaches_what_its_target_names.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_delayed_send_reaches_what_its_target_names_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

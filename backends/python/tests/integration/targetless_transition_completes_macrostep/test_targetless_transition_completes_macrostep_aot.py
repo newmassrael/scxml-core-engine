@@ -21,7 +21,7 @@
 # Fixture: integration_resources/targetless_transition_completes_macrostep/targetless_transition_completes_macrostep.scxml
 #
 # Regeneration (after fixture or template edit):
-#   scripts/regen_targetless_transition_completes_macrostep_python.sh
+#   scripts/materialize.sh python-integration
 
 from __future__ import annotations
 

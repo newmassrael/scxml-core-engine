@@ -20,8 +20,7 @@ transition selector would go red here.
 Fixture: ``integration_resources/host_event_reaches_the_child/host_event_reaches_the_child.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_host_event_reaches_the_child_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem host_event_reaches_the_child`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

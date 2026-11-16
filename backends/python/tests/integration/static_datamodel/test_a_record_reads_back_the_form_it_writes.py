@@ -9,7 +9,7 @@ job_status (a list of integers, optional integers) and form_extras (an enum of
 an open set, a list of optional elements, a 64-bit integer, a list with a lower
 count, an optional list and a list of lists). The modules are generated from
 ``sce-build/tests/fixtures/test_profile/trace_forms/`` beside this file (regen:
-``scripts/regen_static_datamodel_python.sh``; the modules are not committed).
+``scripts/materialize.sh python-static-datamodel``; the modules are not committed).
 
 The twin of ``tests/integration/ARecordReadsBackTheFormItWritesTest.cpp`` and of
 ``backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs``, with

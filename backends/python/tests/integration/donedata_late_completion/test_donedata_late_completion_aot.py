@@ -23,8 +23,7 @@ timing differs.
 Fixture: ``integration_resources/donedata_late_completion/donedata_late_completion.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_donedata_late_completion_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem donedata_late_completion`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

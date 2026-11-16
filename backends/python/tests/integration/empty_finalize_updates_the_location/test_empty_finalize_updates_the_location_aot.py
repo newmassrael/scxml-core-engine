@@ -17,8 +17,7 @@ model had no way to tell an empty element from a missing one.
 Fixture: ``integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml``.
 
 Regeneration:
-  ``scripts/regen_empty_finalize_updates_the_location_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem empty_finalize_updates_the_location`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

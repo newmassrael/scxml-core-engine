@@ -24,7 +24,7 @@ would stop short of `over`. The Rust, Kotlin and Go halves are
 `AStaticHybridInvokeStartsTheCandidateItsValueNamesTest.kt` and
 `a_static_hybrid_invoke_starts_the_candidate_its_value_names_test.go`.
 
-The machines are the ones ``scripts/regen_static_datamodel_python.sh``
+The machines are the ones ``scripts/materialize.sh python-static-datamodel``
 generates; a candidate is a module beside its parent.
 """
 from __future__ import annotations

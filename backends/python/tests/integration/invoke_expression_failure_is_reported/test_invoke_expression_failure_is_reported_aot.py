@@ -18,8 +18,7 @@ every other invoke fixture uses an expression that evaluates.
 Fixture: ``integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml``.
 
 Regeneration:
-  ``scripts/regen_invoke_expression_failure_is_reported_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem invoke_expression_failure_is_reported`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

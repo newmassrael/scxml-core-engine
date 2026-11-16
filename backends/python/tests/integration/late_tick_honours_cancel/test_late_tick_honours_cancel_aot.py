@@ -20,8 +20,7 @@ the host to pick.
 Fixture: ``integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_late_tick_honours_cancel_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem late_tick_honours_cancel`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

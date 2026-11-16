@@ -18,8 +18,7 @@ Fixture: ``integration_resources/session_ids_are_distinct/session_ids_are_distin
 (canonical, shared with every other channel).
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_session_ids_are_distinct_python.sh`` (local)
-  ``sce-codegen generate-integration -l python --stem session_ids_are_distinct`` (CI)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

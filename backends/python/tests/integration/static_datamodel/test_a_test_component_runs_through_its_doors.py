@@ -6,7 +6,7 @@ slice 6), run end to end by the profile's runtime,
 sce-codegen writes from the fixtures under
 ``sce-build/tests/fixtures/test_profile/runtime/`` into a module each beside
 this file, and the records and templates they name into modules of their own
-beside them (regen: ``scripts/regen_static_datamodel_python.sh``; the modules
+beside them (regen: ``scripts/materialize.sh python-static-datamodel``; the modules
 are not committed), driven only through the doors of §12.3; the
 configuration, the factory of machines and the system adapter are written
 here.

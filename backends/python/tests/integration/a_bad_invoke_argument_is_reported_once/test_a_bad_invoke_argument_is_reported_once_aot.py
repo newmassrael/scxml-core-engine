@@ -5,7 +5,7 @@
 Fixture: ``integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_bad_invoke_argument_is_reported_once_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

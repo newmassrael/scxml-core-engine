@@ -24,7 +24,7 @@ codegen emits the refusal and every case below would measure the refusal
 instead of the feature.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_host_processor_python.sh``
+  ``tools/codegen/trees/python-integration.toml``
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ from sce_runtime import HostSendRequest, HostSendResponse  # noqa: E402
 
 import statechart_delayed_host_send_sm as _sm  # noqa: E402 — path inserted above
 
-# The type the fixture was compiled for. ``scripts/regen_host_processor_python.sh``
+# The type the fixture was compiled for. ``tools/codegen/trees/python-integration.toml``
 # passes this same string to ``--host-processor``.
 DECLARED_TYPE = "x-sce-host"
 

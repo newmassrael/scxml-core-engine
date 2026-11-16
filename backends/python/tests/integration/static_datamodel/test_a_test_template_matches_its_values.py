@@ -14,7 +14,7 @@ here: the generator refuses them on Python
 (``sce-build/tests/a_test_template_is_generated_in_python.rs``). The modules
 beside this file are generated from the fixtures under
 ``sce-build/tests/fixtures/test_profile/`` by
-``scripts/regen_static_datamodel_python.sh`` and are not committed. Every
+``scripts/materialize.sh python-static-datamodel`` and are not committed. Every
 character outside ASCII is written as its escape.
 """
 from __future__ import annotations

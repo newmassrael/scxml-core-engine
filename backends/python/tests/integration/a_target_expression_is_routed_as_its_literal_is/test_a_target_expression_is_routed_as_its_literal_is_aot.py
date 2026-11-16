@@ -11,7 +11,7 @@ the SCXML Event I/O Processor does not support raises error.execution.
 Fixture: ``integration_resources/a_target_expression_is_routed_as_its_literal_is/a_target_expression_is_routed_as_its_literal_is.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_target_expression_is_routed_as_its_literal_is_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

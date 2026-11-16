@@ -9,7 +9,7 @@ alone saw its own `finish` overtake the reply.
 Fixture: ``integration_resources/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_child_reply_arrives_without_a_tick_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

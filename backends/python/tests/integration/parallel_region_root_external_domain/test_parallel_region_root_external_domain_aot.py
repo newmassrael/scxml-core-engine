@@ -36,7 +36,7 @@ contract enforced by ``integration_stem_registration.rs`` and the C11 engine has
 not been repaired yet.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_parallel_region_root_external_domain_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

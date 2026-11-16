@@ -9,7 +9,7 @@ order their milliseconds give, and a refused message, had it been scheduled
 under some default wait, would have arrived and moved ``bad``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_a_delay_is_a_css2_time_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

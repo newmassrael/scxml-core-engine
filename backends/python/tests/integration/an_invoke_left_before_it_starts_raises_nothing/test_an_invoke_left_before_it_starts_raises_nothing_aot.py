@@ -7,7 +7,7 @@ Measured 2026-09-26, this channel already raised nothing; the fixture pins it.
 Fixture: ``integration_resources/an_invoke_left_before_it_starts_raises_nothing/an_invoke_left_before_it_starts_raises_nothing.scxml``.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_an_invoke_left_before_it_starts_raises_nothing_python.sh`` (local)
+  ``scripts/materialize.sh python-integration``
 """
 from __future__ import annotations
 

@@ -28,7 +28,7 @@
 # Fixture: integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml
 #
 # Regeneration (after fixture or template edit):
-#   scripts/regen_unhandled_error_is_observable_python.sh
+#   scripts/materialize.sh python-integration
 
 from __future__ import annotations
 

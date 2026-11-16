@@ -17,7 +17,7 @@ own, and the host answered is the one for THAT candidate.
 
 The Kotlin half is ``AChildIsGivenItsHostByItsParentTest.kt`` and
 ``AHybridCandidateIsGivenItsHostByItsParentTest.kt``. The machines are the ones
-``scripts/regen_static_datamodel_python.sh`` generates.
+``scripts/materialize.sh python-static-datamodel`` generates.
 """
 from __future__ import annotations
 
