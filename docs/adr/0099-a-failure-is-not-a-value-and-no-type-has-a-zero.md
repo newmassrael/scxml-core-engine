@@ -434,3 +434,92 @@ reads a field of a composed record variable in a guard, and the non-optional rec
 
 None is put to the owner: each fork above was decided by the standing rule, and the rejected branch is recorded
 with its reason.
+
+## Amendment of 2026-11-16: a refused decode answers the kind that refused it
+
+Decided under the same standing rule, and not put to the owner.
+
+**Context.** A codec's decode is a partial function from bytes to a value: its codomain is the value or the
+reason no value is there. Four backends kept the reason (Rust's `Result<T, CodecError>`, a C11
+`sce_forge_codec_status_t`, Go's `(T, error)` over `codec.Err*`, Swift's `throws(CodecError)`). Three did not:
+
+- Kotlin answered `T?`, `null` for every refusal; a bound's refusal was written to a mutable record on the
+  cursor (`SceCursor.lastRefusal`), a VLE's overflow to a flag beside it (`lastVleOverflow`), and a CBOR or
+  content-line refusal to a global, unsynchronised `Cbor.lastError` / `ContentLine.lastError`, which two
+  decodes on two threads overwrite;
+- C++ answered `std::optional<T>`, `std::nullopt` for every refusal, with the same cursor record and flag, and
+  its CBOR readers kept no reason at all;
+- Python raised the typed `CodecError` subclass inside the decode and caught it at the decode's edge into
+  `None`.
+
+`null`, `nullopt` and `None` are a value of the result type standing where the language says there is none:
+section 1 item 4 of this ADR, and the case it was written against. A caller could not tell a frame cut short
+(`NeedMoreBytes`, which it resumes by appending bytes) from one no bytes make whole, and a reject vector of the
+conformance oracle could assert only that those three refused, not why. The records beside the sentinel are
+the companion state ADR 0055 refuses: a flag that admits an impossible pair (a `null` with no record, a record
+left from an earlier decode over the same cursor).
+
+**Decision.** Every backend's decode answers the kind that refused the frame, in its language's own channel for
+a computation that can fail, and every runtime declares one vocabulary of those kinds.
+
+1. **One vocabulary, from one source.** The decode-side kinds are `CodecFailure` in
+   `sce-build/src/forge/codec_failure.rs`, each with its oracle wire name: `need-more-bytes`,
+   `length-out-of-range`, `too-many-elements`, `vle-width-overflow`, `invalid-utf8`, `undeclared-enum-value`,
+   `capacity-exceeded`, `variant-arm-not-built`, the five `cbor-*` and the six `line-*`. Each runtime's name of
+   a kind is derived from the wire name by its language's rule (`CodecFailure::runtime_name`: PascalCase for a
+   Rust, C++, Kotlin or Python declaration, lowerCamelCase for a Swift case, `SCE_FORGE_CODEC_` + upper snake
+   case for C11, `Err` + PascalCase with `VLE` and `UTF8` in capitals for Go), and
+   `every_runtime_declares_every_failure` reads each runtime's error type and fails on a kind one lacks or
+   spells another way. A runtime declares every kind, the ones its decodes never answer included
+   (`CapacityExceeded` where containers grow, `VariantArmNotBuilt` where every arm is kept), as gRPC's status
+   codes are one table every language's library declares whole: a caller of any lane matches one set.
+2. **The channel is the language's.** Rust `Result`, Swift typed throws, Go `error`, C11 status and Python
+   exceptions as before, with Python's funnel into `None` removed: `decode` raises the subclass that names the
+   refusal (a CBOR or content-line decode restores the cursor first, as it did). C++ answers
+   `::SCE::Forge::Decoded<T>`, the C++17 spelling of `std::expected<T, CodecError>` (C++23, P0323) with that
+   type's member names, so a move to the standard type is a rename. Kotlin answers `Decoded<T>`, a sealed
+   `Ok(value)` / `Refused(error)`, with `valueOr { r -> return r }` as its `?`.
+3. **Every reader below the decode answers the same way.** The C++ cursor's `read_vle_*` and every CBOR and
+   content-line read answer a `Decoded`; the Kotlin cursor's `readVle*`, `Cbor` and the content-line reader
+   and property answer a `Decoded`. `SceCursor::refuse`, `last_refusal`, `last_vle_overflow`,
+   `SceCursor.lastRefusal`, `lastVleOverflow`, `Cbor.lastError`, `ContentLine.lastError`,
+   `ContentLineReader.failed` and the C++ `Reader::failed` / `error()` and `Property::error()` are removed:
+   nothing records a reason beside a value.
+4. **Every kind is asserted by name.** `CodecFailure::symbol` is the expression a caller compares a refusal
+   with on each lane, and the conformance harness of every lane asserts each reject vector's kind with it. The
+   corpus gains the kinds no vector named: `invalid-utf8` (`codec_present_if_string`),
+   `undeclared-enum-value` (`codec_group_enum`) and `cbor-too-deep` (`codec_cbor_map`).
+
+**Why a sealed result on Kotlin, where section 2 throws.** Section 2 lowers an algorithm's failure, an abrupt
+completion of a computation that was meant to succeed, to Kotlin's exception. A decode's refusal is not that:
+it is half of the decode's codomain, the expected outcome of reading untrusted bytes, and on a stream the
+commonest one (`NeedMoreBytes` on every partial frame). The Kotlin language's own guidance answers such a
+failure with a value the caller is made to handle (the `toIntOrNull` family; R. Elizarov, "Kotlin and
+Exceptions", 2020: a domain failure is a sealed result, an exception a logic error), and the codec's encode
+already answers its refusal as a value (`CodecError?`), so the two halves of one codec API answer alike. A JVM
+exception would also capture a stack trace per partial frame. C++ decides the same way for the same reason
+and because its forge code uses no exceptions (section 2).
+
+**Rejected.**
+
+- *Keep the sentinel and record the reason on the cursor, for every kind.* It is the state this amendment
+  removes: a reason beside a value, which a caller must remember to read, and which an earlier decode over the
+  same cursor leaves standing.
+- *Throw on Kotlin* (`CodecException(error)`), as section 2 does for an algorithm: above.
+- *A `Decoded` that is a `std::variant<T, CodecError>` handed to the caller*: the caller then names
+  `std::get_if<0>` where `std::expected` names `*` and `error()`, and the move to the standard type is a
+  rewrite instead of a rename.
+- *Declare in each runtime only the kinds its decodes answer*: a caller matching across lanes would meet a
+  different set per lane, and the table could not hold every runtime to it.
+
+**Consequences.** Every consumer of a Kotlin, C++ or Python decode changes its call site
+(docs/SCE_CODEC_CONSUMER_MIGRATION.md, "A refused decode answers the kind that refused it"). A C++ broadcast
+log's `Malformed` read carries the kind (`LengthOutOfRange` for a stored length past the bound, the element
+decode's kind otherwise). A Kotlin CBOR text that is not UTF-8 is refused as `InvalidUtf8`, as on Rust, Go,
+Python, C11 and C++, where it was `CborMalformed`. No wire, schema or saved-state surface changes.
+
+**Swift.** Swift's decode already throws `CodecError`, whose enum already holds `undeclaredEnumValue` and
+`variantArmNotBuilt` (docs/adr/0072, amendment of 2026-11-16); it gains `capacityExceeded` for the one
+vocabulary, which no Swift decode throws. A Swift positional decode refuses a closed enum's undeclared carrier as
+`undeclaredEnumValue`, and the Swift conformance fragments assert each reject vector's kind by
+`CodecFailure::symbol` (`CodecError.<case>`), as they asserted it by the hand-kept table this amendment retires.

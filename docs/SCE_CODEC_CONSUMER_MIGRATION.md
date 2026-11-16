@@ -1859,3 +1859,75 @@ input and held to no law.
 - Each entry is written by `encode_source` of the entries' codec's module, so a source presents the list as any
   iterable of sources of that codec.
 
+## A refused decode answers the kind that refused it (ADR 0099, amendment of 2026-11-16)
+
+Landing: the commits that add this section. Every Kotlin, C++ and Python codec is regenerated after it; Rust, Go
+and C11 decodes are unchanged, and Swift's only gains one case in its `CodecError`.
+
+The kinds are one vocabulary across every runtime: `NeedMoreBytes`, `LengthOutOfRange`, `TooManyElements`,
+`VleWidthOverflow`, `InvalidUtf8`, `UndeclaredEnumValue`, `CapacityExceeded`, `VariantArmNotBuilt`, the five
+`Cbor*` and the six `Line*`, each spelled by its language's rule (`codec.ErrVLEWidthOverflow` in Go,
+`SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW` in C11, `CodecError.vleWidthOverflow` in Swift). A runtime declares every
+kind, the ones its decodes never answer included, so a match written against one lane's set holds on another.
+
+Kotlin:
+
+- `decode(...)` answers `com.sce.forge.runtime.Decoded<T>`: `Decoded.Ok(value)` or `Decoded.Refused(error)`,
+  where it answered `T?`. Where the code wrote `X.decode(c) ?: return fallback`, write
+  `X.decode(c).valueOr { return fallback }` (the lambda's parameter is the `Decoded.Refused`, and
+  `it.error` the kind); where it wrote `X.decode(c) ?: error(..)`, write `.valueOr { error(..) }`. Code that has
+  no use for the kind writes `.valueOrNull()` and keeps its `null` handling; `errorOrNull()` answers the kind.
+  A test compares a refusal whole: `assertEquals(Decoded.Refused(CodecError.TooManyElements), X.decode(c))`.
+- `SceCursor.readVleU16`, `readVleU32` and `readVleU64` answer `Decoded<UShort>`, `Decoded<UInt>` and
+  `Decoded<ULong>`. `SceCursor.refuse`, `SceCursor.lastRefusal` and `SceCursor.lastVleOverflow` are gone: the
+  kind is in the `Decoded`.
+- `Cbor`'s reads (`readHead`, `readUint`, `readUintUpto`, `readBool`, `readText`, `readBytes`,
+  `readBytesExact`, `readArrayLen`, `readMapLen`) answer a `Decoded`, `readHead` of `Cbor.Head(major, value)`
+  where it answered a `Pair`, and `skip` answers `Decoded<Unit>` where it answered a `Boolean`.
+  `Cbor.lastError` is gone. A CBOR text that is not UTF-8 is refused as `InvalidUtf8`, where it was
+  `CborMalformed`, as on every other runtime.
+- `ContentLineReader.begin` answers `Decoded<ContentLineReader>`, `next()` a `Decoded<ContentLineProperty?>`
+  (`Ok(null)` after `END:`), and every `ContentLineProperty` read a `Decoded`; `nextParam()` answers
+  `Decoded<Boolean>`. `ContentLine.lastError`, `ContentLine.refuse`, `ContentLine.fail` and
+  `ContentLineReader.failed` are gone; an encode answers its `CodecError?` as before.
+- Every `CodecError` case is a `data object`, so `toString()` is its name.
+- A generated broadcast log's `Unreadable(seq, why)` names the element decode's kind in `why`.
+
+C++:
+
+- `decode(...)` answers `::SCE::Forge::Decoded<T>`, where it answered `std::optional<T>`. It has
+  `std::expected`'s names: `has_value()`, `explicit operator bool`, `operator*`, `operator->` and `error()`, so
+  `if (!d) ...; use(*d)` and `d->field()` read as before. Code that declared the result
+  `std::optional<T> d = T::decode(c)` declares `auto` or `::SCE::Forge::Decoded<T>`; code that read
+  `cursor.last_refusal()` reads `d.error()`, which holds `NeedMoreBytes` as well.
+- `SceCursor::read_vle_u16`, `read_vle_u32` and `read_vle_u64` answer `Decoded<std::uint64_t>`.
+  `SceCursor::refuse`, `last_refusal` and `last_vle_overflow` are gone.
+- Every read of `sce/forge/cbor.h` answers a `Decoded` (each kind the one the Rust reader answers for the same
+  bytes; a text that is not UTF-8 is `InvalidUtf8`), and `Cbor::skip` answers `Decoded<Cbor::Skipped>` where it
+  answered a `bool`.
+- `ContentLine::Reader::begin` answers `Decoded<Reader>`, `Reader::next()` a
+  `Decoded<std::optional<Property>>` (an empty optional after `END:`), and every `Property` read a `Decoded`;
+  `Reader::failed`, `Reader::error` and `Property::error` are gone.
+- `CodecError` gains `InvalidUtf8 = 18`, `CborMalformed = 19`, `CborRequiredKeyMissing = 20`,
+  `CborTooDeep = 21` and `CapacityExceeded = 22`; no value moves.
+- A generated broadcast log's `<Log>Malformed` holds `error` beside `seq`: `LengthOutOfRange` for a stored
+  length past the bound, the element decode's kind otherwise. Code that made one by `{seq}` makes it by
+  `{seq, error}`.
+- A variant with no catch-all whose tag no arm names cannot occur (`codec/variant-arm-unreachable`); its decode
+  now calls `std::abort()` there, where it answered `std::nullopt`, as Rust's `unreachable!` does.
+
+Python:
+
+- `decode(...)` raises the `CodecError` subclass that names the refusal (`NeedMoreBytes`, `LengthOutOfRange`,
+  `sce_forge_runtime.cbor.CborMalformed`, `sce_forge_runtime.content_line.LineBadValue`, ...) where it
+  answered `None`; its annotation is the class, not `Optional` of it. Where the code wrote
+  `v = X.decode(c); if v is None: ...`, write `try: v = X.decode(c) except CodecError as refused: ...`, and read
+  the kind from `type(refused)`. A CBOR or content-line decode still restores the cursor before it raises.
+- `sce_forge_runtime.codec` gains `CapacityExceeded` and `VariantArmNotBuilt`, which no Python decode raises.
+- A generated broadcast log's `read` raises `LengthOutOfRange` for a stored length past the bound and lets the
+  element decode's `CodecError` propagate, where it raised a bare `CodecError` with a message.
+
+Go and Swift: `codec.ErrCapacityExceeded` and `codec.ErrVariantArmNotBuilt` are added, and Swift's `CodecError`
+gains `capacityExceeded` beside the `undeclaredEnumValue` and `variantArmNotBuilt` the section on Swift's codecs
+above adds; a Swift `switch` over `CodecError` that names every case adds it.
+

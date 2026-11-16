@@ -1026,8 +1026,9 @@ before it narrows it to a host length, slices or allocates, and refuses one outs
 length with `LengthOutOfRange`, a list's count (or an entry past it in a list read to the end of the
 frame) with `TooManyElements`. The bound is judged before the frame's own length, so such a frame is
 refused and never reported as `NeedMoreBytes`, which keeps the one meaning "the frame is shorter than
-its own lengths say". C++ and Kotlin return their one sentinel and record the reason on the cursor
-(`SceCursor::last_refusal`, `SceCursor.lastRefusal`); Python's `decode` answers every refusal with `None`.
+its own lengths say". Every backend's decode answers the kind that refused the frame, from one vocabulary
+of kinds (docs/adr/0099, amendment of 2026-11-16): Rust's `Result`, a C11 status, Go's `error`, the
+`Decoded` of C++ and Kotlin, a Python `CodecError` raised, and a Swift typed throw.
 
 **Whether the encode can refuse a value — `sce:encode-may-fail`** (docs/adr/0065). An encode is total when every value a source can present (docs/adr/0058 §1) has a frame. It refuses a value at these places:
 
@@ -1105,9 +1106,9 @@ struct DtcResponse {
     uint8_t  dtcStatus;
     uint32_t dtcCode;
 
-    // decode: returns nullopt on truncated frame
-    static std::optional<DtcResponse> decode(const uint8_t* raw, size_t len) {
-        if (len < 5) return std::nullopt;
+    // decode: a truncated frame is refused as NeedMoreBytes
+    static Decoded<DtcResponse> decode(const uint8_t* raw, size_t len) {
+        if (len < 5) return CodecError::NeedMoreBytes;
         return DtcResponse{
             .serviceId   = raw[0],
             .dtcSeverity = (raw[1] >> 4) & 0x0F,
@@ -1242,7 +1243,7 @@ declares; a lower count is, on every backend alike:
 
 - C++, a map whose records hold a text or a byte string:
   `std::vector<<Schema>Payload>`, the functions private static members of the
-  codec's struct; a refused read is `std::nullopt`, as every C++ decode's.
+  codec's struct; a refused read answers its `CodecError`, as every C++ decode's.
 - Kotlin: `List<<Schema>Payload>`, the functions private members of the codec's
   companion object.
 - Swift: `[<Schema>Payload]`, the functions private static members of the codec's
@@ -1316,15 +1317,16 @@ typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,
 `UndeclaredEnumValue`. Kotlin generates the same codec as a data class (an
 optional entry nullable, `bytes` a `ByteArray`), `encode(SceSink):
 CodecError?`, `encodeToByteArray(): ByteArray?` and `decode(SceCursor)`,
-which answers `null` for every refusal — Kotlin's codec convention — and
-leaves the cursor where it was; `com.sce.forge.runtime.Cbor` holds its items.
+which answers a `Decoded`, refused with the kind that refused the map
+(docs/adr/0099, amendment of 2026-11-16), and leaves the cursor where it was
+on a refusal; `com.sce.forge.runtime.Cbor` holds its items.
 C++ generates a struct of owned values (an optional entry `std::optional<T>`,
 `string` a `std::string`, `bytes` a `std::vector<uint8_t>`), a static
 `decode(SceCursor&)` that reads a copy of the cursor and assigns it back only
 when the whole map decoded, `encode(SceSink&)` and `encode_to_vec()`, which
-answers `std::nullopt` when encode refuses; a refused decode is `std::nullopt`,
-the C++ codec convention, and encode's refusals are `CodecError::CborOutOfRange`
-and `CborWrongLength`. `sce/forge/cbor.h` holds its items, rule for rule the
+answers `std::nullopt` when encode refuses; a decode answers a
+`::SCE::Forge::Decoded`, refused with the kind that refused the map, and
+encode's refusals are `CodecError::CborOutOfRange` and `CborWrongLength`. `sce/forge/cbor.h` holds its items, rule for rule the
 Rust runtime's (`cbor_runtime_test`). Go generates a struct of owned values
 whose optional entries are `optional.Of[T]` of the Go forge runtime — the type a
 statechart's `optional<T>` variable is, so an absent byte string and a present
@@ -1335,9 +1337,8 @@ moves the cursor only when the whole map decoded, `Encode(codec.SceSink)` and
 `codec.ErrCborMalformed`, `ErrCborRequiredKeyMissing`, `ErrCborWrongLength`,
 `ErrCborTooDeep` and `ErrCborOutOfRange`, and `codec/cbor.go` holds its items.
 Python generates a dataclass (an optional entry `Optional[T] = None`) whose
-`decode(cursor)` answers `None` for every refusal — the Python codec
-convention — with the cursor returned to where it was (`SceCursor.mark` /
-`reset`), and whose `encode` / `encode_to_bytes` raise
+`decode(cursor)` raises the `CodecError` subclass that refused the map, with
+the cursor returned to where it was (`SceCursor.mark` / `reset`), and whose `encode` / `encode_to_bytes` raise
 `sce_forge_runtime.cbor.CborOutOfRange` or `CborWrongLength` for a value past
 its bound, an integer past its declared width among them: a Python `int`
 carries no width of its own. `sce_forge_runtime.cbor` holds its items.
@@ -1722,15 +1723,16 @@ writer and every rule of the section above) and spell none of the grammar.
 
 Kotlin generates it as a data class: a `String`, a `MutableList<String>` for a
 list, `null` for an absent optional entry, and the runtime's `ContentLineReader`
-and `ContentLineWriter` for the grammar. Its decode follows the Kotlin codec
-convention: every failure is `null`, with the rule that refused in
-`ContentLine.lastError`, and the cursor is left where it was.
+and `ContentLineWriter` for the grammar. Its decode answers a `Decoded`, refused
+with the `CodecError` of the rule that refused, and the cursor is left where it
+was.
 
 C++ generates it as a struct of `std::string`, `std::vector<std::string>` for a
 list and `std::optional` for an absent optional entry, over
-`sce/forge/content_line.h`. Its decode is `std::nullopt` on every refusal and
-leaves the cursor where it was; the rule that refused is a `Reader::error()` of
-the runtime, which a generated decode does not carry out. An encode refusal is a
+`sce/forge/content_line.h`. Its decode answers a `Decoded`, refused with the
+`CodecError` of the rule that refused, and leaves the cursor where it was; each
+read of the runtime's `Reader` and `Property` answers its own `Decoded`. An
+encode refusal is a
 `CodecError` (`LineTooMany`, `LineTooLong`, `LineBadValue`,
 `LineRequiredMissing`); a value that is not UTF-8 is refused on encode as the
 decode would refuse it.
