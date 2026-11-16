@@ -1982,3 +1982,11 @@ codecs with a length of byte strings under more than one gate.
   raises `InconsistentSource`.
 - The decode gives it back `None` where it read any of the content.
 
+## A printed Python codec derives a length held in a flag (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose length or count is held in a flag of a carrier (`sce:length-field="carrier.flag"`).
+
+- The encode writes that flag from what it measures, whatever bits the value holds there; setting it through the
+  flag's setter no longer changes the frame.
+

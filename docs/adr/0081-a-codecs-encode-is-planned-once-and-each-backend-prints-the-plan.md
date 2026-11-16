@@ -1024,6 +1024,12 @@ old encode, the old encode and its templates are removed in the same landing.
    back `None` where it read any of the content and the number it read where it read none, which the template's
    decode takes from the printer (`PythonSource::decoded`), so a decode and a case state one value. A length a group
    holds on the side without its content waits for the groups.
+
+   *The seventh Python landing, 2026-11-16:* a length or a count held in a flag of a carrier. The encode folds it
+   into the carrier as it folds a presence flag, in place of the bits the value presents, where what it measures is
+   there, and leaves the value's bits where the number is free and none is; where the grammar does not bound the
+   number within the flag's bits, a number past them is refused (`LengthOutOfRange`). The value keeps the carrier
+   whole, as every printer presents a flag set.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

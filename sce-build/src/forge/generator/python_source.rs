@@ -123,7 +123,8 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
-            (ElementId::Field(_), Derive::Number(number)) => {
+            // A number into a field, or into a flag of a carrier.
+            (_, Derive::Number(number)) => {
                 forms.extend(number_form(&derived.element, number));
             }
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
@@ -230,9 +231,8 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
                 ));
             }
         }
-        NumberInto::Flag => forms.push(format!(
-            "element '{element}': a length held in a flag of a carrier"
-        )),
+        // Folded into its carrier, as a presence flag is.
+        NumberInto::Flag => {}
     }
     forms
 }
@@ -731,7 +731,15 @@ fn encode_source(
                         present: measure.gated.then(|| format!("{content} is not None")),
                     });
                 }
-                derive_number(plan, l, element, &number.into, &measured, &mut out);
+                derive_number(
+                    plan,
+                    l,
+                    element,
+                    &number.into,
+                    &measured,
+                    &mut out,
+                    &mut folds,
+                );
             }
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
                 let (gated, when_clear) =
@@ -975,6 +983,7 @@ fn derive_number(
     into: &NumberInto<'_>,
     measures: &[MeasureText],
     out: &mut String,
+    folds: &mut BTreeMap<String, Vec<String>>,
 ) {
     let named = element.to_string();
     let disagree = || raise(plan, RefusalKind::InconsistentSource, &named);
@@ -1036,13 +1045,56 @@ fn derive_number(
             }
         }
     };
-    let NumberInto::Field {
-        field,
-        narrow,
-        absent,
-    } = into
-    else {
-        unreachable!("`unlowered` prints a number held in a field only")
+    let (field, narrow, absent) = match (element, into) {
+        (
+            ElementId::Field(_),
+            NumberInto::Field {
+                field,
+                narrow,
+                absent,
+            },
+        ) => (field, narrow, absent),
+        // Folded into its carrier in place of the bits the value presents,
+        // where it is there; where it is free and nothing it measures is
+        // there, the carrier keeps the value's bits. A number the flag's bits
+        // cannot hold is no frame, where the grammar does not bound it within
+        // them.
+        (ElementId::Flag { field, flag }, NumberInto::Flag) => {
+            let def = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| f.id == *field)
+                .and_then(|carrier| carrier.flags.iter().find(|d| d.name == *flag))
+                .expect("a number held in a flag is held in a flag of its carrier");
+            let width_mask = if def.width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << def.width) - 1
+            };
+            let mask = width_mask << def.bit;
+            let c = format!("_c_{}", l.codec_field_id(field));
+            let mut set = String::new();
+            if plan.totality.refuses(RefusalKind::LengthOutOfRange, &named) {
+                set.push_str(&format!(
+                    "if {size} > 0x{width_mask:X}:\n    {}\n",
+                    raise(plan, RefusalKind::LengthOutOfRange, &named)
+                ));
+            }
+            set.push_str(&format!(
+                "{c} = ({c} & ~0x{mask:X}) | (({size}) << {})\n",
+                def.bit
+            ));
+            folds
+                .entry(field.clone())
+                .or_default()
+                .push(match &present {
+                    None => set,
+                    Some(there) => format!("if {there}:\n{}", indented(&set)),
+                });
+            return;
+        }
+        _ => unreachable!("a number goes into the field or the flag it names"),
     };
     let name = l.codec_field_id(&field.id);
     // A number past what the field holds is no frame (docs/adr/0065 §5).
