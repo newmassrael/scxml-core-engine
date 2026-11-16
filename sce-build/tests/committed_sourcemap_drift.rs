@@ -48,6 +48,7 @@ fn repo_root() -> PathBuf {
 const COMMITTED_TREES: &[&str] = &[
     "backends/rust/tests/src/generated",
     "backends/rust/tests/src/integration",
+    "backends/kotlin/w3c/src/main/kotlin/com/sce/generated",
     "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
     "backends/go/tests/generated",
     "backends/python/tests/integration",

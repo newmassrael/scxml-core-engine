@@ -52,8 +52,8 @@
 mutation_tests -p sce-build --features cli \
     --test gate_registry_contract --test script_engine_target_input \
     --test kotlin_coverage_verdict
-mutation_runtime_targets scripts/gates/w3c-kotlin.sh backends/kotlin/tests/build.gradle.kts \
-    scripts/gates/kotlin_coverage.py
+mutation_runtime_targets scripts/gates/w3c-kotlin.sh backends/kotlin/test-harness/build.gradle.kts \
+    gradle/sce-kotlin-suite.gradle.kts scripts/gates/kotlin_coverage.py
 
 # `generator.rs` is COMPILED INTO both binaries above, so it is a
 # `mutation_targets` rather than a runtime one: the harness can hash what the
@@ -163,8 +163,10 @@ PY
 # A suite cannot observe its own staleness: the run that would report it is the
 # run that does not happen. So this is guarded from the Rust side.
 
+# Re-aimed 2026-11-07: `GateEnginePairsTest` moved with the harness to
+# `:sce-kotlin-test-harness`, and the input declaration moved with it.
 mutation_case "the Kotlin suite stops re-reading the gate it checks" <<'PY'
-edit("backends/kotlin/tests/build.gradle.kts",
+edit("backends/kotlin/test-harness/build.gradle.kts",
      'inputs.file(File(rootDir, "scripts/gates/w3c-kotlin.sh"))',
      'inputs.file(File(rootDir, "tests/ecmascript/ecma262_semantics.json"))')
 PY
@@ -388,8 +390,10 @@ PY
 # A `Test` task forks, so the property has to be forwarded deliberately. Stop
 # forwarding it and the engine writes nothing.
 
+# Re-aimed 2026-11-07: the forward is written once for both suite modules, in
+# the script they apply.
 mutation_case "the census property never reaches the test JVM" <<'PY'
-edit("backends/kotlin/tests/build.gradle.kts",
+edit("gradle/sce-kotlin-suite.gradle.kts",
      'systemProperty("sce.lua.loweringCensus", censusProp.get())',
      'systemProperty("sce.lua.loweringCensusDisabled", censusProp.get())')
 PY

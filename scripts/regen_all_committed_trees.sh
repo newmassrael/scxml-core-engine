@@ -92,12 +92,12 @@ step_rust_tests() {
     scripts/regen_static_datamodel_rust.sh
 }
 
-# ── kotlin-tests: the committed trees of backends/kotlin/tests ──────────
+# ── kotlin-tests: the committed trees of the Kotlin test modules ────────
 #
-# One step, because the trees are shared: the static datamodel's algorithms are
-# packages under com/sce/generated, beside the W3C machines. Its machines have
-# their own directory, com/sce/integration/static_datamodel, beside the
-# integration stems.
+# The W3C suite is a module of its own, backends/kotlin/w3c, which nothing else
+# writes into. The static datamodel's algorithms are packages under
+# com/sce/generated of backends/kotlin/tests, and its machines have their own
+# directory, com/sce/integration/static_datamodel, beside the integration stems.
 #
 # The W3C and integration trees are declared (ADR 0097): every document, flag
 # and package of them is in tools/codegen/trees/kotlin-w3c.toml and

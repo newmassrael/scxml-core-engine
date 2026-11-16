@@ -469,6 +469,119 @@ fn synthetic_sources(filler: usize, extra: &[(&str, &str)]) -> tempfile::TempDir
     dir
 }
 
+/// A row runs two suite modules (`:sce-kotlin-w3c`, `:sce-kotlin-tests`), each
+/// writing its own result directory. Read together, the classes split across
+/// them are one complete row; a class reported by both is two modules
+/// compiling one source, and is refused rather than counted twice.
+#[test]
+fn reports_from_every_suite_are_read_together_and_a_class_in_two_is_refused() {
+    let arm = arm(4);
+    let second = arm._dir.path().join("second-suite/test-results/test");
+    fs::create_dir_all(&second).expect("the second report directory is creatable");
+    // Move half the classes to the second suite's directory.
+    for class in &arm.classes[2..] {
+        let name = format!("TEST-{class}.xml");
+        fs::rename(arm.reports.join(&name), second.join(&name)).expect("the report moves");
+    }
+    let both = |dirs: &[&Path]| {
+        let mut args = vec!["verdict".to_string()];
+        for dir in dirs {
+            args.push("--reports".to_string());
+            args.push(dir.to_str().expect("utf-8 path").to_string());
+        }
+        args.extend([
+            "--runnable".to_string(),
+            arm.runnable.to_str().expect("utf-8 path").to_string(),
+            "--label".to_string(),
+            "lua over lua machines".to_string(),
+        ]);
+        run(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    };
+
+    let split = both(&[&arm.reports, &second]);
+    assert_eq!(
+        split.code, 0,
+        "a row whose classes are split across two suites' directories was not \
+         accepted as complete.\nstderr: {}",
+        split.stderr
+    );
+
+    // The control: either directory alone is a row missing a suite.
+    let one = both(&[&arm.reports]);
+    assert_eq!(
+        one.code, REFUSED,
+        "a row read from one of its two suites was accepted.\nstdout: {}",
+        one.stdout
+    );
+
+    write_report(&second, &arm.classes[0], 3, 0, &[]);
+    let twice = both(&[&arm.reports, &second]);
+    assert_eq!(
+        twice.code, REFUSED,
+        "a class reported by two suites was accepted (exit {}), so one claim \
+         was counted twice.\nstdout: {}",
+        twice.code, twice.stdout
+    );
+    assert!(
+        twice
+            .stderr
+            .contains("two suite modules compile one test class"),
+        "the refusal does not say the class is in two suites.\nstderr: {}",
+        twice.stderr
+    );
+}
+
+/// The harness's sources are read for their supertypes only: a generated W3C
+/// case inherits its `@Test` from `W3CTestBase`, which lives in
+/// `:sce-kotlin-test-harness`, and nothing there is a class a row runs.
+#[test]
+fn a_supertype_root_lends_its_bases_and_requires_none_of_its_classes() {
+    let suite = synthetic_sources(
+        200,
+        &[(
+            "Inheriting.kt",
+            "package com.sce.integration\n\nclass FromHarnessBase : HarnessBase()\n",
+        )],
+    );
+    let harness = tempfile::tempdir().expect("a scratch directory");
+    fs::write(
+        harness.path().join("Harness.kt"),
+        "package com.sce.harness\n\n\
+         abstract class HarnessBase {\n    @Test\n    fun inherited() {}\n}\n\n\
+         class HarnessOwnTest {\n    @Test\n    fun runsElsewhere() {}\n}\n",
+    )
+    .expect("the harness source is writable");
+
+    let out = run(&[
+        "derive",
+        suite.path().to_str().expect("utf-8 path"),
+        "--supertypes-from",
+        harness.path().to_str().expect("utf-8 path"),
+    ]);
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    let derived = derived_set(&out);
+    assert!(
+        derived.contains("com.sce.integration.FromHarnessBase"),
+        "a suite class whose `@Test` comes from a base in the supertype root \
+         was not derived.\nderived: {} class(es)",
+        derived.len()
+    );
+    assert!(
+        !derived.contains("com.sce.harness.HarnessOwnTest"),
+        "a concrete class of the supertype root was required of every row; \
+         the harness's own tests run once, outside the rows"
+    );
+
+    // The control: without the supertype root the inheriting class has no
+    // carrier above it.
+    let alone = derive(suite.path());
+    assert!(
+        !derived_set(&alone).contains("com.sce.integration.FromHarnessBase"),
+        "the inheriting class was derived without its base, so the case above \
+         does not show the supertype root doing anything"
+    );
+}
+
 fn derive(sources: &Path) -> Outcome {
     run(&["derive", sources.to_str().expect("utf-8 path")])
 }
@@ -714,21 +827,46 @@ fn the_derivation_refuses_a_tree_it_could_not_read() {
 /// reader trusting it.
 #[test]
 fn the_derivation_names_the_two_classes_the_gates_header_calls_actionable() {
-    let sources = repo_root().join("backends/kotlin/tests/src/test/kotlin");
-    assert!(
-        sources.is_dir(),
-        "no Kotlin test sources at {} — the gate derives the classes every row \
-         must report from exactly this tree",
-        sources.display()
-    );
+    // The gate's own form: both suites' test sources, and the harness read
+    // for its supertypes only.
+    let suites = [
+        repo_root().join("backends/kotlin/w3c/src/test/kotlin"),
+        repo_root().join("backends/kotlin/tests/src/test/kotlin"),
+    ];
+    let harness = repo_root().join("backends/kotlin/test-harness/src/main/kotlin");
+    for sources in suites.iter().chain([&harness]) {
+        assert!(
+            sources.is_dir(),
+            "no Kotlin sources at {} — the gate derives the classes every row \
+             must report from exactly these trees",
+            sources.display()
+        );
+    }
+    let mut args = vec!["derive"];
+    args.extend(suites.iter().map(|path| path.to_str().expect("utf-8 path")));
+    args.extend(["--supertypes-from", harness.to_str().expect("utf-8 path")]);
 
-    let out = derive(&sources);
+    let out = run(&args);
     assert_eq!(
         out.code, 0,
         "the derivation refused the committed Kotlin test sources.\nstderr: {}",
         out.stderr
     );
     let derived = derived_set(&out);
+
+    // A generated W3C case inherits its `@Test` from `W3CTestBase`, which only
+    // the harness holds, so this is the fixpoint reaching across modules.
+    assert!(
+        derived.contains("com.sce.w3c.Test144"),
+        "the W3C case `Test144` was not derived, so the fixpoint did not reach \
+         `W3CTestBase` in the harness and no row is held to running the W3C \
+         suite.\nderived: {} class(es)",
+        derived.len()
+    );
+    assert!(
+        !derived.iter().any(|class| class.ends_with(".W3CTestBase")),
+        "the harness's abstract base was derived as a class a row must run"
+    );
 
     for named in ["SendParamPayloadTest", "XmlDataIsADomTreeTest"] {
         assert!(

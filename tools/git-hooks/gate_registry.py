@@ -2309,6 +2309,10 @@ GATES: dict[str, dict] = {
         # one of them (`script-read-coverage`).
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
+                  # How both suite modules run their tests and take a row's
+                  # overlay, applied by each (it was the tests module's own
+                  # build file until the W3C suite became a module).
+                  "gradle/sce-kotlin-suite.gradle.kts",
                   # The shared Lua the Lua engine copies in at build time, and
                   # the shared tables its readers ask.
                   "sce/include/scripting/*.lua", "tests/ecmascript/**",

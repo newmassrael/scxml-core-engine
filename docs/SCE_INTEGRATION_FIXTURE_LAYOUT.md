@@ -1189,7 +1189,7 @@ first-class vs AOT-only" framing.
 | Backend | Committed generated tree? | Source |
 |---|---|---|
 | Rust | yes (W3C `src/generated/` + integration `src/integration/`) | declared trees (ADR 0097); regen via `scripts/materialize.sh rust-w3c` and `rust-integration` |
-| Kotlin | yes (W3C `…/com/sce/generated/` + integration intermixed under same) | hand-committed; regen via `sce-codegen generate-w3c -l kotlin` + per-fixture scripts |
+| Kotlin | yes (W3C `backends/kotlin/w3c/…/com/sce/generated/`, a module of its own; integration `backends/kotlin/tests/…/com/sce/integration/`, with the static datamodel's algorithms and the test profile's machines under that module's own `com/sce/generated/`) | declared trees (ADR 0097) `kotlin-w3c` and `kotlin-integration`; the static datamodel via its script |
 | Go | hybrid — W3C `backends/go/tests/generated/` is `.gitignore`d (CI regen), integration `backends/go/tests/integration/` is committed | W3C: CI regen; integration: declared tree (ADR 0097), regen via `scripts/materialize.sh go-integration` |
 | C++ | no — `${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated/` | CMake build-time |
 | Python | no — `backends/python/tests/generated/` is `.gitignore`d | CI regen via `sce-codegen generate-w3c -l python` |

@@ -34,6 +34,14 @@ include(":sce-kotlin-lua")
 project(":sce-kotlin-lua").projectDir = file("backends/kotlin/lua")
 include(":sce-kotlin-quickjs")
 project(":sce-kotlin-quickjs").projectDir = file("backends/kotlin/quickjs")
+// The Kotlin suites: the W3C conformance machines, the integration machines, and
+// the harness both run with. Two suites rather than one so that neither
+// population's compile grows with the other's (backends/kotlin/w3c/build.gradle.kts
+// says why).
+include(":sce-kotlin-test-harness")
+project(":sce-kotlin-test-harness").projectDir = file("backends/kotlin/test-harness")
+include(":sce-kotlin-w3c")
+project(":sce-kotlin-w3c").projectDir = file("backends/kotlin/w3c")
 include(":sce-kotlin-tests")
 project(":sce-kotlin-tests").projectDir = file("backends/kotlin/tests")
 // The machine of a statechart too large for one JVM method and its test. Its own

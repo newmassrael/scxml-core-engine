@@ -136,8 +136,19 @@ def strip_comments(text: str) -> str:
         kept.append("\n" * text.count("\n", opened, position))
 
 
-def derive(root: pathlib.Path) -> list[str]:
-    """Every concrete class the suite's sources say JUnit must execute.
+def derive(
+    roots: list[pathlib.Path], supertype_roots: list[pathlib.Path] = ()
+) -> list[str]:
+    """Every concrete class the suites' sources say JUnit must execute.
+
+    `roots` are the test sources of every suite a row runs, read together:
+    the W3C machines' JUnit classes and the integration tests became two
+    modules on 2026-11-07, and a class is the same claim whichever of them
+    holds it. `supertype_roots` are read for the fixpoint only and none of
+    their classes is required to run: every generated W3C class inherits its
+    `@Test` from `W3CTestBase`, which the harness module holds, so without it
+    the fixpoint would find no carrier above 202 of them, and nothing in the
+    harness is a class a row runs.
 
     A FIXPOINT rather than a grep for `@Test`, because most of these classes
     do not carry one. A generated case is `class Test144 : W3CTestBase<...>()`
@@ -162,7 +173,11 @@ def derive(root: pathlib.Path) -> list[str]:
     silently is a class no row is held to running.
     """
     declarations: dict[str, dict] = {}
-    for path in sorted(root.rglob("*.kt")):
+    sources = [(path, True) for root in roots for path in sorted(root.rglob("*.kt"))]
+    sources += [
+        (path, False) for root in supertype_roots for path in sorted(root.rglob("*.kt"))
+    ]
+    for path, runs in sources:
         try:
             text = strip_comments(path.read_text())
         except UnreadableSource as unreadable:
@@ -182,6 +197,7 @@ def derive(root: pathlib.Path) -> list[str]:
                 "modifiers": modifiers.split(),
                 "supertypes": supertypes,
                 "declares_case": bool(EXECUTION_ANNOTATION.search(text[match.end() : end])),
+                "runs": runs,
             }
 
     carriers = {n for n, d in declarations.items() if d["declares_case"]}
@@ -201,12 +217,21 @@ def derive(root: pathlib.Path) -> list[str]:
             for name in carriers
             if declarations[name]["kind"] == "class"
             and "abstract" not in declarations[name]["modifiers"]
+            and declarations[name]["runs"]
         }
     )
 
 
-def read_reports(reports: pathlib.Path) -> tuple[dict[str, int], set[str], list[str]]:
-    """Totals, the classes that reported, and the cases they skipped.
+def read_reports(
+    report_dirs: list[pathlib.Path],
+) -> tuple[dict[str, int], set[str], list[str]]:
+    """Totals, the classes that reported, and the cases they skipped, over
+    every suite's result directory.
+
+    A class reported from two directories is refused: each suite module holds
+    its own classes, so the same class in two of them is two modules
+    compiling one source, and adding its cases twice would count one claim
+    as two.
 
     ⚠ The class is read from each `<testcase classname=...>`, and the file
     name is CHECKED against it rather than trusted. The obvious-looking
@@ -230,8 +255,10 @@ def read_reports(reports: pathlib.Path) -> tuple[dict[str, int], set[str], list[
     """
     totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
     reported: set[str] = set()
+    reported_in: dict[str, pathlib.Path] = {}
     skipped: list[str] = []
-    for path in sorted(reports.glob("TEST-*.xml")):
+    paths = [path for reports in report_dirs for path in sorted(reports.glob("TEST-*.xml"))]
+    for path in paths:
         suite = ET.parse(path).getroot()
         named = path.name[len("TEST-") : -len(".xml")]
         classes = {case.get("classname") for case in suite.iter("testcase")}
@@ -247,6 +274,12 @@ def read_reports(reports: pathlib.Path) -> tuple[dict[str, int], set[str], list[
                 f"reader's index into the report and it does not describe the "
                 f"content"
             )
+        if named in reported_in:
+            raise ValueError(
+                f"`{named}` is reported both under {reported_in[named].parent} and "
+                f"under {path.parent}, so two suite modules compile one test class"
+            )
+        reported_in[named] = path
         reported.add(named)
         for key in totals:
             totals[key] += int(suite.get(key, 0))
@@ -264,7 +297,9 @@ def names(values) -> str:
     return shown
 
 
-def verdict(reports: pathlib.Path, runnable_file: pathlib.Path, label: str) -> int:
+def verdict(
+    report_dirs: list[pathlib.Path], runnable_file: pathlib.Path, label: str
+) -> int:
     runnable = {line for line in runnable_file.read_text().split("\n") if line.strip()}
 
     # The vacuity guard, on the side the comparison cannot defend. Two empty
@@ -279,21 +314,25 @@ def verdict(reports: pathlib.Path, runnable_file: pathlib.Path, label: str) -> i
             f"would report every row as complete"
         )
 
-    if not reports.is_dir():
-        return refuse(
-            f"no JUnit results under {reports} -- the {label} run reported "
-            f"success without producing a result file"
-        )
+    # Every suite a row runs must have written its results: a missing one is
+    # a suite that did not run, whatever the others report.
+    for reports in report_dirs:
+        if not reports.is_dir():
+            return refuse(
+                f"no JUnit results under {reports} -- the {label} run reported "
+                f"success without producing a result file"
+            )
 
     # A report this reader cannot parse is refused, never skipped. The
     # alternative — ignore the file and judge the rest — turns a corrupted or
     # renamed report into a class that "never reported", which is a true
     # sentence about the wrong defect.
+    where = " or ".join(str(reports) for reports in report_dirs)
     try:
-        totals, reported, skipped = read_reports(reports)
+        totals, reported, skipped = read_reports(report_dirs)
     except (ET.ParseError, ValueError) as unreadable:
         return refuse(
-            f"a JUnit report under {reports} could not be read for {label}: "
+            f"a JUnit report under {where} could not be read for {label}: "
             f"{unreadable}"
         )
 
@@ -360,25 +399,39 @@ def main() -> int:
     derived = sub.add_parser(
         "derive", help="print every test class the suite's sources say must run"
     )
-    derived.add_argument("sources", type=pathlib.Path)
+    derived.add_argument("sources", type=pathlib.Path, nargs="+")
+    derived.add_argument(
+        "--supertypes-from",
+        type=pathlib.Path,
+        action="append",
+        default=[],
+        help="sources read for their supertypes only, none of whose classes must run",
+    )
 
     judged = sub.add_parser(
         "verdict", help="judge one row's JUnit reports against that set"
     )
-    judged.add_argument("--reports", type=pathlib.Path, required=True)
+    judged.add_argument(
+        "--reports",
+        type=pathlib.Path,
+        action="append",
+        required=True,
+        help="a suite's JUnit result directory; once per suite the row ran",
+    )
     judged.add_argument("--runnable", type=pathlib.Path, required=True)
     judged.add_argument("--label", required=True)
 
     args = parser.parse_args()
 
     if args.command == "derive":
-        if not args.sources.is_dir():
-            return refuse(
-                f"{args.sources} is not a directory, so no runnable test class "
-                f"can be derived from it"
-            )
+        for root in [*args.sources, *args.supertypes_from]:
+            if not root.is_dir():
+                return refuse(
+                    f"{root} is not a directory, so no runnable test class "
+                    f"can be derived from it"
+                )
         try:
-            classes = derive(args.sources)
+            classes = derive(args.sources, args.supertypes_from)
         except UnreadableSource as unreadable:
             return refuse(
                 f"a Kotlin source could not be read, so the classes it declares "
@@ -387,7 +440,8 @@ def main() -> int:
         if len(classes) < RUNNABLE_FLOOR:
             return refuse(
                 f"only {len(classes)} runnable test class(es) were derived from "
-                f"{args.sources}, under the floor of {RUNNABLE_FLOOR}. Every row "
+                f"{' and '.join(str(root) for root in args.sources)}, under the floor of "
+                f"{RUNNABLE_FLOOR}. Every row "
                 f"compares its report against this set, and a set this small "
                 f"means the derivation failed rather than that the suite shrank "
                 f"-- a derivation that failed reports every row as complete"

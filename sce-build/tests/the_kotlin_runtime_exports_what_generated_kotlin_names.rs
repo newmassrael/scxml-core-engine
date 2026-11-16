@@ -135,6 +135,7 @@ fn sources() -> Vec<PathBuf> {
             .is_some_and(|n| n.contains("_test."))
     });
     for generated in [
+        "backends/kotlin/w3c/src/main/kotlin/com/sce/generated",
         "backends/kotlin/tests/src/main/kotlin/com/sce/integration",
         "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
     ] {

@@ -186,7 +186,7 @@ fn an_emitted_kotlin_suite_moves_the_suite_packages_and_not_the_runtime() {
     let out = tempfile::tempdir().expect("tempdir");
     emit("kotlin", Some("com.acme.conformance"), out.path());
 
-    let project = out.path().join("backends/kotlin/tests");
+    let project = out.path().join("backends/kotlin/w3c");
     for expected in [
         "settings.gradle.kts",
         "build.gradle.kts",

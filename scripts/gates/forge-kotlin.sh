@@ -11,8 +11,9 @@
 # ⚠ WHY THIS EXISTS. `forge-conformance.yml` has SIX arms — rust, python, go,
 # kotlin, cpp, c — and `scripts/gates/` mirrored FIVE of them. Measured
 # 2026-09-18: this file did not exist, and no other gate ran the Kotlin forge
-# harness either. `w3c-kotlin` runs `:sce-kotlin-tests:test`, which is the W3C
-# suite in a different Gradle project, so its green said nothing about this one.
+# harness either. `w3c-kotlin` runs `:sce-kotlin-w3c:test` and
+# `:sce-kotlin-tests:test`, the W3C and integration suites, in different Gradle
+# projects, so its green said nothing about this one.
 # A change that broke only the Kotlin forge lowering therefore passed every
 # local lane and went red in CI after the push — and in this repository a
 # passing local lane is part of what authorises that push, so the gap sat

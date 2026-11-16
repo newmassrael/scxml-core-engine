@@ -15,8 +15,9 @@
 //
 // The live sets those runs printed (1,581 and 1,019 MB) are lower bounds,
 // sampled at whatever moments the collector ran: the module without this
-// machine still needs about 1.85 GB to compile, measured by bisecting the heap
-// (`gradle.properties` records it). Read them as a comparison between two like
+// machine still needed about 1.85 GB to compile, measured by bisecting the heap
+// (`gradle.properties` records it, and the split of that module since). Read
+// them as a comparison between two like
 // runs, not as what either compile needs.
 //
 // It shared that compile four times per Kotlin W3C run, because

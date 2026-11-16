@@ -508,6 +508,28 @@ The owner accepted the recommended answer to every question. Restated as decisio
 8. **The order is that of "Migration in landings"**: the Rust test trees first, the Mesh libraries last, after the
    release pipeline.
 
+## Amendment of 2026-11-16: the Kotlin W3C tree is a module of its own
+
+Decided under the owner's standing rule, without a question to the owner. The Kotlin W3C suite left
+`:sce-kotlin-tests` for a module of its own, so that no compilation unit holds both the W3C machines and the
+integration machines (`backends/kotlin/w3c/build.gradle.kts` gives the measured compile heaps). What that changes
+here:
+
+- **The tree `kotlin-w3c` is the module's two generated directories, whole**
+  (`tools/codegen/trees/kotlin-w3c.toml`): `backends/kotlin/w3c/src/main/kotlin/com/sce/generated` and
+  `backends/kotlin/w3c/src/test/kotlin/com/sce/w3c`, which nothing else writes into. The tree no longer shares
+  `com/sce/generated` with the static datamodel's algorithms, which stay in `:sce-kotlin-tests`.
+- **The files the generator compiles in are outside every tree.** `W3CTestBase`, `VirtualDrive`, `W3CHttpTestBase`
+  and `W3CHttpTestServer` are `:sce-kotlin-test-harness`'s (`backends/kotlin/test-harness`), which both suites depend
+  on; `WITNESS_FILES` and every `[actions.regen-*]` name them there.
+- **Landing 2 hooks two build files**, one per tree: `:sce-kotlin-w3c`'s `generateScxml` becomes the cacheable task
+  of `kotlin-w3c`, and `:sce-kotlin-tests` gets the task of `kotlin-integration` and of the static datamodel.
+  Until that landing the step `kotlin-tests` keeps writing both modules' trees, since the step is what landing 2
+  retires.
+- **The overlay of the conformance lane is shaped like the repository**: `-Psce.generated.overlay` names one tree, a
+  `materialize --script-engine <language>` of each Kotlin tree into it, and each suite module replaces its own part
+  (`gradle/sce-kotlin-suite.gradle.kts`, `scripts/gates/w3c-kotlin.sh`).
+
 ## References
 
 - `scripts/regen_all_committed_trees.sh`, `scripts/lib/sce_generated_tree.sh`, `bx.toml` `[actions.regen-*]` and

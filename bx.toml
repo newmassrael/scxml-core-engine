@@ -611,10 +611,11 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #     rust-integration.toml) whose integration stems are a directory each under src/integration,
 #     found at run time, so no output can be declared for each.
 #   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
-#     com/sce/generated, the W3C tree. Its machines are a directory of their own,
-#     com/sce/integration/static_datamodel, beside the integration stems. The W3C and
-#     integration trees are declared (tools/codegen/trees/kotlin-w3c.toml,
-#     kotlin-integration.toml), the integration stems a directory each, found at run time.
+#     com/sce/generated of backends/kotlin/tests, and its machines are a directory of their own,
+#     com/sce/integration/static_datamodel, beside the integration stems. The W3C tree is the
+#     module backends/kotlin/w3c, which nothing else writes into. The W3C and integration trees
+#     are declared (tools/codegen/trees/kotlin-w3c.toml, kotlin-integration.toml), the
+#     integration stems a directory each, found at run time.
 #   - regen-go-integration: a declared tree (tools/codegen/trees/go-integration.toml) whose stems are
 #     a directory each under backends/go/tests/integration, found at run time, and the static
 #     datamodel's directory beside them. The W3C Go tree is a directory of its own, and a step of its
@@ -634,8 +635,9 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #     which regen-go-round-trip writes; their inputs name the runtime's Go files (`*/*.go`), which no
 #     output of that step can be.
 #   - sce-codegen compiles in hand-written files that sit inside the language test trees
-#     (sce-build/src/w3c_suite.rs: the Rust harness, the Go harness and go.sum, the Python conftest,
-#     three Kotlin W3C base classes). Every action that builds the generator reads them, so a language
+#     (sce-build/src/w3c_suite.rs: the Rust harness, the Go harness and go.sum, the Python conftest;
+#     the Kotlin harness is a module of its own, backends/kotlin/test-harness, inside no output of
+#     any step). Every action that builds the generator reads them, so a language
 #     step declares as outputs only the generated parts of its trees (src/generated, src/integration,
 #     `test_*.rs`, `Test*.kt`, ...), never the files beside them: one output over a whole tree would
 #     put every other action in that step's chain.
@@ -698,9 +700,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -749,9 +749,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -766,9 +764,10 @@ inputs = [
     "backends/kotlin/tests/fixtures/**",
 ]
 outputs = [
+    "backends/kotlin/w3c/src/main/kotlin/com/sce/generated/**",
+    "backends/kotlin/w3c/src/test/kotlin/com/sce/w3c/Test*.kt",
     "backends/kotlin/tests/src/main/kotlin/com/sce/generated/**",
     "backends/kotlin/tests/src/main/kotlin/com/sce/integration/**",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/Test*.kt",
 ]
 
 [actions.regen-kotlin-method-size]
@@ -800,9 +799,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -842,9 +839,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -884,9 +879,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -929,9 +922,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -971,9 +962,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1015,9 +1004,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1069,9 +1056,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1111,9 +1096,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1156,9 +1139,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1197,9 +1178,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1241,9 +1220,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1282,9 +1259,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1323,9 +1298,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",
@@ -1364,9 +1337,7 @@ inputs = [
     "backends/go/tests/harness/**",
     "backends/go/tests/go.sum",
     "backends/python/tests/conftest.py",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/kotlin/test-harness/src/main/**",
     "tests/fixtures/**",
     "tests/forge/resources/**",
     "tests/mesh/**",

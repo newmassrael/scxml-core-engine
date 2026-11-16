@@ -2598,7 +2598,7 @@ struct GenerateW3cArgs {
     /// Root the generated trees are written under.
     ///
     /// Each backend keeps its own layout beneath this root
-    /// (`backends/rust/tests/`, `backends/kotlin/tests/`, ...) because
+    /// (`backends/rust/tests/`, `backends/kotlin/w3c/`, ...) because
     /// the emitted code depends on it: the tests sit at a fixed place
     /// relative to the machines they exercise. Only the root moves.
     ///
@@ -11662,7 +11662,13 @@ struct KotlinBackend {
 }
 
 impl KotlinBackend {
-    const RELATIVE_ROOT: &'static str = "backends/kotlin/tests";
+    /// The module that holds the W3C suite and nothing else
+    /// (`:sce-kotlin-w3c`, backends/kotlin/w3c/build.gradle.kts). The
+    /// integration machines are `:sce-kotlin-tests`'s, written by
+    /// `generate-integration` and the per-stem scripts; keeping the two
+    /// populations in separate modules is what keeps either one's compile
+    /// from growing with the other's.
+    const RELATIVE_ROOT: &'static str = "backends/kotlin/w3c";
 
     fn new(
         output_root: &Path,

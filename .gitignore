@@ -188,7 +188,7 @@ local.properties
 
 # Go W3C test code regenerates at test time via sce-codegen and is
 # deliberately not tracked. The Kotlin + Rust counterparts are tracked
-# (see backends/kotlin/tests/build.gradle.kts: "Generated files are kept in
+# (see backends/kotlin/w3c/build.gradle.kts: "Generated files are kept in
 # git so builds work without sce-codegen") so they are intentionally
 # absent from this ignore list. Drift against the templates is caught
 # by running `sce-codegen generate-w3c` and inspecting `git status`.

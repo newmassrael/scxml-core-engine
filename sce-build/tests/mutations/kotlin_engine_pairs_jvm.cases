@@ -30,15 +30,16 @@
 # Case 1 is that direction, and it is the reason the test was written.
 
 # The suite is selected by task path and narrowed by `--tests`, which is
-# scoped to the task named beside it. `:sce-kotlin-tests:test` unfiltered is
-# 373 conformance cases per run and this round rebuilds between every case;
-# the filter is what makes a JVM round affordable rather than daily.
-mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.w3c.GateEnginePairsTest'
+# scoped to the task named beside it. The test lives in the harness module
+# since 2026-11-07, whose own tests are a handful rather than the 373
+# conformance cases it once sat among; the filter still keeps each case to the
+# one class under study.
+mutation_gradle . :sce-kotlin-test-harness:test --tests 'com.sce.w3c.GateEnginePairsTest'
 
 # Named explicitly, because only a cargo selector carries its oracle inside
 # itself (`--test <name>`). Without this the round would report verdicts that
 # nothing re-proves when the assertions behind them are weakened.
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/w3c/GateEnginePairsTest.kt
+mutation_oracles backends/kotlin/test-harness/src/test/kotlin/com/sce/w3c/GateEnginePairsTest.kt
 
 # The gate is READ AT RUN TIME — `GateEnginePairsTest` opens the file and
 # parses the array out of it — so it is a runtime target: no compiled artifact

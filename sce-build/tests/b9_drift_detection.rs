@@ -452,13 +452,14 @@ fn workspace_root() -> PathBuf {
 //           donedata SM under `backends/rust/tests/src/integration/donedata_local_invoke/`
 //           ⇒ verify `src/generated/` is donedata-free.
 //
-//   Kotlin: W3C SM and donedata SM are siblings under
-//           `backends/kotlin/tests/src/main/kotlin/com/sce/generated/`
-//           ⇒ verify the W3C *harness* tree
-//           (`backends/kotlin/tests/src/test/kotlin/com/sce/w3c/`) which is
-//           donedata-free and shares the W3C drift context with the
-//           SM tree (one `generate-w3c -l kotlin` invocation emits
-//           both atomically, so harness-fresh ⇒ SM-fresh).
+//   Kotlin: W3C SM under `backends/kotlin/w3c/src/main/kotlin/com/sce/generated/`,
+//           a module of its own; donedata SM under
+//           `backends/kotlin/tests/src/main/kotlin/com/sce/integration/donedata_local_invoke/`
+//           ⇒ verify the W3C test-class tree
+//           (`backends/kotlin/w3c/src/test/kotlin/com/sce/w3c/`), which
+//           shares the W3C drift context with the SM tree (one
+//           `generate-w3c -l kotlin` invocation emits both atomically, so
+//           test-class-fresh ⇒ SM-fresh).
 
 fn run_verify_real_tree(target: &Path, input_root: &Path) -> (i32, String) {
     let bin = env_bin();
@@ -497,7 +498,7 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
 fn verify_passes_on_real_committed_kotlin_w3c_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("backends/kotlin/tests")
+        .join("backends/kotlin/w3c")
         .join("src")
         .join("test")
         .join("kotlin")

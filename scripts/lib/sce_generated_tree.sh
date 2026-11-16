@@ -191,9 +191,10 @@ sce_generated_trees() {
             ;;
         kotlin-tests)
             printf '%s\n' \
+                backends/kotlin/w3c/src/main/kotlin/com/sce/generated \
+                backends/kotlin/w3c/src/test/kotlin/com/sce/w3c \
                 backends/kotlin/tests/src/main/kotlin/com/sce/generated \
-                backends/kotlin/tests/src/main/kotlin/com/sce/integration \
-                backends/kotlin/tests/src/test/kotlin/com/sce/w3c
+                backends/kotlin/tests/src/main/kotlin/com/sce/integration
             ;;
         kotlin-method-size)
             printf '%s\n' backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize
