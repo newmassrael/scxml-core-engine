@@ -804,15 +804,48 @@ recorded here because each changes what a manifest is.
     2).
 
 Item 8's first half is done (items 9 and 10: `sce_build::cli`, `sce_build::action::build_script`).
-Still owed, in order: landing 1 (item 11: the Rust test crate's `build.rs` over `rust-w3c`,
-`rust-integration` and `rust-static-datamodel`, the three trees deleted with their step, their bx
-action and the `rust-modrs-drift` gate, whose check the derived declarations make true by
-construction, and every reader re-aimed: the drift and sourcemap tests that read the committed
-trees read a materialization, the casefiles that mutate a generated file name it as `<tree>:<path>`
-(answer 7) and those that select `--test test_<n>` select `--test w3c test_<n>::`), the release
-pipeline, and with the fleet cache the `generated-deterministic` gate of section 5. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
-`sce_build::action::store` already speaks (an `ActionResult` per action key, SHA-256 digests) and a
-store configured to the site's instance in place of `LocalStore`.
+
+12. **Landing 1, the Rust test trees, is done as item 11 has it** (2026-11-16). `sce-rust-tests`
+    and `sce-rust-scenarios` take `sce-build` with `cli` as a build-dependency and materialize
+    their trees into `OUT_DIR/sce-trees`; the declarations are derived from what was placed
+    (`Materialized::modules_in`, `write_module_declarations`), so the `rust-modrs-drift` gate,
+    whose check they make true by construction, is retired with its registry entry. The scenario
+    crate needs the generator too, so it declares Rust 1.87, `sce-build`'s, where it declared
+    1.85: a build compiles its build-dependencies. The three manifests say `committed = false`
+    and declare no `[[format]]`, the 1,376 committed files are deleted and ignored, and the
+    `rust-tests` step and its action are gone. A W3C test is a module of the target `w3c`
+    (`cargo test -p sce-rust-tests --test w3c test_144::`).
+13. **A suite reads a tree the checkout does not hold where the generator under test writes it.**
+    The tests that read the committed Rust trees (the `verify` sweeps, the sourcemap and marker
+    sweeps, the static datamodel placement check, the default-emission comparison) read
+    `sce-codegen materialize <tree> --into <dir> --replace`, run once per tree and test binary
+    into Cargo's scratch directory (`sce-build/tests/common/materialized.rs`), through the
+    machine's action cache, which answers only for the generator the binary was built from.
+14. **A casefile names a file of such a tree as `<tree>:<path>`** (answer 7), resolved by
+    `scripts/mutate` before anything reads the targets: in a cargo round, to the copy under
+    `<OUT_DIR>/sce-trees/<path>` of every package of the selector's build that holds it (the
+    copies the round compiles); for another runner, to `<path>` in the checkout, where
+    `scripts/materialize.sh` and the lanes write a tree; under `--check`, to a materialization
+    in the check's own scratch. A casefile that declared generated files only so a template
+    mutation reached them through `mutation_regen` declares neither now: the build script reruns
+    on the template, and again on its restore. A round runs a test binary whole, so a casefile
+    on the target `w3c` runs every W3C case and needs the BasicHTTP server
+    (`mutation_needs http-fixture`), not a filter the runner would not pass on.
+15. **What reaches such a target in a change set** is what the tree is made of, since no change
+    set holds the file: the tree's manifest, the generator outside its tests, the templates, the
+    standard library, `Cargo.lock`, and any statechart or deploy file, since which documents a
+    generation reads is known only by running it (`scripts/gates/mutation-rounds.sh`). Wider
+    than the file, never narrower.
+
+Still owed, in order: the release pipeline (section 7, landing 6) and, with the fleet cache, the
+`generated-deterministic` gate of section 5. What SCE provides for the fleet cache, which is bx's
+(RFC 0049 section 4.11): the REAPI client `sce_build::action::store` already speaks (an
+`ActionResult` per action key, SHA-256 digests), to be pointed at the site's instance in place of
+`LocalStore` by a `ContentStore` of the remote kind, and the action keys `materialize` computes,
+which the gate compares across machines and against a fleet entry of the same key. The pipeline's
+SCE side is a `generated-provenance.json` per tree (the action keys, their input digests and the
+digest of the output tree) written by `materialize`, which a release job packages beside the
+materialized tree; neither is written yet.
 
 ## References
 
