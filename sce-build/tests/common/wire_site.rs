@@ -4,7 +4,8 @@
 //! Where a diagnostic's `actual` stands, read the way a consumer reads it.
 //!
 //! `SCE_ERROR_CONTRACT.md` §3.1.1: when a record carries `location.line`,
-//! the value in `actual` occurs on that line; when it does not, `actual`
+//! the value in `actual` occurs on that line, beginning at `location.col`
+//! when the record carries that too ([`locate_at`]); when it does not, `actual`
 //! occurs exactly once in the document, since a whole-file search is then
 //! the only locating strategy the wire offers. A substitution is performed
 //! on that same site.
@@ -34,6 +35,12 @@ pub enum Misplaced {
     NoSuchRow { line: usize, lines: usize },
     /// The row `line` names does not hold `actual`.
     NotOnTheRow { line: usize, row: String },
+    /// The row holds `actual`, and not where `col` says it begins.
+    NotAtTheColumn {
+        line: usize,
+        col: usize,
+        row: String,
+    },
     /// The record carries no `line`, and the document holds `actual`
     /// other than exactly once — a miss at zero, a coin flip above one.
     NotUnique { hits: usize },
@@ -47,6 +54,13 @@ impl fmt::Display for Misplaced {
             }
             Misplaced::NotOnTheRow { line, row } => {
                 write!(f, "line {line} does not hold it: {:?}", row.trim())
+            }
+            Misplaced::NotAtTheColumn { line, col, row } => {
+                write!(
+                    f,
+                    "line {line} holds it, and not at column {col}: {:?}",
+                    row.trim()
+                )
             }
             Misplaced::NotUnique { hits: 0 } => {
                 write!(f, "no line is given and the document does not hold it")
@@ -86,6 +100,32 @@ pub fn locate(text: &str, line: Option<usize>, actual: &str) -> Result<(), Mispl
     }
 }
 
+/// [`locate`], and, when the record gives a column, `actual` begins at it:
+/// `line[col-1..]` starts with `actual`, counting columns from 1 in
+/// characters (SCE_ERROR_CONTRACT.md §2.2, §3.1.1).
+pub fn locate_at(
+    text: &str,
+    line: Option<usize>,
+    col: Option<usize>,
+    actual: &str,
+) -> Result<(), Misplaced> {
+    locate(text, line, actual)?;
+    let (Some(line), Some(col)) = (line, col) else {
+        return Ok(());
+    };
+    let row = text.lines().nth(line - 1).unwrap_or_default();
+    let from: String = row.chars().skip(col.saturating_sub(1)).collect();
+    if from.starts_with(actual) {
+        Ok(())
+    } else {
+        Err(Misplaced::NotAtTheColumn {
+            line,
+            col,
+            row: row.to_string(),
+        })
+    }
+}
+
 /// §3.1.1 for one wire record against the text of the document it names:
 /// `None` when the record carries no `actual`, when the value locates, or
 /// when the rule exempts it; the reason otherwise.
@@ -105,7 +145,8 @@ pub fn record_misplaced(record: &serde_json::Value, text: &str) -> Option<Mispla
         return None;
     }
     let line = record["location"]["line"].as_u64().map(|n| n as usize);
-    locate(text, line, actual).err()
+    let col = record["location"]["col"].as_u64().map(|n| n as usize);
+    locate_at(text, line, col, actual).err()
 }
 
 /// Whether §2.3 exempts a record's own `actual` from §3.1.1: it names the

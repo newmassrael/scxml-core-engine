@@ -428,11 +428,10 @@ distinguish them (`validation/invalid-reference` and
 `col` is the column at which `actual` begins on `line`: the value of an
 attribute, not the attribute's name, when the value is what the record
 reports. When it carries none, `col` is the column of the element the
-record stands on. Every forge refusal placed at a node of the document is
-placed by this rule (`forge::parser::located`); the statechart parser's
-own sites still place some records at the element that holds the token,
-and are moved to it as they are measured (docs/adr/0106, item #81), which
-is why §3.1.1's guard reads `line` and not yet `col`.
+record stands on. Every refusal placed at a node of a document, forge or
+statechart, is placed by this rule (`forge::parser::located`), and
+§3.1.1's guard holds a record's own `actual` to its `col` as well as its
+`line` (docs/adr/0106, item #81).
 
 A refusal of a deployment (`deploy.yaml`) stands at the key it names: the
 key path each refusal is about (`DeployError::key_path`) is looked up in a
@@ -593,9 +592,10 @@ that possible, and both are enforced against the emitted corpus by
 carrying `actual`**, fix or no fix, rather than asserted here:
 
 - When the record carries `location.line`, the value in `actual` occurs
-  on that line. A coordinate on an enclosing element — the `<send>`
-  around the offending `<param>`, say — sends the consumer to a line
-  the token is absent from.
+  on that line, and when it carries `location.col` as well, `actual`
+  begins at that column (`line[col-1..]` starts with it). A coordinate
+  on an enclosing element — the `<send>` around the offending `<param>`,
+  say — sends the consumer to a line the token is absent from.
 - When it does not, `actual` occurs exactly once in the document, since
   a whole-file search is then the only locating strategy the wire
   offers.

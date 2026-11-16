@@ -106,6 +106,8 @@ struct FixRecord {
     actual: Option<String>,
     file: Option<String>,
     line: Option<usize>,
+    /// The column `actual` begins at on `line` (§2.2).
+    col: Option<usize>,
     /// Whether the record carries `expanded_from` — §2.3 exempts its
     /// `actual` from occurring on `location`'s row.
     expanded: bool,
@@ -286,6 +288,11 @@ impl FixRecord {
                 .and_then(|l| l.get("line"))
                 .and_then(serde_json::Value::as_u64)
                 .map(|n| n as usize),
+            col: value
+                .get("location")
+                .and_then(|l| l.get("col"))
+                .and_then(serde_json::Value::as_u64)
+                .map(|n| n as usize),
             expanded: value.get("expanded_from").is_some(),
             choices: match fix_kind.as_str() {
                 "replace_one_of" => Some(
@@ -451,19 +458,20 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
     };
     let named = rec.file.as_deref().unwrap_or(&rec.doc);
     let site = format!("[{} / {}] {}", rec.doc, rec.lang, rec.code);
-    token_violation(root, &site, named, rec.line, actual)
+    token_violation(root, &site, named, rec.line, rec.col, actual)
 }
 
-/// Is `actual` findable in `named` — on `line` when there is one,
-/// exactly once in the file when there is not? The rule a record's own
-/// `actual` and each `related` entry's are both held to (§3.1.1, §2.4),
-/// read through [`wire_site::locate`], which the suites writing their own
-/// documents read too.
+/// Is `actual` findable in `named` — on `line` when there is one, beginning
+/// at `col` when that is given too, exactly once in the file when there is
+/// no line? The rule a record's own `actual` and each `related` entry's are
+/// both held to (§3.1.1, §2.4), read through [`wire_site::locate_at`], which
+/// the suites writing their own documents read too.
 fn token_violation(
     root: &Path,
     site: &str,
     named: &str,
     line: Option<usize>,
+    col: Option<usize>,
     actual: &str,
 ) -> Option<String> {
     let path = root.join(named);
@@ -473,12 +481,16 @@ fn token_violation(
              open — §2.2: \"A consumer opens it to apply a fix\".",
         ));
     };
-    let why = match wire_site::locate(&text, line, actual) {
+    let why = match wire_site::locate_at(&text, line, col, actual) {
         Ok(()) => return None,
         Err(why) => why,
     };
     Some(match why {
         Misplaced::NoSuchRow { .. } => format!("{site} points into {named}, but {why}."),
+        Misplaced::NotAtTheColumn { .. } => format!(
+            "{site} carries actual={actual:?} and points into {named}, but \
+             {why}\n  §2.2: `col` is where `actual` begins on its line.",
+        ),
         Misplaced::NotOnTheRow { .. } => format!(
             "{site} carries actual={actual:?} and points at {named}, but \
              {why}\n  The consumer edits the line it was given, so a \
@@ -509,7 +521,10 @@ fn related_violations(root: &Path, rec: &FixRecord) -> Vec<String> {
                 "[{} / {}] {} related[{}]",
                 rec.doc, rec.lang, rec.code, entry.role
             );
-            token_violation(root, &site, &entry.file, entry.line, actual)
+            // A related site is held to its row: the producers of related
+            // sites are not all placed by `col` yet (SCE_ERROR_CONTRACT.md
+            // §2.4), so its column is not judged here.
+            token_violation(root, &site, &entry.file, entry.line, None, actual)
         })
         .collect()
 }
@@ -963,4 +978,24 @@ fn the_sweep_reaches_more_than_one_fix_variant() {
          one of them.",
         by_kind,
     );
+}
+
+/// The guard reads `col` (§2.2, §3.1.1): a record whose row holds `actual`
+/// and whose column is not where `actual` begins is misplaced, and the
+/// column counts characters from 1.
+#[test]
+fn the_guard_holds_actual_to_the_column_the_record_gives() {
+    let text = "<scxml>\n  <state id=\"délai\" initial=\"s\"/>\n</scxml>\n";
+    // `s` begins at column 30 of row 2, counted in characters (`é` is one).
+    assert_eq!(wire_site::locate_at(text, Some(2), Some(30), "s\""), Ok(()));
+    assert_eq!(
+        wire_site::locate_at(text, Some(2), Some(3), "s\""),
+        Err(Misplaced::NotAtTheColumn {
+            line: 2,
+            col: 3,
+            row: "  <state id=\"délai\" initial=\"s\"/>".to_string(),
+        })
+    );
+    // A record with no column is held to its row alone.
+    assert_eq!(wire_site::locate_at(text, Some(2), None, "délai"), Ok(()));
 }

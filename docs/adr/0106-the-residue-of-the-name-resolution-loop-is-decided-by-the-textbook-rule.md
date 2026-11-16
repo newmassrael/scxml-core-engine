@@ -177,6 +177,16 @@ on the corpus, which takes a run this change could not make; the §3.1.1 guard (
 `line[col-1..]` starting with `actual` in the change that moves the last of them, not before, since a guard tightened
 ahead of its producers fails on records that are right by the rule they were written to.
 
+Implemented (2026-11-16): every node-placed statechart refusal (the null and `sce-static` data model rules, the
+`sce:candidates` / `sce:targets` / `sce:types` / `sce:req` / `sce:provenance` / `sce:unhandled` readers, executable
+content, `<invoke>` ids and mesh-rpc targets, drivers, session roles, `<assign>` and `<param>`, the root, the
+product line and the test component's elements) is placed by `forge::parser::located`, so there is one placement for
+both parsers; an unresolved marker stands at its id's value and an unknown standard document at its `src` value. The
+sites that already stood at the value they report (`scxml_identifier`, `declared_names`, the typed invoke
+attributes) keep their own placement. The guard (`wire_site::locate_at`, read by `record_misplaced` and the corpus
+sweep) holds a record's own `actual` to its column. A `related` entry is held to its row only: its producers were not
+measured in this change.
+
 ### #53g — `actual` is an input token
 
 Partly fixed before this ADR (`94e56bc16c`: counts and cycle paths are no longer `actual`).
