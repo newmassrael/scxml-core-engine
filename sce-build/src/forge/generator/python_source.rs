@@ -23,7 +23,7 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::{ElementId, InputSource};
+use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Against, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, HandedFrom,
@@ -84,13 +84,13 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // An input the value says (docs/adr/0065 §6 R4a) is read off it, by a
     // function of the module a parent calls, `input_<name>`, and by the encode
     // where a gate or a check reads it; one it does not say is a parameter of
-    // the encode. It is said by the field gated on it alone, or by the body,
-    // always there, it is handed on to, through that body's codec's own
-    // function, which a codec the Python backend prints has.
+    // the encode. It is said by the field gated on it alone, by the group
+    // gated on it, or by the body, always there, it is handed on to, through
+    // that body's codec's own function, which a codec the Python backend
+    // prints has.
     for said in &plan.said {
         let by = match &plan.roles.inputs[&said.input.name] {
-            InputSource::Gate { .. } | InputSource::Forward { .. } => continue,
-            InputSource::Group => "a group",
+            InputSource::Gate { .. } | InputSource::Forward { .. } | InputSource::Group => continue,
             InputSource::EveryArm { .. } | InputSource::SomeArms { .. } => "the arms of a variant",
             InputSource::List { .. } => "the start of a list held to a law",
         };
@@ -100,39 +100,29 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         ));
     }
     for element in &plan.elements {
-        let id = &element.field.id;
-        match &element.value {
-            Value::Scalar(t) if t.int_bit_width().is_some() => {}
-            Value::Scalar(SceType::Enum(_)) => {}
-            Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
-            Value::Bytes(_) | Value::Text(_) => {}
-            // A body is written by its codec's own `encode_source`, which a
-            // codec the Python backend prints has, handed each input it takes
-            // and does not say from a carrier or an input of this codec's.
-            Value::Body { codec } => {
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a body of `{codec}`, which the Python backend does not print"
-                    ));
-                }
-            }
-            // A list is walked, each entry written by its codec's own
-            // `encode_source`, which a codec the Python backend prints has,
-            // handed as a body is.
-            Value::List { codec, law, .. } => {
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a list of `{codec}`, which the Python backend does not print"
-                    ));
-                }
-                if !law.is_none() {
-                    forms.push(format!("field '{id}': a list held to a law"));
-                }
-            }
-        }
+        forms.extend(value_forms(imports, &element.field.id, &element.value));
     }
-    if !plan.groups().is_empty() {
-        forms.push("a group of fields a gate decides together".to_string());
+    // A group (docs/adr/0065 §6 R4b, R4c) is presented as the dataclass of
+    // its one arm's members, or the `Union` of a dataclass for each of its
+    // arms, held optionally where the gates allow no arm; its gates are flags
+    // of the codec's own or flag inputs, derived from the arm the value holds.
+    // Its members are held as an element alone is.
+    for group in plan.groups() {
+        let label = super::rust_source::gates_label(group);
+        if group.chain().is_some() {
+            forms.push(format!("group '{label}': a group of a chain's memberships"));
+        }
+        if group.aligned.is_some() {
+            forms.push(format!("group '{label}': two lists of one count"));
+        }
+        for id in group.fields() {
+            let member = m
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a group's member is a field of the codec");
+            forms.extend(value_forms(imports, id, &plan.value(member)));
+        }
     }
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
@@ -143,9 +133,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             (ElementId::Flag { .. }, Derive::Presence(presence)) => {
                 forms.extend(presence_form(&derived.element, presence));
             }
+            // A flag of a disjunction, what the arm the value holds gives it
+            // (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
             (element, _) => forms.push(format!(
-                "element '{element}': an element the encode derives other than a length \
-                 or a presence flag"
+                "element '{element}': an element the encode derives other than a length, \
+                 a presence flag or a group's flag"
             )),
         }
     }
@@ -234,6 +227,44 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     forms
 }
 
+/// What of `id`, an element of the abstract type `value` the value presents
+/// alone or a group of it holds, the printer does not print: it prints an
+/// integer, a flag set, an enum, a byte string, a text, and a body or a list
+/// of a codec the Python backend prints, held to no law.
+fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<String> {
+    let mut forms = Vec::new();
+    match value {
+        Value::Scalar(t) if t.int_bit_width().is_some() => {}
+        Value::Scalar(SceType::Enum(_)) => {}
+        Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
+        Value::Bytes(_) | Value::Text(_) => {}
+        // A body is written by its codec's own `encode_source`, which a codec
+        // the Python backend prints has, handed each input it takes and does
+        // not say from a carrier or an input of this codec's.
+        Value::Body { codec } => {
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a body of `{codec}`, which the Python backend does not print"
+                ));
+            }
+        }
+        // A list is walked, each entry written by its codec's own
+        // `encode_source`, which a codec the Python backend prints has, handed
+        // as a body is.
+        Value::List { codec, law, .. } => {
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a list of `{codec}`, which the Python backend does not print"
+                ));
+            }
+            if !law.is_none() {
+                forms.push(format!("field '{id}': a list held to a law"));
+            }
+        }
+    }
+    forms
+}
+
 /// What of the derived number of `element` the printer does not print: it
 /// prints a length, a count or an encoded length of the elements it measures,
 /// or the input a body says,
@@ -260,17 +291,10 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             }
         }
     }
-    match &number.into {
-        NumberInto::Field { absent, .. } => {
-            if *absent == Absent::Group {
-                forms.push(format!(
-                    "element '{element}': a length a group holds on the side without its content"
-                ));
-            }
-        }
-        // Folded into its carrier, as a presence flag is.
-        NumberInto::Flag => {}
-    }
+    // A number into a field holds, where nothing it measures is there, zero,
+    // what the value states, or what the arm of a group that holds it on the
+    // side without its content does (docs/adr/0065 §6 R4b); one into a flag is
+    // folded into its carrier, as a presence flag is.
     forms
 }
 
@@ -305,13 +329,17 @@ fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value
-/// presents it alone, or the encode derives it as a number.
+/// presents it alone or as a member of a group, or the encode derives it as a
+/// number.
 fn unread_form(
     plan: &EncodePlan<'_>,
     numbers: &BTreeSet<String>,
     field: &CodecField,
 ) -> Option<String> {
-    (element_of(plan, &field.id).is_none() && !numbers.contains(&field.id)).then(|| {
+    (element_of(plan, &field.id).is_none()
+        && plan.roles.group_of(&field.id).is_none()
+        && !numbers.contains(&field.id))
+    .then(|| {
         format!(
             "field '{}': a field the value neither presents nor the encode derives as a number",
             field.id
@@ -325,10 +353,24 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 }
 
 /// Whether the Python value of `plan`, a plan [`unlowered`] answers `None` for,
-/// holds no field `id`: the encode derives it (docs/adr/0081 §3) and the value
-/// does not state it while its content is absent.
+/// holds no field `id` of its own: the encode derives it (docs/adr/0081 §3)
+/// and the value does not state it while its content is absent, or a group
+/// holds it (docs/adr/0065 §6 R4), which is the value's field.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_numbers(plan).contains(id) && element_of(plan, id).is_none()
+    (derived_numbers(plan).contains(id) || plan.roles.group_of(id).is_some())
+        && element_of(plan, id).is_none()
+}
+
+/// The expression the encode reads the element `id` by: an attribute of the
+/// source, or, for a member of a group, the local the encode binds it to off
+/// the arm the value holds, `None` where that arm does not hold it.
+fn element_read(plan: &EncodePlan<'_>, l: &LangCtx, id: &str) -> String {
+    let name = l.codec_field_id(id);
+    if plan.roles.group_of(id).is_some() {
+        format!("_e_{name}")
+    } else {
+        format!("src.{name}")
+    }
 }
 
 /// The fields the number the value states as `id` measures, each gated: the
@@ -449,129 +491,78 @@ pub(super) fn render(
     imports: &[ImportContext],
     struct_name: &str,
 ) -> PythonSource {
-    let mut before = String::new();
+    let mut gathered = Gathered::default();
     let mut hold = String::new();
     let mut declared = BTreeMap::new();
-    let mut runtime: BTreeSet<&'static str> = BTreeSet::new();
-    let mut modules: BTreeSet<String> = BTreeSet::new();
-    let mut factory = false;
     let mut decoded = BTreeMap::new();
     // The type the source presents each element as.
     let mut presented: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let gated = element.presence == Presence::Gated;
-        // A body is any source of its codec, which that codec's module names;
-        // the value holds its codec's value, made by default by its class.
-        if let Value::Body { codec } = &element.value {
-            let import = printed_import(imports, codec)
-                .expect("`unlowered` prints a body of a printed codec only");
-            let (alias, class) = body_module(import);
-            modules.insert(format!("from . import {} as {alias}", import.namespace));
-            let source = format!("{alias}.{class}Source");
-            presented.insert(
+        // A number the value states only while the content it measures is
+        // absent (docs/adr/0058 §1): `None` while it is there, which the
+        // encode then derives from it, and the decode gives back `None` where
+        // it read any of it.
+        if element.presence == Presence::Stated {
+            let optional = format!("Optional[{}]", l.type_name(&element.field.sce_type));
+            presented.insert(id.clone(), optional.clone());
+            declared.insert(id.clone(), (optional, "None".to_string()));
+            let contents: Vec<String> = stated_contents(plan, id)
+                .iter()
+                .map(|content| format!("{} is None", l.codec_field_decode_local(&content.id)))
+                .collect();
+            decoded.insert(
                 id.clone(),
-                if gated {
-                    format!("Optional[{source}]")
-                } else {
-                    source
-                },
-            );
-            if gated {
-                declared.insert(
-                    id.clone(),
-                    (format!("Optional[{class}]"), "None".to_string()),
-                );
-            } else {
-                factory = true;
-                declared.insert(
-                    id.clone(),
-                    (class.to_string(), format!("field(default_factory={class})")),
-                );
-            }
-            continue;
-        }
-        let (Value::Bytes(bound) | Value::Text(bound) | Value::List { bound, .. }) = &element.value
-        else {
-            let ty = l.type_name(&element.field.sce_type).into_owned();
-            // A number the value states only while the content it measures is
-            // absent (docs/adr/0058 §1): `None` while it is there, which the
-            // encode then derives from it, and the decode gives back `None`
-            // where it read any of it.
-            if element.presence == Presence::Stated {
-                let optional = format!("Optional[{ty}]");
-                presented.insert(id.clone(), optional.clone());
-                declared.insert(id.clone(), (optional, "None".to_string()));
-                let contents: Vec<String> = stated_contents(plan, id)
-                    .iter()
-                    .map(|content| format!("{} is None", l.codec_field_decode_local(&content.id)))
-                    .collect();
-                decoded.insert(
-                    id.clone(),
-                    format!(
-                        "{} if {} else None",
-                        l.codec_field_decode_local(id),
-                        contents.join(" and ")
-                    ),
-                );
-                continue;
-            }
-            presented.insert(
-                id.clone(),
-                if gated { format!("Optional[{ty}]") } else { ty },
+                format!(
+                    "{} if {} else None",
+                    l.codec_field_decode_local(id),
+                    contents.join(" and ")
+                ),
             );
             continue;
-        };
-        // A list's entries are written by their codec's module, imported whole
-        // as a body's is.
-        if let Value::List { codec, .. } = &element.value {
-            let import = printed_import(imports, codec)
-                .expect("`unlowered` prints a list of a printed codec only");
-            let (alias, _) = body_module(import);
-            modules.insert(format!("from . import {} as {alias}", import.namespace));
         }
-        let (class, base, unit, fewest) =
-            bounded_class(struct_name, id, &element.value, bound.least);
-        runtime.insert(base);
-        let held = match bound.most {
-            Some(most) => format!("{} to {most} {unit}", bound.least),
-            None => format!(
-                "{} or more {unit}, the protocol stating no most",
-                bound.least
-            ),
-        };
-        let most = bound
-            .most
-            .map_or_else(|| "None".to_string(), |most| most.to_string());
-        before.push_str(&format!(
-            "class {class}({base}):\n\
-             \x20   \"\"\"The ``{id}`` element of :class:`{struct_name}`, {held},\n\
-             \x20   held to that bound where a value of it is made (docs/adr/0077 §3).\"\"\"\n\
-             \n\
-             \x20   LEAST = {least}\n\
-             \x20   MOST = {most}\n\n\n",
-            least = bound.least
-        ));
-        let keyword = if hold.is_empty() { "if" } else { "elif" };
-        let made = if gated {
-            format!("None if value is None else {class}(value)")
-        } else {
-            format!("{class}(value)")
-        };
-        hold.push_str(&format!(
-            "        {keyword} name == \"{}\":\n            value = {made}\n",
-            l.codec_field_id(id)
-        ));
-        let (ty, default) = if gated {
-            (format!("Optional[{class}]"), "None".to_string())
-        } else if bound.least == 0 {
-            (class.clone(), format!("{class}()"))
-        } else {
-            (class.clone(), format!("{class}({fewest})"))
-        };
-        presented.insert(id.clone(), ty.clone());
-        declared.insert(id.clone(), (ty, default));
+        let held = held_as(
+            &mut gathered,
+            l,
+            imports,
+            struct_name,
+            element.field,
+            &element.value,
+            gated,
+        );
+        presented.insert(id.clone(), held.presented);
+        if let Some(line) = held.hold {
+            hold.push_str(&hold_line(&hold, l, id, &line));
+        }
+        // An integer, a flag set or an enum takes the default the template
+        // gives every field of its type.
+        if !matches!(element.value, Value::Scalar(_)) {
+            declared.insert(id.clone(), (held.ty, held.default));
+        }
     }
+    // Each group, its arms' classes before the source that presents it.
+    let mut groups = Vec::new();
+    let mut union = false;
+    for group in plan.groups() {
+        let (field, presents) = group_part(
+            &mut gathered,
+            plan,
+            l,
+            imports,
+            struct_name,
+            group,
+            &mut union,
+        );
+        presented.insert(field.name.clone(), presents);
+        groups.push(field);
+    }
+    let Gathered {
+        classes: mut before,
+        runtime,
+        modules,
+        factory,
+    } = gathered;
 
     // The source: what the encode reads, each element by the attribute a value
     // holds it in, `None` where a gate leaves it out.
@@ -581,30 +572,22 @@ pub(super) fn render(
          \x20   reads (docs/adr/0081 §2): any object that presents them is a source of it.\n\
          \x20   The encode derives every other element of the frame.\"\"\"\n"
     ));
-    for element in &plan.elements {
-        let id = &element.field.id;
+    let names = plan
+        .elements
+        .iter()
+        .map(|element| (l.codec_field_id(&element.field.id), &element.field.id))
+        .chain(groups.iter().map(|group| (group.name.clone(), &group.name)));
+    for (name, key) in names {
         before.push_str(&format!(
-            "\n    @property\n    def {}(self) -> {}: ...\n",
-            l.codec_field_id(id),
-            presented[id]
+            "\n    @property\n    def {name}(self) -> {}: ...\n",
+            presented[key]
         ));
     }
 
     // A dataclass's constructor sets each field as an attribute, so one
     // `__setattr__` holds a byte string or a text to its bound where the value
     // is made and wherever it is set after.
-    let hold = if hold.is_empty() {
-        hold
-    } else {
-        format!(
-            "    def __setattr__(self, name: str, value: object) -> None:\n\
-             \x20       # Each byte string and text is held to its bound wherever it is\n\
-             \x20       # set, where the value is made and after (docs/adr/0081 §2),\n\
-             \x20       # whatever it was handed.\n\
-             {hold}\
-             \x20       object.__setattr__(self, name, value)\n"
-        )
-    };
+    let hold = setattr(&hold);
 
     PythonSource {
         before: format!(
@@ -619,8 +602,383 @@ pub(super) fn render(
         modules: modules.into_iter().collect::<Vec<_>>().join("\n"),
         factory,
         decoded,
-        groups: Vec::new(),
-        union: false,
+        groups,
+        union,
+    }
+}
+
+/// What the declarations of a module's elements gather as they are printed:
+/// the classes before the source (each bound's, each group arm's), the
+/// runtime's classes they name, the modules of the codecs they hold, and
+/// whether a default is made by a factory.
+#[derive(Default)]
+struct Gathered {
+    /// The classes, each followed by two blank lines.
+    classes: String,
+    /// The runtime's classes named.
+    runtime: BTreeSet<&'static str>,
+    /// The `from . import` statements of the held codecs' modules.
+    modules: BTreeSet<String>,
+    /// Whether a default is made by `field(default_factory=..)`.
+    factory: bool,
+}
+
+/// How a class of the module holds one element where it is there.
+struct Held {
+    /// The type a source presents it as.
+    presented: String,
+    /// The type the class declares it as.
+    ty: String,
+    /// The default the class gives it.
+    default: String,
+    /// Where a class holds its bound, what `__setattr__` makes of `value`.
+    hold: Option<String>,
+}
+
+/// How a class holds `field`, of the abstract type `value`, `Optional` where
+/// `gated`: a body as any source of its codec, held as its codec's value, made
+/// by default by its class; a byte string, a text or a list as the class of
+/// its bound, which `__setattr__` makes wherever it is set; anything else as
+/// its declared type. The classes and modules it names go into `gathered`.
+fn held_as(
+    gathered: &mut Gathered,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+    field: &CodecField,
+    value: &Value<'_>,
+    gated: bool,
+) -> Held {
+    let optional = |ty: &str| {
+        if gated {
+            format!("Optional[{ty}]")
+        } else {
+            ty.to_string()
+        }
+    };
+    let id = &field.id;
+    let bound = match value {
+        // A body is any source of its codec, which that codec's module names;
+        // a class holds its codec's value, made by default by its class.
+        Value::Body { codec } => {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a body of a printed codec only");
+            let (alias, class) = body_module(import);
+            gathered
+                .modules
+                .insert(format!("from . import {} as {alias}", import.namespace));
+            let default = if gated {
+                "None".to_string()
+            } else {
+                gathered.factory = true;
+                format!("field(default_factory={class})")
+            };
+            return Held {
+                presented: optional(&format!("{alias}.{class}Source")),
+                ty: optional(class),
+                default,
+                hold: None,
+            };
+        }
+        Value::Scalar(ty) => {
+            let ty = l.type_name(ty);
+            return Held {
+                presented: optional(&ty),
+                ty: optional(&ty),
+                default: if gated {
+                    "None".to_string()
+                } else {
+                    l.default_expr(&field.sce_type)
+                },
+                hold: None,
+            };
+        }
+        Value::Bytes(bound) | Value::Text(bound) => bound,
+        // A list's entries are written by their codec's module, imported whole
+        // as a body's is.
+        Value::List { codec, bound, .. } => {
+            let import = printed_import(imports, codec)
+                .expect("`unlowered` prints a list of a printed codec only");
+            gathered.modules.insert(format!(
+                "from . import {} as {}",
+                import.namespace,
+                body_module(import).0
+            ));
+            bound
+        }
+    };
+    let (class, base, unit, fewest) = bounded_class(struct_name, id, value, bound.least);
+    gathered.runtime.insert(base);
+    let held = match bound.most {
+        Some(most) => format!("{} to {most} {unit}", bound.least),
+        None => format!(
+            "{} or more {unit}, the protocol stating no most",
+            bound.least
+        ),
+    };
+    let most = bound
+        .most
+        .map_or_else(|| "None".to_string(), |most| most.to_string());
+    gathered.classes.push_str(&format!(
+        "class {class}({base}):\n\
+         \x20   \"\"\"The ``{id}`` element of :class:`{struct_name}`, {held},\n\
+         \x20   held to that bound where a value of it is made (docs/adr/0077 §3).\"\"\"\n\
+         \n\
+         \x20   LEAST = {least}\n\
+         \x20   MOST = {most}\n\n\n",
+        least = bound.least
+    ));
+    let made = if gated {
+        format!("None if value is None else {class}(value)")
+    } else {
+        format!("{class}(value)")
+    };
+    let default = if gated {
+        "None".to_string()
+    } else if bound.least == 0 {
+        format!("{class}()")
+    } else {
+        format!("{class}({fewest})")
+    };
+    Held {
+        presented: optional(&class),
+        ty: optional(&class),
+        default,
+        hold: Some(made),
+    }
+}
+
+/// The branch of a `__setattr__` whose branches so far are `so_far` that makes
+/// `made` of the value set as the element `id`.
+fn hold_line(so_far: &str, l: &LangCtx, id: &str, made: &str) -> String {
+    let keyword = if so_far.is_empty() { "if" } else { "elif" };
+    format!(
+        "        {keyword} name == \"{}\":\n            value = {made}\n",
+        l.codec_field_id(id)
+    )
+}
+
+/// The `__setattr__` of a class whose branches are `hold`, which holds each
+/// byte string, text and list to its bound wherever it is set, where a value
+/// is made and after; empty where it has none.
+fn setattr(hold: &str) -> String {
+    if hold.is_empty() {
+        return String::new();
+    }
+    format!(
+        "    def __setattr__(self, name: str, value: object) -> None:\n\
+         \x20       # Each byte string and text is held to its bound wherever it is\n\
+         \x20       # set, where the value is made and after (docs/adr/0081 §2),\n\
+         \x20       # whatever it was handed.\n\
+         {hold}\
+         \x20       object.__setattr__(self, name, value)\n"
+    )
+}
+
+/// The class of each arm of `group`, a group of the codec whose value's class
+/// is `struct_name`, in the plan's order: one for each arm of a sum, named
+/// after the group's type and the arm, and the group's type itself for a group
+/// of one arm.
+fn arm_classes(struct_name: &str, group: &GateGroup) -> Vec<String> {
+    let base = super::rust_source::group_type(struct_name, group);
+    if group.is_sum() {
+        group
+            .arms
+            .iter()
+            .map(|arm| format!("{base}{}", super::rust_source::group_arm_name(group, arm)))
+            .collect()
+    } else {
+        vec![base]
+    }
+}
+
+/// The classes of the gate group `group` (docs/adr/0065 §6 R4b, R4c), into
+/// `gathered`, and the field the value holds it in with the type a source
+/// presents it as. Each arm is a dataclass of the members present while the
+/// gates hold the arm's values, each held as an element alone is but always
+/// there; a group of several arms is the `Union` of their classes (`union`
+/// then set), which a value holds one of, or `None` where the gates allow no
+/// arm. The decode makes the arm the gates it read select, from the locals it
+/// read each member into.
+fn group_part(
+    gathered: &mut Gathered,
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+    group: &GateGroup,
+    union: &mut bool,
+) -> (GroupField, String) {
+    let name = super::rust_source::group_accessor(group);
+    let base = super::rust_source::group_type(struct_name, group);
+    let classes = arm_classes(struct_name, group);
+    // How each member is held, once, though several arms may hold it.
+    let mut helds: BTreeMap<&str, Held> = BTreeMap::new();
+    for id in group.fields() {
+        let field = plan
+            .model
+            .fields
+            .iter()
+            .find(|f| f.id == id)
+            .expect("a group's member is a field of the codec");
+        let held = held_as(
+            gathered,
+            l,
+            imports,
+            struct_name,
+            field,
+            &plan.value(field),
+            false,
+        );
+        helds.insert(id, held);
+    }
+    let mut made = Vec::new();
+    for (arm, class) in group.arms.iter().zip(&classes) {
+        let when: Vec<String> = group
+            .gates
+            .iter()
+            .zip(&arm.values)
+            .map(|(gate, value)| {
+                if *value {
+                    format!("``{gate}`` holds")
+                } else {
+                    format!("``{gate}`` does not hold")
+                }
+            })
+            .collect();
+        let mut members = String::new();
+        let mut hold = String::new();
+        let mut args = Vec::new();
+        for id in &arm.fields {
+            let held = &helds[id.as_str()];
+            let member = l.codec_field_id(id);
+            members.push_str(&format!("    {member}: {} = {}\n", held.ty, held.default));
+            if let Some(line) = &held.hold {
+                hold.push_str(&hold_line(&hold, l, id, line));
+            }
+            args.push(format!("{member}={}", l.codec_field_decode_local(id)));
+        }
+        let hold = setattr(&hold);
+        gathered.classes.push_str(&format!(
+            "@dataclass\n\
+             class {class}:\n\
+             \x20   \"\"\"The ``{name}`` group of :class:`{struct_name}` where {}\n\
+             \x20   (docs/adr/0065 §6 R4): the members present then.\"\"\"\n\
+             \n\
+             {members}{}{hold}\n\n",
+            when.join(" and "),
+            if hold.is_empty() { "" } else { "\n" },
+        ));
+        made.push((
+            format!("{class}({})", args.join(", ")),
+            decoded_arm_test(plan, l, group, &arm.values),
+        ));
+    }
+    if group.is_sum() {
+        *union = true;
+        gathered.classes.push_str(&format!(
+            "{base} = Union[{}]\n\
+             \"\"\"The ``{name}`` group of :class:`{struct_name}`: the arm the value holds.\"\"\"\n\n\n",
+            classes.join(", ")
+        ));
+    }
+    // The arms the gates select, in turn; where the gates may select none,
+    // the value holds no arm.
+    let mut decoded = String::new();
+    let last = made.len() - 1;
+    for (i, (arm, test)) in made.into_iter().enumerate() {
+        if i == last && group.absent.is_none() {
+            decoded.push_str(&arm);
+        } else {
+            decoded.push_str(&format!("{arm} if {test} else "));
+        }
+    }
+    let (ty, default) = match &group.absent {
+        Some(_) => {
+            decoded.push_str("None");
+            (format!("Optional[{base}]"), "None".to_string())
+        }
+        None => {
+            gathered.factory = true;
+            (base, format!("field(default_factory={})", classes[0]))
+        }
+    };
+    (
+        GroupField {
+            name,
+            ty: ty.clone(),
+            default,
+            decoded,
+        },
+        ty,
+    )
+}
+
+/// Whether the gates of `group`, as the decode read them, hold `values`: each
+/// flag tested on the local its carrier was read into, each input as the
+/// decode is handed it.
+fn decoded_arm_test(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    group: &GateGroup,
+    values: &[bool],
+) -> String {
+    group
+        .gates
+        .iter()
+        .zip(values)
+        .map(|(gate, value)| {
+            let holds = match gate {
+                GateVar::Flag { carrier, flag } => {
+                    let bit = plan
+                        .model
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == carrier)
+                        .and_then(|f| f.flags.iter().find(|d| &d.name == flag))
+                        .map(|d| d.bit)
+                        .expect("the parser found the flag a gate reads");
+                    format!(
+                        "(({} >> {bit}) & 1) != 0",
+                        l.codec_field_decode_local(carrier)
+                    )
+                }
+                GateVar::Input(name) => format!("{} != 0", input_name(name)),
+                GateVar::Member { .. } => {
+                    unreachable!("`unlowered` prints no group of a chain's memberships")
+                }
+            };
+            if *value {
+                format!("({holds})")
+            } else {
+                format!("not ({holds})")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" and ")
+}
+
+/// Whether the gate at `gate` among those of `group` holds where the value
+/// holds `held`, the group as it holds it: it holds one of the arms that set
+/// the gate, or no arm where the gates the value then has set it.
+fn gate_holds(struct_name: &str, group: &GateGroup, gate: usize, held: &str) -> String {
+    let set: Vec<String> = arm_classes(struct_name, group)
+        .into_iter()
+        .zip(&group.arms)
+        .filter(|(_, arm)| arm.values[gate])
+        .map(|(class, _)| class)
+        .collect();
+    let some = match set.as_slice() {
+        [] => None,
+        [one] => Some(format!("isinstance({held}, {one})")),
+        many => Some(format!("isinstance({held}, ({}))", many.join(", "))),
+    };
+    let none = group.absent.as_ref().is_some_and(|absent| absent[gate]);
+    match (some, none) {
+        (None, false) => "False".to_string(),
+        (None, true) => format!("{held} is None"),
+        (Some(some), false) => some,
+        (Some(some), true) => format!("({held} is None or {some})"),
     }
 }
 
@@ -657,7 +1015,7 @@ fn encode_source(
     let numbers = derived_numbers(plan);
     let (stated, derived): (Vec<&String>, Vec<&String>) = numbers
         .iter()
-        .partition(|id| element_of(plan, id).is_some());
+        .partition(|id| element_of(plan, id).is_some() || plan.roles.group_of(id).is_some());
     let named = |ids: &[&String]| {
         ids.iter()
             .map(|id| format!("``{id}``"))
@@ -713,7 +1071,44 @@ fn encode_source(
          \x20   (docs/adr/0081).{derives}{refuses} a bounded sink raises\n\
          \x20   :class:`BufferOverflow` where it has no room left.\"\"\"\n"
     );
-    let source = |id: &str| format!("src.{}", l.codec_field_id(id));
+    let source = |id: &str| element_read(plan, l, id);
+    // Each group read once, as `_g_<group>`, and each of its members bound to
+    // `_e_<member>` off the arm the value holds where that arm holds it, and
+    // `None` where it does not, so each statement that reads a member reads
+    // it as it reads an element a gate decides.
+    for group in plan.groups() {
+        let name = super::rust_source::group_accessor(group);
+        let held = format!("_g_{name}");
+        out.push_str(&format!("    {held} = src.{name}\n"));
+        let classes = arm_classes(struct_name, group);
+        for id in group.fields() {
+            let holding: Vec<&String> = classes
+                .iter()
+                .zip(&group.arms)
+                .filter(|(_, arm)| arm.fields.iter().any(|f| f == id))
+                .map(|(class, _)| class)
+                .collect();
+            let member = format!("{held}.{}", l.codec_field_id(id));
+            let bound = if holding.len() == group.arms.len() && group.absent.is_none() {
+                member
+            } else if holding.len() == group.arms.len() {
+                format!("None if {held} is None else {member}")
+            } else {
+                let tested = match holding.as_slice() {
+                    [one] => one.to_string(),
+                    many => format!(
+                        "({})",
+                        many.iter()
+                            .map(|c| c.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                format!("{member} if isinstance({held}, {tested}) else None")
+            };
+            out.push_str(&format!("    {} = {bound}\n", source(id)));
+        }
+    }
     // Each input the value says that a gate or a check of the codec reads,
     // read off the source under the name the gate reads it by, as a parent
     // reads it through `input_<name>`; one no gate reads is left to the parent
@@ -725,7 +1120,7 @@ fn encode_source(
         out.push_str(&format!(
             "    {} = {}\n",
             input_name(&said.input.name),
-            said_input(plan, l, imports, &said.input.name)
+            said_input(plan, l, imports, struct_name, &said.input.name)
         ));
     }
     // The `encode_source` of the module that writes the body `field`, or each
@@ -759,7 +1154,7 @@ fn encode_source(
                 let measured: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| plain_measure(l, imports, measure))
+                    .map(|measure| plain_measure(plan, l, imports, measure))
                     .collect();
                 if let Some((carrier, statement)) =
                     derive_number(plan, l, element, &number.into, &measured, &mut out)
@@ -789,6 +1184,26 @@ fn encode_source(
                     source(&gated.id)
                 ));
             }
+            // A flag of a disjunction that decides a group (docs/adr/0065 §6
+            // R4c): set where the value holds an arm that sets it, or no arm
+            // where the gates then set it.
+            (ElementId::Flag { field, flag }, Derive::ArmFlag { group, gate }) => {
+                let group = &plan.groups()[*group];
+                let def = plan
+                    .model
+                    .fields
+                    .iter()
+                    .find(|f| f.id == *field)
+                    .and_then(|carrier| carrier.flags.iter().find(|d| d.name == *flag))
+                    .expect("the parser found the flag a gate reads");
+                let mask = ((1u64 << def.width) - 1) << def.bit;
+                let held = format!("_g_{}", super::rust_source::group_accessor(group));
+                let c = format!("_c_{}", l.codec_field_id(field));
+                folds.entry(field.clone()).or_default().push(format!(
+                    "{c} = ({c} & ~0x{mask:X}) | (0x{mask:X} if {} else 0)\n",
+                    gate_holds(struct_name, group, *gate, &held)
+                ));
+            }
             _ => unreachable!("`unlowered` prints no other derivation"),
         }
     }
@@ -808,7 +1223,7 @@ fn encode_source(
         } else if folds.contains_key(&f.id) {
             format!("_c_{name}")
         } else {
-            format!("src.{name}")
+            source(&f.id)
         }
     };
     // The arguments after the sink the codec imported as `alias` is handed:
@@ -1062,7 +1477,7 @@ fn input_functions(
              \x20   \"\"\"The flag input ``{name}`` a source of :class:`{struct_name}` says, which\n\
              \x20   its encode is not handed (docs/adr/0065 §6 R4a){nothing}.\"\"\"\n\
              \x20   return {}\n",
-            said_input(plan, l, imports, name),
+            said_input(plan, l, imports, struct_name, name),
             snake = input_name(name),
         ));
     }
@@ -1072,13 +1487,16 @@ fn input_functions(
 /// The value of the flag input `input` the value says (docs/adr/0065 §6 R4a),
 /// as an expression over `src`, any source of the codec: set exactly when the
 /// field gated on it alone is there (clear, for a field gated on its clear
-/// state), or what the body it is handed on to says, read through that body's
-/// codec's own `input_<name>`, `None` where that body can say nothing of it.
-/// [`unlowered`] refuses every other way a value says one.
+/// state), what the arm of the group gated on it gives it, or what the body it
+/// is handed on to says, read through that body's codec's own `input_<name>`,
+/// `None` where that body can say nothing of it. `struct_name` is the class of
+/// the codec's value, which names its groups' arms. [`unlowered`] refuses every
+/// other way a value says one.
 fn said_input(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     imports: &[ImportContext],
+    struct_name: &str,
     input: &str,
 ) -> String {
     match &plan.roles.inputs[input] {
@@ -1104,10 +1522,27 @@ fn said_input(
                 l.codec_field_id(embed)
             )
         }
-        InputSource::Group
-        | InputSource::EveryArm { .. }
-        | InputSource::SomeArms { .. }
-        | InputSource::List { .. } => {
+        // Set where the value holds an arm of the group gated on it that sets
+        // it, or no arm where the gates then set it (docs/adr/0065 §6 R4b).
+        InputSource::Group => {
+            let gate = GateVar::Input(input.to_string());
+            let group = plan
+                .groups()
+                .iter()
+                .find(|g| g.gates.contains(&gate))
+                .expect("an input a group says has its group");
+            let at = group
+                .gates
+                .iter()
+                .position(|g| *g == gate)
+                .expect("filtered to the group gated on it");
+            let held = format!("src.{}", super::rust_source::group_accessor(group));
+            format!(
+                "(1 if {} else 0)",
+                gate_holds(struct_name, group, at, &held)
+            )
+        }
+        InputSource::EveryArm { .. } | InputSource::SomeArms { .. } | InputSource::List { .. } => {
             unreachable!("`unlowered` prints no other way a value says an input")
         }
     }
@@ -1157,17 +1592,19 @@ fn input_check(
     };
     let (held, statements) = match &check.site {
         CheckSite::List { list } => {
-            let entries = format!("src.{}", l.codec_field_id(&list.id));
+            let entries = element_read(plan, l, &list.id);
             let walk = format!("for _x in {entries}:\n{}", indented(&test("_x")));
             (list, walk)
         }
-        CheckSite::Embed { body } => (body, test(&format!("src.{}", l.codec_field_id(&body.id)))),
+        CheckSite::Embed { body } => (body, test(&element_read(plan, l, &body.id))),
         CheckSite::Arm { .. } => unreachable!("`unlowered` prints no input an arm says"),
     };
-    let statements = if held.present_if.is_some() {
+    // A gated element, or a member of a group the arm the value holds may not
+    // hold, is read where it is there.
+    let statements = if held.present_if.is_some() || plan.roles.group_of(&held.id).is_some() {
         format!(
-            "if src.{} is not None:\n{}",
-            l.codec_field_id(&held.id),
+            "if {} is not None:\n{}",
+            element_read(plan, l, &held.id),
             indented(&statements)
         )
     } else {
@@ -1193,9 +1630,9 @@ const SAYS_IN_EVERY_VALUE: &str = "the roles derive a flag from a body only wher
 
 /// The import alias of the codec the body `field`, or each entry of the list
 /// `field`, of `plan` is a value of.
-fn held_alias<'p>(plan: &'p EncodePlan<'_>, field: &CodecField) -> &'p str {
-    match element_of(plan, &field.id).map(|e| &e.value) {
-        Some(Value::Body { codec } | Value::List { codec, .. }) => codec,
+fn held_alias<'f>(plan: &EncodePlan<'_>, field: &'f CodecField) -> &'f str {
+    match plan.value(field) {
+        Value::Body { codec } | Value::List { codec, .. } => codec,
         _ => unreachable!("`{}` is a body or a list the value presents", field.id),
     }
 }
@@ -1211,7 +1648,12 @@ fn input_name(name: &str) -> String {
 /// a list, or the input a body says (docs/adr/0065 §6 R4a), read through the
 /// body's codec's own `input_<name>`; each tested present where a gate may
 /// leave it out.
-fn plain_measure(l: &LangCtx, imports: &[ImportContext], measure: &Measure<'_>) -> MeasureText {
+fn plain_measure(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    measure: &Measure<'_>,
+) -> MeasureText {
     let (content, size) = match &measure.of {
         Measured::Bytes { field, offset } => {
             let arith = match offset {
@@ -1222,13 +1664,13 @@ fn plain_measure(l: &LangCtx, imports: &[ImportContext], measure: &Measure<'_>) 
                     unreachable!("`{}`: {}", field.id, LESS_IS_HELD)
                 }
             };
-            let content = format!("src.{}", l.codec_field_id(&field.id));
+            let content = element_read(plan, l, &field.id);
             let size = format!("len({}){arith}", wire_bytes(field, &content));
             (content, size)
         }
         // How many entries the list holds, within its bound.
         Measured::Entries { list } => {
-            let content = format!("src.{}", l.codec_field_id(&list.id));
+            let content = element_read(plan, l, &list.id);
             let size = format!("len({content})");
             (content, size)
         }
@@ -1241,7 +1683,7 @@ fn plain_measure(l: &LangCtx, imports: &[ImportContext], measure: &Measure<'_>) 
             if import.codec_partly_says_inputs.contains(input) {
                 unreachable!("`{}`: {}", body.id, SAYS_IN_EVERY_VALUE);
             }
-            let content = format!("src.{}", l.codec_field_id(&body.id));
+            let content = element_read(plan, l, &body.id);
             let size = format!(
                 "{}.input_{}({content})",
                 body_module(import).0,
@@ -1460,12 +1902,14 @@ fn derive_number(
         ));
     }
     // Where the content is not, zero, the field gated beside it and not
-    // written, or what the value states.
-    let stated = format!("src.{name}");
+    // written, or what the value states: alone, or in the arm of the group
+    // that holds it on the side without its content (docs/adr/0065 §6 R4b),
+    // which the arms keep apart from the content, so the two never both say
+    // it.
+    let stated = element_read(plan, l, &field.id);
     let otherwise = match absent {
         Absent::Never | Absent::Zero => "0".to_string(),
-        Absent::Stated => format!("(0 if {stated} is None else {stated})"),
-        Absent::Group => unreachable!("`unlowered` prints no number a group states"),
+        Absent::Stated | Absent::Group => format!("(0 if {stated} is None else {stated})"),
     };
     let value = match &present {
         None => size,

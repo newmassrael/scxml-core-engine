@@ -2011,3 +2011,15 @@ undeclarations among them.
 - An encode that holds a body or a list whose entries say an input it also hands them raises `PresentIfMismatch`
   where they disagree, before the first byte.
 
+## A printed Python codec holds a gate group as one field (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose fields one gate decides together (two fields on one flag, a length stated where its content is absent,
+a disjunction of the codec's own flags, or a flag input), the Zenoh init, join and key-expression bodies among them.
+
+- The fields a group holds are no longer fields of the value. The value has one field named by the gates
+  (`flags_has_payload`, `flags_wants_a_or_wants_b`, `s`), holding a dataclass of the arm present, one class for
+  each arm (`{Codec}FlagsHasPayloadHasPayload(payload=..)`, `{Codec}FlagsHasPayloadNotHasPayload(payload_size=..)`),
+  or `None` where the gates allow no arm. Make the arm you mean; test which one a value holds with `isinstance`.
+- The gate flags of the group are derived from the arm on encode; the bits the value holds there are not written.
+

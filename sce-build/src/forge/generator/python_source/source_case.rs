@@ -14,8 +14,8 @@
 //! refused by name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, integer_value, source_members,
-    CodecPath as RustCodecPath, HeldCodecs,
+    byte_values, case_inputs, case_tag, enum_variant, gates_label, group_accessor, group_choice,
+    integer_value, source_members, CodecPath as RustCodecPath, HeldCodecs,
 };
 use super::super::*;
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -81,11 +81,11 @@ pub(crate) struct SourceCase {
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, handed
 /// the flag inputs `inputs` states: each to the decode, one the value does not
-/// say to the encode too, and the value held to saying each other one. A codec
-/// whose case hands it a caller's tag (`tag`), or that holds a group or a
-/// variant, is one the Python printer does not print, and its case is refused
-/// by name; so is a source that states an element the value does not present
-/// or leaves out one it does.
+/// say to the encode too, and the value held to saying each other one. A group
+/// is the class of the arm the source states. A codec whose case hands it a
+/// caller's tag (`tag`), or that holds a variant, is one the Python printer
+/// does not print, and its case is refused by name; so is a source that states
+/// an element the value does not present or leaves out one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -125,14 +125,11 @@ pub(crate) fn source_case(
                     prints no codec that holds one"
             .to_string());
     }
-    if !plan.groups().is_empty() {
-        return Err("a Python case states no group yet: the Python printer \
-                    prints no codec that holds one"
-            .to_string());
-    }
     let literal = value_literal(plan, path, source, held)?;
     let l = LangCtx::new(crate::generator::Language::Python, &[]);
-    // A body is its codec's dataclass, compared whole as a dataclass is.
+    // A body is its codec's dataclass, compared whole as a dataclass is, and
+    // so is a group: the same arm's class on both sides, or `None`, its
+    // members equal.
     let mut checks: Vec<(String, String)> = plan
         .elements
         .iter()
@@ -144,6 +141,13 @@ pub(crate) fn source_case(
             )
         })
         .collect();
+    for group in plan.groups() {
+        let attribute = group_accessor(group);
+        checks.push((
+            gates_label(group),
+            format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
+        ));
+    }
     checks.extend(said);
     Ok(SourceCase {
         literal,
@@ -180,6 +184,39 @@ fn value_literal(
             member_literal(&element.value, path, json, held).map_err(|e| format!("`{id}`: {e}"))?
         };
         args.push(format!("{}={value}", l.codec_field_id(id)));
+    }
+    // A group, keyed by its gates, is the class of the arm it states, made of
+    // its members, or `None` (docs/adr/0081 §5).
+    for group in plan.groups() {
+        let label = gates_label(group);
+        let json = object
+            .get(&label)
+            .ok_or_else(|| format!("the source states no `{label}`"))?;
+        let value = match group_choice(group, json).map_err(|e| format!("`{label}`: {e}"))? {
+            None => "None".to_string(),
+            Some(chosen) => {
+                let class = &super::arm_classes(&path.type_name, group)[chosen.index];
+                let mut members = Vec::new();
+                for id in &chosen.arm.fields {
+                    let field = plan
+                        .model
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == id)
+                        .expect("a group's member is a field of the codec");
+                    let json = chosen
+                        .members
+                        .get(id)
+                        .filter(|json| !json.is_null())
+                        .ok_or_else(|| format!("`{label}`: the arm holds `{id}`"))?;
+                    let member = member_literal(&plan.value(field), path, json, held)
+                        .map_err(|e| format!("`{label}`: `{id}`: {e}"))?;
+                    members.push(format!("{}={member}", l.codec_field_id(id)));
+                }
+                format!("{}.{class}({})", path.module, members.join(", "))
+            }
+        };
+        args.push(format!("{}={value}", group_accessor(group)));
     }
     Ok(format!("{}({})", path.class(), args.join(", ")))
 }

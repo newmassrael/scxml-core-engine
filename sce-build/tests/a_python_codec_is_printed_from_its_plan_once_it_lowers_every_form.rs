@@ -478,33 +478,119 @@ fn a_flag_input_the_value_says_is_read_off_the_value_and_not_handed() {
     );
 }
 
-/// An input a group, the arms of a variant or the start of a list says is
-/// named unlowered until its form is printed.
+/// A group of a gated byte string and the length stated on the side without it
+/// (docs/adr/0065 §6 R4b) is one field of the value, the `Union` of a dataclass
+/// for each side; the encode binds each member off the arm the value holds,
+/// derives the length from the bytes where the arm holds them and reads it off
+/// the other arm otherwise, and the decode makes the arm the flag it read
+/// selects. The members are no fields of the value of their own.
 ///
-/// Turns red where `python_source::positional_forms` stops naming an input a
-/// group says.
+/// Turns red where `python_source::group_part` stops printing an arm's class or
+/// the `Union`, `encode_source` reads a member off the source rather than the
+/// arm, `derive_number` reads an `Absent::Group` number other than off the arm,
+/// or `derived_field` declares a member as a field of the value.
 #[test]
-fn an_input_a_group_says_is_not_printed_yet() {
-    let forms = unlowered("codec_zenoh_init_body");
-    assert!(
-        forms
-            .iter()
-            .any(|f| f.contains("a flag input a group says")),
-        "codec_zenoh_init_body says S by the group gated on it: {forms:?}"
+fn a_group_is_one_field_whose_arms_hold_its_members() {
+    assert!(unlowered("codec_present_if_length_ref").is_empty());
+    let text = resource_module("codec_present_if_length_ref");
+    holds(
+        "codec_present_if_length_ref",
+        &text,
+        &[
+            "from typing import Optional, Protocol, Union\n",
+            "@dataclass\nclass CodecPresentIfLengthRefFlagsHasPayloadHasPayload:\n",
+            "    payload: CodecPresentIfLengthRefPayloadBytes = CodecPresentIfLengthRefPayloadBytes()\n",
+            "@dataclass\nclass CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload:\n",
+            "    payload_size: int = 0\n",
+            "CodecPresentIfLengthRefFlagsHasPayload = Union[\
+             CodecPresentIfLengthRefFlagsHasPayloadHasPayload, \
+             CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload]\n",
+            "    def flags_has_payload(self) -> CodecPresentIfLengthRefFlagsHasPayload: ...\n",
+            "    flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = \
+             field(default_factory=CodecPresentIfLengthRefFlagsHasPayloadHasPayload)\n",
+            "    _g_flags_has_payload = src.flags_has_payload\n",
+            "    _e_payload = _g_flags_has_payload.payload if isinstance(_g_flags_has_payload, \
+             CodecPresentIfLengthRefFlagsHasPayloadHasPayload) else None\n",
+            "    _d_payload_size = (len(_e_payload)) if _e_payload is not None else \
+             (0 if _e_payload_size is None else _e_payload_size)\n",
+            "    _c_flags = (_c_flags & ~0x1) | (0x1 if _e_payload is not None else 0)\n",
+            "    if _e_payload is not None:\n        w.write_bytes(_e_payload)\n",
+            "            flags_has_payload=CodecPresentIfLengthRefFlagsHasPayloadHasPayload(\
+             payload=f_payload) if (((f_flags >> 0) & 1) != 0) else \
+             CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload(payload_size=f_payload_size),\n",
+        ],
+    );
+    holds_none(
+        "codec_present_if_length_ref",
+        &text,
+        &[
+            "\n    payload: Optional",
+            "src.payload",
+            "            payload=",
+        ],
+    );
+}
+
+/// A disjunction of a codec's own flags decides a group of an arm for each
+/// assignment that holds it (docs/adr/0065 §6 R4c); each flag is derived from
+/// the arm the value holds, and the value may hold none.
+///
+/// Turns red where `python_source::encode_source` stops folding a
+/// `Derive::ArmFlag` from the arm the value holds, or `group_part` declares a
+/// group the gates may leave out as other than `Optional`.
+#[test]
+fn a_disjunctions_flags_are_derived_from_the_arm_the_value_holds() {
+    assert!(unlowered("codec_present_if_disjunction").is_empty());
+    let text = resource_module("codec_present_if_disjunction");
+    holds(
+        "codec_present_if_disjunction",
+        &text,
+        &[
+            "    flags_wants_a_or_wants_b: Optional[CodecPresentIfDisjunctionFlagsWantsAOrWantsB] \
+             = None\n",
+            "    _g_flags_wants_a_or_wants_b = src.flags_wants_a_or_wants_b\n",
+            "    _c_flags = (_c_flags & ~0x1) | (0x1 if isinstance(_g_flags_wants_a_or_wants_b, (",
+            "    _c_flags = (_c_flags & ~0x2) | (0x2 if isinstance(_g_flags_wants_a_or_wants_b, (",
+            " else None,\n",
+        ],
+    );
+}
+
+/// An input a group gated on it says is what the arm the value holds gives it,
+/// read off any source by `input_<name>`.
+///
+/// Turns red where `python_source::said_input` stops reading a group's input
+/// off the arm the value holds, or `positional_forms` names it unlowered.
+#[test]
+fn an_input_a_group_says_is_read_off_the_arm_the_value_holds() {
+    assert!(unlowered("codec_zenoh_init_body").is_empty());
+    let text = resource_module("codec_zenoh_init_body");
+    holds(
+        "codec_zenoh_init_body",
+        &text,
+        &[
+            "\ndef input_s(src: CodecZenohInitBodySource) -> int:\n",
+            "    return (1 if isinstance(src.s, CodecZenohInitBodyS) else 0)\n",
+            "    s: Optional[CodecZenohInitBodyS] = None\n",
+            "    _e_sn_res = None if _g_s is None else _g_s.sn_res\n",
+        ],
     );
 }
 
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
-/// so does a group that holds a length the value states beside its content.
+/// so does a group of a chain's memberships.
 ///
 /// Turns red where `python_source::positional_forms` stops naming a variant or
-/// a group, or `unlowered_forms` a CBOR map.
+/// a group of a chain's memberships, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
+    let forms = unlowered("codec_chain_has_envelope");
     assert!(
-        !unlowered("codec_present_if_length_ref").is_empty(),
-        "a group of a gated byte string and the length stated beside it is not printed yet"
+        forms
+            .iter()
+            .any(|f| f.contains("a group of a chain's memberships")),
+        "codec_chain_has_envelope: a group of a chain's memberships is not printed yet: {forms:?}"
     );
     for (name, form) in [
         ("codec_variant_default_marker", "a variant"),

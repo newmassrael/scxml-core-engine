@@ -1051,6 +1051,21 @@ old encode, the old encode and its templates are removed in the same landing.
    the template writes hands a printed codec's encode no input the codec says (`ImportContext::python_printed`). The
    case printer holds the value to saying each input the case hands it that the value says. An input a group, the
    arms of a variant or the start of a list says waits for that form.
+
+   *The tenth Python landing, 2026-11-16:* gate groups of a codec's own flags or of its flag inputs (docs/adr/0065 §6
+   R4b, R4c). A group is one field of the value, named by its gates as every printer names it (`group_accessor`):
+   each arm is a dataclass of the members present while the gates hold the arm's values, held as an element alone is
+   but always there, and a group of several arms is the `typing.Union` of their classes; it is `Optional` where the
+   gates allow no arm. The decision was between a dataclass per arm and one dataclass with a tag member: a tag is a
+   second statement of which arm the value holds, which a value could make disagree with the members it holds, while
+   the class of the arm is that statement alone, and `isinstance` reads it. The encode binds each member to a local
+   off the arm the value holds, `None` where that arm does not hold it, so every statement that reads a member reads
+   it as it reads an element a gate decides; each flag of a disjunction is derived from the arm (`ArmFlag`), a
+   presence flag of members held together from the first, a length on the side without its content is read off that
+   arm (`Absent::Group`), and an input a group says is what its arm gives it. The decode makes the arm the gates it
+   read select, from the locals it read each member into, and its members are no fields of the value of their own.
+   The case printer states a group as the arm's class made of its members, compared whole. A group of a chain's
+   memberships (R6) and two lists of one count (R5) wait for their landings.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
