@@ -117,11 +117,6 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 }
             }
         }
-        if element.presence == Presence::Stated {
-            forms.push(format!(
-                "field '{id}': a length the value states where its content is absent"
-            ));
-        }
     }
     if !plan.groups().is_empty() {
         forms.push("a group of fields a gate decides together".to_string());
@@ -229,9 +224,9 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
     }
     match &number.into {
         NumberInto::Field { absent, .. } => {
-            if !matches!(absent, Absent::Never | Absent::Zero) {
+            if *absent == Absent::Group {
                 forms.push(format!(
-                    "element '{element}': a length the value states where its content is absent"
+                    "element '{element}': a length a group holds on the side without its content"
                 ));
             }
         }
@@ -297,9 +292,30 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 }
 
 /// Whether the Python value of `plan`, a plan [`unlowered`] answers `None` for,
-/// holds no field `id`: the encode derives it (docs/adr/0081 §3).
+/// holds no field `id`: the encode derives it (docs/adr/0081 §3) and the value
+/// does not state it while its content is absent.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_numbers(plan).contains(id)
+    derived_numbers(plan).contains(id) && element_of(plan, id).is_none()
+}
+
+/// The fields the number the value states as `id` measures, each gated: the
+/// value states the number only while none of them is there.
+fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
+    plan.derivations
+        .iter()
+        .filter(|derived| matches!(&derived.element, ElementId::Field(field) if field == id))
+        .filter_map(|derived| match &derived.by {
+            Derive::Number(number) => Some(number),
+            _ => None,
+        })
+        .flat_map(|number| number.measures.iter())
+        .map(|measure| match &measure.of {
+            Measured::Bytes { field, .. } => *field,
+            Measured::Entries { list } => *list,
+            Measured::Encoded { body, .. } => *body,
+            _ => unreachable!("a number the value states is a length or a count of gated content"),
+        })
+        .collect()
 }
 
 /// The Python text the printer gives a codec's module.
@@ -325,6 +341,9 @@ pub(super) struct PythonSource {
     /// Whether a default of the value's fields is made by a factory, a body's
     /// class, which the module imports `field` of `dataclasses` for.
     pub(super) factory: bool,
+    /// For each element the decode makes other than as the local it read, by
+    /// field id, the expression it makes it of.
+    pub(super) decoded: BTreeMap<String, String>,
 }
 
 /// The module alias a printed codec's module is imported under where a
@@ -384,6 +403,7 @@ pub(super) fn render(
     let mut runtime: BTreeSet<&'static str> = BTreeSet::new();
     let mut modules: BTreeSet<String> = BTreeSet::new();
     let mut factory = false;
+    let mut decoded = BTreeMap::new();
     // The type the source presents each element as.
     let mut presented: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
@@ -422,6 +442,28 @@ pub(super) fn render(
         let (Value::Bytes(bound) | Value::Text(bound) | Value::List { bound, .. }) = &element.value
         else {
             let ty = l.type_name(&element.field.sce_type).into_owned();
+            // A number the value states only while the content it measures is
+            // absent (docs/adr/0058 §1): `None` while it is there, which the
+            // encode then derives from it, and the decode gives back `None`
+            // where it read any of it.
+            if element.presence == Presence::Stated {
+                let optional = format!("Optional[{ty}]");
+                presented.insert(id.clone(), optional.clone());
+                declared.insert(id.clone(), (optional, "None".to_string()));
+                let contents: Vec<String> = stated_contents(plan, id)
+                    .iter()
+                    .map(|content| format!("{} is None", l.codec_field_decode_local(&content.id)))
+                    .collect();
+                decoded.insert(
+                    id.clone(),
+                    format!(
+                        "{} if {} else None",
+                        l.codec_field_decode_local(id),
+                        contents.join(" and ")
+                    ),
+                );
+                continue;
+            }
             presented.insert(
                 id.clone(),
                 if gated { format!("Optional[{ty}]") } else { ty },
@@ -523,6 +565,7 @@ pub(super) fn render(
         runtime: runtime.into_iter().collect::<Vec<_>>().join(", "),
         modules: modules.into_iter().collect::<Vec<_>>().join("\n"),
         factory,
+        decoded,
     }
 }
 
@@ -557,15 +600,29 @@ fn encode_source(
     struct_name: &str,
 ) -> String {
     let numbers = derived_numbers(plan);
-    let derived: Vec<String> = numbers.iter().map(|id| format!("``{id}``")).collect();
-    let derives = if derived.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " It derives {} from what each measures, and never reads it off\n    the source.",
-            derived.join(", ")
-        )
+    let (stated, derived): (Vec<&String>, Vec<&String>) = numbers
+        .iter()
+        .partition(|id| element_of(plan, id).is_some());
+    let named = |ids: &[&String]| {
+        ids.iter()
+            .map(|id| format!("``{id}``"))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
+    let mut derives = String::new();
+    if !derived.is_empty() {
+        derives.push_str(&format!(
+            " It derives {} from what each measures, and never reads it off\n    the source.",
+            named(&derived)
+        ));
+    }
+    if !stated.is_empty() {
+        derives.push_str(&format!(
+            " It derives {} where what it measures is there, and reads\n    what the source \
+             states where none is.",
+            named(&stated)
+        ));
+    }
     // What the encode refuses, each refusal the runtime's exception class:
     // nothing, or what the plan's totality names, before the first byte.
     let refuses = if plan.totality.is_total() {
@@ -1002,17 +1059,28 @@ fn derive_number(
             raise(plan, RefusalKind::LengthOutOfRange, &named)
         ));
     }
-    // Where the content is not, zero: the field is gated beside it and is
-    // not written.
+    // Where the content is not, zero, the field gated beside it and not
+    // written, or what the value states.
+    let stated = format!("src.{name}");
     let otherwise = match absent {
         Absent::Never | Absent::Zero => "0".to_string(),
-        Absent::Group | Absent::Stated => {
-            unreachable!("`unlowered` prints no number the value or a group states")
-        }
+        Absent::Stated => format!("(0 if {stated} is None else {stated})"),
+        Absent::Group => unreachable!("`unlowered` prints no number a group states"),
     };
     let value = match &present {
         None => size,
         Some(there) => format!("({size}) if {there} else {otherwise}"),
     };
     out.push_str(&format!("    _d_{name} = {value}\n"));
+    // A value that states the number beside content says it twice, and must
+    // say what the content does.
+    if *absent == Absent::Stated {
+        let there = present
+            .as_deref()
+            .expect("a number the value states is free: every measure may be absent");
+        out.push_str(&format!(
+            "    if {there} and {stated} is not None and {stated} != _d_{name}:\n        {}\n",
+            disagree()
+        ));
+    }
 }

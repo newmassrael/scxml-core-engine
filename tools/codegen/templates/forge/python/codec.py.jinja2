@@ -118,7 +118,9 @@ class {{ struct_name }}:
     pass
 {% else %}
 {# An element the encode derives is no field of a value printed from its plan
-   (docs/adr/0081 §3). #}
+   (docs/adr/0081 §3). Such a value's decode makes an element of other than the
+   local it read where `py_decoded` says so: a number the value states only
+   while its content is absent is `None` where the decode read any of it. #}
 {% for field in fields if not field.derived %}
 {% if field.py_flag_default_literal is defined %}
     {{ field.id }}: {{ field.py_type }} = {{ field.py_flag_default_literal }}
@@ -214,7 +216,7 @@ class {{ struct_name }}:
 {% endif %}
         return cls(
 {% for field in fields if not field.derived %}
-            {{ field.id }}={{ field.local }},
+            {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
             body=body,
         )
@@ -241,7 +243,7 @@ class {{ struct_name }}:
 {% endfor %}
         return cls(
 {% for field in fields if not field.derived %}
-            {{ field.id }}={{ field.local }},
+            {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
         )
 {% elif has_variable_fields %}
@@ -256,7 +258,7 @@ class {{ struct_name }}:
 {% endfor %}
         value = cls(
 {% for field in fields if not field.derived %}
-            {{ field.id }}={{ field.local }},
+            {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
         )
         cursor.advance(_frame_len)
@@ -268,7 +270,7 @@ class {{ struct_name }}:
 {% endfor %}
         value = cls(
 {% for field in fields if not field.derived %}
-            {{ field.id }}={{ field.local }},
+            {{ field.id }}={{ field.py_decoded if field.py_decoded is defined else field.local }},
 {% endfor %}
         )
         cursor.advance({{ min_bytes }})

@@ -1972,3 +1972,13 @@ field (`LengthOutOfRange`).
 - A codec that holds a codec whose encode can refuse writes its frame whole before it hands it to your sink, so a
   refusal leaves the sink as it was.
 
+## A printed Python codec states a length only while its content is absent (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs with a length of byte strings under more than one gate.
+
+- Such a length is `Optional[int]`, `None` by default. Leave it `None` while any byte string it measures is there:
+  the encode derives it. Set it only where none is there. A value that sets it beside content of another length
+  raises `InconsistentSource`.
+- The decode gives it back `None` where it read any of the content.
+

@@ -1015,6 +1015,15 @@ old encode, the old encode and its templates are removed in the same landing.
    sink and one pass both measures and writes. `EncodeFailure::symbol` names each refusal for Python, so the harness
    runs the refused cases of a printed codec, holding the encode to raising that class and leaving the sink empty. An
    input a held codec says, checked against what the codec is handed, waits for the flag inputs.
+
+   *The sixth Python landing, 2026-11-16:* a length the value states while all of the content it measures is absent
+   (ADR 0058 §1), where that content lies under more than one gate and so joins no group (docs/adr/0065 §6 R4b). The
+   value presents it as `Optional[int]`, `None` by default. The encode derives it from the content that is there, the
+   first one there fixing it and each other one there saying the same, and reads what the value states where none is;
+   a value that states it beside content that says otherwise is refused (`InconsistentSource`). The decode gives it
+   back `None` where it read any of the content and the number it read where it read none, which the template's
+   decode takes from the printer (`PythonSource::decoded`), so a decode and a case state one value. A length a group
+   holds on the side without its content waits for the groups.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

@@ -359,17 +359,50 @@ fn a_frame_that_holds_a_codec_that_can_refuse_is_written_whole_first() {
     );
 }
 
+/// A length the value states while the byte strings it measures are absent is
+/// `None` while any of them is there, derived then from them, each one there
+/// saying the same, and what the value states where none is; a value that
+/// states it beside content that says otherwise is refused, and the decode
+/// gives it back `None` where it read any of the content.
+///
+/// Turns red where `python_source::derive_number` reads the stated number
+/// where content is there, drops the check of a stated number against the
+/// content, or `render` decodes the number where the content was read.
+#[test]
+fn a_length_the_value_states_is_read_only_where_its_content_is_absent() {
+    assert!(unlowered("codec_length_stated").is_empty());
+    let text = resource_module("codec_length_stated");
+    holds(
+        "codec_length_stated",
+        &text,
+        &[
+            "    @property\n    def span_len(self) -> Optional[int]: ...\n",
+            "    span_len: Optional[int] = None\n",
+            "    _f_span_len = None\n    if src.alpha is not None:\n        \
+             _f_span_len = len(src.alpha)\n    elif src.beta is not None:\n        \
+             _f_span_len = len(src.beta)\n",
+            "    if src.beta is not None and len(src.beta) != _f_span_len:\n        \
+             raise InconsistentSource(\"span_len\")\n",
+            "    _d_span_len = (_f_span_len) if _f_span_len is not None else \
+             (0 if src.span_len is None else src.span_len)\n",
+            "    if _f_span_len is not None and src.span_len is not None and \
+             src.span_len != _d_span_len:\n        raise InconsistentSource(\"span_len\")\n",
+            "            span_len=f_span_len if f_alpha is None and f_beta is None else None,\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
-/// a length the value states where its gated content is absent names one.
+/// so does a group that holds a length the value states beside its content.
 ///
 /// Turns red where `python_source::positional_forms` stops naming a variant or
-/// a stated length, or `unlowered_forms` a CBOR map.
+/// a group, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     assert!(
         !unlowered("codec_present_if_length_ref").is_empty(),
-        "a length the value states beside gated content is not printed yet"
+        "a group of a gated byte string and the length stated beside it is not printed yet"
     );
     for (name, form) in [
         ("codec_variant_default_marker", "a variant"),
@@ -453,6 +486,7 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_present_if_checked",
         "codec_length_shared",
         "codec_encoded_length_checked",
+        "codec_length_stated",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

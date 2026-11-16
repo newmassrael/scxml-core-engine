@@ -14908,6 +14908,9 @@ fn render_codec(
                     obj.insert(type_key.into(), class.clone().into());
                     obj.insert("default_value".into(), default.clone().into());
                 }
+                if let Some(made) = printed.decoded.get(&f.id) {
+                    obj.insert("py_decoded".into(), made.clone().into());
+                }
             }
             Ok(serde_json::Value::Object(obj))
         })
