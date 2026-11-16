@@ -3017,6 +3017,49 @@ FIXTURES = {
         "the arm where H is set holds the links and the weights, whose start is W; the other "
         "holds the links alone, and there W is the value's own.",
     ),
+    "codec_repeat_flag_aligned_always": Fixture(
+        [
+            ({"head": 0x02, "head.H": {"arm": 0,
+                                       "links": {"start": {"wide": 0}, "entries": [
+                                           flag_entry(1, 5, 0, False),
+                                           flag_entry(2, 6, 0, False)]},
+                                       "weights": [{"seq": 1}, {"seq": 2}]}},
+             "H set: two short links and two weights, one count, W clear by the start"),
+            ({"head": 0x03, "head.H": {"arm": 0,
+                                       "links": {"start": {"wide": 1}, "entries": [
+                                           flag_entry(3, 0xABCD, 1, False)]},
+                                       "weights": [{"seq": 0x1234}]}},
+             "the start set: the link long, W derived set"),
+            ({"head": 0x03, "head.H": {"arm": 0,
+                                       "links": {"start": {"wide": 1}, "entries": []},
+                                       "weights": []}},
+             "no entry and the start set: W follows the start, not the entries"),
+            ({"head": 0x00, "head.H": {"arm": 1,
+                                       "links": {"start": {"wide": 0}, "entries": [
+                                           flag_entry(4, 7, 0, False)]}}},
+             "H clear: the links alone, W still derived from their start"),
+            ({"head": 0x01, "head.H": {"arm": 1,
+                                       "links": {"start": {"wide": 1}, "entries": [
+                                           flag_entry(5, 0x0102, 1, False),
+                                           flag_entry(6, 0x0304, 1, False)]}}},
+             "H clear and the start set: the links alone and long, W derived set"),
+            ({"head": 0x01, "head.H": {"arm": 1,
+                                       "links": {"start": {"wide": 1}, "entries": []}}},
+             "H clear and no entry: W follows the start of the links in this arm too"),
+            ({"head": 0xFE, "head.H": {"arm": 0,
+                                       "links": {"start": {"wide": 0}, "entries": [
+                                           flag_entry(7, 0x7F, 0, False)]},
+                                       "weights": [{"seq": 9}]}},
+             "the bits beside W and H are kept, H set by the arm"),
+            ({"head": 0xFD, "head.H": {"arm": 1,
+                                       "links": {"start": {"wide": 1}, "entries": [
+                                           flag_entry(8, 0xFFFF, 1, False)]}}},
+             "the bits beside W and H are kept, W by the start and H clear by the arm"),
+        ],
+        "two lists of one count, the one always there held to its law (docs/adr/0065 §6 R5, "
+        "R8): each arm holds the links, whose start is W whichever arm the value holds; the "
+        "arm where H is set holds the weights beside them, of one count.",
+    ),
     "codec_chain_prev_carrier": Fixture(
         [
             ({"head": 0x00, "entries": {"start": {"tagged": 0}, "entries": [
