@@ -31,7 +31,8 @@ mutation_tests -p sce-build --features cli --test path_naming_parity
 # from it — and because `mutation_compiled_targets` skips run-time files, the
 # reach check was not consulted at all for the cases below.
 mutation_targets sce-build/tests/path_naming_parity.rs \
-                 sce-build/src/cli/mod.rs
+                 sce-build/src/cli/mod.rs \
+                 sce-build/src/forge/drift.rs
 
 mutation_case "generate infers its source-set root lexically again" <<'PY'
 edit("sce-build/src/cli/mod.rs",
@@ -53,10 +54,18 @@ PY
 # no indentation: the subject is "the root is the first input's containing
 # directory", and neither the argument's reference depth nor the column it
 # is indented to is part of that.
+#
+# Re-aimed 2026-11-16: orchestrate no longer infers a root of its own. A set
+# is hashed over the closure of its documents (ADR 0094), whose keys are
+# taken from the deepest directory holding them all, each document's
+# directory read from its canonical path (`real_parent` in
+# sce-build/src/forge/drift.rs). The lexical answer is that directory read
+# off the spelling instead, where a bare filename has the empty path.
 mutation_case "orchestrate infers its source-set root lexically again" <<'PY'
-edit("sce-build/src/cli/mod.rs",
-     ".map(|p| containing_dir(p))",
-     ".and_then(|p| p.parent().map(|x| x.to_path_buf()))")
+edit("sce-build/src/forge/drift.rs",
+     "    let real = crate::confine::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());\n"
+     "    real.parent().map(Path::to_path_buf).unwrap_or_default()",
+     "    path.parent().map(Path::to_path_buf).unwrap_or_default()")
 PY
 
 mutation_case "generate-conformance derives resources lexically again" <<'PY'
