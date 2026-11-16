@@ -386,7 +386,12 @@ COST_MEASURED: dict[str, str] = {
 # 30 -> 31 on 2026-11-18, again: `windows-msvc` arrived as the first lane on a
 # Windows host, which no push host is, so its cost is an estimate its entry
 # derives. Its first run reads it.
-UNMEASURED_COST_CEILING = 31
+#
+# 31 -> 32, the same direction: `generated-deterministic` arrived declared and
+# skipped, since the fleet cache it compares against does not exist yet. Its
+# skip costs a shell start; its run is timed on the first machine that names a
+# fleet.
+UNMEASURED_COST_CEILING = 32
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1147,6 +1152,33 @@ GATES: dict[str, dict] = {
         "inputs": None,
         "commits": ["HEAD"],
         "peak_gb": 6.5,
+    },
+    # What replaces `regen-reproduces` once nothing generated is committed
+    # (ADR 0097, section 5): every action of every declared tree run here
+    # from an empty cache and held against the fleet's entry of the same key.
+    # Declared and skipped until bx's fleet cache exists: the script passes
+    # and says so when `SCE_FLEET_CACHE` names no instance, and the half that
+    # needs no fleet (two runs on one machine) is a test of the workspace
+    # suite, `a_declared_tree_reproduces_its_committed_tree`.
+    "generated-deterministic": {
+        "local": ["sce-build/**", "tools/codegen/**", "stdlib/**", "Cargo.lock"],
+        "no_ci_reason": "it compares against the fleet's action cache, which no "
+                        "hosted runner reaches (a site's REAPI instance, read "
+                        "through `bx-fleet site-tunnel`), and which does not "
+                        "exist until bx's fleet cache lands (ADR 0097, "
+                        "amendment 16). Without one the gate is skipped.",
+        # Unmeasured: the skip is a shell start. A run that names a fleet
+        # builds the generator twice (the comparer in a target directory of
+        # its own) and runs every declared tree's actions, about what
+        # `regen-reproduces` costs.
+        "cost_s": 1,
+        "summary": "every action agrees with the fleet's entry of its key",
+        "cache": False,
+        "no_cache_reason": "its verdict is about the fleet's entries as they "
+                           "are when it runs, which move without any commit",
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 5,
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],

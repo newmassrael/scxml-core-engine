@@ -4128,6 +4128,24 @@ enum Commands {
         provenance: Option<PathBuf>,
     },
 
+    /// Run every action of each tree on this machine, from an empty cache,
+    /// and hold each result against the fleet's entry for the same key
+    /// (ADR 0097, section 5): the `generated-deterministic` gate. The fleet
+    /// is the REAPI instance `SCE_FLEET_CACHE` and `SCE_FLEET_INSTANCE`
+    /// name, read and never written. Exits 1 when an entry differs.
+    #[cfg(feature = "remote-cache")]
+    FleetCompare {
+        /// The trees, as their manifests name them.
+        #[arg(required = true)]
+        trees: Vec<String>,
+        /// The generator that runs the actions, built as every action key
+        /// names it (`cargo build --bin sce-codegen --features cli -p
+        /// sce-build`); this program is built with `remote-cache` besides,
+        /// which no key names.
+        #[arg(long, value_name = "PATH")]
+        generator: PathBuf,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
     /// PC offset back to its originating SCXML coordinates.
     ///
@@ -4816,6 +4834,10 @@ pub fn main() {
             provenance.as_deref(),
             error_format,
         ),
+        #[cfg(feature = "remote-cache")]
+        Commands::FleetCompare { trees, generator } => {
+            cmd_fleet_compare(&trees, &generator, error_format)
+        }
         Commands::Addr2Sce {
             sourcemap_dir,
             symbol,
@@ -4977,6 +4999,8 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Materialize { .. }
         | Commands::Addr2Sce { .. }
         | Commands::Sce2Sym { .. } => Some(NOT_A_GENERATOR.to_string()),
+        #[cfg(feature = "remote-cache")]
+        Commands::FleetCompare { .. } => Some(NOT_A_GENERATOR.to_string()),
     }
 }
 
@@ -15097,6 +15121,91 @@ fn cmd_materialize(
         report.hits,
         report.runs
     );
+}
+
+/// `fleet-compare`: run every action of each of `trees` on this machine, from
+/// an empty action cache of its own so that each one runs, and hold the
+/// result each run recorded against the fleet's entry for the same key
+/// (ADR 0097, section 5). Prints a line per tree and each divergence, and
+/// exits 1 when an entry differs.
+#[cfg(feature = "remote-cache")]
+fn cmd_fleet_compare(trees: &[String], generator: &Path, error_format: ErrorFormat) {
+    use crate::action::determinism::{compare, Verdict};
+    use crate::action::store::{ContentStore, LocalStore, RemoteStore, ENDPOINT_VARIABLE};
+    use crate::action::{generation, identity, materialize, tree as manifests};
+    let fail = |detail: String| -> ! {
+        error_format.emit_and_exit(
+            &CliError::ScxmlGenerate {
+                stage: "fleet-compare",
+                detail,
+            },
+            "",
+        )
+    };
+    let fleet = match RemoteStore::from_environment() {
+        Some(connected) => connected.unwrap_or_else(|e| fail(e.to_string())),
+        None => fail(format!(
+            "no fleet: {ENDPOINT_VARIABLE} names no REAPI endpoint to compare against"
+        )),
+    };
+    let root = locate_workspace_root(current_workspace_root_override().as_deref())
+        .unwrap_or_else(|| cli_exit(CliError::ProjectRootNotFound));
+    let identity =
+        identity::GeneratorIdentity::of_checkout(&root).unwrap_or_else(|e| fail(e.to_string()));
+    // The generator is built from the sources this program was, so it
+    // carries the digest this program does; a stale one is refused by the
+    // generator itself, which names the checkout it was built from.
+    let generator =
+        generation::Generator::new(&root, generator, crate::GENERATOR_SOURCE_DIGEST, identity)
+            .unwrap_or_else(|e| fail(e.to_string()));
+    let scratch = std::env::temp_dir().join(format!("sce-fleet-compare-{}", std::process::id()));
+    let mut differed = false;
+    for name in trees {
+        let _ = fs::remove_dir_all(&scratch);
+        // An empty cache, so that every action of the tree runs here rather
+        // than being answered by an entry this machine took from elsewhere.
+        let local = LocalStore::at(scratch.join("cache"));
+        let expanded = manifests::tree(&root, name)
+            .and_then(|manifest| manifest.expand(&root))
+            .unwrap_or_else(|e| fail(e.to_string()));
+        let report = materialize::materialize(&generator, &local, &expanded, &scratch.join("tree"))
+            .unwrap_or_else(|e| fail(e.to_string()));
+        let mut verdict = Verdict::default();
+        for action in &report.actions {
+            let here = local
+                .action_result(&action.key)
+                .unwrap_or_else(|e| fail(e.to_string()))
+                .unwrap_or_else(|| {
+                    fail(format!(
+                        "tree `{name}`: the run of action {} recorded no result here",
+                        action.key
+                    ))
+                });
+            let there = fleet
+                .action_result(&action.key)
+                .unwrap_or_else(|e| fail(e.to_string()));
+            verdict.count(&action.key, compare(&here, there.as_ref()));
+        }
+        println!(
+            "fleet-compare {name}: {} action(s), {} agree with the fleet, {} differ, {} the \
+             fleet does not hold",
+            report.actions.len(),
+            verdict.agreed,
+            verdict.differed.len(),
+            verdict.absent
+        );
+        for (key, divergences) in &verdict.differed {
+            println!("  action {key}:");
+            for divergence in divergences {
+                println!("    {divergence}");
+            }
+        }
+        differed |= !verdict.passed();
+    }
+    let _ = fs::remove_dir_all(&scratch);
+    if differed {
+        std::process::exit(1);
+    }
 }
 
 /// Walks `out_dir` recursively and returns every file whose extension

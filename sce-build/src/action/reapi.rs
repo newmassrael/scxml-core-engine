@@ -181,6 +181,166 @@ pub struct ActionResult {
     pub stderr_digest: Option<Digest>,
 }
 
+/// `DigestFunction.Value.SHA256`, the digest function every request names.
+pub const DIGEST_FUNCTION_SHA256: i32 = 1;
+
+/// `google.rpc.Status`: how one entry of a batch call ended. Its `details`
+/// (field 3) are never read here and are skipped by the decoder.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct RpcStatus {
+    #[prost(int32, tag = "1")]
+    pub code: i32,
+    #[prost(string, tag = "2")]
+    pub message: String,
+}
+
+/// `FindMissingBlobsRequest` of the `ContentAddressableStorage` service.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct FindMissingBlobsRequest {
+    #[prost(string, tag = "1")]
+    pub instance_name: String,
+    #[prost(message, repeated, tag = "2")]
+    pub blob_digests: Vec<Digest>,
+    #[prost(int32, tag = "3")]
+    pub digest_function: i32,
+}
+
+/// `FindMissingBlobsResponse`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct FindMissingBlobsResponse {
+    #[prost(message, repeated, tag = "2")]
+    pub missing_blob_digests: Vec<Digest>,
+}
+
+/// `BatchUpdateBlobsRequest.Request`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct UpdateBlob {
+    #[prost(message, optional, tag = "1")]
+    pub digest: Option<Digest>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: Vec<u8>,
+}
+
+/// `BatchUpdateBlobsRequest`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct BatchUpdateBlobsRequest {
+    #[prost(string, tag = "1")]
+    pub instance_name: String,
+    #[prost(message, repeated, tag = "2")]
+    pub requests: Vec<UpdateBlob>,
+    #[prost(int32, tag = "5")]
+    pub digest_function: i32,
+}
+
+/// `BatchUpdateBlobsResponse.Response`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct UpdatedBlob {
+    #[prost(message, optional, tag = "1")]
+    pub digest: Option<Digest>,
+    #[prost(message, optional, tag = "2")]
+    pub status: Option<RpcStatus>,
+}
+
+/// `BatchUpdateBlobsResponse`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct BatchUpdateBlobsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub responses: Vec<UpdatedBlob>,
+}
+
+/// `BatchReadBlobsRequest`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct BatchReadBlobsRequest {
+    #[prost(string, tag = "1")]
+    pub instance_name: String,
+    #[prost(message, repeated, tag = "2")]
+    pub digests: Vec<Digest>,
+    #[prost(int32, tag = "4")]
+    pub digest_function: i32,
+}
+
+/// `BatchReadBlobsResponse.Response`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ReadBlob {
+    #[prost(message, optional, tag = "1")]
+    pub digest: Option<Digest>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: Vec<u8>,
+    #[prost(message, optional, tag = "3")]
+    pub status: Option<RpcStatus>,
+}
+
+/// `BatchReadBlobsResponse`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct BatchReadBlobsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub responses: Vec<ReadBlob>,
+}
+
+/// `GetActionResultRequest` of the `ActionCache` service.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct GetActionResultRequest {
+    #[prost(string, tag = "1")]
+    pub instance_name: String,
+    #[prost(message, optional, tag = "2")]
+    pub action_digest: Option<Digest>,
+    #[prost(int32, tag = "6")]
+    pub digest_function: i32,
+}
+
+/// `UpdateActionResultRequest`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct UpdateActionResultRequest {
+    #[prost(string, tag = "1")]
+    pub instance_name: String,
+    #[prost(message, optional, tag = "2")]
+    pub action_digest: Option<Digest>,
+    #[prost(message, optional, tag = "3")]
+    pub action_result: Option<ActionResult>,
+    #[prost(int32, tag = "5")]
+    pub digest_function: i32,
+}
+
+/// `google.bytestream.ReadRequest`: a blob too large for one batch call,
+/// read as `<instance>/blobs/<hash>/<size>`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ByteStreamReadRequest {
+    #[prost(string, tag = "1")]
+    pub resource_name: String,
+    #[prost(int64, tag = "2")]
+    pub read_offset: i64,
+    #[prost(int64, tag = "3")]
+    pub read_limit: i64,
+}
+
+/// `google.bytestream.ReadResponse`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ByteStreamReadResponse {
+    #[prost(bytes = "vec", tag = "10")]
+    pub data: Vec<u8>,
+}
+
+/// `google.bytestream.WriteRequest`: a blob too large for one batch call,
+/// written as `<instance>/uploads/<uuid>/blobs/<hash>/<size>`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ByteStreamWriteRequest {
+    #[prost(string, tag = "1")]
+    pub resource_name: String,
+    #[prost(int64, tag = "2")]
+    pub write_offset: i64,
+    #[prost(bool, tag = "3")]
+    pub finish_write: bool,
+    #[prost(bytes = "vec", tag = "10")]
+    pub data: Vec<u8>,
+}
+
+/// `google.bytestream.WriteResponse`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ByteStreamWriteResponse {
+    #[prost(int64, tag = "1")]
+    pub committed_size: i64,
+}
+
 /// `properties` sorted the way REAPI requires a platform's to be.
 pub fn platform(mut properties: Vec<Property>) -> Platform {
     properties.sort_by(|a, b| (&a.name, &a.value).cmp(&(&b.name, &b.value)));
@@ -251,6 +411,46 @@ mod tests {
         // Platform { properties: [Property { name: "n", value: "v" }] }
         expected.extend([0x52, 8, 0x0a, 6, 0x0a, 1, b'n', 0x12, 1, b'v']);
         assert_eq!(action.encode_to_vec(), expected);
+    }
+
+    /// The request the fleet is asked most, encoded by hand from
+    /// `remote_execution.proto`: instance (1), the action's digest (2) and
+    /// the digest function (6, varint 1 for SHA256). A tag off by one would
+    /// be a request every server reads as for no action.
+    #[test]
+    fn a_get_action_result_request_encodes_as_the_proto_schema_says() {
+        let digest = Digest {
+            hash: "0".repeat(64),
+            size_bytes: 1,
+        };
+        let request = GetActionResultRequest {
+            instance_name: "sce".into(),
+            action_digest: Some(digest.clone()),
+            digest_function: DIGEST_FUNCTION_SHA256,
+        };
+        let inner = digest.encode_to_vec();
+        let mut expected = vec![0x0a, 3, b's', b'c', b'e', 0x12];
+        expected.push(u8::try_from(inner.len()).unwrap());
+        expected.extend(&inner);
+        expected.extend([0x30, 1]);
+        assert_eq!(request.encode_to_vec(), expected);
+    }
+
+    /// A batch read's entry carries its status under tag 3 and its bytes
+    /// under tag 2; a response written by hand decodes to both.
+    #[test]
+    fn a_batch_read_response_decodes_its_data_and_status() {
+        // responses { data: "ab" (0x12), status { code: 5 } (0x1a) }
+        let entry = [0x12, 2, b'a', b'b', 0x1a, 2, 0x08, 5];
+        let mut bytes = vec![0x0a, u8::try_from(entry.len()).unwrap()];
+        bytes.extend(entry);
+        let response = BatchReadBlobsResponse::decode(bytes.as_slice()).unwrap();
+        assert_eq!(response.responses.len(), 1);
+        assert_eq!(response.responses[0].data, b"ab");
+        assert_eq!(
+            response.responses[0].status.as_ref().map(|s| s.code),
+            Some(5)
+        );
     }
 
     #[test]

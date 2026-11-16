@@ -117,6 +117,20 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 # without it generates a gated document for Swift one variant at a time.
 tree-sitter = { version = "0.25", optional = true }
 tree-sitter-swift = { version = "0.7.4", optional = true }
+# The fleet's action cache (ADR 0097, answer 3): a plain REAPI v2 client of a
+# site's instance, `action::store::RemoteStore`, speaking gRPC over HTTP/2.
+# Optional, behind `remote-cache`, so that a default build, every build script
+# that materializes a tree among them, links no network crate. tonic 0.12 is
+# the line built on prost 0.13, the encoder of the messages above; no
+# protoc and no generated stubs: the calls are made through
+# `tonic::client::Grpc` with the method paths of `remote_execution.proto` and
+# `bytestream.proto`. `tokio` is the runtime the blocking `ContentStore` calls
+# run on; `tokio-stream` turns a blob's chunks into a ByteStream write; `http`
+# names a method's path.
+tonic = { version = "0.12", default-features = false, features = ["channel", "prost"], optional = true }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"], optional = true }
+tokio-stream = { version = "0.1", default-features = false, optional = true }
+http = { version = "1", optional = true }
 
 [build-dependencies]
 # The build script `include!`s `src/generator_witness.rs` to embed the
@@ -135,6 +149,9 @@ xsd = ["libxml"]
 cli = ["clap", "object"]
 # The Swift output for every build of a product line (ADR 0057 §10).
 swift-reader = ["tree-sitter", "tree-sitter-swift"]
+# The client of the fleet's REAPI action cache (`action::store::RemoteStore`)
+# and the commands that read it (`sce-codegen fleet-compare`).
+remote-cache = ["tonic", "tokio", "tokio-stream", "http"]
 
 # The C-callable lowering surface — see `src/ffi.rs`. It began as a
 # measurement probe; the owner's 2026-08-29 decision to link the frontend
