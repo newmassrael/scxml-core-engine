@@ -12,7 +12,7 @@
 // its values by `acceptSeeds` as its parent would hand them, and its variables are read; the
 // parent is also run whole, so the values its `<invoke>` hands are the ones the children take.
 //
-// Regeneration: scripts/regen_swift_ecmascript.sh
+// Regeneration: scripts/materialize.sh swift-ecmascript
 
 import EcmaScriptMachines
 import SceLua
