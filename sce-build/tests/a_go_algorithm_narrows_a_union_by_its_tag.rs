@@ -176,11 +176,100 @@ func TestEachCaseHasTheExtentItsRecordGives(t *testing.T) {
 }
 "#;
 
+/// A list of unions (docs/adr/0099, "Still open" item 2) is a slice of the
+/// union's value struct: an element a union local copies is read by the
+/// runtime's checked read, which records `out-of-range` for an index outside
+/// it, a loop ranges over the slice, and the list the body builds is a slice
+/// each item is appended to as it is.
+#[test]
+fn a_go_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("shapes []{SHAPE}"));
+    holds(
+        &at,
+        "picked := scealgorithm.AtU(&sceFailure, shapes[:], uint64(at))\n",
+    );
+    holds(&at, "picked.ProvenCircle().Radius");
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, "for _, shape := range shapes {");
+    holds(&widest, "shape.ProvenRect().Width");
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("kept := make([]{SHAPE}, 0, 8)\n"));
+    holds(&kept, "kept = append(kept, shape)\n");
+}
+
+/// A package that calls the algorithms over a list of unions.
+const LIST_PROBE: &str = r#"package probe
+
+import (
+	"example.com/generated/algorithm_shape_at"
+	"example.com/generated/algorithm_shapes_kept"
+	"example.com/generated/algorithm_shapes_widest"
+	"example.com/generated/union_shape_minimal"
+)
+
+// ExtentAt is the extent of the shape at `at`, and whether `at` is in the list.
+func ExtentAt(shapes []union_shape_minimal.UnionShapeMinimal, at uint32) (uint16, bool) {
+	got, err := algorithm_shape_at.AlgorithmShapeAt(shapes, at)
+	return got, err == nil
+}
+
+// Widest is the widest circle or rect of the list.
+func Widest(shapes []union_shape_minimal.UnionShapeMinimal) uint16 {
+	return algorithm_shapes_widest.AlgorithmShapesWidest(shapes)
+}
+
+// Kept is how many shapes of the list are no dot.
+func Kept(shapes []union_shape_minimal.UnionShapeMinimal) int {
+	kept, err := algorithm_shapes_kept.AlgorithmShapesKept(shapes)
+	if err != nil {
+		return -1
+	}
+	return len(kept)
+}
+"#;
+
+/// The list probe's test: a dot, a circle of 5 and a rect of 7 by 4.
+const LIST_PROBE_TEST: &str = r#"package probe
+
+import (
+	"testing"
+
+	"example.com/generated/shape_radius_minimal"
+	"example.com/generated/shape_rect_minimal"
+	"example.com/generated/union_shape_minimal"
+)
+
+func TestAListOfUnionsIsReadAtAnIndexWalkedAndKept(t *testing.T) {
+	shapes := []union_shape_minimal.UnionShapeMinimal{
+		union_shape_minimal.UnionShapeMinimalDot(),
+		union_shape_minimal.UnionShapeMinimalCircle(shape_radius_minimal.ShapeRadiusMinimalPayload{Radius: 5}),
+		union_shape_minimal.UnionShapeMinimalRect(shape_rect_minimal.ShapeRectMinimalPayload{Width: 7, Height: 4}),
+	}
+	if got, ok := ExtentAt(shapes, 1); !ok || got != 5 {
+		t.Errorf("the circle at 1 has the extent %d (in the list: %v)", got, ok)
+	}
+	if got, ok := ExtentAt(shapes, 2); !ok || got != 7 {
+		t.Errorf("the rect at 2 has the extent %d (in the list: %v)", got, ok)
+	}
+	if _, ok := ExtentAt(shapes, 3); ok {
+		t.Errorf("an index past the list read a shape")
+	}
+	if got := Widest(shapes); got != 7 {
+		t.Errorf("the widest shape is %d wide", got)
+	}
+	if got := Kept(shapes); got != 2 {
+		t.Errorf("%d shapes are no dot", got)
+	}
+}
+"#;
+
 /// The algorithms, beside the union's unit and the units it names, written
 /// each into the package directory of its document below the module
 /// [`PREFIX`], with the probe: the reads, the build, the returns and the closed
 /// end are Go the compiler accepts, and each case's extent is the one its
-/// record gives.
+/// record gives. The algorithms over a list of unions are held by the list
+/// probe: an element in range and past the range, the loop and the list built.
 #[test]
 fn the_go_of_an_algorithm_over_a_union_builds_and_answers_each_case() {
     let Some(go_bin) =
@@ -209,6 +298,9 @@ fn the_go_of_an_algorithm_over_a_union_builds_and_answers_each_case() {
         "union_shape_minimal.scxml",
         "algorithm_shape_extent.scxml",
         "algorithm_shape_grown.scxml",
+        "algorithm_shape_at.scxml",
+        "algorithm_shapes_widest.scxml",
+        "algorithm_shapes_kept.scxml",
     ] {
         let (file, text) = unit(name);
         let package = dir.path().join(file.trim_end_matches(".go"));
@@ -219,6 +311,9 @@ fn the_go_of_an_algorithm_over_a_union_builds_and_answers_each_case() {
     std::fs::create_dir_all(&probe).expect("the probe's directory");
     std::fs::write(probe.join("probe.go"), PROBE).expect("write the probe");
     std::fs::write(probe.join("probe_test.go"), PROBE_TEST).expect("write the probe's test");
+    std::fs::write(probe.join("lists.go"), LIST_PROBE).expect("write the list probe");
+    std::fs::write(probe.join("lists_test.go"), LIST_PROBE_TEST)
+        .expect("write the list probe's test");
     let out = Command::new(&go_bin)
         .args(["test", "./..."])
         .current_dir(dir.path())
