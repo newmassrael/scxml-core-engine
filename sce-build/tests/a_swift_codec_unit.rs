@@ -1287,7 +1287,9 @@ fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
         "the count is the entries the list holds: {code}"
     );
     assert!(
-        !code.contains("value.count > 32") && !code.contains("num_elems: UInt8"),
+        !code.contains("value.count > 32")
+            && !code.contains("public var num_elems")
+            && !code.contains("num_elems: num_elems"),
         "an encode neither counts a list its type bounds nor reads a stated count: {code}"
     );
     assert!(
