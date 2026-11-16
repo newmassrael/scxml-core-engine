@@ -113,6 +113,31 @@ fn a_kotlin_algorithm_returns_a_union_it_was_given_or_built() {
     assert!(!text.contains("IllegalStateException("), "{text}");
 }
 
+/// A list of unions (docs/adr/0099, "Still open" item 2) is a read-only `List`
+/// of the sealed interface: an element a union local copies is read by the
+/// runtime's checked read of any `List`, which throws `out-of-range` for an
+/// index outside it, a loop walks the list as it is, and the list the body
+/// builds is the `ArrayList` a list of records is, each item added as it is.
+#[test]
+fn a_kotlin_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("shapes: List<{SHAPE}>"));
+    holds(
+        &at,
+        &format!(
+            "val picked: {SHAPE} = com.sce.forge.runtime.SceChecked.at(shapes, (at).toLong())"
+        ),
+    );
+    holds(&at, "picked.provenCircle().radius");
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, "for (shape in shapes) {");
+    holds(&widest, "shape.provenRect().width");
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("val kept = ArrayList<{SHAPE}>(8)"));
+    holds(&kept, "kept.add(shape)");
+    holds(&kept, &format!("): List<{SHAPE}>"));
+}
+
 /// A file that calls both algorithms, the one's union handed to the other.
 const PROBE: &str = r#"package probe
 
@@ -146,6 +171,9 @@ fn the_kotlin_of_an_algorithm_over_a_union_compiles_under_werror() {
         "union_shape_minimal.scxml",
         "algorithm_shape_extent.scxml",
         "algorithm_shape_grown.scxml",
+        // A loop over a list of unions needs no runtime; the copy from an
+        // index and the built list read the runtime's checked read.
+        "algorithm_shapes_widest.scxml",
     ] {
         let (file, text) = unit(name);
         let path = dir.path().join(file);

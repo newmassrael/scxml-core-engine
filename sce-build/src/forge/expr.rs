@@ -9289,8 +9289,12 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         } => {
             // A buffer checks the index against its size, then reads with
             // its reader.
+            // A buffer of unions is the `ArrayList` a record buffer is, read by
+            // the overload of any `List` below (docs/adr/0099, section 5.2).
             let reader = match left.ty {
-                InferredType::ListBuffer(elem) => Some(kotlin_buffer_reader(elem)?),
+                InferredType::ListBuffer(elem) if elem.union_alias().is_none() => {
+                    Some(kotlin_buffer_reader(elem)?)
+                }
                 InferredType::BytesBuffer => Some("getUByte"),
                 _ => None,
             };
