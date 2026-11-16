@@ -2901,3 +2901,22 @@ resources; `sce_build::c11_codec_printed_file` answers `Some(true)`).
   `{codec}_{element}_bytes_optional_some(view)` and `_none()`, and a gated number as the `sce_optional_<type>_t` the
   struct holds it in.
 
+## A printed C11 codec presents a body as its codec's source, and counts its encoded length (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it, against the C runtime's
+`sce/forge/codec.h` of the same landing. The printed set grows by the codecs that hold bodies of printed codecs, and
+derive a body's encoded length (`codec_embed_basic`, `codec_zenoh_timestamp_ext` among the resources;
+`sce_build::c11_codec_printed_file` answers `Some(true)`).
+
+- An encoded length is no member of `{codec}_t` (`msg.ext_size` is gone): the encode counts what the body's encode
+  writes, and the decode sets none. A value whose length member disagreed with its body now writes the body's own
+  length.
+- `{codec}_encode` refuses, before the first byte, a body whose arrays are past their bounds or whose text no
+  UTF-8 holds, as the body's own encode does. The check is `{codec}_check_value(&msg)`, which you may call yourself.
+- Every printed header includes `sce/forge/optional.h` and declares `{codec}_source_ref_t`, `{ table, ctx }`, and
+  `{codec}_source_ref_optional_t`; a source of your own presents a body as `{ body_value_source(), &body }`, or as
+  a pair over a record of your own with a table of your own. A name of yours that collides with one of these, or
+  with `{codec}_check_value`, now collides with the header.
+- The runtime gains `sce_forge_writer_init_counting()`, a writer that stores nothing and counts. A writer of yours
+  built by hand with a `NULL` buffer and room past zero now counts instead of writing through a null pointer.
+
