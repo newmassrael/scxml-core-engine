@@ -43,15 +43,33 @@ use crate::DocumentLabel;
 /// token (measured 2026-09-21). The attribute is found by what the record
 /// says it observed, so every variant is placed by the one rule the wire
 /// is held to, with no table of which variant names which attribute.
+///
+/// ⚠ And the record's `actual` is that attribute's value AS WRITTEN when
+/// the record names its decoded value and the document escapes it
+/// (`list&lt;int64&gt;` for `list<int64>`): the decoded token occurs on
+/// no line (§3.1.1). The id keeps the decoded value
+/// (`restate_actual`). This is the rule a handful of sites applied one by
+/// one through `value_as_written`, applied where every node-placed refusal
+/// passes.
 pub(crate) fn located<E: Into<ForgeError>>(
     node: &roxmltree::Node,
     name: &str,
     err: E,
 ) -> Located<ForgeError> {
+    use crate::forge::diagnostic::SingleDiagnostic;
     let err = err.into();
-    let start = observed_attribute(node, &err).map_or(node.range().start, |a| a.range().start);
+    let observed = observed_attribute(node, &err);
+    let start = observed
+        .as_ref()
+        .map_or(node.range().start, |a| a.range().start);
     let pos = node.document().text_pos_at(start);
-    Located::new(err, name, Some(pos.row), Some(pos.col))
+    let as_written = observed.as_ref().and_then(|attribute| {
+        let actual = err.diagnostic_payload().actual?;
+        let written = node.document().input_text().get(attribute.range_value())?;
+        (attribute.value() == actual && written != actual)
+            .then(|| crate::forge::error::AsWritten::Text(written.to_string()))
+    });
+    Located::new(err, name, Some(pos.row), Some(pos.col)).with_as_written(as_written)
 }
 
 /// The 1-based row `node` starts on — what a model element records as its
@@ -15788,6 +15806,73 @@ fn parse_finite_list(text: &str) -> Result<Vec<f64>, String> {
             _ => Err(format!("'{token}' is not a finite number")),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod located_tests {
+    use super::*;
+    use crate::forge::diagnostic::ToDiagnostics;
+
+    /// A refusal placed at an attribute whose value the document escapes
+    /// reports it as written, the token a consumer finds on the row, and
+    /// keeps the identity of the decoded value.
+    #[test]
+    fn an_escaped_value_is_reported_as_written_and_keyed_as_read() {
+        let xml = format!(
+            "<p xmlns:sce=\"{SCE_NAMESPACE}\">\n  <data id=\"d\"\n        sce:type=\"a&amp;b\"/>\n</p>"
+        );
+        let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+        let data = doc
+            .root_element()
+            .first_element_child()
+            .expect("fixture has a child");
+        let refusal = || ValidationError::InvalidAttribute {
+            element: "<data>".into(),
+            attr: "sce:type".into(),
+            value: "a&b".into(),
+            allowed: vec!["uint8".into()],
+        };
+        let placed = located(&data, "t.scxml", refusal());
+        assert_eq!(placed.location.line, Some(3), "the attribute's row");
+        let record = &placed.to_diagnostics()[0];
+        assert_eq!(record.actual.as_deref(), Some("a&amp;b"));
+
+        let unplaced: Located<ForgeError> =
+            Located::new(refusal().into(), "t.scxml", Some(3), None);
+        assert_eq!(
+            record.id,
+            unplaced.to_diagnostics()[0].id,
+            "the identity is the decoded value's"
+        );
+        assert_eq!(
+            unplaced.to_diagnostics()[0].actual.as_deref(),
+            Some("a&b"),
+            "control: unplaced, the record names the decoded value"
+        );
+    }
+
+    /// A value the document writes as it reads is not restated.
+    #[test]
+    fn a_plain_value_is_reported_as_it_is() {
+        let xml = format!("<p xmlns:sce=\"{SCE_NAMESPACE}\"><data sce:type=\"blob\"/></p>");
+        let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+        let data = doc
+            .root_element()
+            .first_element_child()
+            .expect("fixture has a child");
+        let placed = located(
+            &data,
+            "t.scxml",
+            ValidationError::InvalidAttribute {
+                element: "<data>".into(),
+                attr: "sce:type".into(),
+                value: "blob".into(),
+                allowed: vec!["uint8".into()],
+            },
+        );
+        assert_eq!(placed.as_written(), None);
+        assert_eq!(placed.to_diagnostics()[0].actual.as_deref(), Some("blob"));
+    }
 }
 
 #[cfg(test)]
