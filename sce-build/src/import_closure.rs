@@ -847,6 +847,11 @@ mod tests {
         );
         assert_eq!(forge.directory(Language::Go, None), Path::new("outer_pick"));
         assert_eq!(forge.directory(Language::Rust, None), Path::new(""));
+        assert_eq!(
+            forge.directory(Language::Swift, None),
+            Path::new(""),
+            "a Swift unit is a file of the module that calls it"
+        );
         let machine = Unit {
             name: "door".to_string(),
             kind: UnitKind::Statechart,
