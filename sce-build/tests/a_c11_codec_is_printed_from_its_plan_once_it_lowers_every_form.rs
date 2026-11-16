@@ -187,7 +187,8 @@ fn a_length_is_derived_from_the_view_it_measures_and_is_no_member_of_the_value()
              codec_length_ref_payload_bytes_t;\n",
             "static inline sce_forge_codec_status_t codec_length_ref_payload_bytes_make(\
              codec_length_ref_payload_bytes_t *out, const uint8_t *data, size_t len) {\n    \
-             if (len > 32u) {\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n",
+             if (!sce_forge_length_within_bound(len, 32)) {\n        \
+             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n",
             "    codec_length_ref_payload_bytes_t (*payload)(const void *ctx);\n",
             "    view.data = self->payload;\n    view.len = self->payload_len;\n",
             "    const codec_length_ref_payload_bytes_t _e_payload = src->payload(ctx);\n",
@@ -223,7 +224,7 @@ fn a_length_less_its_arithmetic_is_derived_less_it() {
         "codec_scout_zid_body",
         &text,
         &[
-            "    if (len < 1u || len > 16u) {\n",
+            "    if (len < 1u || !sce_forge_length_within_bound(len, 16)) {\n",
             "    const uint8_t _d_zid_len_m1 = (uint8_t)(_e_zid.len - 1u);\n",
             "    if (self->zid_len < 1u || !sce_forge_length_within_bound(self->zid_len, 16)) {\n",
             "(size_t)((int64_t)_d_zid_len_m1 + 1)",
@@ -262,18 +263,95 @@ fn a_length_named_as_the_arrays_length_member_leaves_the_value_too() {
     );
 }
 
-/// A codec whose plan uses a form the C11 printer does not lower keeps the
-/// template's encode whole: a byte string of a streamed layout, a variant and
-/// a CBOR map each name their form, and none of them has an encode over a
-/// source.
+/// A text of a streamed layout whose length is a variable-length integer before
+/// it: the encode derives the number from the view and writes it by the
+/// runtime's writer, and the decode reads it into a local of its own that the
+/// text's length is read off, as the value holds no member of it. The text's
+/// array keeps the length member of its own the number was named as.
 ///
-/// Turns red where `c11_source::positional_forms` stops naming a streamed byte
-/// string or a variant, or `unlowered_forms` a CBOR map, or where the template
-/// prints the encode over a source for a codec it keeps.
+/// Turns red where `present_if_decode_vle` reads a derived number into the
+/// struct, where `carried_length` reads the length off the struct, or where
+/// `c11_source::encode_source` writes no byte string of a streamed layout.
+#[test]
+fn a_streamed_length_is_derived_and_read_into_a_local_of_the_decode() {
+    assert!(unlowered("codec_zenoh_locator").is_empty());
+    let text = resource_header("codec_zenoh_locator");
+    holds(
+        "codec_zenoh_locator",
+        &text,
+        &[
+            "    codec_zenoh_locator_locator_text_t (*locator)(const void *ctx);\n",
+            "    size_t  locator_len;\n",
+            "    const uint64_t _d_locator_len = (uint64_t)(_e_locator.len);\n",
+            "sce_forge_writer_write_vle_u64(w, (uint64_t)(_d_locator_len))",
+            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, \
+             (const uint8_t *)_e_locator.data, _e_locator.len));\n",
+            "uint64_t _d_locator_len;\n",
+            "sce_forge_cursor_read_vle_u64(cursor, &_d_locator_len)",
+            "size_t _n = (size_t)_d_locator_len;",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_locator",
+        &text,
+        &[
+            "    uint64_t locator_len;\n",
+            "out->locator_len = locator_len;",
+            "src->locator_len",
+        ],
+    );
+}
+
+/// A fixed field after a byte string of a streamed layout, whose length is a
+/// fixed field before it: the decode declares the length's local before the
+/// block that reads it, and the encode writes the bytes before the field after
+/// them, as the frame lays them out.
+///
+/// Turns red where `present_if_decode_fixed` declares the local inside its
+/// block or writes the struct, or where the encode over a source writes the
+/// streamed fields out of their order.
+#[test]
+fn a_fixed_length_of_a_streamed_layout_is_read_into_a_local_before_its_block() {
+    assert!(unlowered("codec_fixed_after_lengthref").is_empty());
+    let text = resource_header("codec_fixed_after_lengthref");
+    holds(
+        "codec_fixed_after_lengthref",
+        &text,
+        &[
+            "uint16_t _d_payload_len;\n    {\n",
+            "        _d_payload_len = ",
+            "    const uint16_t _d_payload_len = (uint16_t)(_e_payload.len);\n",
+            "size_t _n = (size_t)_d_payload_len;",
+        ],
+    );
+    holds_none(
+        "codec_fixed_after_lengthref",
+        &text,
+        &[
+            "    uint16_t payload_len;\n",
+            "out->payload_len = (uint16_t)",
+        ],
+    );
+    let bytes = text
+        .find("sce_forge_writer_write_bytes(w, _e_payload.data, _e_payload.len)")
+        .expect("the encode writes the payload's view");
+    let crc = text[bytes..].find("_e_crc32");
+    assert!(
+        crc.is_some(),
+        "the encode writes crc32 after the payload it follows"
+    );
+}
+
+/// A codec whose plan uses a form the C11 printer does not lower keeps the
+/// template's encode whole: a variant and a CBOR map each name their form, and
+/// neither has an encode over a source.
+///
+/// Turns red where `c11_source::positional_forms` stops naming a variant, or
+/// `unlowered_forms` a CBOR map, or where the template prints the encode over
+/// a source for a codec it keeps.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_zenoh_locator", "a byte string of a streamed layout"),
         ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
@@ -351,6 +429,9 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_length_ref_uint16_be",
         "codec_scout_zid_body",
         "codec_tail",
+        "codec_zenoh_locator",
+        "codec_fixed_after_lengthref",
+        "codec_zenoh_frame",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
