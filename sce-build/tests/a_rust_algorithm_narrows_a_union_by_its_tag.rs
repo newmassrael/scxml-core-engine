@@ -100,6 +100,32 @@ fn an_algorithm_returns_a_union_it_was_given_or_built() {
     assert!(!text.contains("unreachable!("), "{text}");
 }
 
+/// A list of unions (docs/adr/0099, "Still open" item 2) is the slice of the
+/// union's enum: an element a union local copies is read by reference through
+/// the checked read and cloned out of the list, a loop borrows each element,
+/// whose reads take `&self`, and the list the body builds is the caller's
+/// `SceOwnedList` of the enum, each item cloned in.
+#[test]
+fn an_algorithm_reads_walks_and_builds_a_list_of_unions() {
+    let (_, at) = unit("algorithm_shape_at.scxml");
+    holds(&at, &format!("shapes: &[{SHAPE}]"));
+    holds(
+        &at,
+        &format!(
+            "let picked: {SHAPE} = sce_forge_runtime::algorithm::at_ref(&shapes, at)?.clone();"
+        ),
+    );
+    holds(&at, "picked.kind()");
+    holds(&at, "picked.proven_circle().radius");
+    let (_, widest) = unit("algorithm_shapes_widest.scxml");
+    holds(&widest, "for shape in shapes.iter() {");
+    holds(&widest, "shape.proven_circle().radius");
+    holds(&widest, "shape.proven_rect().width");
+    let (_, kept) = unit("algorithm_shapes_kept.scxml");
+    holds(&kept, &format!("kept: &mut SceOwnedList<{SHAPE}, 8>"));
+    holds(&kept, "kept.push(shape.clone())?;");
+}
+
 /// A module that calls both algorithms, the one's union handed to the other.
 const PROBE: &str = r#"use super::algorithm_shape_extent::algorithm_shape_extent;
 use super::algorithm_shape_grown::algorithm_shape_grown;
@@ -134,6 +160,11 @@ fn the_rust_of_an_algorithm_over_a_union_compiles_under_deny_warnings() {
         "union_shape_minimal.scxml",
         "algorithm_shape_extent.scxml",
         "algorithm_shape_grown.scxml",
+        // A loop over a list of unions needs no runtime; the copy from an index
+        // and the list built are may-fail, read through the runtime's checked
+        // read and destination, and compile where the forge runtime is linked
+        // (the conformance harness of `resolve_date_at`).
+        "algorithm_shapes_widest.scxml",
     ] {
         let (file, text) = unit(name);
         std::fs::write(dir.path().join(&file), text).expect("write the unit");

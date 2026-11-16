@@ -10423,7 +10423,12 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         } => {
             let list = rust_list_operand(left)?;
             let index = emit_rust(index, InferredType::Unknown)?;
-            match rust_element_by_reference(expr.ty) {
+            // A union, typed by no operand type, is no `Copy` value either: the
+            // element a union local copies is read by reference and cloned out
+            // of the list, which keeps its own (docs/adr/0099, section 5.2).
+            let element = rust_element_by_reference(expr.ty)
+                .or_else(|| listed_union(left.ty).map(|_| RustElement::Owned));
+            match element {
                 None => format!("sce_forge_runtime::algorithm::at({list}, {index})?"),
                 Some(RustElement::Operand) => {
                     format!("sce_forge_runtime::algorithm::at_ref({list}, {index})?")
