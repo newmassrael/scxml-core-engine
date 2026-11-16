@@ -28,8 +28,18 @@ final class CodecVariantUnitTests: XCTestCase {
         var cursor = SceCursor([0x09, 0x03])
         let frame = try CodecVariantDispatch.decode(&cursor)
         XCTAssertEqual(frame.msg_id, 9)
-        XCTAssertEqual(
-            frame.body, .default(tag: 9, body: CodecVariantSessionClose(reason: 3)))
+        let tag = try XCTUnwrap(CodecVariantDispatchUnknownTag(9))
+        XCTAssertEqual(frame.body, .default(tag: tag, body: CodecVariantSessionClose(reason: 3)))
+    }
+
+    // docs/adr/0065 §6 R3: the catch-all holds a tag no arm names, within the bits it is read from,
+    // so a catch-all written is read back as the catch-all.
+    func testTheCatchAllsTagAdmitsNoArmsTagAndNoTagPastItsBits() {
+        XCTAssertNil(CodecVariantDispatchUnknownTag(0x01), "an arm names it")
+        XCTAssertNil(CodecVariantDispatchUnknownTag(0x02), "an arm names it")
+        XCTAssertEqual(CodecVariantDispatchUnknownTag(0xFF)?.value, 0xFF)
+        XCTAssertNil(CodecZenohPushBodyUnknownTag(0x20), "past the five bits of the flag")
+        XCTAssertEqual(CodecZenohPushBodyUnknownTag(0x1F)?.value, 0x1F)
     }
 
     func testAnArmCutShortRefusesTheFrameAndConsumesNothing() {
@@ -47,8 +57,9 @@ final class CodecVariantUnitTests: XCTestCase {
         ).encode(into: &sink)
         XCTAssertEqual(sink.bytes, [0x01, 0x00, 0x05])
         var caught = BytesSink()
+        let tag = try XCTUnwrap(CodecVariantDispatchUnknownTag(9))
         try CodecVariantDispatch(
-            msg_id: 9, body: .default(tag: 9, body: CodecVariantSessionClose(reason: 3))
+            msg_id: 9, body: .default(tag: tag, body: CodecVariantSessionClose(reason: 3))
         ).encode(into: &caught)
         XCTAssertEqual(caught.bytes, [0x09, 0x03])
     }
@@ -82,6 +93,7 @@ final class CodecVariantUnitTests: XCTestCase {
         var cursor = SceCursor([0xFF, 0x2A])
         let frame = try CodecZenohPushBody.decode(&cursor)
         XCTAssertEqual(frame.header, 0xFF)
-        XCTAssertEqual(frame.body, .default(tag: 0x1F, body: CodecZenohPut(payload: 0x2A)))
+        let tag = try XCTUnwrap(CodecZenohPushBodyUnknownTag(0x1F))
+        XCTAssertEqual(frame.body, .default(tag: tag, body: CodecZenohPut(payload: 0x2A)))
     }
 }

@@ -587,7 +587,17 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
     let code = swift_of("tests/forge/resources/codec_variant_dispatch.scxml")
         .expect("a variant over a field is written");
     assert!(
-        code.contains("public enum CodecVariantDispatchVariant: Equatable, Sendable {\n    case codecVariantSessionOpen(CodecVariantSessionOpen)\n    case codecVariantSessionClose(CodecVariantSessionClose)\n    case `default`(tag: UInt8, body: CodecVariantSessionClose)\n}"),
+        code.contains("public enum CodecVariantDispatchVariant: Equatable, Sendable {\n    case codecVariantSessionOpen(CodecVariantSessionOpen)\n    case codecVariantSessionClose(CodecVariantSessionClose)\n    case `default`(tag: CodecVariantDispatchUnknownTag, body: CodecVariantSessionClose)\n}"),
+        "{code}"
+    );
+    // docs/adr/0065 §6 R3: the catch-all's tag admits no tag an arm names; a whole byte holds no
+    // tag past its bits.
+    assert!(
+        code.contains("public struct CodecVariantDispatchUnknownTag: Equatable, Hashable, Sendable {\n    /// The tag.\n    public let value: UInt8\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("        switch value {\n        case 0x1...0x2: return false\n        default: return true\n        }"),
         "{code}"
     );
     assert!(
@@ -599,7 +609,7 @@ fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catc
         "{code}"
     );
     assert!(
-        code.contains("        default:\n            body = .default(tag: body_tag, body: try CodecVariantSessionClose.decode(&reader))"),
+        code.contains("        default:\n            body = .default(tag: CodecVariantDispatchUnknownTag(admitted: body_tag), body: try CodecVariantSessionClose.decode(&reader))"),
         "{code}"
     );
     assert!(
@@ -621,8 +631,14 @@ fn a_variant_over_the_bits_of_a_flag_reads_them_shifted_down_and_masked() {
         "{code}"
     );
     assert!(
-        code.contains("body = .default(tag: UInt8(truncatingIfNeeded: body_tag), body: try CodecZenohPut.decode(&reader))"),
+        code.contains("body = .default(tag: CodecZenohPushBodyUnknownTag(admitted: UInt8(truncatingIfNeeded: body_tag)), body: try CodecZenohPut.decode(&reader))"),
         "the tag the catch-all holds is the bits, in the smallest type that holds them: {code}"
+    );
+    assert!(
+        code.contains(
+            "        case 0x1...0x2: return false\n        default: return value <= 0x1F\n"
+        ),
+        "the catch-all's tag holds no tag past the flag's five bits: {code}"
     );
 }
 

@@ -33,6 +33,42 @@ public enum {{ variant_enum.name }}: Equatable, Sendable {
 }
 
 {% endif %}
+{% if variant_enum and variant_enum.unknown_tag %}
+{% set u = variant_enum.unknown_tag %}
+/// The tag the catch-all arm of `{{ struct_name }}` holds (docs/adr/0065 §6 R3): one no arm names{% if u.max %},
+/// within the bits the tag is read from{% endif %}. The failable initializer is the one door, so a
+/// catch-all written is read back as the catch-all, and its encode refuses nothing.
+public struct {{ u.name }}: Equatable, Hashable, Sendable {
+    /// The tag.
+    public let value: {{ u.type }}
+
+    /// The tag `value`, or `nil` where an arm names it{% if u.max %} or its bits do not hold it{% endif %}.
+    public init?(_ value: {{ u.type }}) {
+        guard Self.admits(value) else { return nil }
+        self.value = value
+    }
+
+    /// A tag the decode read where no arm names one, or the least one the catch-all admits.
+    fileprivate init(admitted value: {{ u.type }}) {
+        self.value = value
+    }
+
+    /// Whether the catch-all may hold `value`.
+    public static func admits(_ value: {{ u.type }}) -> Bool {
+{% if u.known %}
+        switch value {
+        case {{ u.known }}: return false
+        default: return {% if u.max %}value <= {{ u.max }}{% else %}true{% endif %}
+
+        }
+{% else %}
+        return {% if u.max %}value <= {{ u.max }}{% else %}true{% endif %}
+
+{% endif %}
+    }
+}
+
+{% endif %}
 {% if printed %}
 /// The elements a value of `{{ struct_name }}` presents, each a read-only property in the order the
 /// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
@@ -176,7 +212,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% endif %}
 {% endfor %}
 {% if variant_enum.default %}
-        case .default(let held, _): return held
+        case .default(let held, _): return held.value
 {% endif %}
         }
     }

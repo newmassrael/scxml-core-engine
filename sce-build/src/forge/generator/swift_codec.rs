@@ -881,6 +881,12 @@ struct VariantParts {
     fewest_bytes: String,
 }
 
+/// The type the catch-all arm of the codec `codec`'s variant holds its tag in (docs/adr/0065 §6
+/// R3): a tag no arm names, within the bits the tag is read from.
+pub(super) fn unknown_tag_type(codec: &str) -> String {
+    format!("{}UnknownTag", filters::to_pascal_case(codec.to_string()))
+}
+
 /// The smallest unsigned Swift integer type that holds `width` bits.
 fn smallest_unsigned(width: u32) -> &'static str {
     match width {
@@ -970,6 +976,12 @@ fn variant_context(
     } else {
         local.clone()
     };
+    // The tag the catch-all holds is a type of its own (docs/adr/0065 §6 R3), which admits the tags
+    // no arm names within the bits the tag is read from; the decode reaches the catch-all with no
+    // other, so it makes the tag through the door that checks nothing.
+    let unknown = crate::forge::codec_totality::unknown_tag(m);
+    let unknown_name = unknown_tag_type(&m.name);
+    let admitted = |tag: &str| format!("{unknown_name}(admitted: {tag})");
     let entry = |alias: &str| resolve_repeat_body_type(&m.name, alias, imports, Language::Swift);
     let mut arms = Vec::new();
     for arm in &v.arms {
@@ -1009,7 +1021,10 @@ fn variant_context(
         let (decode_args, encode_args) = thread(&arm.body_alias);
         cases.push(serde_json::json!({
             "label": "default:",
-            "value": format!(".default(tag: {narrowed}, body: try {ty}.decode(&reader{decode_args}))"),
+            "value": format!(
+                ".default(tag: {}, body: try {ty}.decode(&reader{decode_args}))",
+                admitted(&narrowed)
+            ),
             "pattern": ".default(_, let arm)",
             "encode_args": encode_args,
             // The catch-all is never under a feature: every build holds it.
@@ -1024,10 +1039,18 @@ fn variant_context(
         .iter()
         .find(|(arm, ..)| arm.is_default)
         .or_else(|| arms.iter().find(|(arm, ..)| arm.feature.is_none()));
-    let initial = match (held_by_every_build, &default) {
-        (Some((_, case, ty)), _) => format!(".{case}({ty}())"),
-        (None, Some(ty)) => format!(".default(tag: 0, body: {ty}())"),
-        (None, None) => {
+    // The catch-all starts at the least tag it admits; one that admits none holds no value, and the
+    // value starts at its first arm.
+    let least_unknown = unknown
+        .as_ref()
+        .and_then(|unknown| (0..=unknown.known.len() as u64).find(|tag| unknown.admits(*tag)));
+    let initial = match (held_by_every_build, &default, least_unknown) {
+        (Some((_, case, ty)), _, _) => format!(".{case}({ty}())"),
+        (None, Some(ty), Some(tag)) => format!(
+            ".default(tag: {}, body: {ty}())",
+            admitted(&format!("0x{tag:X}"))
+        ),
+        (None, _, _) => {
             let (_, case, ty) = arms.first().expect("a variant holds an arm");
             format!(".{case}({ty}())")
         }
@@ -1076,7 +1099,22 @@ fn variant_context(
                 .collect::<Vec<_>>(),
             "default": default.as_ref().map(|ty| serde_json::json!({
                 "type": ty,
-                "tag_type": tag_type,
+                "tag_type": unknown_name,
+            })),
+            "unknown_tag": unknown.as_ref().map(|unknown| serde_json::json!({
+                "name": unknown_name,
+                "type": tag_type,
+                "known": unknown
+                    .known_runs()
+                    .iter()
+                    .map(|&(first, last)| if first == last {
+                        format!("0x{first:X}")
+                    } else {
+                        format!("0x{first:X}...0x{last:X}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                "max": unknown.max_below_type().map(|max| format!("0x{max:X}")),
             })),
         }),
         fewest_bytes,
@@ -1151,7 +1189,7 @@ fn parent_tag_locals(derivations: &[ParentTagDerivation]) -> Vec<String> {
         }
         if d.catch_all {
             lines.push(format!(
-                "{pad}        case .default(let tag, _): {local} = (UInt8(truncatingIfNeeded: tag) & 0x{mask:X}) << {}",
+                "{pad}        case .default(let tag, _): {local} = (UInt8(truncatingIfNeeded: tag.value) & 0x{mask:X}) << {}",
                 d.bit
             ));
         }
