@@ -11921,7 +11921,12 @@ fn parse_link(
                 "inbound" => {
                     let event = require_attr(&child, "event", "<sce:inbound>", doc_name)?;
                     let when = child.attribute("when").map(|s| s.to_string());
-                    inbound.push(LinkInboundEvent { event, when });
+                    let when_spelling = AttributeSpelling::of(&child, None, "when");
+                    inbound.push(LinkInboundEvent {
+                        event,
+                        when,
+                        when_spelling,
+                    });
                 }
                 "outbound" => {
                     let event = require_attr(&child, "event", "<sce:outbound>", doc_name)?;

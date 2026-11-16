@@ -33,6 +33,8 @@ mod go_test_template;
 mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
+mod link_events;
+pub(crate) use link_events::DECODED as LINK_DECODED;
 mod python_source;
 mod python_test_tables;
 mod python_test_template;
@@ -28057,11 +28059,12 @@ pub fn generate_rust_with_imports_and_externs(
 /// and exposes a constructor that the consumer threads through to a
 /// downstream `sce_link_runtime_<os>` `impl Link`. SCE owns the trait
 /// surface in the workspace member `sce-link-runtime`; per-OS impls
-/// (lwip/tokio/qnx) live downstream.
+/// (lwip/tokio/qnx) live downstream. A link that declares `<sce:events>`
+/// rows is generated against the codecs they name ([`link_events::resolve`]).
 fn render_link_rust(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
-    _imports: &[ImportContext],
+    imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("link.rs.jinja2").map_err(|e| {
@@ -28069,6 +28072,7 @@ fn render_link_rust(
             "link.rs.jinja2 (rust): {e}"
         )))
     })?;
+    let events = link_events::resolve(m, imports, crate::generator::Language::Rust, options)?;
     // Item C10 listener-pair: orchestrator-resolved flag. `None` (deploy-
     // unaware paths) collapses to `false` — silent-skip:
     // no deploy ⇒ no listener-pair synthesis. The set-membership lookup
@@ -28102,6 +28106,7 @@ fn render_link_rust(
         has_tx_pool => m.tx_pool.is_some(),
         has_stage_pool => m.stage_pool.is_some(),
         is_listener_with_sibling => is_listener_with_sibling,
+        events => events,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -31705,7 +31710,7 @@ fn render_bounded_collection_python(
 fn render_link_c(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
-    _imports: &[ImportContext],
+    imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("link.h.jinja2").map_err(|e| {
@@ -31713,6 +31718,7 @@ fn render_link_c(
             "link.h.jinja2 (c11): {e}"
         )))
     })?;
+    let events = link_events::resolve(m, imports, crate::generator::Language::C11, options)?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper_name);
@@ -31743,6 +31749,7 @@ fn render_link_c(
         stage_pool => m.stage_pool.clone().unwrap_or_default(),
         has_stage_pool => m.stage_pool.is_some(),
         is_listener_with_sibling => is_listener_with_sibling,
+        events => events,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

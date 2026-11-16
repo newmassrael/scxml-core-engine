@@ -1247,6 +1247,7 @@ fn each_mcu_kind_renders_every_field_it_can_carry() {
         inbound: vec![LinkInboundEvent {
             event: "rx".to_string(),
             when: Some("len > 0".to_string()),
+            when_spelling: None,
         }],
         outbound: vec![LinkOutboundEvent {
             event: "tx".to_string(),

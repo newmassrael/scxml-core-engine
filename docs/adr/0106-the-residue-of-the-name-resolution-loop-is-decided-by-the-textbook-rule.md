@@ -65,6 +65,22 @@ unread. Left to the owners of the link templates (`tools/codegen/templates/forge
 framer codec resolved across imports; the template header comment is to be made true by that change, not edited
 ahead of it.
 
+Implemented (2026-11-16), on the two backends that generate a link (Rust and C11; the kind is MCU-class elsewhere):
+a link that declares `<sce:events>` rows is generated against the codecs they name, read through the link's own
+`<sce:import kind="codec">` (`forge::generator::link_events`). The receive path (`pump`) gives the driver its tick,
+decodes every frame with the framer and injects, through a callback, the event of every `<sce:inbound>` row whose
+`when` holds, in document order; each row is a rule of its own, so a frame may raise several events and a row
+without `when` raises its event for every frame. `when` is an expression over `decoded`, a closed record of the
+framer's fields, lowered by the forge expression pipeline and refused where it was written. A frame the framer
+refuses raises no event and is handed to a second callback. The transmit path (`send`) encodes an `<sce:outbound>`
+event's value with its codec into a slot of the `<sce:tx-pool>` when the link names one (acquired, written, handed
+to the driver, returned: `Link::tx` copies the bytes before it returns, so the slot is free whichever way the send
+went) and into a buffer of the codec's largest encoding otherwise. The listener's established-session half carries
+the same paths. Refused at generation, naming the link: a codec a row names that the link does not import (its
+decode and encode are generated from its document, which only an import reads), a framer whose decode takes caller
+inputs (flag inputs, a caller-supplied tag), an outbound codec whose encode does, an outbound event declared twice,
+and two event names one identifier would spell. A link with no event row stays the byte endpoint it was.
+
 ### #127 — a deployment's refusal names the deployment's path
 
 Implemented. `DeployConfig` keeps the path it was read from (`source`, set by `parse_deploy` and by the CLI's

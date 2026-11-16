@@ -6131,6 +6131,11 @@ pub struct LinkInboundEvent {
     /// `None` means inject every successful decode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<String>,
+    /// The `when` attribute as written and where, so a refusal of the
+    /// predicate names the row and the piece of it the author wrote. Not
+    /// part of the IR. See [`crate::attribute_spelling`].
+    #[serde(skip)]
+    pub when_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// `<sce:outbound>` — SCXML event → framer encode + driver send contract.

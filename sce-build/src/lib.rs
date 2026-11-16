@@ -8115,12 +8115,11 @@ fn validate_link_pool_refs(
 /// that put the pool axis here, one join earlier.
 ///
 /// The generated link wrapper is not an argument against the join, it
-/// is the request for it: the emitted header says the wrapper "treats
-/// the framer as opaque (no codegen-time codec import resolution here)
-/// … cross-file framer-codec resolution happens at generator level"
-/// and hands consumers a `*_LINK_FRAMER_REF` string to "resolve
-/// against the imported codec map". Opacity is a property of the
-/// wrapper; the resolution it defers is owed here.
+/// is the request for it: a link that declares events is generated
+/// against the framer its own `<sce:import>` reads, and a link that
+/// declares none hands the bytes' reader a `*_LINK_FRAMER_REF` string
+/// to resolve. A ref that names nothing the build has is refused here,
+/// on both.
 ///
 /// Runs only from [`compile_scxml_with_imports`] for
 /// [`validate_link_pool_refs`]'s reason: the single-document entry
@@ -12292,12 +12291,13 @@ mod tests {
 
     /// SCE Protocol-Synthesis RFC §synth-5-C: link kind happy path. A
     /// well-formed `<sce:kind="link">` document with udp class +
-    /// framer ref + minimal events → Rust generator emits a
+    /// framer ref and no events → Rust generator emits a
     /// `<Pascal><L: Link>` wrapper struct that routes RX/TX through
     /// the `sce-link-runtime::Link` trait. Asserts presence of the
     /// load-bearing tokens (struct decl + impl block + trait import +
     /// LINK_CLASS / FRAMER_REF / BACKPRESSURE constants) so codegen
-    /// drift fails the build.
+    /// drift fails the build. A link that declares events is generated
+    /// against its imported codecs: `tests/link_event_paths.rs`.
     #[test]
     fn link_rust_happy_path_emits_wrapper_struct() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -12307,10 +12307,6 @@ mod tests {
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
-  <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
-    <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
-  </sce:events>
 </scxml>"##;
         let label = DocumentLabel {
             identifier: "udp_scout",
@@ -12667,10 +12663,6 @@ topology:
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
-  <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
-    <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
-  </sce:events>
 </scxml>"##;
         let label = DocumentLabel {
             identifier: "udp_scout",

@@ -2637,14 +2637,13 @@ pub enum ValidationError {
     /// `sce:kind="codec"` document the build can see, neither among its
     /// inputs nor among the link's own `<sce:import>` aliases.
     ///
-    /// The framer axis is the pool axis's twin, one join later. The
-    /// generated link wrapper states the split in its own header — the
-    /// wrapper "treats the framer as opaque (no codegen-time codec
-    /// import resolution here) … cross-file framer-codec resolution
-    /// happens at generator level" — and emits the ref as a
-    /// `*_LINK_FRAMER_REF` string for consumers to "resolve against the
-    /// imported codec map". Both sentences are claims about a join, and
-    /// the generator is the layer that owes it.
+    /// The framer axis is the pool axis's twin, one join later. A link
+    /// that declares events is generated against its framer, read
+    /// through the link's own `<sce:import>` (docs/adr/0106, #142); a
+    /// link that declares none is a byte endpoint that emits the ref as a
+    /// `*_LINK_FRAMER_REF` string for the bytes' reader. Either way the
+    /// ref is a claim about a join, and the build is the layer that can
+    /// check it.
     ///
     /// The join that consumes the resolved framer,
     /// `validate_link_pool_framer_resolution`, returns `Ok(())` when the

@@ -1402,6 +1402,7 @@ fn parse_link(head: &Line<'_>, body: &[&Line<'_>]) -> Result<LinkModel, ParseErr
                 m.inbound.push(LinkInboundEvent {
                     event: undo(event, l.number)?,
                     when,
+                    when_spelling: None,
                 });
             }
             Some("outbound") => {

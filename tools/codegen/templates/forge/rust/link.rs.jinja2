@@ -10,10 +10,24 @@
 //
 // SCE Protocol-Synthesis RFC §synth-5-C byte-stream link endpoint. The struct
 // owns an `impl Link` driver (downstream `sce_link_runtime_<os>`
-// implementation) and routes RX bytes through the §synth-5-B framer
-// codec's decode + injects the configured SCXML event, while TX
-// pulls bytes from the framer's encode and submits them through
-// the driver's `tx`. The c11 emit mirrors this rust-target slice.
+// implementation).
+{% if events %}
+// Receive path: `pump` gives the driver its tick, decodes every
+// frame it has with the framer codec `{{ framer }}` and injects the event of
+// every `<sce:inbound>` row whose `when` holds for the frame. Transmit path:
+// `send` encodes an `<sce:outbound>` event's value with its codec into
+{% if events.tx_pool %}
+// a slot of the transmit pool `{{ tx_pool }}`
+{% else %}
+// a buffer of the largest encoding
+{% endif %}
+// and hands the bytes to the driver's `tx`. The C11 emit mirrors this
+// rust-target slice.
+{% else %}
+// The link declares no `<sce:events>` row, so it is a byte endpoint:
+// `rx` and `tx` carry the bytes the framer `{{ framer }}` frames, and no
+// event is decoded or encoded here.
+{% endif %}
 //
 // Generated from document `{{ name }}` with link-class `{{ class }}`,
 // framer ref `{{ framer }}`, backpressure policy `{{ backpressure }}`.
@@ -24,14 +38,176 @@
 #![allow(dead_code)]
 
 use sce_link_runtime::{Link, LinkError, RxFrame, TxFrame};
+{% if events %}
+use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};
+{{ events.framer_include }}
+{% for line in events.includes %}
+{{ line }}
+{% endfor %}
+{% endif %}
+{% macro event_paths(owner, events) %}
+{% if events.inbound_rows %}
 
-/// Generated wrapper around an `impl Link` driver. The `framer_ref`
-/// is the `<sce:framer ref="{{ framer }}"/>` codec name — consumers
-/// thread it through to the framer's decode/encode entry points.
-/// The wrapper treats the framer as opaque (no codegen-time codec
-/// import resolution here) so it compiles standalone against
-/// `sce-link-runtime`'s `StubLink`; cross-file framer-codec
-/// resolution happens at generator level.
+    /// The receive path (RFC §synth-5-C): give the driver its tick of
+    /// `deadline_us`, then read every frame it has, decode each with the
+    /// framer, and inject through `inject` the event of every
+    /// `<sce:inbound>` row whose `when` holds for the decoded frame, in
+    /// document order, with the frame. A frame the framer refuses raises no
+    /// event and is handed to `refused`. Answers how many events were
+    /// injected.
+    pub fn pump<I, R>(&mut self, deadline_us: u32, mut inject: I, mut refused: R) -> usize
+    where
+        I: FnMut({{ owner }}Inbound, &{{ events.framer_type }}{% if events.framer_borrowed %}<'_>{% endif %}),
+        R: FnMut(CodecError),
+    {
+        self.driver.poll(deadline_us);
+        let mut injected = 0;
+        while let Some(frame) = self.driver.rx() {
+            let mut cursor = SceCursor::new(frame.data);
+            let decoded = match {{ events.framer_type }}::decode(&mut cursor) {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    refused(error);
+                    continue;
+                }
+            };
+{% for row in events.inbound_rows %}
+{% if row.when %}
+            // `<sce:inbound event="{{ row.event }}">` when it holds.
+            if {{ row.when }} {
+                inject({{ owner }}Inbound::{{ row.variant }}, &decoded);
+                injected += 1;
+            }
+{% else %}
+            // `<sce:inbound event="{{ row.event }}">` for every frame.
+            inject({{ owner }}Inbound::{{ row.variant }}, &decoded);
+            injected += 1;
+{% endif %}
+{% endfor %}
+        }
+        injected
+    }
+{% endif %}
+{% if events.outbound %}
+
+    /// The transmit path (RFC §synth-5-C): encode `event`'s value with the
+    /// codec its `<sce:outbound>` row names into
+{% if events.tx_pool %}
+    /// a slot of `tx_pool`, hand the bytes to the driver, and return the
+    /// slot: the driver has copied them by the time `tx` returns
+    /// (`Link::tx`), so the slot is free again whether or not they were sent.
+    pub fn send(&mut self, tx_pool: &mut {{ events.tx_pool.rust_type }}, event: &{{ owner }}Outbound{% if events.outbound_borrowed %}<'_>{% endif %}) -> Result<(), {{ owner }}SendError> {
+        let mut slot = tx_pool
+            .pool_acquire_for_encode()
+            .ok_or({{ owner }}SendError::PoolExhausted)?;
+        let encoded = {
+            let mut sink = SliceSink::new(&mut slot.write(tx_pool)[..]);
+            let written = match event {
+{% for row in events.outbound %}
+                {{ owner }}Outbound::{{ row.variant }}(value) => value.encode(&mut sink),
+{% endfor %}
+            };
+            written.map(|()| sink.position())
+        };
+        let sent = match encoded {
+            Ok(length) => self
+                .driver
+                .tx(TxFrame::new(&slot.read(tx_pool)[..length]))
+                .map_err({{ owner }}SendError::Link),
+            Err(error) => Err({{ owner }}SendError::Encode(error)),
+        };
+        slot.pool_return(tx_pool);
+        sent
+    }
+{% else %}
+    /// a buffer of the largest encoding any of them writes
+    /// ({{ events.tx_bytes }} bytes), and hand the bytes to the driver.
+    pub fn send(&mut self, event: &{{ owner }}Outbound{% if events.outbound_borrowed %}<'_>{% endif %}) -> Result<(), {{ owner }}SendError> {
+        let mut buffer = [0u8; {{ events.tx_bytes }}];
+        let mut sink = SliceSink::new(&mut buffer);
+        let written = match event {
+{% for row in events.outbound %}
+            {{ owner }}Outbound::{{ row.variant }}(value) => value.encode(&mut sink),
+{% endfor %}
+        };
+        written.map_err({{ owner }}SendError::Encode)?;
+        let length = sink.position();
+        self.driver
+            .tx(TxFrame::new(&buffer[..length]))
+            .map_err({{ owner }}SendError::Link)
+    }
+{% endif %}
+{% endif %}
+{% endmacro %}
+{% if events and events.inbound_events %}
+
+/// The events this link injects, one per name its `<sce:inbound>` rows
+/// declare. A frame raises the event of every row whose `when` holds for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum {{ pascal_name }}Inbound {
+{% for e in events.inbound_events %}
+    /// `{{ e.event }}`
+    {{ e.variant }},
+{% endfor %}
+}
+
+impl {{ pascal_name }}Inbound {
+    /// The SCXML event name the link injects.
+    pub const fn name(self) -> &'static str {
+        match self {
+{% for e in events.inbound_events %}
+            Self::{{ e.variant }} => "{{ e.event }}",
+{% endfor %}
+        }
+    }
+}
+{% endif %}
+{% if events and events.outbound %}
+{% set lifetime = "<'a>" if events.outbound_borrowed else "" %}
+
+/// The events this link sends, each with the value its `<sce:outbound>` row
+/// encodes it by.
+pub enum {{ pascal_name }}Outbound{{ lifetime }} {
+{% for row in events.outbound %}
+    /// `{{ row.event }}`
+    {{ row.variant }}({{ row.codec_type }}{% if row.codec_borrowed %}<'a>{% endif %}),
+{% endfor %}
+}
+
+impl{{ lifetime }} {{ pascal_name }}Outbound{{ lifetime }} {
+    /// The SCXML event name the value was handed to the link for.
+    pub const fn name(&self) -> &'static str {
+        match self {
+{% for row in events.outbound %}
+            Self::{{ row.variant }}(_) => "{{ row.event }}",
+{% endfor %}
+        }
+    }
+}
+
+/// Why `send` did not hand an event's frame to the driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum {{ pascal_name }}SendError {
+{% if events.tx_pool %}
+    /// Every slot of the transmit pool is in use.
+    PoolExhausted,
+{% endif %}
+    /// The codec refused the value.
+    Encode(CodecError),
+    /// The driver did not take the frame (`<sce:backpressure>`).
+    Link(LinkError),
+}
+{% endif %}
+
+/// Generated wrapper around an `impl Link` driver.
+{% if events %}
+/// Its events are decoded by the framer `{{ framer }}` and encoded by the
+/// codecs the `<sce:outbound>` rows name, each read from the codec's
+/// document through the link's own `<sce:import>`.
+{% else %}
+/// It declares no event, so the framer `{{ framer }}` is the bytes'
+/// reader's business: `FRAMER_REF` names it.
+{% endif %}
 pub struct {{ pascal_name }}<L: Link> {
     driver: L,
 }
@@ -45,9 +221,7 @@ impl<L: Link> {{ pascal_name }}<L> {
     }
 
     /// Pull the next RX frame from the driver. Returns `None` when
-    /// no bytes are pending; the SCXML interpreter polls in the
-    /// idle slot and dispatches the configured event when bytes
-    /// arrive.
+    /// no bytes are pending.
     pub fn rx(&mut self) -> Option<RxFrame<'_>> {
         self.driver.rx()
     }
@@ -66,14 +240,16 @@ impl<L: Link> {{ pascal_name }}<L> {
     pub fn poll(&mut self, deadline_us: u32) {
         self.driver.poll(deadline_us);
     }
+{% if events %}
+{{ event_paths(pascal_name, events) }}
+{% endif %}
 
     /// Link-class declared in the source SCXML — `{{ class }}`.
     /// Round-tripped here so the SCXML's `<sce:link-class>` body
     /// can be inspected at runtime (e.g. for diagnostic logs).
     pub const LINK_CLASS: &'static str = "{{ class }}";
 
-    /// Framer codec reference — `{{ framer }}`. Consumers resolve
-    /// this against the imported codec map.
+    /// Framer codec reference — `{{ framer }}`.
     pub const FRAMER_REF: &'static str = "{{ framer }}";
 
     /// Backpressure policy — `{{ backpressure }}`. Used by the
@@ -90,7 +266,8 @@ impl<L: Link> {{ pascal_name }}<L> {
 {% endif %}
 {% if has_tx_pool %}
     /// `<sce:tx-pool ref="{{ tx_pool }}"/>` — TX buffer-pool name
-    /// (RFC §synth-5-E schema-only). Same shape as `RX_POOL`.
+    /// (RFC §synth-5-E). Same shape as `RX_POOL`; a link that sends
+    /// events encodes them into this pool's slots.
     pub const TX_POOL: &'static str = "{{ tx_pool }}";
 {% endif %}
 {% if has_stage_pool %}
@@ -122,7 +299,8 @@ impl<L: Link> {{ pascal_name }}<L> {
 // codegen-time projection per RFC §synth-5-C lines 814-816; it deliberately
 // does NOT inherit the §synth-5-K accept-side hardening fields per RFC
 // §synth-5-C lines 816-820 (those are meaningful only on the
-// `session_arming` half).
+// `session_arming` half). It carries the same events: they are the link's,
+// whichever half the bytes arrive on.
 //
 // Reverse-linkage marker: the validator reads this declaration
 // instead of grepping for the literal `pub struct ...EstablishedSession`
@@ -164,6 +342,9 @@ impl<L: Link> {{ pascal_name }}EstablishedSession<L> {
     pub fn poll(&mut self, deadline_us: u32) {
         self.driver.poll(deadline_us);
     }
+{% if events %}
+{{ event_paths(pascal_name, events) }}
+{% endif %}
 
     /// Link-class declared in the source SCXML — `{{ class }}`.
     pub const LINK_CLASS: &'static str = "{{ class }}";

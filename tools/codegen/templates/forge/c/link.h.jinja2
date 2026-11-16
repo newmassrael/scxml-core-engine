@@ -10,12 +10,26 @@
 /*
  * SCE Protocol-Synthesis RFC §synth-5-C byte-stream link endpoint. The wrapper
  * composes a `sce_forge_link_t` driver handle (from
- * `backends/c/runtime`-adjacent contract `sce/forge/link.h`) and routes
- * RX bytes through the §synth-5-B framer codec's decode + injects the
- * configured SCXML event, while TX pulls bytes from the framer's
- * encode and submits them through the driver's `tx`. The c11
- * mirror of the rust-target slice uses the canonical Linux-kernel
- * separate-vtable shape.
+ * `backends/c/runtime`-adjacent contract `sce/forge/link.h`) through the
+ * canonical Linux-kernel separate-vtable shape.
+{% if events %}
+ * Receive path: `{{ snake_name }}_link_pump` gives the driver its tick,
+ * decodes every frame it has with the framer codec `{{ framer }}` and
+ * injects the event of every `<sce:inbound>` row whose `when` holds for the
+ * frame. Transmit path: one `{{ snake_name }}_link_send_<event>` per
+ * `<sce:outbound>` row encodes the event's value with its codec into
+{% if events.tx_pool %}
+ * a slot of the transmit pool `{{ tx_pool }}`
+{% else %}
+ * a buffer of the codec's largest encoding
+{% endif %}
+ * and hands the bytes to the driver's `tx`. The rust-target slice mirrors
+ * this one.
+{% else %}
+ * The link declares no `<sce:events>` row, so it is a byte endpoint: `rx`
+ * and `tx` carry the bytes the framer `{{ framer }}` frames, and no event is
+ * decoded or encoded here.
+{% endif %}
  *
  * Generated from document `{{ name }}` with link-class `{{ class }}`,
  * framer ref `{{ framer }}`, backpressure policy `{{ backpressure }}`.
@@ -29,6 +43,16 @@
 #include <stdint.h>
 
 #include "sce/forge/link.h"
+{% if events %}
+#include "sce/forge/codec.h"
+{{ events.framer_include }}
+{% for line in events.includes %}
+{{ line }}
+{% endfor %}
+{% if events.tx_pool %}
+{{ events.tx_pool.c_include }}
+{% endif %}
+{% endif %}
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,8 +63,7 @@ extern "C" {
  * inspected at runtime (e.g. for diagnostic logs). */
 #define {{ upper_name }}_LINK_CLASS "{{ class }}"
 
-/* Framer codec reference — `{{ framer }}`. Consumers resolve this
- * against the imported codec map. */
+/* Framer codec reference — `{{ framer }}`. */
 #define {{ upper_name }}_LINK_FRAMER_REF "{{ framer }}"
 
 /* Backpressure policy — `{{ backpressure }}`. Used by the driver
@@ -59,14 +82,152 @@ extern "C" {
  * panic-on-take default; borrow-only consumers are unaffected. */
 #define {{ upper_name }}_LINK_STAGE_POOL "{{ stage_pool }}"
 {% endif %}
+{% if events and events.inbound_events %}
+
+/* The events this link injects, one per name its `<sce:inbound>` rows
+ * declare. A frame raises the event of every row whose `when` holds for
+ * it. */
+typedef enum {
+{% for e in events.inbound_events %}
+    {{ upper_name }}_INBOUND_{{ e.constant }} = {{ loop.index0 }}, /* `{{ e.event }}` */
+{% endfor %}
+} {{ snake_name }}_inbound_t;
+
+/* The SCXML event name the link injects for `event`. */
+static inline const char *{{ snake_name }}_inbound_name({{ snake_name }}_inbound_t event) {
+    switch (event) {
+{% for e in events.inbound_events %}
+    case {{ upper_name }}_INBOUND_{{ e.constant }}:
+        return "{{ e.event }}";
+{% endfor %}
+    }
+    return "";
+}
+
+/* Where the receive path injects an event: `ctx` is the caller's, and
+ * `decoded` the frame, valid for the call only (it may view the received
+ * bytes). */
+typedef void (*{{ snake_name }}_inject_fn)(void *ctx, {{ snake_name }}_inbound_t event,
+    const {{ events.framer_type }} *decoded);
+
+/* Where the receive path hands a frame the framer refused. */
+typedef void (*{{ snake_name }}_refused_fn)(void *ctx, sce_forge_codec_status_t status);
+{% endif %}
+{% if events and events.outbound %}
+
+/* What a send did: the codec's answer, the driver's when the codec wrote the
+ * frame{% if events.tx_pool %}, and whether the transmit pool had no free slot{% endif %}. */
+typedef struct {
+{% if events.tx_pool %}
+    bool pool_exhausted;
+{% endif %}
+    sce_forge_codec_status_t codec_status;
+    sce_forge_link_status_t link_status;
+} {{ snake_name }}_send_result_t;
+{% endif %}
+{% macro event_paths(self_type, prefix, events, snake_name, upper_name) %}
+{% if events.inbound_rows %}
+
+/* The receive path (RFC §synth-5-C): give the driver its tick of
+ * `deadline_us`, then read every frame it has, decode each with the framer,
+ * and call `inject` with the event of every `<sce:inbound>` row whose `when`
+ * holds for the decoded frame, in document order. A frame the framer refuses
+ * raises no event and is handed to `refused`. Returns how many events were
+ * injected. */
+static inline size_t {{ prefix }}_pump(
+    {{ self_type }} *self, uint32_t deadline_us,
+    {{ snake_name }}_inject_fn inject, {{ snake_name }}_refused_fn refused, void *ctx) {
+    size_t injected = 0;
+    sce_forge_link_rx_frame_t frame;
+    self->driver.ops->poll(self->driver.self, deadline_us);
+    while (self->driver.ops->rx(self->driver.self, &frame)) {
+        sce_forge_cursor_t cursor = sce_forge_cursor_init(frame.data, frame.len);
+        {{ events.framer_type }} decoded;
+        sce_forge_codec_status_t status = {{ events.framer_prefix }}_decode(&cursor, &decoded);
+        if (status != SCE_FORGE_CODEC_OK) {
+            refused(ctx, status);
+            continue;
+        }
+{% for row in events.inbound_rows %}
+{% if row.when %}
+        /* `<sce:inbound event="{{ row.event }}">` when it holds. */
+        if ({{ row.when }}) {
+            inject(ctx, {{ upper_name }}_INBOUND_{{ row.constant }}, &decoded);
+            ++injected;
+        }
+{% else %}
+        /* `<sce:inbound event="{{ row.event }}">` for every frame. */
+        inject(ctx, {{ upper_name }}_INBOUND_{{ row.constant }}, &decoded);
+        ++injected;
+{% endif %}
+{% endfor %}
+    }
+    return injected;
+}
+{% endif %}
+{% for row in events.outbound %}
+
+/* The transmit path of `{{ row.event }}` (RFC §synth-5-C): encode `value`
+{% if events.tx_pool %}
+ * with `{{ row.codec_prefix }}` into a slot of the transmit pool, hand the
+ * bytes to the driver, and return the slot: the driver has copied them by
+ * the time `tx` returns, so the slot is free again whether or not they were
+ * sent. */
+static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}(
+    {{ self_type }} *self, const {{ row.codec_type }} *value) {
+    {{ snake_name }}_send_result_t result;
+    size_t length = 0;
+    sce_slot_handle_t slot;
+    result.pool_exhausted = false;
+    result.codec_status = SCE_FORGE_CODEC_OK;
+    result.link_status = SCE_FORGE_LINK_OK;
+    slot = {{ events.tx_pool.prefix }}_pool_acquire_for_encode();
+    if (slot.state == SCE_SLOT_INVALID) {
+        result.pool_exhausted = true;
+        return result;
+    }
+    result.codec_status = {{ row.codec_prefix }}_encode_to_buf(
+        value, {{ events.tx_pool.prefix }}_slot_write(&slot), {{ events.tx_pool.upper }}_SLOT_SIZE, &length);
+    if (result.codec_status == SCE_FORGE_CODEC_OK) {
+        sce_forge_link_tx_frame_t frame;
+        frame.data = {{ events.tx_pool.prefix }}_slot_read(&slot);
+        frame.len = length;
+        result.link_status = self->driver.ops->tx(self->driver.self, frame);
+    }
+    (void){{ events.tx_pool.prefix }}_pool_return(&slot);
+    return result;
+}
+{% else %}
+ * with `{{ row.codec_prefix }}` into a buffer of its largest encoding
+ * ({{ row.max_bytes }} bytes) and hand the bytes to the driver. */
+static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}(
+    {{ self_type }} *self, const {{ row.codec_type }} *value) {
+    {{ snake_name }}_send_result_t result;
+    uint8_t buffer[{{ row.max_bytes }}];
+    size_t length = 0;
+    result.link_status = SCE_FORGE_LINK_OK;
+    result.codec_status = {{ row.codec_prefix }}_encode_to_buf(value, buffer, sizeof buffer, &length);
+    if (result.codec_status == SCE_FORGE_CODEC_OK) {
+        sce_forge_link_tx_frame_t frame;
+        frame.data = buffer;
+        frame.len = length;
+        result.link_status = self->driver.ops->tx(self->driver.self, frame);
+    }
+    return result;
+}
+{% endif %}
+{% endfor %}
+{% endmacro %}
 
 /* Generated wrapper around an `sce_forge_link_t` driver handle.
- * The `framer_ref` is the `<sce:framer ref="{{ framer }}"/>` codec
- * name — consumers thread it through to the framer's decode / encode
- * entry points. The wrapper treats the framer as opaque (no
- * codegen-time codec import resolution here) so it compiles
- * standalone against any conforming driver; cross-file framer-codec
- * resolution happens at generator level. */
+{% if events %}
+ * Its events are decoded by the framer `{{ framer }}` and encoded by the
+ * codecs the `<sce:outbound>` rows name, each read from the codec's document
+ * through the link's own `<sce:import>`. */
+{% else %}
+ * It declares no event, so the framer `{{ framer }}` is the bytes' reader's
+ * business: `{{ upper_name }}_LINK_FRAMER_REF` names it. */
+{% endif %}
 typedef struct {
     sce_forge_link_t driver;
 } {{ snake_name }}_link_t;
@@ -80,8 +241,7 @@ static inline void {{ snake_name }}_link_init(
 }
 
 /* Pull the next RX frame from the driver. Returns `false` when no
- * bytes are pending; the SCXML interpreter polls in the idle slot
- * and dispatches the configured event when bytes arrive. */
+ * bytes are pending. */
 static inline bool {{ snake_name }}_link_rx(
     {{ snake_name }}_link_t *self, sce_forge_link_rx_frame_t *out) {
     return self->driver.ops->rx(self->driver.self, out);
@@ -105,6 +265,9 @@ static inline void {{ snake_name }}_link_poll(
     {{ snake_name }}_link_t *self, uint32_t deadline_us) {
     self->driver.ops->poll(self->driver.self, deadline_us);
 }
+{% if events %}
+{{ event_paths(snake_name ~ "_link_t", snake_name ~ "_link", events, snake_name, upper_name) }}
+{% endif %}
 
 {% if is_listener_with_sibling %}
 /* ── Listener-link Sibling half (RFC §synth-5-C lines 802-833) ──
@@ -122,7 +285,8 @@ static inline void {{ snake_name }}_link_poll(
  * codegen-time projection per RFC §synth-5-C lines 814-816; it
  * deliberately does NOT inherit the §synth-5-K accept-side hardening
  * fields per RFC §synth-5-C lines 816-820 (those are meaningful only on
- * the `session_arming` half).
+ * the `session_arming` half). It carries the same events: they are the
+ * link's, whichever half the bytes arrive on.
  *
  * Reverse-linkage: the validator reads the marker below
  * instead of grepping for the `_established_session_t` typedef
@@ -168,6 +332,9 @@ static inline void {{ snake_name }}_established_session_poll(
     {{ snake_name }}_established_session_t *self, uint32_t deadline_us) {
     self->driver.ops->poll(self->driver.self, deadline_us);
 }
+{% if events %}
+{{ event_paths(snake_name ~ "_established_session_t", snake_name ~ "_established_session", events, snake_name, upper_name) }}
+{% endif %}
 {% endif %}
 
 #ifdef __cplusplus

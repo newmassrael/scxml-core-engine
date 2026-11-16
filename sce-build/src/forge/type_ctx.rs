@@ -509,6 +509,26 @@ pub fn validator<'a>(m: &'a ValidatorModel, imports: &'a [ImportContext]) -> Typ
     ctx
 }
 
+/// TypeCtx for a **Link**'s `<sce:inbound when>` predicate (the link
+/// section of the protocol-synthesis RFC): it reads the frame the framer decoded,
+/// a record named `decoded` whose members are the framer codec's fields
+/// (`decoded_fields`, each keyed `"decoded.<field>"`), and the values of the
+/// enums the link imports. Nothing else is in scope: the predicate runs on the
+/// receive path, before any event reaches a statechart.
+pub fn link_inbound<'a>(
+    decoded_fields: &'a [(String, SceType)],
+    imports: &'a [ImportContext],
+) -> TypeCtx<'a> {
+    let mut ctx = TypeCtx::new();
+    ctx.insert_record(crate::forge::generator::LINK_DECODED, RecordShape::Closed);
+    for (path, ty) in decoded_fields {
+        ctx.insert_var(path.as_str(), InferredType::from_sce_type(ty));
+    }
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
+    ctx
+}
+
 /// TypeCtx for a **Lookup** kind: single-input function.
 pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
