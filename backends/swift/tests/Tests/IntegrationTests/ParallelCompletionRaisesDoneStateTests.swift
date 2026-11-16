@@ -6,7 +6,7 @@
 // Fixture: integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceRuntime

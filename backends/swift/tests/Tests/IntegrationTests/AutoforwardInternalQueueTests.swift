@@ -6,7 +6,7 @@
 // Fixture: integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceRuntime

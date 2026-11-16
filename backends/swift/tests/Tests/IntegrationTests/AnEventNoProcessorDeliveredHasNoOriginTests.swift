@@ -12,7 +12,7 @@
 // Fixture: integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml
 // (canonical, shared with the other channels), generated with `--host-processor x-sce-host`.
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

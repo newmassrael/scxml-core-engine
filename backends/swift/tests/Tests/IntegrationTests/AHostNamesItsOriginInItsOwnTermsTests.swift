@@ -12,7 +12,7 @@
 // Fixture: integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml
 // (canonical, shared with the other channels), generated with `--host-invoker x-sce-host`.
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua

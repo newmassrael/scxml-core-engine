@@ -24,7 +24,7 @@
 // Fixture: integration_resources/send_namelist_over_http/send_namelist_over_http.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import Foundation
 import IntegrationMachines

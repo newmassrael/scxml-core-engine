@@ -6,7 +6,7 @@
 // Fixture: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python / Kotlin channels).
 //
-// Regeneration: scripts/regen_swift_integration.sh
+// Regeneration: scripts/materialize.sh swift-integration
 
 import IntegrationMachines
 import SceLua
