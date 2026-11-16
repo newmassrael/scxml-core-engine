@@ -3265,6 +3265,22 @@ static bool static_union_save_and_restore(void *sm) {
     return true;
 }
 
+// The machine's saved text, ended by its terminator, or NULL for one it could not save. The record
+// that holds a union (`held`) is the machine's own struct, which no reader of this file walks, so
+// each variable a step states is read out of the saved state, the text every backend writes it by
+// its type in (docs/adr/0099, "Landed of the open items" item 1).
+static const char *static_union_saved(void *sm) {
+    static char text[16384];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    if (!static_union_save((const static_union_t *)sm, UNION_SAVED_AT_MS, text, sizeof(text) - 1u, &len, &err)) {
+        (void)fprintf(stderr, "static_union: the machine was not saved: %s\n", err.message);
+        return NULL;
+    }
+    text[len] = '\0';
+    return text;
+}
+
 static const name_value_t union_states[] = {
     {"idle", STATIC_UNION_STATE_IDLE},
 };
@@ -3288,9 +3304,10 @@ static const record_variable_t union_records[] = {
     RECORD_ROW(static_union, lifted), RECORD_ROW(static_union, lift_why),
     RECORD_ROW(static_union, picked), RECORD_ROW(static_union, picked_maybe),
     {NULL, NULL, NULL, NULL}};
-STATIC_SCENARIO_CORE_RESTORING(static_union, union_states, union_variables, static_union_text, no_lists, union_records,
-                               NULL, NULL, NULL, NULL, REQUIRE_STARTED(static_union_init(&sm), STATIC_UNION_START_OK),
-                               NULL, NULL, NULL, NULL, NULL, static_union_presence, static_union_save_and_restore)
+STATIC_SCENARIO_CORE_SAVED(static_union, union_states, union_variables, static_union_text, no_lists, union_records,
+                           NULL, NULL, NULL, NULL, REQUIRE_STARTED(static_union_init(&sm), STATIC_UNION_START_OK), NULL,
+                           NULL, NULL, NULL, NULL, static_union_presence, static_union_save_and_restore,
+                           static_union_saved)
 
 // todo_peer: replayed through the readers `todo_peer_scenario.h` declares, which
 // `test_static_large.c` replays it through at the bounds of a team.
@@ -3627,7 +3644,7 @@ int main(void) {
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_lift_scenario("static_lift", 37);
     bad |= static_lift_list_scenario("static_lift_list", 25);
-    bad |= static_union_scenario("static_union", 37);
+    bad |= static_union_scenario("static_union", 41);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

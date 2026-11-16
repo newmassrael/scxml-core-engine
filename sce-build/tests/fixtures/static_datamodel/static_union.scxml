@@ -14,7 +14,10 @@
   index outside the list writes nothing, ends the block and raises
   error.execution (docs/adr/0099, section 5.3), and so is a shape at an index of
   a list itself reached through an index, of a group's field or of a list of
-  rows. A delivery outside its type is
+  rows. A text is lifted into a record that holds a union, an optional one that
+  starts absent and is written whole, and the union the record holds is narrowed by
+  its tag where a test proves the record present (docs/adr/0099, "Decided while
+  landing steps 3 and 4" item 3). A delivery outside its type is
   refused whole and counted. Every out variable is what a host reads back, and
   scenarios/static_union.json replays it.
 
@@ -41,6 +44,8 @@
   <sce:import kind="event-schema" src="shape_group.scxml" as="Group"/>
   <sce:import kind="event-schema" src="event_shapes_grouped.scxml" as="Grouped"/>
   <sce:import kind="event-schema" src="event_shapes_rows.scxml" as="Rows"/>
+  <sce:import kind="event-schema" src="shape_held.scxml" as="Held"/>
+  <sce:import kind="event-schema" src="event_shape_held.scxml" as="HeldSaid"/>
   <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
   <datamodel>
     <!-- A union variable is built where it is declared, a case and each of its
@@ -77,6 +82,12 @@
     <data id="picked_maybe" sce:type="optional&lt;union:Shape&gt;" expr="null" sce:direction="out"/>
     <data id="picks" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="picked_width" sce:type="uint16" expr="0" sce:direction="out"/>
+    <!-- A record that holds a union, lifted whole into a variable that starts
+         absent (docs/adr/0087, "Landing order" item 8), or why it is none; and the
+         width of the rect it holds, read where its case is proven. -->
+    <data id="held" sce:type="optional&lt;record:Held&gt;" expr="null" sce:direction="out"/>
+    <data id="held_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+    <data id="held_width" sce:type="uint16" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <transition event="shapes.sent" type="internal">
@@ -115,6 +126,15 @@
     </transition>
     <transition event="shape.said" type="internal">
       <sce:lift text="_event.data.text" schema="Shape" location="lifted" refusal="lift_why"/>
+    </transition>
+    <!-- The union a record holds is a subject the tests narrow as a union
+         variable is, reached through the present value of the record
+         (docs/adr/0092, section 6.1 item 2). -->
+    <transition event="shape.held" type="internal">
+      <sce:lift text="_event.data.text" schema="Held" location="held" refusal="held_why"/>
+      <if cond="held !== null &amp;&amp; held.value.shape.kind === Kind.rect">
+        <assign location="held_width" expr="held.value.shape.width"/>
+      </if>
     </transition>
     <!-- The element at an index is read by the checked read of an index, which
          fails outside the list: then nothing is written, the rest of the block

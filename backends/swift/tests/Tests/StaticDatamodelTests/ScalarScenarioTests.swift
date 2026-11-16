@@ -865,6 +865,13 @@ private func unionPayload() -> Machine {
             (key: "bound", value: optionalInteger(w.bound)),
         ])
     }
+    // A record that holds a union, as a scenario writes it: its text and its union by its tag.
+    let held = { (h: StaticUnionHeldRecord) -> JSONValue in
+        .object([
+            (key: "title", value: .text(h.title)),
+            (key: "shape", value: unionShape(h.shape)),
+        ])
+    }
     return driveSaved({ StaticUnionPolicy() }) { policy in
         [
             "built": { unionShape(policy.built) },
@@ -887,6 +894,9 @@ private func unionPayload() -> Machine {
             "picked_maybe": { policy.pickedMaybe.map(unionShape) ?? .null },
             "picks": { integer(policy.picks) },
             "picked_width": { integer(policy.pickedWidth) },
+            "held": { policy.held.map(held) ?? .null },
+            "held_why": { policy.heldWhy.map(why) ?? .null },
+            "held_width": { integer(policy.heldWidth) },
         ]
     }
 }

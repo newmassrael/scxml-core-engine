@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A shape held under a title, said as a text: what `static_union.scxml` lifts into a
+  variable of a record that holds a union, `shape_held.scxml`, whole.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shape_held"
+       sce:event-name="shape.held">
+  <datamodel>
+    <data id="text" sce:type="string[128]" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A shape held under a title (docs/adr/0099, "Decided while landing steps 3 and 4"
+  item 3): a record that holds a union field, which `static_union.scxml` lifts a text
+  into whole, as a variable of `optional<record:Held>`, and narrows by the union's tag.
+  An event schema used as a record type: no machine sends `shape.holder`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="shape_held"
+       sce:event-name="shape.holder">
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <datamodel>
+    <data id="title" sce:type="string[8]" sce:direction="in"/>
+    <data id="shape" sce:type="union:Shape" sce:direction="in"/>
+  </datamodel>
+</scxml>
