@@ -469,6 +469,39 @@ fn a_length_held_in_a_flag_is_folded_into_its_carrier() {
     );
 }
 
+/// A flag input the value does not say is a parameter of the encode after the
+/// sink, which a gate tests as it tests a flag, and which the value's `encode`
+/// hands on; an input the value says is not printed yet.
+///
+/// Turns red where `kotlin_source::encode_source` drops `plan.given` from its
+/// parameters or `gate_test` stops spelling a `Clause::Input`, where the
+/// template's `encode` stops handing its inputs on, or where
+/// `positional_forms` stops naming an input the value says.
+#[test]
+fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
+    assert!(unlowered("codec_chain_handed_entry").is_empty());
+    let text = resource_file("codec_chain_handed_entry");
+    holds(
+        "codec_chain_handed_entry",
+        &text,
+        &[
+            "        fun encodeSource(src: CodecChainHandedEntrySource, w: SceSink, \
+             afterMarker: UByte): CodecError? {\n",
+            "            if ((afterMarker.toUInt() != 0u || ((_e_header.toUInt() shr 6) and 0x1u) \
+             != 0x0u) != (_e_value != null)) {\n\
+             \x20               return CodecError.PresentIfMismatch\n",
+            "        return encodeSource(this, w, afterMarker)\n",
+        ],
+    );
+    let forms = unlowered("codec_zenoh_init_body");
+    assert!(
+        forms
+            .iter()
+            .any(|f| f.contains("a flag input the value says")),
+        "codec_zenoh_init_body says S and A by the fields gated on them: {forms:?}"
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a group that holds a
 /// length the value states beside its content each name their form.
@@ -563,6 +596,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_encoded_length_checked",
         "codec_length_stated",
         "codec_length_ref_dotted_basic",
+        "codec_chain_handed_entry",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

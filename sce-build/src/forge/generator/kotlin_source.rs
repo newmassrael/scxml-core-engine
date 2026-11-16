@@ -81,8 +81,13 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     if m.variant.is_some() {
         forms.push("a variant".to_string());
     }
-    if !m.flag_inputs.is_empty() {
-        forms.push("a flag input".to_string());
+    // An input the value says is read off it, by a function a parent calls;
+    // one it does not say is a parameter of the encode.
+    for said in &plan.said {
+        forms.push(format!(
+            "input '{}': a flag input the value says",
+            said.input.name
+        ));
     }
     for element in &plan.elements {
         let id = &element.field.id;
@@ -99,9 +104,7 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                         "field '{id}': a body of `{codec}`, which the Kotlin backend does not print"
                     ));
                 }
-                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
-                    forms.push(format!("field '{id}': a body handed flag inputs"));
-                }
+                forms.extend(handed_form(plan, id, codec));
             }
             // A list is walked, each entry written by its codec's own
             // `encodeSource`, which a codec the Kotlin backend prints has.
@@ -114,11 +117,7 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                         "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
                     ));
                 }
-                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
-                    forms.push(format!(
-                        "field '{id}': a list whose entries are handed flag inputs"
-                    ));
-                }
+                forms.extend(handed_form(plan, id, codec));
                 if !law.is_none() {
                     forms.push(format!("field '{id}': a list held to a law"));
                 }
@@ -258,18 +257,25 @@ fn presence_form(element: &ElementId, presence: &PresenceFlag<'_>) -> Option<Str
 }
 
 /// What of the gate of `field`, a field a gate decides, the printer does not
-/// print: it tests a flag of the codec's own carriers.
+/// print: it tests a flag of the codec's own carriers or an input the encode
+/// is handed.
 fn gate_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
     let gate = field.present_if.as_ref()?;
     plan.clauses(gate)
         .iter()
-        .any(|clause| !matches!(clause, Clause::Flag { .. }))
-        .then(|| {
-            format!(
-                "field '{}': a gate on an input or on a chain's entries",
-                field.id
-            )
-        })
+        .any(|clause| matches!(clause, Clause::Member { .. }))
+        .then(|| format!("field '{}': a gate on a chain's entries", field.id))
+}
+
+/// What of the inputs the codec imported as `codec`, held by the element `id`,
+/// is handed that the printer does not print: it hands a carrier's bits or an
+/// input of the codec's own, and not what the entry before was, which a chain
+/// that hands it says.
+fn handed_form(plan: &EncodePlan<'_>, id: &str, codec: &str) -> Option<String> {
+    plan.handed
+        .get(codec)
+        .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+        .then(|| format!("field '{id}': a codec handed what the entry before it was"))
 }
 
 /// The fields of `plan` whose value the encode derives as a number.
@@ -789,6 +795,12 @@ fn encode_source(
         reads.borrow_mut().insert(id.to_string());
         format!("_e_{}", l.codec_field_id(id))
     };
+    // The flag inputs the body reads, each a parameter of the encode.
+    let inputs_read: RefCell<BTreeSet<String>> = RefCell::new(BTreeSet::new());
+    let input = |name: &str| -> String {
+        inputs_read.borrow_mut().insert(name.to_string());
+        input_name(name)
+    };
     let is_text = |field: &CodecField| field.sce_type == SceType::String;
     // The data class of the codec whose companion's `encodeSource` writes the
     // body `field`, or each entry of the list `field`.
@@ -921,7 +933,7 @@ fn encode_source(
                 // An input the encode is handed.
                 Clause::Input { name, negate } => format!(
                     "{}.toUInt() {} 0u",
-                    input_name(name),
+                    input(name),
                     if *negate { "==" } else { "!=" }
                 ),
                 Clause::Member { .. } => {
@@ -958,7 +970,7 @@ fn encode_source(
                                 bits.literal(mask)
                             )
                         }
-                        Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
+                        Some(HandedFrom::Input { name }) => format!(", {}", input(name)),
                         None => unreachable!(
                             "`unlowered` prints no codec handed an input from the entry before"
                         ),
@@ -1146,8 +1158,15 @@ fn encode_source(
             bound.push_str(&format!("val _e_{name} = src.{name}\n"));
         }
     }
-    // A codec that writes nothing reads no element and touches no sink.
-    let suppress = if reads.is_empty() {
+    // A codec that writes nothing reads no element and touches no sink, and an
+    // input the encode is handed may be one only its decode reads.
+    let inputs_read = inputs_read.into_inner();
+    let suppress = if reads.is_empty()
+        || plan
+            .given
+            .iter()
+            .any(|given| !inputs_read.contains(&given.name))
+    {
         "@Suppress(\"UNUSED_PARAMETER\")\n"
     } else {
         ""

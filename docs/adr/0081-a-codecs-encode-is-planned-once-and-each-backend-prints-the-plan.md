@@ -1397,6 +1397,14 @@ old encode, the old encode and its templates are removed in the same landing.
    be absent; a number the flag's bits cannot hold, where no bound holds it within them, is refused as
    `LengthOutOfRange` before the first byte. The value's other flags of that carrier are written as it presents
    them.
+
+   *The eighth Kotlin landing, 2026-11-16:* the flag inputs a codec takes that its value does not say (§1.5, the
+   plan's `given`). `encodeSource` takes each after the sink as a `UByte`, as the decode takes it after the
+   cursor, and a gate tests it as it tests a flag; the data class's `encode`, whose value says none, hands every
+   input on. A body or a list's entry is handed what the plan says it is handed: the bits of a carrier as the
+   encode writes it, or an input of the codec's own passed on. The case printer hands a case's inputs to the
+   decode and the encode. An input the value says (R4a), and an entry handed what the entry before it was, stay
+   unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

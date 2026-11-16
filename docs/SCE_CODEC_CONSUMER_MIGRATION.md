@@ -2396,3 +2396,14 @@ codecs whose byte string's length is held in a flag of a carrier (`sce:length-re
   stop setting those bits before you encode. The carrier's other flags are written as you set them.
 - The byte string is held in the value class of its bound, as every printed byte string is.
 
+## A printed Kotlin codec takes the flag inputs its value does not say (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that take flag inputs (`<sce:flag-inputs>`) their value does not say.
+
+- `encode(w, input...)` and `decode(cursor, input...)` take each input as before. `{Codec}.encodeSource(src, w,
+  input...)` takes the same inputs after the sink, each a `UByte`.
+- A field gated on an input is held to it: a value that holds the field where the input you hand says it is
+  absent, or leaves it out where the input says it is there, is refused with `CodecError.PresentIfMismatch`
+  before a byte is written.
+
