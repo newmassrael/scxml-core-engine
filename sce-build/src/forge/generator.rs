@@ -26659,12 +26659,19 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
 /// The `.kind` string dispatch matches the existing Python variant
 /// encode template.
 fn parent_tag_match_term_python(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
-    // imp lookup ensures the embed alias resolves (parity with the
-    // other backends); Python's variant dispatch reads `.kind` on the
-    // body so the dispatcher's struct name isn't spelled here.
-    let _ = parent_tag_embed_pascal(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
+    // A dispatcher printed from its plan (docs/adr/0081 step 4) holds the
+    // arm itself, with no `kind`: its value answers the tag of the arm it
+    // holds, the default arm's the one it keeps, through `tag()`.
+    if parent_tag_embed_import(d, imports).python_printed {
+        let term = format!("(((self.{snake}.tag() & 0x{mask:X}) << {}) & 0xFF)", d.bit);
+        return if d.present_if.is_some() {
+            format!("({term} if self.{snake} is not None else 0)")
+        } else {
+            term
+        };
+    }
     let mut chain = String::new();
     for (idx, arm) in d.arms.iter().enumerate() {
         let variant = filters::to_pascal_case(arm.body_alias.clone());
