@@ -4094,16 +4094,14 @@ impl From<crate::forge::generator::SwiftSourceCase> for PrintedCase {
 }
 
 impl From<crate::forge::generator::KotlinSourceCase> for PrintedCase {
-    /// The value is one expression, so it needs no binding. The Kotlin
-    /// printer prints no codec that takes a flag input or a caller's tag, so a
-    /// decode and an encode are handed nothing after the cursor or the sink.
+    /// The value is one expression, so it needs no binding.
     fn from(case: crate::forge::generator::KotlinSourceCase) -> Self {
         PrintedCase {
             bindings: Vec::new(),
             literal: case.literal,
             checks: case.checks,
-            inputs: Vec::new(),
-            encode_inputs: Vec::new(),
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
             note: String::new(),
         }
     }
