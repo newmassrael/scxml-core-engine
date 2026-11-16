@@ -439,7 +439,7 @@ fn an_encoded_length_is_counted_by_the_bodys_encode_into_a_counting_sink() {
             "    sce_forge_writer_t _k_ts = sce_forge_writer_init_counting();\n    \
              SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode_source(_e_ts.table, _e_ts.ctx, \
              &_k_ts));\n    \
-             const uint64_t _d_ext_size = (uint64_t)sce_forge_writer_position(&_k_ts);\n",
+             const uint64_t _d_ext_size = (uint64_t)(sce_forge_writer_position(&_k_ts));\n",
             "uint64_t _d_ext_size;\n",
         ],
     );
@@ -452,6 +452,127 @@ fn an_encoded_length_is_counted_by_the_bodys_encode_into_a_counting_sink() {
             "    uint64_t ext_size;\n",
         ],
     );
+}
+
+/// Two byte strings always there share one length: the first says it, and the
+/// encode refuses the second where it says another, before the first byte, by
+/// the runtime's status of an inconsistent source.
+///
+/// Turns red where `c11_source::derive_number` stops holding a second measure
+/// always there to the first, or where `positional_forms` names a number of
+/// two measures as unlowered again.
+#[test]
+fn a_length_two_byte_strings_share_is_the_first_and_the_second_is_held_to_it() {
+    assert!(unlowered("codec_length_shared").is_empty());
+    let text = resource_header("codec_length_shared");
+    holds(
+        "codec_length_shared",
+        &text,
+        &[
+            "    if ((size_t)(_e_beta.len) != (size_t)(_e_alpha.len)) {\n        \
+             return SCE_FORGE_CODEC_INCONSISTENT_SOURCE;\n    }\n    \
+             const uint8_t _d_span_len = (uint8_t)(_e_alpha.len);\n",
+            "A value the encoding cannot carry is refused",
+        ],
+    );
+    holds_none(
+        "codec_length_shared",
+        &text,
+        &["    uint8_t span_len;\n", "It refuses no value"],
+    );
+}
+
+/// A length of two gated byte strings the value states where neither is
+/// there: the source presents it as an optional number, the encode derives it
+/// from the first byte string there, holds the other to it and holds what the
+/// value states beside content to what the content says, and the decode
+/// answers it present exactly where neither byte string was there.
+///
+/// Turns red where `c11_source::derive_number` takes a stated number where
+/// content is there or stops refusing one that disagrees, where the template's
+/// struct stops holding a stated number as an optional value, or where
+/// `c11_source::decoded` stops setting it from the local the decode read.
+#[test]
+fn a_length_the_value_states_is_derived_from_the_first_content_there() {
+    assert!(unlowered("codec_length_stated").is_empty());
+    let text = resource_header("codec_length_stated");
+    holds(
+        "codec_length_stated",
+        &text,
+        &[
+            "    sce_optional_uint8_t (*span_len)(const void *ctx);\n",
+            "    sce_optional_uint8_t span_len;\n",
+            "    size_t _m_span_len = 0;\n    bool _m_span_len_there = false;\n    \
+             if (_e_alpha.present) {\n        _m_span_len = (size_t)(_e_alpha.value.len);\n        \
+             _m_span_len_there = true;\n    } else if (_e_beta.present) {\n        \
+             _m_span_len = (size_t)(_e_beta.value.len);\n        _m_span_len_there = true;\n    \
+             }\n    if (_e_beta.present && (size_t)(_e_beta.value.len) != _m_span_len) {\n        \
+             return SCE_FORGE_CODEC_INCONSISTENT_SOURCE;\n    }\n",
+            "    const uint8_t _d_span_len = _m_span_len_there ? (uint8_t)(_m_span_len) : \
+             (_e_span_len.present ? _e_span_len.value : (uint8_t)0);\n    \
+             if (_m_span_len_there && _e_span_len.present && _e_span_len.value != _d_span_len) {\n        \
+             return SCE_FORGE_CODEC_INCONSISTENT_SOURCE;\n    }\n",
+            "    out->span_len = (!out->alpha.present && !out->beta.present) ? \
+             sce_optional_uint8_some(_d_span_len) : sce_optional_uint8_none();",
+        ],
+    );
+}
+
+/// The encoded length of a body whose own encode can refuse: the count passes
+/// the body's refusal on, a length past the field is refused, and the encode
+/// over a source writes the frame over a counting sink first, so a refusal is
+/// met before the first byte.
+///
+/// Turns red where `c11_source::encode_source` writes without counting first
+/// for a codec that holds a body that can refuse, or where `derive_number`
+/// stops refusing a number that may not fit its field.
+#[test]
+fn a_body_that_can_refuse_is_counted_before_the_first_byte() {
+    assert!(unlowered("codec_encoded_length_checked").is_empty());
+    let text = resource_header("codec_encoded_length_checked");
+    holds(
+        "codec_encoded_length_checked",
+        &text,
+        &[
+            "static inline sce_forge_codec_status_t codec_encoded_length_checked_write_source(\
+             const codec_encoded_length_checked_source_t *src, const void *ctx, \
+             sce_forge_writer_t *w) {\n",
+            "    if (!sce_forge_length_within_bound((size_t)(sce_forge_writer_position(&_k_inner)), \
+             65535)) {\n        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n    }\n    \
+             const uint16_t _d_inner_size = (uint16_t)(sce_forge_writer_position(&_k_inner));\n",
+            "        sce_forge_writer_t _count = sce_forge_writer_init_counting();\n        \
+             SCE_FORGE_TRY_WRITE(codec_encoded_length_checked_write_source(src, ctx, &_count));\n    \
+             }\n    return codec_encoded_length_checked_write_source(src, ctx, w);\n",
+            "    SCE_FORGE_TRY_WRITE(codec_length_shared_check_value(&self->inner));\n",
+        ],
+    );
+}
+
+/// A body a gate decides, of a codec the C11 backend prints, is a form the
+/// printer lowers: each codec of the resources that holds one names no form of
+/// the body, and waits on forms of its own (here each holds a list).
+///
+/// Turns red where `c11_source::positional_forms` names a gated body of a
+/// printed codec, or where one of these codecs stops holding a list, which
+/// would leave the census with nothing to say.
+#[test]
+fn a_gated_body_of_a_printed_codec_is_no_form_the_printer_leaves() {
+    for (name, body) in [
+        ("codec_zenoh_msg_del", "timestamp"),
+        ("codec_origin_envelope", "optional"),
+    ] {
+        let forms = unlowered(name);
+        assert!(
+            !forms
+                .iter()
+                .any(|f| f.starts_with(&format!("field '{body}'"))),
+            "{name}: the gated body `{body}` is lowered ({forms:?})"
+        );
+        assert!(
+            forms.iter().any(|f| f.contains("a list of")),
+            "{name}: the codec waits on a list ({forms:?})"
+        );
+    }
 }
 
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
@@ -548,6 +669,9 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_present_if_tail",
         "codec_embed_basic",
         "codec_zenoh_timestamp_ext",
+        "codec_length_shared",
+        "codec_length_stated",
+        "codec_encoded_length_checked",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
