@@ -2898,3 +2898,21 @@ among the resources; `sce_build::c11_codec_printed_file` answers `Some(true)`).
 - A view's maker refuses the same lengths as before; it is now spelled through `sce_forge_length_within_bound`, so
   a header compiled for a target with a 32-bit `size_t` raises no `-Wtype-limits` warning on a bound of 2^32 - 1.
 
+## A printed C11 codec derives a gated element's flag and length from whether it is there (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the
+codecs whose elements a gate of a carrier's flags decides, each gated element said by one presence flag
+(`codec_present_if_basic`, `codec_present_if_vle`, `codec_present_if_tail`, `codec_present_if_string` among the
+resources; `sce_build::c11_codec_printed_file` answers `Some(true)`).
+
+- `{codec}_encode` sets a presence flag exactly where the element it gates is `present`, whatever the carrier
+  member holds in that bit. A value that held the flag clear with the element present, which wrote the element's
+  bytes under a clear flag and so a frame no decode reads back as the value, now writes the flag set. Set
+  `present` (or leave it false); the flag follows. The carrier's other bits are written as the value holds them.
+- A length gated beside its content is no member of `{codec}_t` (`msg.text_len` is gone): the encode writes the
+  content's own length where it is there, and the decode sets none. Read `msg.text.value.len`.
+- A gated byte string or text whose length is past its bound is refused only where it is `present`.
+- A source presents a gated byte string as `{codec}_{element}_bytes_optional_t` (or `_text_optional_t`), made by
+  `{codec}_{element}_bytes_optional_some(view)` and `_none()`, and a gated number as the `sce_optional_<type>_t` the
+  struct holds it in.
+
