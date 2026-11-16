@@ -2208,11 +2208,11 @@ one set of bytes.
    has `textLength` for a template's length restriction, a text's Unicode code points, and the Swift host send
    request carries a test-port send's value (`HostSendRequest.value`, a `HostSendValue`), which a saved state does
    not carry: a save that finds one waiting refuses by name. Swift generates templates, and the refusal of §11.9 is
-   lifted for Swift for `test-template`; Swift lowers no union, so a template whose type reaches one stays refused
-   there, as on C++, Go, Python and C11, and so does one that holds a record or an enum whose own Swift unit is not
-   written. Swift generates test components next, through the doors of §12.3, and runs them through
-   `SceTestProfile.TestCaseRun`; the refusal is lifted for Swift for `test-component`, but for a component that
-   declares `<sce:action>` and for one whose template reaches a union. Swift then generates the configuration, case
+   lifted for Swift for `test-template`, a template over a union among them, since Swift lowers a union as Rust,
+   Kotlin and Go do (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`); one that holds a record or an enum whose own
+   Swift unit is not written stays refused. Swift generates test components next, through the doors of §12.3, and
+   runs them through `SceTestProfile.TestCaseRun`; the refusal is lifted for Swift for `test-component`, but for a
+   component that declares `<sce:action>`. Swift then generates the configuration, case
    and suite tables over the same rows, each the members of an enum named by its document in the one module every
    unit of a run is a file of, and runs the examples end to end through `SceTestProfile.runSuite`; the refusal is
    lifted for Swift for the remaining kinds, and for a component's module parameter. Every backend now generates
