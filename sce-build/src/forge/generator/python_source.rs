@@ -446,8 +446,8 @@ pub(super) struct PythonSource {
     /// For each byte string, text and body the value presents, by field id,
     /// the type the value's field is declared as and the default it takes.
     pub(super) declared: BTreeMap<String, (String, String)>,
-    /// The runtime's classes the module names, joined for its import; empty
-    /// where it names none.
+    /// The import of the runtime's classes the module names, one statement for
+    /// each module of `sce_forge_runtime` a line; empty where it names none.
     pub(super) runtime: String,
     /// The modules of the printed codecs the value holds a body of, each
     /// imported whole under its alias, one statement a line; empty where it
@@ -749,11 +749,12 @@ pub(super) fn render(
         union = true;
         presented.insert(VARIANT.to_string(), format!("{struct_name}Variant"));
     }
+    let runtime = gathered.runtime_imports();
     let Gathered {
         classes: mut before,
-        runtime,
         modules,
         factory,
+        ..
     } = gathered;
 
     // The source: what the encode reads, each element by the attribute a value
@@ -798,7 +799,7 @@ pub(super) fn render(
         variant,
         hold: hold.trim_end_matches('\n').to_string(),
         declared,
-        runtime: runtime.into_iter().collect::<Vec<_>>().join(", "),
+        runtime,
         modules: modules.into_iter().collect::<Vec<_>>().join("\n"),
         factory,
         decoded,
@@ -815,12 +816,34 @@ pub(super) fn render(
 struct Gathered {
     /// The classes, each followed by two blank lines.
     classes: String,
-    /// The runtime's classes named.
-    runtime: BTreeSet<&'static str>,
+    /// The runtime's classes named, by the module of `sce_forge_runtime`
+    /// that defines them.
+    runtime: BTreeMap<&'static str, BTreeSet<&'static str>>,
     /// The `from . import` statements of the held codecs' modules.
     modules: BTreeSet<String>,
     /// Whether a default is made by `field(default_factory=..)`.
     factory: bool,
+}
+
+impl Gathered {
+    /// Names the runtime's class `name` of its module `module`.
+    fn runtime(&mut self, module: &'static str, name: &'static str) {
+        self.runtime.entry(module).or_default().insert(name);
+    }
+
+    /// The import statements of the runtime's classes named, one a line.
+    fn runtime_imports(&self) -> String {
+        self.runtime
+            .iter()
+            .map(|(module, names)| {
+                format!(
+                    "from sce_forge_runtime.{module} import {}",
+                    names.iter().copied().collect::<Vec<_>>().join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 /// How a class of the module holds one element where it is there.
@@ -912,7 +935,7 @@ fn held_as(
         }
     };
     let (class, base, unit, fewest) = bounded_class(struct_name, id, value, bound.least);
-    gathered.runtime.insert(base);
+    gathered.runtime("bounded", base);
     let held = match bound.most {
         Some(most) => format!("{} to {most} {unit}", bound.least),
         None => format!(
@@ -1083,7 +1106,7 @@ fn group_part(
                 };
                 let (first_class, second_class) = (bound_of(one), bound_of(two));
                 let pair = aligned_member(l, id, second);
-                gathered.runtime.insert("Aligned");
+                gathered.runtime("bounded", "Aligned");
                 members.push_str(&format!(
                     "    {pair}: Aligned[{first_class}, {second_class}] = Aligned({}, {})\n",
                     one.default, two.default
@@ -1280,7 +1303,7 @@ fn variant_part(
         );
         let body = format!("{}.{}", arm.module, import.type_name);
         let class = default_arm_class(struct_name);
-        gathered.runtime.insert("UnknownTag");
+        gathered.runtime("bounded", "UnknownTag");
         gathered.factory = true;
         gathered.classes.push_str(&format!(
             "class {tag_class}(UnknownTag):\n\
