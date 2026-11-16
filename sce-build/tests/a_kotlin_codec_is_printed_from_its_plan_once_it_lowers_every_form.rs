@@ -445,6 +445,30 @@ fn a_length_the_value_states_is_read_only_where_its_content_is_absent() {
     );
 }
 
+/// A length held in a flag of a carrier is folded into the carrier's bits from
+/// the bytes it measures, in place of the bits the value presents, and the
+/// value's other flags of that carrier are written as it presents them.
+///
+/// Turns red where `kotlin_source::derive_number` stops folding a
+/// `NumberInto::Flag` number into its carrier, or `number_form` names it
+/// unlowered.
+#[test]
+fn a_length_held_in_a_flag_is_folded_into_its_carrier() {
+    assert!(unlowered("codec_length_ref_dotted_basic").is_empty());
+    let text = resource_file("codec_length_ref_dotted_basic");
+    holds(
+        "codec_length_ref_dotted_basic",
+        &text,
+        &[
+            "            var _u_carrier = _e_carrier.toUInt()\n",
+            "            _u_carrier = (_u_carrier and 0xF0u.inv()) or \
+             ((_e_payload.bytes.size).toUInt() shl 4)\n",
+            "            val _c_carrier = _u_carrier.toUByte()\n",
+            "            w.writeBytes(_e_payload.bytes)?.let { return it }\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a group that holds a
 /// length the value states beside its content each name their form.
@@ -538,6 +562,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_length_shared",
         "codec_encoded_length_checked",
         "codec_length_stated",
+        "codec_length_ref_dotted_basic",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

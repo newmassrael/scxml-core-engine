@@ -2387,3 +2387,12 @@ codecs with a length the value states while every byte string it measures is abs
 - A value that states it beside content of another length is refused with `CodecError.InconsistentSource`.
 - `decode` gives it back `null` where it read any of the content, and the number the frame holds where it read none.
 
+## A printed Kotlin codec derives a length held in a flag of a carrier (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose byte string's length is held in a flag of a carrier (`sce:length-ref="carrier.flag"`).
+
+- The encode writes the byte string's length into the flag's bits, whatever the carrier you hand it holds there;
+  stop setting those bits before you encode. The carrier's other flags are written as you set them.
+- The byte string is held in the value class of its bound, as every printed byte string is.
+

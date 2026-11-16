@@ -244,9 +244,8 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
                 ));
             }
         }
-        NumberInto::Flag => forms.push(format!(
-            "element '{element}': a length held in a flag of a carrier"
-        )),
+        // Folded into its carrier, as a presence flag is.
+        NumberInto::Flag => {}
     }
     forms
 }

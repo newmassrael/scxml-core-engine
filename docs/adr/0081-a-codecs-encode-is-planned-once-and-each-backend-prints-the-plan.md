@@ -1390,6 +1390,13 @@ old encode, the old encode and its templates are removed in the same landing.
    content that says another number is refused as `InconsistentSource`. The decode makes it `null` where it read
    any of the content, so a decoded value states it exactly where an encode reads it. A group that holds such a
    length beside its content (R4b's group form) stays unlowered.
+
+   *The seventh Kotlin landing, 2026-11-16:* a length held in a flag of a carrier (`sce:length-ref` naming
+   `carrier.flag`). The encode folds the number into the carrier's bits as it folds a presence flag, a statement on
+   `_u_<carrier>` in place of the bits the value presents, under the test that its content is there where it may
+   be absent; a number the flag's bits cannot hold, where no bound holds it within them, is refused as
+   `LengthOutOfRange` before the first byte. The value's other flags of that carrier are written as it presents
+   them.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
