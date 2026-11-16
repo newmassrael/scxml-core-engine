@@ -52,6 +52,7 @@ fn deploy_with_plugin(path: std::path::PathBuf) -> DeployConfig {
         codecs: std::collections::BTreeMap::new(),
         codec_storage: Default::default(),
         build: None,
+        source: None,
     }
 }
 
@@ -309,6 +310,7 @@ fn deploy_without_plugin_preserves_baseline_only_semantics() {
         codecs: std::collections::BTreeMap::new(),
         codec_storage: Default::default(),
         build: None,
+        source: None,
     };
 
     let scxml = fixture_transform_with_externs(

@@ -5740,7 +5740,12 @@ fn load_deploy_config(
         )
     });
     match sce_build::mesh::deploy::parse_deploy_str(&content) {
-        Ok(cfg) => cfg,
+        // The path as the operator passed it labels every later refusal of a
+        // fact this deployment states, as it labels this one.
+        Ok(cfg) => sce_build::mesh::deploy::DeployConfig {
+            source: Some(path.to_string()),
+            ..cfg
+        },
         Err(e) => {
             let forge_err: ForgeError = sce_build::mesh::error::MeshError::from(e).into();
             let located = Located::new(forge_err, path, None, None);

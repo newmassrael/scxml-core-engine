@@ -154,7 +154,19 @@ pub struct DeployConfig {
     /// under it is optional and descriptive.
     #[serde(default)]
     pub build: Option<BuildConfig>,
+
+    /// The path this deployment was read from, as its reader was given it:
+    /// the `location.file` of every refusal of a fact this deployment states
+    /// (SCE_ERROR_CONTRACT.md §2.2). Not a key of the file; set by
+    /// [`parse_deploy`] and by a caller that reads the text itself, and
+    /// `None` for a text parsed with no path ([`Self::label`]).
+    #[serde(skip)]
+    pub source: Option<String>,
 }
+
+/// The name a deployment given as text, with no path, is labelled by: the
+/// file's conventional name, the only one it has.
+pub const DEPLOY_FILE_NAME: &str = "deploy.yaml";
 
 /// `build:` block in deploy.yaml. Today carries one key.
 ///
@@ -3755,7 +3767,9 @@ pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
         path: path.display().to_string(),
         source: e,
     })?;
-    parse_deploy_str(&content)
+    let mut cfg = parse_deploy_str(&content)?;
+    cfg.source = Some(path.display().to_string());
+    Ok(cfg)
 }
 
 /// Parse deploy.yaml from a string (filesystem-free, testable).
@@ -7607,6 +7621,17 @@ fn validate_someip_machine_liveness_service_ids(cfg: &DeployConfig) -> Result<()
 // ── Helpers for topology/codegen ────────────────────────────
 
 impl DeployConfig {
+    /// The label a refusal of a fact this deployment states carries as its
+    /// `location.file`: the path it was read from, as given, or
+    /// [`DEPLOY_FILE_NAME`] for a text that came with none.
+    ///
+    /// ⚠ Every such refusal used to carry the literal `deploy.yaml`, so a
+    /// deployment read from `site/a.yaml` was reported at a file of another
+    /// name, and two deployments of one build were reported at the same one.
+    pub fn label(&self) -> &str {
+        self.source.as_deref().unwrap_or(DEPLOY_FILE_NAME)
+    }
+
     /// What this deployment's storing forms hold (docs/adr/0077 §7), as a
     /// compile takes it.
     pub fn codec_capacities(&self) -> crate::forge::model::CodecCapacities {
@@ -7970,6 +7995,29 @@ pub fn validate_event_schemas_cross_machine(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A deployment read from a path is labelled by that path, as given;
+    /// one parsed from text alone by the file's conventional name.
+    #[test]
+    fn a_deployment_is_labelled_by_the_path_it_was_read_from() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("edge-site.yaml");
+        std::fs::write(&path, "version: \"1.0\"\n").expect("the deployment is written");
+        let read = parse_deploy(&path).expect("the deployment parses");
+        assert_eq!(read.label(), path.display().to_string());
+        assert_ne!(read.label(), DEPLOY_FILE_NAME);
+
+        let text = parse_deploy_str("version: \"1.0\"\n").expect("the text parses");
+        assert_eq!(text.source, None);
+        assert_eq!(text.label(), DEPLOY_FILE_NAME);
+    }
+
+    /// `source` is the reader's, never a key of the file: a deployment that
+    /// writes it is refused as any unknown key is.
+    #[test]
+    fn source_is_not_a_key_of_the_file() {
+        assert!(parse_deploy_str("version: \"1.0\"\nsource: elsewhere.yaml\n").is_err());
+    }
 
     /// Field names declared by `struct <name>` in this very file, in
     /// source order, excluding the flattened `extra` catch-all.

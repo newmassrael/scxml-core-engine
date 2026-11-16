@@ -5894,7 +5894,7 @@ fn compile_document_set(
         validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
             Located::new(
                 forge::error::ForgeError::Validation(e),
-                "deploy.yaml",
+                deploy_cfg.label(),
                 None,
                 None,
             )
@@ -5935,15 +5935,15 @@ fn compile_document_set(
             .into_iter()
             .collect();
 
-        // The diag_label for cross-doc failures points at deploy.yaml —
+        // The diag_label for cross-doc failures points at the deployment —
         // the cross-doc axis names a deploy-side fact, not a per-forge-
-        // doc parser error. CLI surfaces the file via the wire `path`
-        // field; `Located::new` carries the label.
-        const DEPLOY_LABEL: &str = "deploy.yaml";
+        // doc parser error — by the path it was read from
+        // (`DeployConfig::label`); `Located::new` carries the label.
+        let deploy_label = deploy_cfg.label();
 
         mesh::deploy::validate_links_cross_doc(deploy_cfg, &forge_link_names)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         mesh::deploy::validate_links_burst_invariants(
             deploy_cfg,
@@ -5951,11 +5951,11 @@ fn compile_document_set(
             &pool_models_view,
         )
         .map_err(mesh::error::MeshError::from)
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+        .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         mesh::deploy::validate_link_driver_class_consistency(deploy_cfg, &forge_link_models_view)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         mesh::deploy::validate_reassembly_cross_doc(
             deploy_cfg,
@@ -5963,7 +5963,7 @@ fn compile_document_set(
             &pool_models_view,
             &listener_links,
         )
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+        .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         // C13 deferred-2: stateless_accept hmac_extern / rng_extern
         // allowlist (SCE Protocol-Synthesis RFC §synth-5-K line 2466-2469). The
@@ -5976,10 +5976,10 @@ fn compile_document_set(
         // (the same type as the orchestrator's CompileError alias) —
         // bubble through with ?. Any plugin-load failure surfaces at
         // the deploy.yaml label set above.
-        let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, DEPLOY_LABEL)?;
+        let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, deploy_label)?;
         mesh::deploy::validate_stateless_accept_externs(deploy_cfg, &orchestrator_plugin_symbols)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         // ── Cross-machine EventSchema validation ─────────────────
         //
@@ -5993,7 +5993,7 @@ fn compile_document_set(
         // cannot exhibit a cross-machine mismatch by construction.
         mesh::deploy::validate_event_schemas_cross_machine(deploy_cfg, &scxml_models)
             .map_err(mesh::error::MeshError::from)
-            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+            .map_err(|e| Located::new(e.into(), deploy_label, None, None))?;
 
         // ── link/inbound-event-queue-unsized (§synth-5-N) ──
         //
@@ -6064,7 +6064,7 @@ fn compile_document_set(
                                 inbound_event_count: inbound_count,
                             }
                             .into(),
-                            DEPLOY_LABEL,
+                            deploy_label,
                             None,
                             None,
                         ));
@@ -6335,7 +6335,7 @@ fn compile_document_set(
                             section.class.as_deref(),
                             language,
                         )
-                        .map_err(|e| Located::new(e.into(), "deploy.yaml", None, None))?;
+                        .map_err(|e| Located::new(e.into(), deploy_cfg.label(), None, None))?;
                         if deploy_section_class.is_none() {
                             deploy_section_class.clone_from(&section.class);
                         }
@@ -6450,7 +6450,7 @@ fn compile_document_set(
                     tick_period_us,
                     per_link_budget_us,
                 )
-                .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
+                .map_err(|e| Located::new(e, deploy_cfg.label(), None, None))?;
                 // §synth-5-Q: the session runtime is the host runtime's
                 // configuration, emitted whether or not the machine has links.
                 files.extend(
@@ -6463,7 +6463,7 @@ fn compile_document_set(
                             .as_ref()
                             .and_then(|s| s.session_runtime_profile()),
                     )
-                    .map_err(|e| Located::new(e, "deploy.yaml", None, None))?,
+                    .map_err(|e| Located::new(e, deploy_cfg.label(), None, None))?,
                 );
                 // §synth-5-R: the queries a machine serves, from its own deploy
                 // block and independent of its links and scheduler.
@@ -6472,7 +6472,7 @@ fn compile_document_set(
                         .map_err(|e| {
                             Located::new(
                                 forge::error::ForgeError::from(mesh::error::MeshError::from(e)),
-                                "deploy.yaml",
+                                deploy_cfg.label(),
                                 None,
                                 None,
                             )
@@ -6484,7 +6484,7 @@ fn compile_document_set(
                         machine_name,
                         &queryable_legs,
                     )
-                    .map_err(|e| Located::new(e, "deploy.yaml", None, None))?,
+                    .map_err(|e| Located::new(e, deploy_cfg.label(), None, None))?,
                 );
                 if !files.is_empty() {
                     // Per-machine scheduler artifacts are
@@ -6493,7 +6493,7 @@ fn compile_document_set(
                     // filesystem-anchored fragment deps to forward.
                     outputs.add(
                         machine_name,
-                        "deploy.yaml",
+                        deploy_cfg.label(),
                         generator::GeneratedOutput {
                             files,
                             ..Default::default()
