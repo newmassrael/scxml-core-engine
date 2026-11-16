@@ -94,3 +94,34 @@ fn a_go_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
         "a record that holds a list is not read field by field:\n{code}"
     );
 }
+
+/// Pinned by the Python row of `ComposedLowering::of`, `PythonTarget::lift`'s
+/// `Lifted::Whole` arm, and `PythonComposed::read_list` and
+/// `PythonComposed::saved_record_ext` (`sce-build/src/forge/composed_lowering/python.rs`):
+/// the variable is the machine's frozen record class in `Optional`, the lift reads it
+/// whole through `lift_value` by the runtime's name of the record's type, the list held
+/// to both its counts, and the class is given `to_saved` and `from_saved`, the list read
+/// back held to its lower count.
+#[test]
+fn a_python_machine_holds_the_record_lifts_it_whole_and_saves_it_by_its_type() {
+    let code = machine(Language::Python, "_sm.py");
+    holds(
+        &code,
+        &[
+            "class StaticLiftListPlanRecord:\n",
+            "Optional[StaticLiftListPlanRecord]",
+            "sce_event_payload.lift_value(",
+            "sce_event_payload.ListOf(",
+            ", 3, least=1)",
+            "StaticLiftListPlanRecord.to_saved = _StaticLiftListPlanRecord_to_saved\n",
+            "StaticLiftListPlanRecord.from_saved = \
+             classmethod(_StaticLiftListPlanRecord_from_saved)",
+            "sce_saved.saved_read_list_within(sce_saved0, sce_what0, 1, 3, \
+             StaticLiftListItemRecord.from_saved)",
+        ],
+    );
+    assert!(
+        !code.contains("sce_event_payload.lift_record("),
+        "a record that holds a list is not read field by field:\n{code}"
+    );
+}

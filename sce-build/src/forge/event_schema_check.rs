@@ -340,6 +340,7 @@ impl ComposedLowering {
 
             Language::Python => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
 

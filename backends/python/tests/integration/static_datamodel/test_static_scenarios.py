@@ -807,6 +807,15 @@ def test_a_lift_reads_a_text_into_a_record_or_keeps_its_refusal() -> None:
     replay("static_lift")
 
 
+# docs/adr/0087, "Landing order" item 8: a text read into a record that holds a list
+# of records, or its refusal kept, at every depth of the record: the list's counts, a
+# field of an item, and a container opened past the deepest the record holds. The
+# record is the machine's frozen record class, read field by field as a scenario
+# states it.
+def test_a_lift_reads_a_text_into_a_record_that_holds_a_list() -> None:
+    replay("static_lift_list")
+
+
 # A delivery written against an earlier revision of a schema that grew lacks the
 # fields a later revision added, and takes their defaults; a delivery that lacks a
 # field of the first revision is refused, and a field the schema does not name is
