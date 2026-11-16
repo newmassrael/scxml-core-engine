@@ -54,14 +54,15 @@ use crate::model::SCXMLModel;
 
 // ── Placing a refusal ──────────────────────────────────────────
 
-/// `err` placed where `node` starts: an element refused as a whole.
+/// `err` placed on `node`, an element refused as a whole: where the record's
+/// `actual` begins in it (SCE_ERROR_CONTRACT.md §2.2), or where the element
+/// starts when the record carries none.
 fn at_element(
     node: &roxmltree::Node,
     diag_label: &str,
     err: impl Into<ForgeError>,
 ) -> Located<ForgeError> {
-    let pos = node.document().text_pos_at(node.range().start);
-    Located::new(err.into(), diag_label, Some(pos.row), Some(pos.col))
+    crate::forge::parser::located(node, diag_label, err)
 }
 
 /// Every element of the document below `root`, in document order, and none

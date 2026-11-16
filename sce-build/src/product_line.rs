@@ -588,8 +588,10 @@ fn location(file: &str, line: u32, col: Option<u32>) -> SourceLocation {
     }
 }
 
+/// `error` placed on `node` where its `actual` begins (SCE_ERROR_CONTRACT.md
+/// §2.2), or where the element starts when it carries none.
 fn at(node: &roxmltree::Node, source_name: &str, error: ValidationError) -> Located<ForgeError> {
-    at_offset(node, node.range().start, source_name, error)
+    crate::forge::parser::located(node, source_name, error)
 }
 
 fn at_offset(

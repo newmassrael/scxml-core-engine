@@ -703,12 +703,12 @@ fn enforce_datamodel_languages(
     if datamodel != Datamodel::Null {
         return Ok(());
     }
-    // Each refusal is placed where its `actual` is: the refused element's
-    // own row, or the row of the attribute holding the refused value.
-    let refused = |pos: roxmltree::TextPos, err: ScxmlSemanticError| {
-        crate::forge::error::Located::new(err.into(), diag_label, Some(pos.row), Some(pos.col))
+    // Each refusal is placed where its `actual` begins, as
+    // SCE_ERROR_CONTRACT.md §2.2 defines `col`: the refused element's name
+    // in its start tag, or the attribute value holding the refused value.
+    let refused = |node: &roxmltree::Node, err: ScxmlSemanticError| {
+        crate::forge::parser::located(node, diag_label, err)
     };
-    let element_row = |node: &roxmltree::Node| node.document().text_pos_at(node.range().start);
 
     let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
     while let Some(node) = stack.pop() {
@@ -736,7 +736,7 @@ fn enforce_datamodel_languages(
         // script text, which B-1-5 has no language for.
         if name == "script" {
             return Err(refused(
-                element_row(&node),
+                &node,
                 ScxmlSemanticError::NullDatamodelForbidsConstruct {
                     construct: "<script>".to_string(),
                     needs: "a scripting language".to_string(),
@@ -749,7 +749,7 @@ fn enforce_datamodel_languages(
 
         if ELEMENTS_NEEDING_A_DATA_MODEL.contains(&name) {
             return Err(refused(
-                element_row(&node),
+                &node,
                 ScxmlSemanticError::NullDatamodelForbidsConstruct {
                     construct: format!("<{name}>"),
                     needs: "the underlying data model it declares or writes to".to_string(),
@@ -762,10 +762,10 @@ fn enforce_datamodel_languages(
 
         for (attr, needs, rule) in EXPRESSION_ATTRIBUTES {
             if let Some(value) = node.attribute(*attr) {
-                let (written, pos) = attribute_as_written(&node, attr)
+                let written = attribute_as_written(&node, attr)
                     .expect("the attribute `node.attribute` just returned");
                 return Err(refused(
-                    pos,
+                    &node,
                     ScxmlSemanticError::NullDatamodelForbidsConstruct {
                         construct: format!("{attr}=\"{value}\""),
                         needs: (*needs).to_string(),
@@ -785,10 +785,10 @@ fn enforce_datamodel_languages(
             // with `datamodel="null"` and were refused while the `<script>`
             // form beside them passed (ADR 0003).
             if !is_null_datamodel_condition(cond) && !is_native_condition(cond) {
-                let (written, pos) = attribute_as_written(&node, "cond")
+                let written = attribute_as_written(&node, "cond")
                     .expect("the attribute `node.attribute` just returned");
                 return Err(refused(
-                    pos,
+                    &node,
                     ScxmlSemanticError::NullDatamodelForbidsConstruct {
                         construct: format!("cond=\"{cond}\""),
                         needs: "a boolean expression language beyond In()".to_string(),
@@ -896,26 +896,23 @@ fn enforce_static_datamodel(
     if datamodel != Datamodel::SceStatic {
         return Ok(());
     }
-    let refused = |pos: roxmltree::TextPos,
-                   construct: String,
-                   rule: &str,
-                   node: &roxmltree::Node,
-                   observed: Option<String>| {
-        crate::forge::error::Located::new(
-            ScxmlSemanticError::StaticDatamodelRule {
-                construct,
-                datamodel: datamodel.as_str().to_string(),
-                rule: rule.to_string(),
-                state: owning_state(node),
-                observed,
-            }
-            .into(),
-            diag_label,
-            Some(pos.row),
-            Some(pos.col),
-        )
-    };
-    let element_row = |node: &roxmltree::Node| node.document().text_pos_at(node.range().start);
+    // Each refusal is placed on `node` where its `observed` begins
+    // (SCE_ERROR_CONTRACT.md §2.2): in the attribute that holds it, or the
+    // element's name in its start tag.
+    let refused =
+        |construct: String, rule: &str, node: &roxmltree::Node, observed: Option<String>| {
+            crate::forge::parser::located(
+                node,
+                diag_label,
+                ScxmlSemanticError::StaticDatamodelRule {
+                    construct,
+                    datamodel: datamodel.as_str().to_string(),
+                    rule: rule.to_string(),
+                    state: owning_state(node),
+                    observed,
+                },
+            )
+        };
 
     let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
     while let Some(node) = stack.pop() {
@@ -933,10 +930,9 @@ fn enforce_static_datamodel(
         // would be written into the code as it stands, and refused only by the compiler of
         // the generated language, or not at all.
         for attribute in ["cond", "expr"] {
-            if let Some((written, pos)) = attribute_as_written(&node, attribute) {
+            if let Some(written) = attribute_as_written(&node, attribute) {
                 if let Some(member) = event_metadata_member(written) {
                     return Err(refused(
-                        pos,
                         format!("{attribute}=\"{written}\""),
                         "a machine of this data model reads the payload of an event \
                          (`_event.data.<field>`) and no other member of `_event`: the metadata \
@@ -952,7 +948,6 @@ fn enforce_static_datamodel(
             let id = node.attribute("id").unwrap_or("");
             if attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type").is_none() {
                 return Err(refused(
-                    element_row(&node),
                     format!("<data id=\"{id}\">"),
                     "every <data> declares its type with sce:type",
                     &node,
@@ -963,12 +958,10 @@ fn enforce_static_datamodel(
             // the machine's own. `in` would make it the host's to write, and
             // nothing lowers such a write, so it is refused rather than
             // accepted with no effect.
-            if let Some((written, pos)) =
-                attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "direction")
-                    .filter(|(written, _)| written.trim() == "in")
+            if let Some(written) = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "direction")
+                .filter(|written| written.trim() == "in")
             {
                 return Err(refused(
-                    pos,
                     format!("sce:direction=\"{written}\""),
                     "a variable is written only by the machine: sce:direction=\"out\" \
                      publishes it to the host, \"internal\" (the default) keeps it the \
@@ -977,9 +970,8 @@ fn enforce_static_datamodel(
                     Some(written.to_string()),
                 ));
             }
-            if let Some((written, pos)) = attribute_as_written(&node, "src") {
+            if let Some(written) = attribute_as_written(&node, "src") {
                 return Err(refused(
-                    pos,
                     format!("src=\"{written}\""),
                     "a variable's initial value is its expr, written in the Forge \
                      expression language — src is read at run time and has no type",
@@ -1013,9 +1005,8 @@ fn enforce_static_datamodel(
                 )
             );
             if is_record {
-                if let Some((written, pos)) = attribute_as_written(&node, "expr") {
+                if let Some(written) = attribute_as_written(&node, "expr") {
                     return Err(refused(
-                        pos,
                         format!("expr=\"{written}\""),
                         "a record variable is built from one <sce:set> per field of its \
                          schema, not from an expr",
@@ -1025,7 +1016,6 @@ fn enforce_static_datamodel(
                 }
                 if !character_data(&node).trim().is_empty() {
                     return Err(refused(
-                        element_row(&node),
                         format!("<data id=\"{id}\"> with in-line text"),
                         "a record variable is built from one <sce:set> per field of its \
                          schema — in-line text has no type",
@@ -1047,9 +1037,8 @@ fn enforce_static_datamodel(
             );
             let capacity = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "capacity");
             if is_list {
-                if let Some((written, pos)) = attribute_as_written(&node, "expr") {
+                if let Some(written) = attribute_as_written(&node, "expr") {
                     return Err(refused(
-                        pos,
                         format!("expr=\"{written}\""),
                         "a list variable starts empty and is filled by <sce:append> — it \
                          takes no expr",
@@ -1059,7 +1048,6 @@ fn enforce_static_datamodel(
                 }
                 if !inline_data_value(&node).is_empty() {
                     return Err(refused(
-                        element_row(&node),
                         format!("<data id=\"{id}\"> with in-line content"),
                         "a list variable starts empty and is filled by <sce:append> — \
                          in-line content has no type",
@@ -1071,7 +1059,6 @@ fn enforce_static_datamodel(
                     None if bracket => {}
                     None => {
                         return Err(refused(
-                            element_row(&node),
                             format!("<data id=\"{id}\">"),
                             "a list variable declares the most elements it holds in its type, \
                              list<T>[N] (or with sce:capacity, the attribute that stated it \
@@ -1080,7 +1067,7 @@ fn enforce_static_datamodel(
                             Some(name.to_string()),
                         ))
                     }
-                    Some((written, pos))
+                    Some(written)
                         if written
                             .trim()
                             .parse::<u32>()
@@ -1089,7 +1076,6 @@ fn enforce_static_datamodel(
                             .is_none() =>
                     {
                         return Err(refused(
-                            pos,
                             format!("sce:capacity=\"{written}\""),
                             "sce:capacity is a whole number of elements, at least one, that \
                              fits 32 bits",
@@ -1133,7 +1119,6 @@ fn enforce_static_datamodel(
                     None if bracket => {}
                     None => {
                         return Err(refused(
-                            element_row(&node),
                             format!("<data id=\"{id}\">"),
                             &format!(
                                 "a {kind} variable declares the most {unit} it holds in its \
@@ -1144,7 +1129,7 @@ fn enforce_static_datamodel(
                             Some(name.to_string()),
                         ))
                     }
-                    Some((written, pos))
+                    Some(written)
                         if written
                             .trim()
                             .parse::<u32>()
@@ -1153,7 +1138,6 @@ fn enforce_static_datamodel(
                             .is_none() =>
                     {
                         return Err(refused(
-                            pos,
                             format!("sce:capacity=\"{written}\""),
                             &format!(
                                 "sce:capacity is a whole number of {unit}, at least one, that \
@@ -1165,9 +1149,8 @@ fn enforce_static_datamodel(
                     }
                     Some(_) => {}
                 }
-            } else if let Some((written, pos)) = capacity {
+            } else if let Some(written) = capacity {
                 return Err(refused(
-                    pos,
                     format!("sce:capacity=\"{written}\""),
                     "only a list, a string or a bytes variable has a capacity",
                     &node,
@@ -1176,7 +1159,6 @@ fn enforce_static_datamodel(
             }
             if !inline_data_value(&node).is_empty() {
                 return Err(refused(
-                    element_row(&node),
                     format!("<data id=\"{id}\"> with in-line content"),
                     "a variable's initial value is its expr, written in the Forge \
                      expression language — in-line content has no type",
@@ -1198,7 +1180,6 @@ fn enforce_static_datamodel(
                     .is_some_and(|flag| matches!(flag.trim(), "true" | "1"));
             if !module_parameter && node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {
                 return Err(refused(
-                    element_row(&node),
                     format!("<data id=\"{id}\">"),
                     "every <data> declares its initial value with expr",
                     &node,
@@ -1209,7 +1190,6 @@ fn enforce_static_datamodel(
 
         if name == "script" && !is_native_script_block(&node) {
             return Err(refused(
-                element_row(&node),
                 "<script>".to_string(),
                 "script text needs a scripting language, which this data model does not \
                  have — write the effect as <assign> or as a native <script> block",
@@ -1224,12 +1204,13 @@ fn enforce_static_datamodel(
 }
 
 /// An unqualified attribute's value as the document's text spells it —
-/// entities and all, where `node.attribute` hands back the decoded value —
-/// with the position the attribute starts at.
+/// entities and all, where `node.attribute` hands back the decoded value.
+/// Where a refusal of it stands is [`crate::forge::parser::located`]'s to
+/// say, from the value the refusal reports.
 fn attribute_as_written<'input>(
     node: &roxmltree::Node<'_, 'input>,
     name: &str,
-) -> Option<(&'input str, roxmltree::TextPos)> {
+) -> Option<&'input str> {
     attribute_as_written_ns(node, None, name)
 }
 
@@ -1239,16 +1220,12 @@ fn attribute_as_written_ns<'input>(
     node: &roxmltree::Node<'_, 'input>,
     namespace: Option<&str>,
     name: &str,
-) -> Option<(&'input str, roxmltree::TextPos)> {
+) -> Option<&'input str> {
     let attr = node
         .attributes()
         .find(|a| a.name() == name && a.namespace() == namespace)?;
     crate::sce_attr::note(node, &attr);
-    let document = node.document();
-    Some((
-        &document.input_text()[attr.range_value()],
-        document.text_pos_at(attr.range().start),
-    ))
+    Some(&node.document().input_text()[attr.range_value()])
 }
 
 /// Collect `<sce:unresolved>` markers attached to `node` — both
@@ -1279,8 +1256,9 @@ pub(crate) fn collect_sce_unresolved(
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
     };
-    // A marker is located where its id is written: at the attribute for
-    // the attribute form, at the child element for the element form.
+    // A marker is located where its id begins (SCE_ERROR_CONTRACT.md §2.2):
+    // the attribute's value for the attribute form, the child element's `id`
+    // value for the element form.
     // ⚠ The attribute form used to take its element's first row, and an
     // element's attributes span rows — `sce:unresolved="…"` one row down
     // was reported on a row without it (measured 2026-09-21,
@@ -1314,7 +1292,7 @@ pub(crate) fn collect_sce_unresolved(
                     candidates: crate::sce_attr::read(node, &format!("{attr}-candidates"))
                         .map(split)
                         .unwrap_or_default(),
-                    location: at(node, attribute.range().start),
+                    location: at(node, attribute.range_value().start),
                 });
             }
         }
@@ -1324,16 +1302,19 @@ pub(crate) fn collect_sce_unresolved(
             {
                 continue;
             }
-            let id = match child.attribute("id") {
-                Some(s) if !s.is_empty() => s.to_string(),
-                _ => continue,
+            let Some(id_attribute) = child
+                .attributes()
+                .find(|a| a.name() == "id" && a.namespace().is_none())
+                .filter(|a| !a.value().is_empty())
+            else {
+                continue;
             };
             markers.push(UnresolvedMarker {
-                id,
+                id: id_attribute.value().to_string(),
                 kind,
                 reason: child.attribute("reason").map(|s| s.to_string()),
                 candidates: child.attribute("candidates").map(split).unwrap_or_default(),
-                location: at(&child, child.range().start),
+                location: at(&child, id_attribute.range_value().start),
             });
         }
     }
@@ -1522,7 +1503,7 @@ fn collect_invoke_candidates(
     Vec<crate::model::InvokeCandidate>,
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
     use crate::model::InvokeCandidate;
     use std::collections::HashSet;
 
@@ -1531,10 +1512,8 @@ fn collect_invoke_candidates(
         None => return Ok(Vec::new()),
     };
 
-    let pos = node.document().text_pos_at(node.range().start);
-    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
-        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-    };
+    // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+    let at = |err: ValidationError| crate::forge::parser::located(node, source_name, err);
 
     if !contentexpr.is_empty() || srcexpr.is_empty() {
         return Err(at(ValidationError::IncompatibleAttributes {
@@ -1613,7 +1592,7 @@ fn collect_send_targets(
     action: &Action,
     source_name: &str,
 ) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
     use std::collections::HashSet;
 
     let raw = match crate::sce_attr::read(node, "targets") {
@@ -1621,10 +1600,8 @@ fn collect_send_targets(
         None => return Ok(Vec::new()),
     };
 
-    let pos = node.document().text_pos_at(node.range().start);
-    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
-        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-    };
+    // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+    let at = |err: ValidationError| crate::forge::parser::located(node, source_name, err);
     let incompatible = |detail: String| {
         at(ValidationError::IncompatibleAttributes {
             element: "<send>".to_string(),
@@ -1702,7 +1679,7 @@ fn collect_send_types(
     action: &Action,
     source_name: &str,
 ) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
     use std::collections::HashSet;
 
     let raw = match crate::sce_attr::read(node, "types") {
@@ -1710,10 +1687,8 @@ fn collect_send_types(
         None => return Ok(Vec::new()),
     };
 
-    let pos = node.document().text_pos_at(node.range().start);
-    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
-        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-    };
+    // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+    let at = |err: ValidationError| crate::forge::parser::located(node, source_name, err);
     let incompatible = |detail: String| {
         at(ValidationError::IncompatibleAttributes {
             element: "<send>".to_string(),
@@ -1785,7 +1760,7 @@ pub(crate) fn collect_sce_req(
     Vec<crate::provenance::RequirementId>,
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
     use crate::provenance::RequirementId;
     use std::collections::HashSet;
     let raw = match crate::sce_attr::read(node, "req") {
@@ -1796,16 +1771,13 @@ pub(crate) fn collect_sce_req(
     let mut out: Vec<RequirementId> = Vec::new();
     for tok in RequirementId::split(raw) {
         if !seen.insert(tok.to_string()) {
-            let pos = node.document().text_pos_at(node.range().start);
-            return Err(Located::new(
+            return Err(crate::forge::parser::located(
+                node,
+                source_name,
                 ValidationError::DuplicateRequirementId {
                     element: element_label_fn(),
                     id: tok.to_string(),
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
+                },
             ));
         }
         out.push(RequirementId(tok.to_string()));
@@ -1890,21 +1862,21 @@ pub(crate) fn collect_sce_provenance(
     Vec<crate::provenance::SpecProvenance>,
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
     use crate::forge::model::SCE_NAMESPACE;
     use crate::provenance::{Position, SpecProvenance};
     use std::collections::HashSet;
 
+    // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
     let locate = |err: ValidationError, at: &roxmltree::Node| {
-        let pos = at.document().text_pos_at(at.range().start);
-        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+        crate::forge::parser::located(at, source_name, err)
     };
 
-    // Anchors paired with the position of the element that declared
-    // them. The duplicate check runs over the assembled list rather
-    // than at each push so the rejection names the *second*
-    // occurrence, which is the one the author deletes.
-    let mut anchors: Vec<(SpecProvenance, roxmltree::TextPos)> = Vec::new();
+    // Anchors paired with the element that declared them. The duplicate
+    // check runs over the assembled list rather than at each push so the
+    // rejection names the *second* occurrence, which is the one the author
+    // deletes.
+    let mut anchors: Vec<(SpecProvenance, roxmltree::Node)> = Vec::new();
 
     if let Some(raw) = crate::sce_attr::read(node, "provenance") {
         let parsed = SpecProvenance::parse_compact(raw).ok_or_else(|| {
@@ -1916,7 +1888,7 @@ pub(crate) fn collect_sce_provenance(
                 node,
             )
         })?;
-        anchors.push((parsed, node.document().text_pos_at(node.range().start)));
+        anchors.push((parsed, *node));
     }
 
     for child in node.children().filter(|c| c.is_element()) {
@@ -1981,22 +1953,19 @@ pub(crate) fn collect_sce_provenance(
                 section: child.attribute("section").and_then(non_empty),
                 at,
             },
-            child.document().text_pos_at(child.range().start),
+            child,
         ));
     }
 
     let mut seen: HashSet<&str> = HashSet::new();
-    for (anchor, pos) in &anchors {
+    for (anchor, declared_at) in &anchors {
         if !seen.insert(anchor.doc_id.as_str()) {
-            return Err(Located::new(
+            return Err(locate(
                 ValidationError::DuplicateProvenanceDocId {
                     element: element_label_fn(),
                     doc_id: anchor.doc_id.clone(),
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
+                },
+                declared_at,
             ));
         }
     }
@@ -2177,22 +2146,19 @@ fn parse_sce_unhandled(
     element_label_fn: impl Fn() -> String,
     source_name: &str,
 ) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
 
-    let pos_of = || node.document().text_pos_at(node.range().start);
+    // Placed where the refused value begins (SCE_ERROR_CONTRACT.md §2.2).
     let reject = |attr: &str, value: String, rule: String| {
-        let pos = pos_of();
-        Located::new(
+        crate::forge::parser::located(
+            node,
+            source_name,
             ValidationError::AttributeRuleViolated {
                 element: element_label_fn(),
                 attr: attr.to_string(),
                 value,
                 rule,
-            }
-            .into(),
-            source_name,
-            Some(pos.row),
-            Some(pos.col),
+            },
         )
     };
 
@@ -2689,15 +2655,12 @@ impl SCXMLParser {
         let dir = base_dir.map(|dir| self.import_dir(&imports, dir));
         let Some(line) = Self::read_product_line(&doc, &imports, dir.as_deref(), diag_label)?
         else {
-            let pos = doc.text_pos_at(root.range().start);
-            return Err(Located::new(
+            return Err(crate::forge::parser::located(
+                &root,
+                diag_label,
                 ValidationError::FeatureSelectionWithoutModel {
                     features: features.to_vec(),
-                }
-                .into(),
-                diag_label,
-                Some(pos.row),
-                Some(pos.col),
+                },
             ));
         };
         let model_name = line.model_name().to_string();
@@ -3001,16 +2964,14 @@ impl SCXMLParser {
         // this is defense-in-depth and documents the invariant in
         // code at the model-construction boundary.
         if root.tag_name().name() != "scxml" || !is_scxml_ns(&root) {
-            // The record's `actual` is the root's own name, so the root's
-            // row is where a consumer finds it (SCE_ERROR_CONTRACT §3.1.1).
-            let pos = doc.text_pos_at(root.range().start);
-            return Err(Located::new(
+            // The record's `actual` is the root's own name, placed where it
+            // begins in the root's start tag (SCE_ERROR_CONTRACT §2.2).
+            return Err(crate::forge::parser::located(
+                &root,
+                diag_label,
                 ForgeError::Xml(XmlError::WrongRootElement {
                     found: root.tag_name().name().to_string(),
                 }),
-                diag_label,
-                Some(pos.row),
-                Some(pos.col),
             ));
         }
 
@@ -4829,7 +4790,7 @@ impl SCXMLParser {
         // (`ValidationError::RemovedAttribute`). No migration tolerance
         // remains — third-party documents must migrate before building
         // against Session E1 or later.
-        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::error::ValidationError;
         for removed_attr in [
             "qos",
             "pattern",
@@ -4839,8 +4800,9 @@ impl SCXMLParser {
             "priority",
         ] {
             if crate::sce_attr::read(elem, removed_attr).is_some() {
-                let pos = elem.document().text_pos_at(elem.range().start);
-                return Err(Located::new(
+                return Err(crate::forge::parser::located(
+                    elem,
+                    &model.name,
                     ValidationError::RemovedAttribute {
                         attribute: format!("sce:{removed_attr}"),
                         event: if action.event.is_empty() {
@@ -4848,11 +4810,7 @@ impl SCXMLParser {
                         } else {
                             Some(action.event.clone())
                         },
-                    }
-                    .into(),
-                    &model.name,
-                    Some(pos.row),
-                    Some(pos.col),
+                    },
                 ));
             }
         }
@@ -4878,23 +4836,20 @@ impl SCXMLParser {
         action: &mut Action,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::error::ValidationError;
         use crate::forge::model::SCE_NAMESPACE;
 
         let require_attr = |present: bool, element: &str, attr: &str, node: &roxmltree::Node| {
             if present {
                 return Ok(());
             }
-            let pos = node.document().text_pos_at(node.range().start);
-            Err(Located::new(
+            Err(crate::forge::parser::located(
+                node,
+                source_name,
                 ValidationError::MissingAttribute {
                     element: element.into(),
                     attr: attr.into(),
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
+                },
             ))
         };
 
@@ -4907,18 +4862,15 @@ impl SCXMLParser {
         let effect = elem.attribute("effect").unwrap_or("").trim().to_string();
         require_attr(!effect.is_empty(), "<sce:action>", "effect", elem)?;
         if !matches!(effect.as_str(), "duty" | "notice") {
-            let pos = elem.document().text_pos_at(elem.range().start);
-            return Err(Located::new(
+            return Err(crate::forge::parser::located(
+                elem,
+                source_name,
                 ValidationError::InvalidAttribute {
                     element: "<sce:action>".into(),
                     attr: "effect".into(),
                     value: effect,
                     allowed: vec!["duty".into(), "notice".into()],
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
+                },
             ));
         }
 
@@ -5191,16 +5143,13 @@ impl SCXMLParser {
                 // duplication). 5-backend cancel templates may safely
                 // assume at least one attribute is non-empty post-parse.
                 if action.sendid.is_empty() && action.sendidexpr.is_empty() {
-                    let pos = child.document().text_pos_at(child.range().start);
-                    return Err(crate::forge::error::Located::new(
+                    return Err(crate::forge::parser::located(
+                        child,
+                        source_name,
                         crate::forge::error::ValidationError::RequireEither {
                             element: "<cancel>".into(),
                             alternatives: vec!["sendid".into(), "sendidexpr".into()],
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     ));
                 }
                 // [`NeedsScriptEngineCause::CancelExpr`] — derived post-parse
@@ -5226,8 +5175,9 @@ impl SCXMLParser {
             // judged with the rest of the typed scope.
             (false, name @ ("append" | "clear")) => {
                 if model.datamodel != Datamodel::SceStatic {
-                    let pos = child.document().text_pos_at(child.range().start);
-                    return Err(crate::forge::error::Located::new(
+                    return Err(crate::forge::parser::located(
+                        child,
+                        source_name,
                         ScxmlSemanticError::StaticDatamodelRule {
                             construct: format!("<sce:{name}>"),
                             datamodel: model.datamodel.as_str().to_string(),
@@ -5236,11 +5186,7 @@ impl SCXMLParser {
                                 .to_string(),
                             state: owning_state(child),
                             observed: Some(name.to_string()),
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     ));
                 }
                 action.action_type = format!("sce_{name}");
@@ -5254,8 +5200,9 @@ impl SCXMLParser {
             // typed scope ([`crate::forge::static_datamodel`]).
             (false, "lift") => {
                 if model.datamodel != Datamodel::SceStatic {
-                    let pos = child.document().text_pos_at(child.range().start);
-                    return Err(crate::forge::error::Located::new(
+                    return Err(crate::forge::parser::located(
+                        child,
+                        source_name,
                         ScxmlSemanticError::StaticDatamodelRule {
                             construct: "<sce:lift>".to_string(),
                             datamodel: model.datamodel.as_str().to_string(),
@@ -5265,11 +5212,7 @@ impl SCXMLParser {
                                 .to_string(),
                             state: owning_state(child),
                             observed: Some("lift".to_string()),
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     ));
                 }
                 action.action_type = "sce_lift".to_string();
@@ -5285,19 +5228,16 @@ impl SCXMLParser {
             // ([`crate::forge::static_datamodel`]).
             (false, "render") => {
                 let refused = |node: &roxmltree::Node, rule: &str, observed: &str| {
-                    let pos = node.document().text_pos_at(node.range().start);
-                    crate::forge::error::Located::new(
+                    crate::forge::parser::located(
+                        node,
+                        source_name,
                         ScxmlSemanticError::StaticDatamodelRule {
                             construct: "<sce:render>".to_string(),
                             datamodel: model.datamodel.as_str().to_string(),
                             rule: rule.to_string(),
                             state: owning_state(child),
                             observed: Some(observed.to_string()),
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     )
                 };
                 if model.datamodel != Datamodel::SceStatic {
@@ -5338,8 +5278,9 @@ impl SCXMLParser {
             // author wrote is never dropped in silence.
             (false, "setverdict" | "start-timer" | "stop-timer") => {
                 if model.test_component.is_none() {
-                    let pos = child.document().text_pos_at(child.range().start);
-                    return Err(crate::forge::error::Located::new(
+                    return Err(crate::forge::parser::located(
+                        child,
+                        source_name,
                         crate::forge::error::ValidationError::UnexpectedChildElement {
                             parent: child
                                 .parent_element()
@@ -5350,11 +5291,7 @@ impl SCXMLParser {
                                 .iter()
                                 .map(|name| (*name).to_string())
                                 .collect(),
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     ));
                 }
                 let statement = crate::test_component::read_statement(child, source_name)?
@@ -5369,8 +5306,9 @@ impl SCXMLParser {
             // not run and nothing said so. The document is refused instead, naming the element
             // and the closed set it could have been.
             (true, _) => {
-                let pos = child.document().text_pos_at(child.range().start);
-                return Err(crate::forge::error::Located::new(
+                return Err(crate::forge::parser::located(
+                    child,
+                    source_name,
                     crate::forge::error::ValidationError::UnexpectedChildElement {
                         parent: child
                             .parent_element()
@@ -5381,11 +5319,7 @@ impl SCXMLParser {
                             .iter()
                             .map(|name| (*name).to_string())
                             .collect(),
-                    }
-                    .into(),
-                    source_name,
-                    Some(pos.row),
-                    Some(pos.col),
+                    },
                 ));
             }
             _ => return Ok(None),
@@ -5437,17 +5371,14 @@ impl SCXMLParser {
         // is numbered past every id the author wrote, so what this refuses is
         // an author's own duplicate.
         if !self.invoke_ids_seen.insert(invoke_id.clone()) {
-            let pos = elem.document().text_pos_at(elem.range().start);
-            return Err(crate::forge::error::Located::new(
+            return Err(crate::forge::parser::located(
+                elem,
+                source_name,
                 crate::forge::error::ValidationError::DuplicateId {
                     kind: crate::forge::model::ForgeKind::Statechart,
                     what: "<invoke id>".into(),
                     id: invoke_id,
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
+                },
             ));
         }
 
@@ -5784,7 +5715,14 @@ impl SCXMLParser {
                 // raised against it stays in its own coordinates, under its library
                 // name.
                 let synth_name = synthesised_child_name(&model.name, &field_suffix);
-                let at = elem.document().text_pos_at(elem.range().start);
+                // Placed where the name the library does not hold begins: the
+                // `src` value (SCE_ERROR_CONTRACT.md §2.2).
+                let at = elem.document().text_pos_at(
+                    elem.attribute_node("src")
+                        .map_or(elem.range().start, |attribute| {
+                            attribute.range_value().start
+                        }),
+                );
                 let text = standard_document_text(&src, source_name, Some(at.row), Some(at.col))?;
                 let standard_child =
                     SCXMLParser::new().parse_standard_as(text, &src, &synth_name)?;
@@ -5902,17 +5840,14 @@ impl SCXMLParser {
             let invoke_id = if elem.attribute("id").is_none() && !idlocation.is_empty() {
                 let generated = format!("{state_id}.{invoke_id}");
                 if !self.invoke_ids_seen.insert(generated.clone()) {
-                    let pos = elem.document().text_pos_at(elem.range().start);
-                    return Err(crate::forge::error::Located::new(
+                    return Err(crate::forge::parser::located(
+                        elem,
+                        source_name,
                         crate::forge::error::ValidationError::DuplicateId {
                             kind: crate::forge::model::ForgeKind::Statechart,
                             what: "<invoke id>".into(),
                             id: generated,
-                        }
-                        .into(),
-                        source_name,
-                        Some(pos.row),
-                        Some(pos.col),
+                        },
                     ));
                 }
                 generated
@@ -6005,7 +5940,7 @@ impl SCXMLParser {
         attrs: MeshRpcInvokeAttrs,
     ) -> Result<MeshRpcInvokeInfo, crate::forge::error::Located<crate::forge::error::ForgeError>>
     {
-        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::error::ValidationError;
         let MeshRpcInvokeAttrs {
             invoke_id,
             id_generated,
@@ -6015,10 +5950,8 @@ impl SCXMLParser {
             idlocation,
         } = attrs;
 
-        let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
-            let pos = elem.document().text_pos_at(elem.range().start);
-            Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-        };
+        // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+        let locate = |err: ValidationError| crate::forge::parser::located(elem, source_name, err);
 
         // SCE Mesh §9.5 exactly-one rule: `src` and `srcexpr` are
         // mutually exclusive on `<invoke type="sce:mesh-rpc">`. Both
@@ -6830,7 +6763,7 @@ impl SCXMLParser {
         model: &mut SCXMLModel,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        use crate::forge::error::{Located, SourceLocation, ValidationError};
+        use crate::forge::error::{SourceLocation, ValidationError};
         use crate::forge::model::SCE_NAMESPACE;
         use crate::model::DriverRef;
         let mut document_order: u32 = 0;
@@ -6841,16 +6774,13 @@ impl SCXMLParser {
                 continue;
             }
             let href = child.attribute("href").ok_or_else(|| {
-                let pos = child.document().text_pos_at(child.range().start);
-                Located::new(
+                crate::forge::parser::located(
+                    &child,
+                    source_name,
                     ValidationError::MissingAttribute {
                         element: "<sce:driver>".to_string(),
                         attr: "href".to_string(),
-                    }
-                    .into(),
-                    source_name,
-                    Some(pos.row),
-                    Some(pos.col),
+                    },
                 )
             })?;
             let pos = child.document().text_pos_at(child.range().start);
@@ -6901,7 +6831,7 @@ impl SCXMLParser {
         model: &mut SCXMLModel,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::error::ValidationError;
         use crate::forge::model::SCE_NAMESPACE;
         use crate::model::SessionRoleKind;
         for child in root.children().filter(|n| n.is_element()) {
@@ -6910,43 +6840,29 @@ impl SCXMLParser {
             if !is_sce_session_role {
                 continue;
             }
-            let pos = child.document().text_pos_at(child.range().start);
+            // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+            let refused =
+                |err: ValidationError| crate::forge::parser::located(&child, source_name, err);
             let raw_kind = child.attribute("kind").ok_or_else(|| {
-                Located::new(
-                    ValidationError::MissingAttribute {
-                        element: "<sce:session-role>".to_string(),
-                        attr: "kind".to_string(),
-                    }
-                    .into(),
-                    source_name,
-                    Some(pos.row),
-                    Some(pos.col),
-                )
+                refused(ValidationError::MissingAttribute {
+                    element: "<sce:session-role>".to_string(),
+                    attr: "kind".to_string(),
+                })
             })?;
             let kind = SessionRoleKind::parse(raw_kind).ok_or_else(|| {
-                Located::new(
-                    ValidationError::ScxmlUnknownSessionRoleKind {
-                        kind: raw_kind.to_string(),
-                        allowed: SessionRoleKind::all_wire_names()
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect(),
-                    }
-                    .into(),
-                    source_name,
-                    Some(pos.row),
-                    Some(pos.col),
-                )
+                refused(ValidationError::ScxmlUnknownSessionRoleKind {
+                    kind: raw_kind.to_string(),
+                    allowed: SessionRoleKind::all_wire_names()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                })
             })?;
             if !model.declared_session_roles.insert(kind) {
-                return Err(Located::new(
+                return Err(refused(
                     ValidationError::ScxmlDuplicateSessionRoleDeclaration {
                         kind: kind.as_str().to_string(),
-                    }
-                    .into(),
-                    source_name,
-                    Some(pos.row),
-                    Some(pos.col),
+                    },
                 ));
             }
         }
@@ -8085,12 +8001,10 @@ fn check_assign_attributes(
     node: &roxmltree::Node,
     source_name: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
 
-    let at = |err: ValidationError| {
-        let pos = node.document().text_pos_at(node.range().start);
-        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-    };
+    // Placed where the refusal's `actual` begins (SCE_ERROR_CONTRACT.md §2.2).
+    let at = |err: ValidationError| crate::forge::parser::located(node, source_name, err);
     if node.attribute("location").is_none() {
         return Err(at(ValidationError::MissingAttribute {
             element: "<assign>".to_string(),
@@ -8138,10 +8052,11 @@ fn check_param_attributes(
     node: &roxmltree::Node,
     source_name: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::ValidationError;
 
     // Document order: the attribute written beyond the first is the record's
-    // `actual`, as `ExactlyOneAttribute` states for every element it names.
+    // `actual`, as `ExactlyOneAttribute` states for every element it names,
+    // and the refusal stands where that attribute's name begins.
     let written: Vec<&str> = node
         .attributes()
         .map(|a| a.name())
@@ -8150,17 +8065,14 @@ fn check_param_attributes(
     if written.len() == 1 {
         return Ok(());
     }
-    let pos = node.document().text_pos_at(node.range().start);
-    Err(Located::new(
+    Err(crate::forge::parser::located(
+        node,
+        source_name,
         ValidationError::ExactlyOneAttribute {
             element: "<param>".to_string(),
             alternatives: vec!["expr".to_string(), "location".to_string()],
             extra: written.get(1).map(|name| name.to_string()),
-        }
-        .into(),
-        source_name,
-        Some(pos.row),
-        Some(pos.col),
+        },
     ))
 }
 
