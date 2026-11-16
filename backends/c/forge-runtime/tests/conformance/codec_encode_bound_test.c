@@ -165,7 +165,8 @@ static void a_repeat_above_its_bound_is_refused(void) {
     size_t len = 99;
 
     memset(&v, 0, sizeof v);
-    v.num_frags = (uint8_t)(sizeof v.frags / sizeof v.frags[0]);
+    /* The count is derived from the entries (docs/adr/0081 §3); the value
+     * holds none. */
     v.frags_len = sizeof v.frags / sizeof v.frags[0];
     memset(buf, CANARY, sizeof buf);
     CHECK(codec_repeat_basic_encode_to_buf(&v, buf, sizeof buf, &len) == SCE_FORGE_CODEC_OK,
