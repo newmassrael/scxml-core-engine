@@ -122,6 +122,44 @@ public struct {{ u.name }}: Equatable, Hashable, Sendable {
 
 {% endif %}
 {% if printed %}
+{% for g in printed.groups %}
+/// The elements of `{{ struct_name }}` the gates `{{ g.label }}` decide together (docs/adr/0065 §6
+/// R4b, R4c): {% if g.sum %}the arm a value holds, each arm the elements present under one assignment of
+/// the gates{% else %}the elements present while the gates are as the one arm says{% endif %}. The encode derives the gates
+/// from {% if g.sum %}which arm it is{% else %}whether a value holds it{% endif %}, and a decode makes the arm the gates of the frame name.
+{% if g.sum %}
+public enum {{ g.type }}: Equatable, Sendable {
+{% for a in g.arms %}
+    /// While {{ a.when }}.
+    case {{ a.case }}{% if a.members %}({% for m in a.members %}{{ m.name }}: {{ m.type }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}
+{% endfor %}
+
+    /// The place of the arm among the arms, in the order the document's gates make them: what the
+    /// encode derives each gate from.
+    public var arm: Int {
+        switch self {
+{% for a in g.arms %}
+        case .{{ a.case }}: return {{ a.index }}
+{% endfor %}
+        }
+    }
+}
+{% else %}
+{% set a = g.arms[0] %}
+public struct {{ g.type }}: Equatable, Sendable {
+{% for m in a.members %}
+    public var {{ m.name }}: {{ m.type }}
+{% endfor %}
+
+    public init({% for m in a.members %}{{ m.name }}: {{ m.type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for m in a.members %}
+        self.{{ m.name }} = {{ m.name }}
+{% endfor %}
+    }
+}
+{% endif %}
+
+{% endfor %}
 /// The elements a value of `{{ struct_name }}` presents, each a read-only property in the order the
 /// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
 /// `{{ struct_name }}.encodeSource(_:into:)` writes a frame from. A type of the host's own that
@@ -256,6 +294,13 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% endif %}
 {% endfor %}
 {% endfor %}
+{% if printed %}
+{% for g in printed.groups %}
+
+    /// The elements the gates `{{ g.label }}` decide together{% if g.holds != g.type %}, `nil` while they name no arm{% endif %}.
+    public var {{ g.name }}: {{ g.holds }} = {{ g.default }}
+{% endfor %}
+{% endif %}
 {% if caller_tag and variant_enum %}
 
     /// The tag of the arm this value holds: the one a decode is given to read it back, which a
@@ -283,7 +328,17 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-{% if fields | rejectattr("derived") | list %}
+{# A value printed from its plan is made of what it presents, in the order the protocol requires
+   it: each element, each gate group where its first member stands, the variant last. #}
+{% if printed %}
+{% if printed.requirements %}
+    public init({% for r in printed.requirements %}{{ r.name }}: {{ r.type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for r in printed.requirements %}
+        self.{{ r.name }} = {{ r.name }}
+{% endfor %}
+    }
+{% endif %}
+{% elif fields | rejectattr("derived") | list %}
     public init({% for f in fields if not f.derived %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
 {% for f in fields if not f.derived %}
         self.{{ f.id }} = {{ f.id }}
@@ -430,8 +485,20 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% if printed %}
+{# Each gate group, the arm the gates of the frame name, made of the locals its members were read
+   into (docs/adr/0065 §6 R4b, R4c). #}
+{% for g in printed.groups %}
+{% for line in g.decode %}
+        {{ line }}
+{% endfor %}
+{% endfor %}
+        cursor = reader
+        return {{ struct_name }}({% for r in printed.requirements %}{{ r.name }}: {{ r.local }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% else %}
         cursor = reader
         return {{ struct_name }}({% for f in fields if not f.derived %}{{ f.id }}: {{ f.id }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endif %}
 {% else %}
         _ = try cursor.peekSlice(frameLength)
         let frame = {{ struct_name }}(

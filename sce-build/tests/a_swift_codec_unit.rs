@@ -265,6 +265,10 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_repeat_present_if_basic.scxml",
         "tests/forge/resources/codec_tlv_chain_basic.scxml",
         "tests/forge/resources/codec_chain_depth_plain.scxml",
+        "tests/forge/resources/codec_group_enum.scxml",
+        "tests/forge/resources/codec_present_if_disjunction.scxml",
+        "tests/forge/resources/codec_chain_flag_entry.scxml",
+        "tests/forge/resources/codec_repeat_flag_carrier.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -279,8 +283,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         );
     }
     for (template, why) in [(
-        "tests/forge/resources/codec_repeat_flag_carrier.scxml",
-        "a list of a codec whose fields a gate group holds",
+        "tests/forge/resources/codec_repeat_flag_group.scxml",
+        "a list a gate group holds",
     )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
@@ -800,9 +804,14 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
         carrier.contains("wide: UInt8(truncatingIfNeeded: (head >> 0) & 0x1)"),
         "a decode hands the bit of the carrier it has read: {carrier}"
     );
+    // The entries say `wide` by the arm of their gate group (docs/adr/0065 §6 R4b), so the printed
+    // encode hands it to none of them and holds each to the bit of the carrier the value holds.
     assert!(
-        carrier.contains("wide: UInt8(truncatingIfNeeded: (self.head >> 0) & 0x1)"),
-        "an encode hands the bit of the carrier the value holds: {carrier}"
+        carrier.contains("    let handed: Bool = ((source.head >> 0) & 1) != 0\n")
+            && carrier.contains(
+                "if ((CodecChainFlagEntry.inputWide(entry) != 0) != handed) { throw CodecError.presentIfMismatch }"
+            ),
+        "an encode holds each entry to the bit of the carrier the value holds: {carrier}"
     );
 }
 
@@ -1124,6 +1133,83 @@ fn a_negated_clause_is_on_a_clear_bit_and_a_disjunction_on_any_clause() {
 }
 
 #[test]
+fn a_gate_group_is_one_property_whose_arm_the_encode_derives_the_gates_from() {
+    // docs/adr/0065 §6 R4c: `seq` is on the wire under `wants_a || wants_b`, two flags nothing else
+    // reads, so the value holds the arm of the disjunction and the encode derives both flags.
+    let either = swift_of("tests/forge/resources/codec_present_if_disjunction.scxml")
+        .expect("a disjunction is written");
+    for (expected, why) in [
+        (
+            "public enum CodecPresentIfDisjunctionFlagsWantsAOrWantsB: Equatable, Sendable {",
+            "the group is an enum of its arms",
+        ),
+        (
+            "    case wantsAWantsB(seq: UInt16)\n",
+            "an arm holds each member by its name",
+        ),
+        (
+            "    public var flags_wants_a_or_wants_b: CodecPresentIfDisjunctionFlagsWantsAOrWantsB? = nil\n",
+            "a value that may hold no arm holds the group as an optional",
+        ),
+        (
+            "var seq_member: UInt16? = nil",
+            "the encode reads the member off the arm the value holds",
+        ),
+        (
+            "    if let held = seq_member {\n",
+            "the member is written where the arm holds it",
+        ),
+        (
+            "flags_folded = (flags_folded & ~0x1) | ((source.flags_wants_a_or_wants_b.map { [",
+            "the flag is derived from the arm",
+        ),
+        (
+            ".contains($0.arm) } ?? false) ? 0x1 : 0)",
+            "a value that holds no arm clears the flag",
+        ),
+        (
+            "case .wantsAWantsB: return ",
+            "the arm says its place among the arms",
+        ),
+    ] {
+        assert!(either.contains(expected), "{why}: {expected} in {either}");
+    }
+    // docs/adr/0065 §6 R4b: `wide` decides `long_value` and `short_value` on its two values, so a
+    // value always holds one of the two arms, says the input by which, and a decode makes the arm
+    // the input it is handed names.
+    let entry = swift_of("tests/forge/resources/codec_chain_flag_entry.scxml")
+        .expect("a group of one input is written");
+    for (expected, why) in [
+        (
+            "    case wide(long_value: UInt16)\n",
+            "the arm while the input is set",
+        ),
+        (
+            "    case notWide(short_value: UInt8)\n",
+            "the arm while it is clear",
+        ),
+        (
+            "    public var wide: CodecChainFlagEntryWide = .notWide(short_value: 0)\n",
+            "a value always holds an arm, a frame of zeros the one of every gate clear",
+        ),
+        (
+            "        [0].contains(source.wide.arm) ? 1 : 0\n",
+            "the value says the input by the arm it holds",
+        ),
+        (
+            "        if (wide & 0x01) != 0 {\n            wide_group = .wide(long_value: long_value!)\n        } else {\n            wide_group = .notWide(short_value: short_value!)\n        }\n",
+            "a decode makes the arm the input names",
+        ),
+        (
+            "public init(header: UInt8, wide: CodecChainFlagEntryWide) {",
+            "the value is made of its elements and its group, in the order of the document",
+        ),
+    ] {
+        assert!(entry.contains(expected), "{why}: {expected} in {entry}");
+    }
+}
+
+#[test]
 fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_ungated_one() {
     let tail = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
@@ -1197,16 +1283,18 @@ fn a_chain_hands_its_entries_an_input_read_off_the_entry_before() {
         code.contains("_prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0"),
         "it is rewritten from the entry just handled: {code}"
     );
+    // Each entry says `after_marker` by the arm of its gate group (docs/adr/0065 §6 R4b), so the
+    // printed encode hands it to none of them and holds each to the entry before, walked as the
+    // decode walks it, the first entry after none.
     let encode = code
-        .split("public func encode")
+        .split("public static func encodeSource")
         .nth(1)
-        .expect("the codec has an encode");
+        .expect("the codec's encode is printed");
     assert!(
-        encode.contains("try entry.encode(into: &piece, after_marker: _prev_entries_after_marker,")
-            && encode.contains(
-                "_prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0"
-            ),
-        "an encode walks the same values over the same entries: {code}"
+        encode.contains("    var entries_before: UInt64? = nil\n")
+            && encode.contains("let handed: Bool = entries_before == 0x4\n")
+            && encode.contains("CodecChainPrevEntry.inputAfterMarker(entry) != 0) != handed"),
+        "an encode holds each entry to the entry before it: {code}"
     );
 }
 

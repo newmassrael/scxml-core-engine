@@ -12,10 +12,12 @@
 //! lower, as a case of a shape no printer spells is refused by name.
 
 use super::super::rust_source::{
-    case_inputs, case_tag, enum_variant, integer_value, source_members, variant_choice, HeldCodecs,
-    CALLER_TAG_LABEL, VARIANT_MEMBER,
+    case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value, source_members,
+    variant_choice, ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
+use super::source::{presented_order, Presented};
 use super::*;
+use crate::forge::codec_roles::GateGroup;
 use crate::forge::encode_plan::{Element, EncodePlan, Law, Value};
 
 /// The name the harness gives the value a case makes.
@@ -96,6 +98,14 @@ pub(crate) fn source_case(
             (id.clone(), format!("{DECODED}.{id} == {VALUE}.{id}"))
         })
         .collect();
+    // A gate group is `Equatable` down into its members: one comparison a group, by its gates.
+    for group in plan.groups() {
+        let name = super::source::group_name(group);
+        checks.push((
+            gates_label(group),
+            format!("{DECODED}.{name} == {VALUE}.{name}"),
+        ));
+    }
     if plan.model.variant.is_some() {
         checks.push((
             VARIANT_MEMBER.to_string(),
@@ -124,9 +134,9 @@ pub(crate) fn source_case(
 /// its initializer, each element in declaration order: a byte string or a text through its bound's
 /// one door, bound first in `bindings`, which the harness requires to answer; a body by the
 /// initializer of its own codec's value; a list of entries each made so, through its count bound's
-/// door; a number as a literal; the variant's arm as [`variant_literal`] makes it, last. An element
-/// a gate leaves out is `nil`. A shape the Swift printer does not print (a group, a list held to
-/// its law) is refused by name,
+/// door; a number as a literal; a gate group, where its first member stands, as [`group_literal`]
+/// makes it; the variant's arm as [`variant_literal`] makes it, last. An element a gate leaves out
+/// is `nil`. A shape the Swift printer does not print (a list held to its law) is refused by name,
 /// and so is a source that states an element the value does not present or leaves out one it does.
 fn value_literal(
     plan: &EncodePlan<'_>,
@@ -135,16 +145,23 @@ fn value_literal(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    if !plan.groups().is_empty() {
-        return Err(format!(
-            "the Swift printer does not print `{}`, which holds a gate group, so no value of it \
-             is made from a case",
-            plan.model.name
-        ));
-    }
     let object = source_members(plan, source)?;
     let mut arguments = Vec::new();
-    for element in &plan.elements {
+    for presented in presented_order(plan) {
+        let element = match presented {
+            Presented::Element(element) => element,
+            Presented::Group(index) => {
+                let group = &plan.groups()[index];
+                let label = gates_label(group);
+                let value = object
+                    .get(&label)
+                    .ok_or_else(|| format!("the source states no `{label}`"))?;
+                let spelled = group_literal(plan, type_name, group, value, &*held, bindings)
+                    .map_err(|e| format!("`{label}`: {e}"))?;
+                arguments.push(format!("{}: {spelled}", super::source::group_name(group)));
+                continue;
+            }
+        };
         let id = &element.field.id;
         let value = object
             .get(id)
@@ -152,15 +169,8 @@ fn value_literal(
         let spelled = if value.is_null() && element.presence.optional() {
             "nil".to_string()
         } else if let Some(bounded) = super::source::bounded_type(type_name, element) {
-            let raw = match &element.value {
-                Value::Text(_) => text_literal(value),
-                _ => bytes_literal(value),
-            }
-            .map_err(|e| format!("`{id}`: {e}"))?;
-            // Numbered, as a body's elements are bound beside its holder's.
-            let local = format!("bound{}", bindings.len());
-            bindings.push(format!("let {local} = try #require({bounded}({raw}))"));
-            local
+            bounded_literal(&bounded, &element.value, value, bindings)
+                .map_err(|e| format!("`{id}`: {e}"))?
         } else if let Value::Body { codec } = &element.value {
             held.read(codec, &mut |plan, _, held| {
                 let type_name = filters::to_pascal_case(plan.model.name.clone());
@@ -185,6 +195,76 @@ fn value_literal(
         arguments.push(format!("{VARIANT_MEMBER}: {arm}"));
     }
     Ok(format!("{type_name}({})", arguments.join(", ")))
+}
+
+/// The byte string or text `value` holds as a source states it (`json`), made through the one door
+/// of `bounded`, its bounded type (docs/adr/0065 §6 R1), bound first in `bindings`, which the
+/// harness requires to answer: the name of the binding.
+fn bounded_literal(
+    bounded: &str,
+    value: &Value<'_>,
+    json: &serde_json::Value,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let raw = match value {
+        Value::Text(_) => text_literal(json),
+        _ => bytes_literal(json),
+    }?;
+    // Numbered, as a body's elements are bound beside its holder's.
+    let local = format!("bound{}", bindings.len());
+    bindings.push(format!("let {local} = try #require({bounded}({raw}))"));
+    Ok(local)
+}
+
+/// The value of the gate group `group` of the codec `plan`, whose Swift type is `type_name`, that
+/// `json` states (`rust_source::group_choice`): `nil` where it states none, else the arm it states,
+/// the case of the group's enum or its one arm's struct, each member as the arm holds it (docs/adr
+/// /0065 §6 R4b, R4c).
+fn group_literal(
+    plan: &EncodePlan<'_>,
+    type_name: &str,
+    group: &GateGroup,
+    json: &serde_json::Value,
+    held: &dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let Some(ChosenGroupArm {
+        arm,
+        members: object,
+        ..
+    }) = group_choice(group, json)?
+    else {
+        return Ok("nil".to_string());
+    };
+    let mut members = Vec::new();
+    for id in &arm.fields {
+        let field = plan
+            .model
+            .fields
+            .iter()
+            .find(|f| f.id == *id)
+            .ok_or_else(|| format!("the codec has no field `{id}`"))?;
+        let stated = object
+            .get(id)
+            .ok_or_else(|| format!("the arm states no `{id}`"))?;
+        let value = plan.value(field);
+        let spelled = match super::source::bounded_field_type(type_name, plan, field) {
+            Some(bounded) => bounded_literal(&bounded, &value, stated, bindings),
+            None => number_literal(&value, stated, held),
+        }
+        .map_err(|e| format!("`{id}`: {e}"))?;
+        members.push(format!("{id}: {spelled}"));
+    }
+    let group_type = super::source::group_type_name(type_name, group);
+    Ok(match (group.is_sum(), members.is_empty()) {
+        (true, true) => format!("{group_type}.{}", super::source::group_case(group, arm)),
+        (true, false) => format!(
+            "{group_type}.{}({})",
+            super::source::group_case(group, arm),
+            members.join(", ")
+        ),
+        (false, _) => format!("{group_type}({})", members.join(", ")),
+    })
 }
 
 /// The arm of the variant of the codec `plan`, whose Swift type is `type_name`, that `json` states

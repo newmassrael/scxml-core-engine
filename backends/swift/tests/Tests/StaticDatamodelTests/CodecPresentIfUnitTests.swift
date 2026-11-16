@@ -49,13 +49,20 @@ final class CodecPresentIfUnitTests: XCTestCase {
         XCTAssertNil(try CodecPresentIfNegation.decode(&closed).seq)
     }
 
+    // A field a disjunction gates is held in the arm of its gate group the flags name (docs/adr/0065
+    // §6 R4c): one arm for each assignment that opens the gate, and none where neither flag is set.
     func testADisjunctionOpensOnEitherFlag() throws {
-        for carrier: UInt8 in [0x01, 0x02, 0x03] {
+        let arms: [(UInt8, CodecPresentIfDisjunctionFlagsWantsAOrWantsB)] = [
+            (0x01, .wantsA(seq: 7)),
+            (0x02, .wantsB(seq: 7)),
+            (0x03, .wantsAWantsB(seq: 7)),
+        ]
+        for (carrier, arm) in arms {
             var cursor = SceCursor([carrier, 0x00, 0x07])
-            XCTAssertEqual(try CodecPresentIfDisjunction.decode(&cursor).seq, 7)
+            XCTAssertEqual(try CodecPresentIfDisjunction.decode(&cursor).flags_wants_a_or_wants_b, arm)
         }
         var cursor = SceCursor([0x00])
-        XCTAssertNil(try CodecPresentIfDisjunction.decode(&cursor).seq)
+        XCTAssertNil(try CodecPresentIfDisjunction.decode(&cursor).flags_wants_a_or_wants_b)
     }
 
     func testAGatedTailIsTheRestOfTheFrameWhenOpen() throws {

@@ -1345,12 +1345,13 @@ pub(super) fn render(
     let plan = crate::forge::encode_plan::EncodePlan::of(m, imports);
     let prints = source::unlowered_positional(&plan, imports).is_none();
     let struct_name = filters::to_pascal_case(m.name.clone());
+    // A member of a gate group is held so in the arm that holds it.
     let bounded_of = |f: &CodecField| {
-        plan.elements
-            .iter()
-            .find(|e| e.field.id == f.id)
-            .filter(|_| prints)
-            .and_then(|e| source::bounded_type(&struct_name, e))
+        if prints {
+            source::bounded_field_type(&struct_name, &plan, f)
+        } else {
+            None
+        }
     };
     // A printed value holds each list and chain in the bounded list type its plan gives it, of the
     // entry codec's own value (docs/adr/0065 §6 R2, R7), which a decode makes through the door that
@@ -1709,7 +1710,8 @@ pub(super) fn render(
         })
         .collect();
     // A value printed from its plan holds no element the encode derives (docs/adr/0081 §3): the
-    // decode reads it into a local alone.
+    // decode reads it into a local alone. A member of a gate group is no property of its own
+    // either: the value holds it in its group, which the decode makes of the members' locals.
     let mut fields = fields;
     for field in &mut fields {
         let id = field["id"].as_str().unwrap_or_default();

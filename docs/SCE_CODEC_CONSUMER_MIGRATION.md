@@ -2243,4 +2243,14 @@ Landing: the commit that adds this section, and each later one that names a form
   Read a value's tag as `body.tag`. A call site moves from `CodecVariantDispatch(msg_id: 1, body: .x(a))` to
   `CodecVariantDispatch(body: .x(a))`. A parent that embeds such a variant derives the flag it dispatches it by
   from `body.tag`, as before from the arm.
+- A gate group of numbers, byte strings and texts (ADR 0065 §6 R4b, R4c), decided by flags of the codec's own
+  carriers or by flag inputs, is printed. Its members are no properties of the value: the value holds the group
+  in one property named as every backend names it (`flags_wants_a_or_wants_b`), of a type of its own
+  (`{Codec}{Gates}`): an enum with a case for each arm, holding the arm's members by name, or a struct of the one
+  arm; optional where the gates may name no arm, and otherwise starting at the arm of every gate clear. The
+  gates are derived from the arm, and an input the group decides is said by it (`{Codec}.input{Name}(_:)`). A read
+  moves from `entry.short_value` to `if case .notWide(let short) = entry.wide`, and a call site from
+  `CodecChainFlagEntry(header: h, short_value: 7, long_value: nil)` to
+  `CodecChainFlagEntry(header: h, wide: .notWide(short_value: 7))`. A group of a chain's memberships, one whose
+  arm holds two lists of one count, and one that holds a body or a list keep their template's encode.
 

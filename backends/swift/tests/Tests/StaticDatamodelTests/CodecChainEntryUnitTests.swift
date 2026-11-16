@@ -22,8 +22,9 @@ final class CodecChainEntryUnitTests: XCTestCase {
         // Entry 0 (id 1), entry 1 the marker (id 4), entry 2 (id 2) right after the marker.
         var cursor = SceCursor([0x00, 0x81, 0x11, 0x84, 0x22, 0x02, 0x33, 0x44])
         let frame = try CodecChainPrevCarrier.decode(&cursor)
-        XCTAssertEqual(frame.entries.map(\.short_value), [0x11, 0x22, nil])
-        XCTAssertEqual(frame.entries.map(\.long_value), [nil, nil, 0x3344])
+        XCTAssertEqual(
+            frame.entries.map(\.after_marker),
+            [.notAfterMarker(short_value: 0x11), .notAfterMarker(short_value: 0x22), .afterMarker(long_value: 0x3344)])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
@@ -31,23 +32,23 @@ final class CodecChainEntryUnitTests: XCTestCase {
         // The marker, an entry after it, and then an entry two places after the marker.
         var cursor = SceCursor([0x00, 0x84, 0x11, 0x81, 0x22, 0x33, 0x03, 0x44])
         let frame = try CodecChainPrevCarrier.decode(&cursor)
-        XCTAssertEqual(frame.entries.map(\.short_value), [0x11, nil, 0x44])
-        XCTAssertEqual(frame.entries.map(\.long_value), [nil, 0x2233, nil])
+        XCTAssertEqual(
+            frame.entries.map(\.after_marker),
+            [.notAfterMarker(short_value: 0x11), .afterMarker(long_value: 0x2233), .notAfterMarker(short_value: 0x44)])
     }
 
     func testTheFirstEntryHasNoEntryBeforeIt() throws {
         // Its identifier is the marker's, but nothing precedes it.
         var cursor = SceCursor([0x00, 0x04, 0x77])
         let frame = try CodecChainPrevCarrier.decode(&cursor)
-        XCTAssertEqual(frame.entries.map(\.short_value), [0x77])
-        XCTAssertEqual(frame.entries.map(\.long_value), [nil])
+        XCTAssertEqual(frame.entries.map(\.after_marker), [.notAfterMarker(short_value: 0x77)])
     }
 
     func testAnInputOfTheCarrierReachesEveryEntryAlongsideTheChainsOwn() throws {
         // The head's bit 0 is handed to every entry as `tagged`: each reads a tag byte.
         var cursor = SceCursor([0x01, 0x03, 0x55, 0x66])
         let frame = try CodecChainPrevCarrier.decode(&cursor)
-        XCTAssertEqual(frame.entries.map(\.short_value), [0x55])
+        XCTAssertEqual(frame.entries.map(\.after_marker), [.notAfterMarker(short_value: 0x55)])
         XCTAssertEqual(frame.entries.map(\.tag), [0x66])
     }
 

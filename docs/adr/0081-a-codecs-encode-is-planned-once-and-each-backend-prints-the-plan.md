@@ -1393,6 +1393,21 @@ old encode, the old encode and its templates are removed in the same landing.
    through its door, hands a caller's tag to the decode and holds both values to it, and compares the variant
    whole. The hand tests the catalog's cases now state are gone (`CodecVariantUnitTests`' encode of a stored
    tag field); what stays holds what no case can state.
+   *Gate groups of numbers, byte strings and texts, 2026-11-17:* a group decided by flags of the codec's own
+   carriers or by flag inputs (docs/adr/0065 §6 R4b, R4c) whose members are numbers, byte strings and texts is
+   printed. Two decisions are recorded here. First, the group is one property of the value, of a concrete type
+   of its own and not one generic over sources: an enum with a case for each arm, each holding the arm's
+   members by name, with the arm's place among the arms (`arm`), or a struct of the one arm, optional where the
+   gates may name no arm. A member is a number or a bounded byte string or text, which a host makes as cheaply
+   as the group, so nothing a host holds is copied that a source would spare; a group that holds a body or a
+   list, whose source a host holds, waits for the form that presents it through an associated type. Second, the
+   encode reads each member off the arm the value holds into a local (`{member}_member`), which every write, length
+   and presence flag reads as it reads an element off the source, so one encode shape serves an element and a
+   member; a flag of a disjunction (`ArmFlag`) and an input the group decides (`InputSource::Group`) are what
+   the arm's place gives them, and a decode makes the arm its gates name from the locals it read the members
+   into. The case printer states a group as the arm `group_choice` reads, and compares it whole. A group of a
+   chain's memberships (R6), one whose arm holds two lists of one count (R5), and one that holds a body or a
+   list stay refused by name.
 
 ## Consequences
 

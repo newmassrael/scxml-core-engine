@@ -48,13 +48,12 @@ final class CodecFlagInputUnitTests: XCTestCase {
 
     func testANegatedGateReadsTheInputTheOtherWay() throws {
         var narrow = SceCursor([0xAA, 0x07])
+        // The two fields the input decides are the two arms of its gate group (docs/adr/0065 §6 R4b).
         let short = try CodecChainFlagEntry.decode(&narrow, wide: 0)
-        XCTAssertEqual(short.short_value, 7)
-        XCTAssertNil(short.long_value)
+        XCTAssertEqual(short.wide, .notWide(short_value: 7))
         var wide = SceCursor([0xAA, 0x01, 0x02])
         let long = try CodecChainFlagEntry.decode(&wide, wide: 1)
-        XCTAssertNil(long.short_value)
-        XCTAssertEqual(long.long_value, 0x0102)
+        XCTAssertEqual(long.wide, .wide(long_value: 0x0102))
     }
 
     func testAnEmbedderHandsOnTheInputItWasGiven() throws {
@@ -70,8 +69,8 @@ final class CodecFlagInputUnitTests: XCTestCase {
     func testAListHandsEachEntryTheBitOfTheHeaderItWasBoundTo() throws {
         var wide = SceCursor([0x01, 0x02, 0xA1, 0x00, 0x05, 0xA2, 0x00, 0x06])
         let long = try CodecRepeatFlagCarrier.decode(&wide)
-        XCTAssertEqual(long.entries.map(\.long_value), [5, 6])
+        XCTAssertEqual(long.entries.map(\.wide), [.wide(long_value: 5), .wide(long_value: 6)])
         var narrow = SceCursor([0x00, 0x01, 0xA1, 0x09])
-        XCTAssertEqual(try CodecRepeatFlagCarrier.decode(&narrow).entries.first?.short_value, 9)
+        XCTAssertEqual(try CodecRepeatFlagCarrier.decode(&narrow).entries.first?.wide, .notWide(short_value: 9))
     }
 }
