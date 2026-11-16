@@ -149,14 +149,17 @@ pub fn materialize(
             }
         })?;
         for dir in dirs.iter().filter(|d| !index.except.contains(d)) {
-            let mut text = index.header.clone();
-            let mut names: Vec<String> = fs::read_dir(into.join(dir))?
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
-                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            // The modules this materialization placed in the directory, in
+            // byte order: a file left there by an older copy of the tree is
+            // no module of it, and is removed after (`remove_unproduced`).
+            let names: Vec<String> = placed_in(&report.files, dir)
                 .filter(|name| *name != index.file)
+                .map(str::to_string)
                 .collect();
-            names.sort();
+            if names.is_empty() {
+                continue;
+            }
+            let mut text = index.header.clone();
             for entry in &index.entries {
                 for name in names.iter().filter(|n| wildcard(&entry.files, n)) {
                     text.push_str(&entry.line.replace("{module}", super::tree::stem(name)));
@@ -198,6 +201,16 @@ pub fn materialize(
         }
     }
     Ok(report)
+}
+
+/// The names of the files of `placed` (paths relative to the directory a tree
+/// is materialized into) that are directly in `dir`, in the set's order.
+fn placed_in<'a>(placed: &'a BTreeSet<String>, dir: &'a str) -> impl Iterator<Item = &'a str> {
+    placed.iter().filter_map(move |file| {
+        file.strip_prefix(dir)?
+            .strip_prefix('/')
+            .filter(|name| !name.contains('/'))
+    })
 }
 
 /// Whether a file at `relative` in a generation's output is one the tree
@@ -653,6 +666,26 @@ mod tests {
         assert!(!kept(&keep, "sce_sourcemap.json"));
         let nested = vec!["*/*.go".to_string()];
         assert!(kept(&nested, "fn/a.go"));
+    }
+
+    /// An index names the files placed directly in its directory and no
+    /// other: not a file of a directory below, nor of a directory whose name
+    /// the indexed one begins.
+    #[test]
+    fn an_index_names_only_what_was_placed_directly_in_its_directory() {
+        let placed: BTreeSet<String> = [
+            "gen/a_sm.rs",
+            "gen/b.rs",
+            "gen/deeper/c_sm.rs",
+            "generated/d.rs",
+            "other/e.rs",
+        ]
+        .iter()
+        .map(|p| p.to_string())
+        .collect();
+        let names: Vec<&str> = placed_in(&placed, "gen").collect();
+        assert_eq!(names, ["a_sm.rs", "b.rs"]);
+        assert_eq!(placed_in(&placed, "missing").count(), 0);
     }
 
     #[test]
