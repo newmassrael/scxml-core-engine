@@ -342,6 +342,48 @@ fn a_fixed_length_of_a_streamed_layout_is_read_into_a_local_before_its_block() {
     );
 }
 
+/// A text a gate decides, with its length gated beside it: the source
+/// presents the text as the optional value of its view, the encode folds the
+/// presence flag into the carrier from whether the text is there, derives the
+/// length as zero where it is not, writes the length where the gate holds over
+/// the carrier it writes and the text where the source holds it, and the
+/// decode reads the length into a local that is zero where the gate is clear.
+///
+/// Turns red where `c11_source::encode_source` stops folding a presence flag,
+/// derives a gated length off an absent view, writes a gated field
+/// unguarded, or where `present_if_decode_fixed` writes a derived length into
+/// the struct.
+#[test]
+fn a_gated_text_sets_its_flag_and_its_length_from_whether_it_is_there() {
+    assert!(unlowered("codec_present_if_string").is_empty());
+    let text = resource_header("codec_present_if_string");
+    holds(
+        "codec_present_if_string",
+        &text,
+        &[
+            "SCE_OPTIONAL_DECLARE_NAMED(codec_present_if_string_text_text_optional, \
+             codec_present_if_string_text_text_t)\n",
+            "    codec_present_if_string_text_text_optional_t (*text)(const void *ctx);\n",
+            "        return codec_present_if_string_text_text_optional_none();\n",
+            "    view.data = (const char *)self->text.value.data;\n",
+            "    _f_carrier = (_f_carrier & ~0x1ull) | (uint64_t)(_e_text.present);\n",
+            "    const uint8_t _c_carrier = (uint8_t)_f_carrier;\n",
+            "    const uint8_t _d_text_len = _e_text.present ? (uint8_t)(_e_text.value.len) : \
+             (uint8_t)0;\n",
+            "    if ((((uint64_t)_c_carrier & 0x1ull) != 0)) {\n",
+            "    if (_e_text.present) {\n        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, \
+             (const uint8_t *)_e_text.value.data, _e_text.value.len));\n    }\n",
+            "uint8_t _d_text_len = 0;\n    if (",
+            "    if (self->text.present && (!sce_forge_length_within_bound(self->text.value.len, 32))) {\n",
+        ],
+    );
+    holds_none(
+        "codec_present_if_string",
+        &text,
+        &[" text_len;\n", "self->text_len", "out->text_len"],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// neither has an encode over a source.
@@ -432,6 +474,8 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_zenoh_locator",
         "codec_fixed_after_lengthref",
         "codec_zenoh_frame",
+        "codec_present_if_string",
+        "codec_present_if_tail",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
