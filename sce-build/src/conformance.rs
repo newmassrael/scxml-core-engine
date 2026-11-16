@@ -3759,9 +3759,10 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
 /// backend's ready-made source, after the bindings of the bodies and entries it
 /// holds, with an expression for each element that holds when a decode of the
 /// bytes presents what the literal does. Rust prints the plan as `{Codec}Parts`
-/// (docs/adr/0058 §4), and C++ as the printed value its constructor makes
-/// (docs/adr/0081 step 4); the others are handed nothing, and run their `cases`
-/// as before. A CBOR map and a content-line component derive nothing, so their
+/// (docs/adr/0058 §4), C++ as the printed value its constructor makes
+/// (docs/adr/0081 step 4), and C11 as statements that set the members of its
+/// struct, for a codec its printer prints; the others are handed nothing, and
+/// run their `cases` as before. A CBOR map and a content-line component derive nothing, so their
 /// source is the value itself, every entry stated (`source_notation`): Rust
 /// makes the map or the component, C++ its constructor and Python its
 /// dataclass's.
@@ -3931,8 +3932,9 @@ fn codec_case_rows<'r>(
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
 /// whose value is `{Codec}Parts` (docs/adr/0058 §4), the C++ one, whose value
 /// its constructor makes (docs/adr/0081 step 4), the Python one, whose value
-/// its dataclass's constructor makes, the Swift one, or the Kotlin one, whose
-/// value its data class's constructor makes.
+/// its dataclass's constructor makes, the Swift one, the Kotlin one, whose
+/// value its data class's constructor makes, or the C11 one, whose value is
+/// the codec's struct set member by member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CasePrinter {
     Rust,
@@ -3942,6 +3944,7 @@ enum CasePrinter {
     /// Swift printer prints (`printed`, read by `swift_codec_printed_file`).
     Swift,
     Kotlin,
+    C11,
 }
 
 impl CasePrinter {
@@ -3950,9 +3953,9 @@ impl CasePrinter {
     /// codec the C++ backend does not print (`printed`) is refused by
     /// name: a printer runs every case of every shape it prints
     /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
-    /// constructor makes from the case. Python and Kotlin print a codec one
-    /// landing at a time (§6): a codec one prints runs its cases as a value of
-    /// its source, and one it does not runs its `cases` on the template's
+    /// constructor makes from the case. Python, Kotlin and C11 print a codec
+    /// one landing at a time (§6): a codec one prints runs its cases as a value
+    /// of its source, and one it does not runs its `cases` on the template's
     /// encode. Swift prints one form at a time the same way (step 5).
     fn of(
         printed: bool,
@@ -3973,6 +3976,7 @@ impl CasePrinter {
             Language::Python if printed => Some(CasePrinter::Python),
             Language::Swift if printed => Some(CasePrinter::Swift),
             Language::Kotlin if printed => Some(CasePrinter::Kotlin),
+            Language::C11 if printed => Some(CasePrinter::C11),
             // Their encodes do not print the plan, or not this codec's yet:
             // they run the `cases`.
             Language::Kotlin
@@ -3991,6 +3995,7 @@ impl CasePrinter {
             CasePrinter::Python => Language::Python,
             CasePrinter::Swift => Language::Swift,
             CasePrinter::Kotlin => Language::Kotlin,
+            CasePrinter::C11 => Language::C11,
         }
     }
 }
@@ -4018,8 +4023,9 @@ struct PrintedCase {
 impl PrintedCase {
     /// The case as `printer`'s harness inlines it, its note `note`: the C++
     /// fragment hands the note and each label to a `printf` as a string
-    /// literal's text, the Swift one writes the note into a string literal of
-    /// its own, and the others inline them as they are.
+    /// literal's text, the C11 one the note to an `fprintf`, the Swift one
+    /// writes the note into a string literal of its own, and the others inline
+    /// them as they are.
     fn noted(self, printer: CasePrinter, note: &str) -> Self {
         match printer {
             CasePrinter::Cpp => PrintedCase {
@@ -4028,6 +4034,10 @@ impl PrintedCase {
                     .into_iter()
                     .map(|(element, holds)| (crate::filters::escape_cpp(element), holds))
                     .collect(),
+                note: crate::filters::escape_cpp(note.to_string()),
+                ..self
+            },
+            CasePrinter::C11 => PrintedCase {
                 note: crate::filters::escape_cpp(note.to_string()),
                 ..self
             },
@@ -4097,6 +4107,23 @@ impl From<crate::forge::generator::SwiftSourceCase> for PrintedCase {
             checks: case.checks,
             inputs: case.inputs,
             encode_inputs: case.encode_inputs,
+            note: String::new(),
+        }
+    }
+}
+
+impl From<crate::forge::generator::C11SourceCase> for PrintedCase {
+    /// The C11 harness zeroes the value and sets each member by a statement,
+    /// so the value has no expression of its own; the C11 printer prints no
+    /// codec that takes a flag input or a caller's tag, so a decode and an
+    /// encode are handed nothing after the cursor or the sink.
+    fn from(case: crate::forge::generator::C11SourceCase) -> Self {
+        PrintedCase {
+            bindings: case.statements,
+            literal: String::new(),
+            checks: case.checks,
+            inputs: Vec::new(),
+            encode_inputs: Vec::new(),
             note: String::new(),
         }
     }
@@ -4217,6 +4244,12 @@ fn fold_case_rows(
                                     )
                                     .map_err(|e| format!("{at}: {e}"))?,
                                 ),
+                                CasePrinter::C11 => PrintedCase::from(
+                                    crate::forge::generator::c11_source_case(
+                                        plan, source, inputs, tag, &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
                             }
                         }
                         // A map and a component take no flag input and no
@@ -4268,6 +4301,15 @@ fn fold_case_rows(
                                 )
                                 .map_err(|e| format!("{at}: {e}"))?,
                             ),
+                            // The C11 printer prints no map
+                            // (`c11_source::unlowered`), so no fold of one
+                            // asks it.
+                            CasePrinter::C11 => {
+                                return Err(format!(
+                                    "{at}: the C11 printer prints no CBOR map, so no \
+                                     value of it is made from a case"
+                                ))
+                            }
                         },
                         CodecPlan::ContentLine(plan) => match printer {
                             CasePrinter::Cpp => PrintedCase::from(
@@ -4305,6 +4347,13 @@ fn fold_case_rows(
                                 )
                                 .map_err(|e| format!("{at}: {e}"))?,
                             ),
+                            // The C11 printer prints no component either.
+                            CasePrinter::C11 => {
+                                return Err(format!(
+                                    "{at}: the C11 printer prints no content-line \
+                                     component, so no value of it is made from a case"
+                                ))
+                            }
                         },
                     };
                     fold_row(codec_plan.totality(), &at, row, case.noted(printer, note))
@@ -4676,8 +4725,8 @@ pub fn render_harness(
             } => {
                 // Whether this language's backend prints the codec from its
                 // plan (docs/adr/0081 step 4): C++ every codec it writes, Python
-                // Swift (step 5), Kotlin and Go each whose forms its printer
-                // lowers. A Swift codec printed from its plan holds no element
+                // Swift (step 5), Kotlin, Go and C11 each whose forms its
+                // printer lowers. A Swift codec printed from its plan holds no element
                 // its encode derives and each byte string and text in its
                 // bounded type, which its `cases` fragment makes.
                 if document_exists(&scxml_path) {
@@ -4702,7 +4751,10 @@ pub fn render_harness(
                             };
                             Some(crate::go_codec_printed_file(&scxml_path, &[], &options))
                         }
-                        Language::Rust | Language::C11 => None,
+                        Language::C11 => {
+                            Some(crate::c11_codec_printed_file(&scxml_path, &[], &options))
+                        }
+                        Language::Rust => None,
                     };
                     if let Some(read) = read {
                         *printed = read
@@ -5669,6 +5721,75 @@ mod tests {
                     "element": "payload",
                     "holds": "decoded.payload.bytes.contentEquals(value.payload.bytes)"
                 },
+            ])
+        );
+
+        let (folded, value) = fold(false).expect("a codec on the template is handed nothing");
+        assert!(!folded && value.get("sources").is_none());
+    }
+
+    /// A byte case of a codec the C11 backend prints from its plan is written
+    /// as statements that set each member of its struct, on a value the
+    /// harness zeroes, and one of a codec it does not print reaches the harness
+    /// as no case (docs/adr/0081 §5, §6).
+    ///
+    /// Turns red where `CasePrinter::of` stops answering C11 for a printed
+    /// codec, or `c11_source::source_case` spells an unsigned number without
+    /// its suffix or checks an element other than member by member.
+    #[test]
+    fn a_source_case_of_a_printed_c11_codec_sets_each_member_of_its_struct() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_simple_frame")
+            .expect("the catalog holds codec_simple_frame");
+        let reference = serde_json::json!({ "codecs": { "codec_simple_frame": { "sources": [{
+            "source": { "msgId": 1, "length": 2, "payload": 258 },
+            "encoded": [1, 2, 1, 2],
+            "note": "three numbers"
+        }] } } });
+        let fold = |printed: bool| {
+            let mut fixture = fixture.clone();
+            if let FixtureSpec::Codec {
+                printed: by_plan, ..
+            } = &mut fixture.spec
+            {
+                *by_plan = printed;
+            }
+            let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+            fold_source_cases(
+                &mut value,
+                &reference,
+                &fixture,
+                Language::C11,
+                &resource_dir,
+                &reference_path,
+            )
+            .map(|folded| (folded, value))
+        };
+
+        let (folded, value) = fold(true).expect("C11 states it");
+        assert!(folded);
+        assert_eq!(
+            value["sources"][0]["bindings"],
+            serde_json::json!([
+                "value.msg_id = 1u;",
+                "value.length = 2u;",
+                "value.payload = 258u;",
+            ])
+        );
+        assert_eq!(
+            value["sources"][0]["checks"],
+            serde_json::json!([
+                { "element": "msgId", "holds": "decoded.msg_id == value.msg_id" },
+                { "element": "length", "holds": "decoded.length == value.length" },
+                { "element": "payload", "holds": "decoded.payload == value.payload" },
             ])
         );
 

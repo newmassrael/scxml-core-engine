@@ -136,6 +136,13 @@ pub(crate) use kotlin_source::source_case::{
     source_case as kotlin_source_case, CodecPath as KotlinCodecPath, SourceCase as KotlinSourceCase,
 };
 
+/// A byte case of the C11 conformance harness, its source a value of the
+/// codec's struct set member by member (docs/adr/0081 §5). See
+/// [`c11_source::source_case::source_case`].
+pub(crate) use c11_source::source_case::{
+    source_case as c11_source_case, SourceCase as C11SourceCase,
+};
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(
