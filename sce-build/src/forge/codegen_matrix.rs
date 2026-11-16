@@ -165,11 +165,25 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
 /// missing on A.
 pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
     match kind {
+        // A codec ships on every backend, Swift the last. What Swift's codec
+        // (`forge::generator::swift_codec`) refuses by name is a shape no codec
+        // of the repository holds, as with the C++ printer (docs/adr/0081 step
+        // 4): `sce-build/tests/a_swift_codec_is_written_wherever_rust_writes_one.rs`
+        // holds every codec of the repository that Rust writes to being written
+        // on Swift as well, but for those only an MCU-class backend writes.
+        ForgeKind::Codec => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => true,
+        },
         ForgeKind::Statechart
         | ForgeKind::Transform
         | ForgeKind::Lookup
         | ForgeKind::Condition
-        | ForgeKind::Codec
         | ForgeKind::Procedure
         | ForgeKind::Validator
         | ForgeKind::Filter
@@ -633,11 +647,10 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// those), and its event schema a struct of scalar fields
 /// (`forge::generator::swift_event_schema_unlowered` names each field past those), and
 /// its enum a closed one (`forge::generator::swift_enum_unlowered` names an open enum
-/// and a variant named for a reserved word), and its codec a positional one of
-/// native-width integers at byte offsets (`forge::generator::swift_codec::unlowered` names
-/// each shape past that), and its observer one whose events are cases Swift can spell
+/// and a variant named for a reserved word), and its observer one whose events are cases Swift can spell
 /// (`forge::generator::swift_observer_unlowered`), and its procedure one whose imports are the
-/// functions of stateless kinds (`forge::generator::swift_procedure_unlowered`), and its broadcast log one over an element whose codec that is
+/// functions of stateless kinds (`forge::generator::swift_procedure_unlowered`), and its broadcast
+/// log one over an element whose codec Swift writes
 /// (`BroadcastLogElementFacts::refusal_for` refuses every other element by the codec's own
 /// refusal, and the narrow row of a deploy whose target has no 64-bit atomic is refused by
 /// name), and its bounded collection one over an element codec Swift writes
@@ -652,7 +665,6 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Algorithm, Language::Swift)
             | (ForgeKind::EventSchema, Language::Swift)
             | (ForgeKind::Enum, Language::Swift)
-            | (ForgeKind::Codec, Language::Swift)
             | (ForgeKind::Condition, Language::Swift)
             | (ForgeKind::Lookup, Language::Swift)
             | (ForgeKind::Interpolation, Language::Swift)
@@ -1064,10 +1076,15 @@ mod tests {
         }
     }
 
-    /// All 11 baseline kinds emit on every backend that emits any of them
-    /// (all six at `758aea3f`). A backend ships the baseline whole or not at
-    /// all: one that emitted some kinds and not others would be a half-shipped
-    /// backend, and is the shape this refuses.
+    /// All 11 baseline kinds are written by every backend that writes any of
+    /// them (all six at `758aea3f`), each in whole ([`template_ships`]) or, on
+    /// a backend on its way there, in part ([`ships_in_part`]), which refuses
+    /// by name what it does not lower yet. A backend writes the baseline or
+    /// none of it: one that had no emitter at all for some kinds and had one
+    /// for others would be a half-shipped backend, and is the shape this
+    /// refuses. A backend that writes every baseline kind in whole writes none
+    /// in part, and Swift, which writes a codec in whole and the rest in part,
+    /// is the backend on its way.
     #[test]
     fn baseline_kinds_emit_on_all_backends() {
         // `Language::ALL` rather than a local restatement: a new backend
@@ -1095,22 +1112,37 @@ mod tests {
                 .iter()
                 .map(|&k| lookup(k, l) == EmitOutcome::Emit)
                 .collect();
+            let writes: Vec<bool> = BASELINE_KINDS
+                .iter()
+                .zip(&emits)
+                .map(|(&k, &emitted)| emitted || ships_in_part(k, l))
+                .collect();
             assert!(
-                emits.iter().all(|e| *e) || emits.iter().all(|e| !*e),
-                "{l:?} emits only some of the baseline kinds: {emits:?}"
+                writes.iter().all(|w| *w) || writes.iter().all(|w| !*w),
+                "{l:?} writes only some of the baseline kinds: {writes:?}"
             );
-            for &k in BASELINE_KINDS {
+            for (&k, &written) in BASELINE_KINDS.iter().zip(&writes) {
                 // A kind the backend writes in part is refused by its renderer,
                 // construct by construct, and not by the matrix.
-                if emits[0] || ships_in_part(k, l) {
+                if written {
                     assert!(check(k, l).is_ok(), "check({k:?}, {l:?})");
                 } else {
                     assert!(check(k, l).is_err(), "check({k:?}, {l:?}) admitted");
                 }
+                assert!(
+                    !(emits.iter().all(|e| *e) && ships_in_part(k, l)),
+                    "{l:?} writes every baseline kind whole and {k:?} in part"
+                );
             }
-            whole += usize::from(emits[0]);
+            whole += usize::from(emits.iter().all(|e| *e));
         }
         assert!(whole > 0, "no backend emits the baseline");
+        assert_eq!(
+            lookup(ForgeKind::Codec, Language::Swift),
+            EmitOutcome::Emit,
+            "Swift writes a codec whole"
+        );
+        assert!(!ships_in_part(ForgeKind::Codec, Language::Swift));
     }
 
     /// RFC §synth-5-A §synth-5-J-4 matrix closure: Algorithm ships on every

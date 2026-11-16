@@ -440,7 +440,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "forge kind `transform`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "forge kind `lookup`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "forge kind `condition`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "forge kind `codec`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "forge kind `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "forge kind `validator`", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "forge kind `filter`", Why::NotYet(SWIFT_NO_FORGE)),

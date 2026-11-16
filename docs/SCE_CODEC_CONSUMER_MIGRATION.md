@@ -1783,3 +1783,18 @@ Landing: the commit that adds this section.
   `codec_max_bytes`, and `CodecModel::max_frame_bytes_as` and `frame_bytes_with_as` count either side
   (`FrameBound::Written`, `FrameBound::Received`).
 
+## Swift writes every codec the other backends write (docs/adr/0072 amendment of 2026-11-16)
+
+Landing: the commits that add this section.
+
+- A Swift codec whose field is typed by an imported enum, whose variant has an arm under a build feature, whose
+  word is in the native byte order, or whose frame read field by field has a field of fewer whole bytes than its type,
+  was refused by name (`generate/unsupported-feature`, "has no Swift lowering yet") and is now generated. A consumer
+  that left such a codec out of its Swift tree adds it.
+- `CodecError` of `SceForgeRuntime` gains `undeclaredEnumValue`, thrown by a decode of a field of a closed enum that
+  holds a number no variant declares, and `variantArmNotBuilt`, thrown by a decode of an arm's tag in a build that
+  leaves the arm out. A `switch` over `CodecError` with no `default` adds the two cases.
+- An arm under the feature `<name>` is built unless the build sets the condition `SCE_FEATURE_<NAME>_OFF` (upper
+  case, `-` read as `_`): `-D SCE_FEATURE_<NAME>_OFF`, or `.define("SCE_FEATURE_<NAME>_OFF")` in the target's
+  `swiftSettings`. A build that sets none keeps every arm, as before.
+
