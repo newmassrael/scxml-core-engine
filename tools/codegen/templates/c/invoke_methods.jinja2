@@ -269,14 +269,25 @@
    which a hybrid invoke has because it hands every candidate the same
    arguments: each is evaluated and left out (§scxml-6.4.3), and one that cannot
    be evaluated costs `error.execution` all the same, because an argument is the
-   invoke's whatever the child keeps. #}
-{% macro seed_static_child(slot, seeds, unkept, model, csym_prefix) %}
+   invoke's whatever the child keeps.
+
+   §scxml-6.4 (docs/adr/0098): the values are written into the child's
+   `_invoke_params_t`, each with whether it was handed, and the child declares
+   its variables from it (`_invoked_accept`), in document order, each handed one
+   in place of its own initial value, so a variable declared after a handed one
+   reads the handed value. This machine writes none of the child's variables.
+   `child` is the child's document name. #}
+{% macro seed_static_child(slot, child, seeds, unkept, model, csym_prefix) %}
+            {
+            {{ csym_prefix }}{{ child }}_invoke_params_t _child_params;
+            memset(&_child_params, 0, sizeof _child_params);
             {% for param in seeds if param.native_seed %}
             {# A string is a buffer of the bound its variable declares: the value
                was bounded to the child's own bound where it was lowered, so a
                failure never reaches the copy, and the terminator goes with it. #}
-            {% set seed_into = slot ~ '.policy.v_' ~ (param.name | to_snake_case) %}
-            {% set seed_write = ('memmove(' ~ seed_into ~ '.data, sce_value, strlen(sce_value) + 1u);') if param.native_seed_type == 'const char *' else (seed_into ~ ' = sce_value;') %}
+            {% set seed_into = '_child_params.v_' ~ (param.name | to_snake_case) %}
+            {% set seed_handed = '_child_params.has_v_' ~ (param.name | to_snake_case) ~ ' = true;' %}
+            {% set seed_write = ('memmove(' ~ seed_into ~ '.data, sce_value, strlen(sce_value) + 1u); ' ~ seed_handed) if param.native_seed_type == 'const char *' else (seed_into ~ ' = sce_value; ' ~ seed_handed) %}
             {
                 {% if param.native_fails %}
                 sce_forge_algorithm_failure_t sce_failure_ = {0};
@@ -314,6 +325,8 @@
                 }
             }
             {% endfor %}
+            {{ csym_prefix }}{{ child }}_invoked_accept(&{{ slot }}, &_child_params);
+            }
 {% endmacro %}
 
 {% set _ns = namespace(any_child_parent_send=false) %}
@@ -893,7 +906,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
             {% if invoke_info.child_is_static %}
 {{ hand_arguments(invoke_info, model, csym_prefix, false) }}
-{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}
+{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.params, [], model, csym_prefix) }}
 {% if model.host_processor_types %}
             {
                 /* SCE_MESH.md, Child Sessions in Mesh: the child's router,
@@ -1129,7 +1142,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
 {% if candidate.child_is_static %}
 {{ hand_arguments(invoke_info, model, csym_prefix, false) }}
-{{ seed_static_child("sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.seeds, candidate.unkept, model, csym_prefix) }}
+{{ seed_static_child("sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.stem, candidate.seeds, candidate.unkept, model, csym_prefix) }}
 {% if model.host_processor_types %}
                 {
                     /* SCE_MESH.md, Child Sessions in Mesh: the router of the

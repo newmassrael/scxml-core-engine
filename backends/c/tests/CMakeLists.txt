@@ -3609,6 +3609,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/static_invoke_entry.scxml"
     )
+    # docs/adr/0098: the child declares its variables with the values it was
+    # handed, in document order, so one declared after a handed one reads it.
+    sce_generate_static_integration_c_test(a_static_child_declares_its_data_with_a_handed_value
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml"
+    )
     add_executable(sce_c_integration_static_invoke
         integration/test_static_invoke.c
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
@@ -3617,6 +3623,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_entry_SOURCES}
+        ${INTEGRATION_C_TEST_a_static_child_declares_its_data_with_a_handed_value_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_invoke)
     target_include_directories(sce_c_integration_static_invoke PRIVATE

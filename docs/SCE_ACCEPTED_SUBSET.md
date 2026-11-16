@@ -4488,10 +4488,10 @@ Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` 
 `None` / empty when nothing is handed its variable (the slot of a variable declared
 `optional<T>` is that backend's one optional type itself, `Option<T>`, `T?`,
 `std::optional<T>`, `optional.Of[T]` or `Optional[T]`, and not a second one inside
-it: see "A child's optional variable" below); C11 has no such object, and the invoking
-machine writes the values into the child's own variables between the two steps its
-start takes (`<machine>_invoked_begin`, `<machine>_invoked_enter`, described with C11
-below).
+it: see "A child's optional variable" below); C11 a `<machine>_invoke_params_t`, a slot
+and a `has_` flag per variable, and `<machine>_invoked_accept`, which the invoking machine
+calls between the two steps its start takes (`<machine>_invoked_begin`,
+`<machine>_invoked_enter`, described with C11 below).
 The invoking machine builds one from its fields and gives it to the child before
 the child starts. A handed value is its variable's initial value, in place of the one
 its `<data>` declares (§scxml-6.4, docs/adr/0098): `accept_params` declares the
@@ -6670,12 +6670,15 @@ holds (`sm->child_<id>`), which has no constructor to be handed values, and
 in two steps instead — `<machine>_invoked_begin`, which gives each variable its
 declared value, installs the parent's clock and, for a child that sends to its
 parent, the routing `_init_with_parent` stamps, and `<machine>_invoked_enter`,
-the entry walk — and the parent writes between them each value a `<param>` or
-`namelist` name hands over, into the child's variable of that name, read from the
-parent's fields when the invoke executes (the lowering the other backends share,
-spelled as a typed local that is written only when it was computed). A string is
-bounded to the child's own bound where it is lowered and then copied, terminator
-and all, into the child's buffer, which a value past it would have written beyond.
+the entry walk — and the parent hands over between them each value a `<param>` or
+`namelist` name, into the slot of the child's `<machine>_invoke_params_t` named for
+its variable, read from the parent's fields when the invoke executes (the lowering
+the other backends share, spelled as a typed local that is written only when it was
+computed), and gives the record to `<machine>_invoked_accept`, which declares the
+child's variables again in document order, each handed one with its value in place
+of its own (docs/adr/0098). A string is bounded to the child's own bound where it is
+lowered and then copied, terminator and all, into the slot's buffer, which a value
+past it would have written beyond.
 A value that
 cannot be computed raises `error.execution` and is left out, and the child still
 starts holding the value its `<data>` gave it (5.7.1). A child that declares

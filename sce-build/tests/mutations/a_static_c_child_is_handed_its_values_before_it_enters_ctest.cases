@@ -36,8 +36,8 @@ edit("tools/codegen/templates/c/invoke_methods.jinja2",
      "{{ tree_directory.enter('child_' ~ invoke_info.field_suffix, inbox_endings) }}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n",
      "{{ tree_directory.enter('child_' ~ invoke_info.field_suffix, inbox_endings) }}\n")
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n",
-     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n")
+     "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.params, [], model, csym_prefix) }}\n",
+     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.params, [], model, csym_prefix) }}\n")
 PY
 
 # ── A value that cannot be computed is left out and reported ───────

@@ -175,17 +175,14 @@ for that (`child_datamodel_vars`) is gone from the model and the forge AST.
 
 "Decision" 2 holds for a static child as well: a handed value is its variable's initial value, so a variable
 declared after it and initialized from it reads the handed value. `tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`
-holds it (`worker` declares `copied = start` after a handed `start`). Rust's `accept_params`, Go's `AcceptParams`
-and Python's `accept_params` declare the variables again in document order, each handed one with its value and every
-other one with its own initial value (which can neither fail nor act, so the second declaration is not observable),
-and are driven on that fixture. **Open, registered here:** C++ (`acceptParams` in `state_machine.jinja2`), Kotlin
-(`acceptParams` in `kotlin/state_machine.kt.jinja2`), Swift (`acceptParams` in `swift/state_machine.swift.jinja2`)
-still write a handed value over the variable after every variable was declared, and C11 writes it between
-`_invoked_begin` and `_invoked_enter`, after `_invoked_begin` declared them all. Each needs the same document-order
-declaration and a driver of the static fixture; C++, Kotlin and Swift declare their variables as members whose
-initial values read the members declared before them, so assigning each member in document order, handed or own, is
-the whole change there, and C11 needs `_invoked_enter` (or a step between) to declare again the variables after the
-first handed one.
+holds it (`worker` declares `copied = start` after a handed `start`). Every backend's way in declares the variables
+again in document order, each handed one with its value and every other one with its own initial value (which can
+neither fail nor act, so the second declaration is not observable), and every one is driven on that fixture: Rust's
+`accept_params`, Go's `AcceptParams`, Python's `accept_params`, C++'s and Kotlin's `acceptParams`, which assign the
+members in that order, Swift's `acceptParams`, which declares locals in that order as its initializers now do (a
+Swift property initializer cannot read another property, so a static machine whose initial value read a variable did
+not compile before), and C11's `<machine>_invoked_accept`, to which the parent gives a `<machine>_invoke_params_t`
+between `_invoked_begin` and `_invoked_enter` instead of writing the child's variables itself.
 
 ### A test that saw no error where the session could not hold a value
 

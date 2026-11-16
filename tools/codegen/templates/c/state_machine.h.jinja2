@@ -1993,8 +1993,9 @@ SCE_WARN_UNUSED
    value its `<data>` declared. `_invoked_begin` does what `_init` does up to
    the entry walk (each variable at its declared value, the session identity,
    the parent's clock and, for a child that addresses its parent, the routing
-   `_init_with_parent` stamps); the parent then writes the values it was asked
-   to hand over, and `_invoked_enter` runs the entry walk. `_invoked_begin`
+   `_init_with_parent` stamps); the parent then hands over the values it was
+   asked to (`_invoked_accept`, which declares the variables again with them,
+   docs/adr/0098), and `_invoked_enter` runs the entry walk. `_invoked_begin`
    keeps what the machine holds from `inbox` on, which the parent built with the
    tree (`_build_inboxes`), so a slot started again keeps its inbox while
    another context may be posting to it (docs/adr/0084).
@@ -2025,6 +2026,34 @@ void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.n
                                        const char *invoke_id,
                                        sce_clock_t clock);
 void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* §scxml-6.4 (docs/adr/0098): the values a parent's `<param>`s and `namelist`
+   hand this machine, a slot per variable a value may be handed for, each with
+   whether one was. The parent fills it from its own fields and gives it to
+   `_invoked_accept` between `_invoked_begin` and `_invoked_enter`. */
+typedef struct {{ csym_prefix }}{{ model.name }}_invoke_params_s {
+{% set ns_params = namespace(any=false) %}
+{% for field in static_fields if field.seeded and not field.module_parameter %}
+{% set ns_params.any = true %}
+    bool has_{{ field.name }};
+    {{ field.ty }} {{ field.name }};
+{% endfor %}
+{% if not ns_params.any %}
+    /* No variable of this machine may be handed a value; C has no empty struct. */
+    char none;
+{% endif %}
+} {{ csym_prefix }}{{ model.name }}_invoke_params_t;
+
+/* §scxml-6.4 (docs/adr/0098): declares this machine's variables again, in
+   document order, each handed one with the value `params` holds for it in place
+   of its own initial value, every other one with its own, which reads the
+   variables declared before it; so a variable declared after a handed one and
+   initialized from it reads the handed value. An initial value can neither fail
+   nor act (one that could is refused where it is written), so declaring an
+   unhanded variable a second time is not observable. Called between
+   `_invoked_begin` and `_invoked_enter`. */
+void {{ csym_prefix }}{{ model.name }}_invoked_accept({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const {{ csym_prefix }}{{ model.name }}_invoke_params_t *params);
 
 /* SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): the Mesh router this
    machine's parent gave it as a child session, installed between

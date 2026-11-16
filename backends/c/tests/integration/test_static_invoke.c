@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "../require_started.h"
+#include "a_static_child_declares_its_data_with_a_handed_value_sm.h"
 #include "static_invoke_entry_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
@@ -222,8 +223,29 @@ static int a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidat
     return bad;
 }
 
+// §scxml-6.4 (docs/adr/0098): a value an invoke hands its static child is its variable's
+// initial value, in place of the one its `<data>` declares, so a variable declared after it
+// whose initial value reads it reads the handed value. `worker` is handed `start = 7` and
+// declares `copied = start` after it; it ends the moment `copied` is 7. A child whose
+// parent wrote the handed value over `start` after `_invoked_begin` declared both holds
+// `copied = 0`, never ends, and leaves the parent in `working`. Fixture:
+// tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml.
+static int a_variable_declared_after_a_handed_one_reads_the_handed_value(void) {
+    static a_static_child_declares_its_data_with_a_handed_value_t sm;
+    REQUIRE_STARTED(a_static_child_declares_its_data_with_a_handed_value_init(&sm),
+                    A_STATIC_CHILD_DECLARES_ITS_DATA_WITH_A_HANDED_VALUE_START_OK);
+    for (int i = 0; i < 5; ++i) {
+        a_static_child_declares_its_data_with_a_handed_value_step(&sm);
+    }
+    int bad = expect(a_static_child_declares_its_data_with_a_handed_value_is_in_final_state(&sm),
+                     "`worker` read the handed `start` through `copied` and ended");
+    a_static_child_declares_its_data_with_a_handed_value_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
+    bad |= a_variable_declared_after_a_handed_one_reads_the_handed_value();
     bad |= a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidate();
     bad |= a_child_takes_what_its_parent_forwards();
     bad |= a_child_waits_for_its_first_event();

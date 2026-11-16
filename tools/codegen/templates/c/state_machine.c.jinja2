@@ -7801,6 +7801,32 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}
 {% endif %}
 }
 
+/* §scxml-6.4 (docs/adr/0098): this machine's variables declared again in
+   document order (see the header), each initial value reading the variables
+   declared before it as `_invoked_begin`'s do. A list is not written again from
+   a copy of its whole bound: one not handed starts empty, as `_invoked_begin`
+   left it. A module parameter keeps what its component filled. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_accept({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const {{ csym_prefix }}{{ model.name }}_invoke_params_t *params) {
+    (void)sm;
+    (void)params;
+{% for field in static_fields if not field.module_parameter %}
+{% if field.seeded and (field.saved_kind == "list" or field.saved_kind == "record_list") %}
+    if (params != NULL && params->has_{{ field.name }}) {
+        sm->policy.{{ field.name }} = params->{{ field.name }};
+    }
+{% elif field.seeded %}
+    if (params != NULL && params->has_{{ field.name }}) {
+        sm->policy.{{ field.name }} = params->{{ field.name }};
+    } else {
+        sm->policy.{{ field.name }} = {{ field.init }};
+    }
+{% elif field.saved_kind != "list" and field.saved_kind != "record_list" %}
+    sm->policy.{{ field.name }} = {{ field.init }};
+{% endif %}
+{% endfor %}
+}
+
 /* SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): install the router this
    child's parent gave it. What a host installs on a machine it starts, the
    parent installs here, between `_invoked_begin` (which zeroes the struct) and
