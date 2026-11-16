@@ -106,14 +106,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // its one arm's members, or the `Union` of a dataclass for each of its
     // arms, held optionally where the gates allow no arm; its gates are flags
     // of the codec's own or flag inputs, derived from the arm the value holds.
-    // Its members are held as an element alone is.
+    // Its members are held as an element alone is, and two lists of one count
+    // (R5) as one `Aligned` of the two.
     for group in plan.groups() {
         let label = super::rust_source::gates_label(group);
         if group.chain().is_some() {
             forms.push(format!("group '{label}': a group of a chain's memberships"));
-        }
-        if group.aligned.is_some() {
-            forms.push(format!("group '{label}': two lists of one count"));
         }
         for id in group.fields() {
             let member = m
@@ -533,7 +531,7 @@ pub(super) fn render(
         );
         presented.insert(id.clone(), held.presented);
         if let Some(line) = held.hold {
-            hold.push_str(&hold_line(&hold, l, id, &line));
+            hold.push_str(&hold_line(&hold, &l.codec_field_id(id), &line));
         }
         // An integer, a flag set or an enum takes the default the template
         // gives every field of its type.
@@ -633,6 +631,8 @@ struct Held {
     default: String,
     /// Where a class holds its bound, what `__setattr__` makes of `value`.
     hold: Option<String>,
+    /// The class of its bound, where it has one.
+    class: Option<String>,
 }
 
 /// How a class holds `field`, of the abstract type `value`, `Optional` where
@@ -678,6 +678,7 @@ fn held_as(
                 ty: optional(class),
                 default,
                 hold: None,
+                class: None,
             };
         }
         Value::Scalar(ty) => {
@@ -691,6 +692,7 @@ fn held_as(
                     l.default_expr(&field.sce_type)
                 },
                 hold: None,
+                class: None,
             };
         }
         Value::Bytes(bound) | Value::Text(bound) => bound,
@@ -745,17 +747,22 @@ fn held_as(
         ty: optional(&class),
         default,
         hold: Some(made),
+        class: Some(class),
     }
 }
 
 /// The branch of a `__setattr__` whose branches so far are `so_far` that makes
-/// `made` of the value set as the element `id`.
-fn hold_line(so_far: &str, l: &LangCtx, id: &str, made: &str) -> String {
+/// `made` of the value set as the attribute `name`.
+fn hold_line(so_far: &str, name: &str, made: &str) -> String {
     let keyword = if so_far.is_empty() { "if" } else { "elif" };
-    format!(
-        "        {keyword} name == \"{}\":\n            value = {made}\n",
-        l.codec_field_id(id)
-    )
+    format!("        {keyword} name == \"{name}\":\n            value = {made}\n")
+}
+
+/// The attribute of an arm that holds the two lists `first` and `second` of
+/// one count (docs/adr/0065 §6 R5) as one `Aligned`, named as every printer
+/// names it (`aligned_name`).
+fn aligned_member(l: &LangCtx, first: &str, second: &str) -> String {
+    super::rust_source::aligned_name(&l.codec_field_id(first), &l.codec_field_id(second))
 }
 
 /// The `__setattr__` of a class whose branches are `hold`, which holds each
@@ -850,11 +857,43 @@ fn group_part(
         let mut hold = String::new();
         let mut args = Vec::new();
         for id in &arm.fields {
+            // Two lists of one count are one member of an arm that holds both
+            // (docs/adr/0065 §6 R5), where the first is: an `Aligned` of the
+            // two, each held in the class of its bound.
+            if group.is_second_in(arm, id) {
+                continue;
+            }
+            if let Some(second) = group.second_of(arm, id) {
+                let (one, two) = (&helds[id.as_str()], &helds[second]);
+                let bound_of = |held: &Held| {
+                    held.class
+                        .clone()
+                        .expect("two lists of one count are each held in the class of its bound")
+                };
+                let (first_class, second_class) = (bound_of(one), bound_of(two));
+                let pair = aligned_member(l, id, second);
+                gathered.runtime.insert("Aligned");
+                members.push_str(&format!(
+                    "    {pair}: Aligned[{first_class}, {second_class}] = Aligned({}, {})\n",
+                    one.default, two.default
+                ));
+                hold.push_str(&hold_line(
+                    &hold,
+                    &pair,
+                    &format!("Aligned({first_class}(value.first), {second_class}(value.second))"),
+                ));
+                args.push(format!(
+                    "{pair}=Aligned({}, {})",
+                    l.codec_field_decode_local(id),
+                    l.codec_field_decode_local(second)
+                ));
+                continue;
+            }
             let held = &helds[id.as_str()];
             let member = l.codec_field_id(id);
             members.push_str(&format!("    {member}: {} = {}\n", held.ty, held.default));
             if let Some(line) = &held.hold {
-                hold.push_str(&hold_line(&hold, l, id, line));
+                hold.push_str(&hold_line(&hold, &member, line));
             }
             args.push(format!("{member}={}", l.codec_field_decode_local(id)));
         }
@@ -1082,29 +1121,47 @@ fn encode_source(
         out.push_str(&format!("    {held} = src.{name}\n"));
         let classes = arm_classes(struct_name, group);
         for id in group.fields() {
-            let holding: Vec<&String> = classes
-                .iter()
-                .zip(&group.arms)
-                .filter(|(_, arm)| arm.fields.iter().any(|f| f == id))
-                .map(|(class, _)| class)
-                .collect();
-            let member = format!("{held}.{}", l.codec_field_id(id));
-            let bound = if holding.len() == group.arms.len() && group.absent.is_none() {
-                member
-            } else if holding.len() == group.arms.len() {
-                format!("None if {held} is None else {member}")
-            } else {
-                let tested = match holding.as_slice() {
-                    [one] => one.to_string(),
-                    many => format!(
-                        "({})",
-                        many.iter()
-                            .map(|c| c.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
+            // How each arm that holds the member reads it off the arm: as its
+            // attribute, or as one of the two lists of one count it holds as
+            // one `Aligned` (docs/adr/0065 §6 R5); the arms that read it alike
+            // are tested together.
+            let mut reads: Vec<(String, Vec<&str>)> = Vec::new();
+            for (class, arm) in classes.iter().zip(&group.arms) {
+                if !arm.fields.iter().any(|f| f == id) {
+                    continue;
+                }
+                let read = if let Some(second) = group.second_of(arm, id) {
+                    format!("{held}.{}.first", aligned_member(l, id, second))
+                } else if group.is_second_in(arm, id) {
+                    let (first, _) = group
+                        .aligned
+                        .as_ref()
+                        .expect("the second of two lists of one count is aligned");
+                    format!("{held}.{}.second", aligned_member(l, first, id))
+                } else {
+                    format!("{held}.{}", l.codec_field_id(id))
                 };
-                format!("{member} if isinstance({held}, {tested}) else None")
+                match reads.iter_mut().find(|(r, _)| *r == read) {
+                    Some((_, arms)) => arms.push(class.as_str()),
+                    None => reads.push((read, vec![class.as_str()])),
+                }
+            }
+            let every = reads.len() == 1 && reads[0].1.len() == group.arms.len();
+            let bound = if every && group.absent.is_none() {
+                reads.remove(0).0
+            } else if every {
+                format!("None if {held} is None else {}", reads[0].0)
+            } else {
+                let mut bound = String::new();
+                for (read, arms) in &reads {
+                    let tested = match arms.as_slice() {
+                        [one] => one.to_string(),
+                        many => format!("({})", many.join(", ")),
+                    };
+                    bound.push_str(&format!("{read} if isinstance({held}, {tested}) else "));
+                }
+                bound.push_str("None");
+                bound
             };
             out.push_str(&format!("    {} = {bound}\n", source(id)));
         }

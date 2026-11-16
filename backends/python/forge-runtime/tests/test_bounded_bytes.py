@@ -6,8 +6,13 @@ so the encode over it has nothing of the bound to refuse."""
 
 import pytest
 
-from sce_forge_runtime.bounded import BoundedBytes, BoundedText, BoundedTuple
-from sce_forge_runtime.codec import InvalidUtf8, LengthOutOfRange, TooManyElements
+from sce_forge_runtime.bounded import Aligned, BoundedBytes, BoundedText, BoundedTuple
+from sce_forge_runtime.codec import (
+    InconsistentSource,
+    InvalidUtf8,
+    LengthOutOfRange,
+    TooManyElements,
+)
 
 
 class _AtMostThree(BoundedBytes):
@@ -110,3 +115,28 @@ def test_a_list_short_of_its_least_is_refused():
     with pytest.raises(LengthOutOfRange):
         _OneEntryOrMore([])
     assert len(_OneEntryOrMore(range(50))) == 50
+
+
+def test_two_lists_of_one_count_are_made_and_hold_both():
+    pair = Aligned(_TwoEntries([1, 2]), _TwoEntries([3, 4]))
+    assert pair.first == (1, 2)
+    assert pair.second == (3, 4)
+    assert len(pair) == 2
+    assert pair == Aligned((1, 2), (3, 4))
+    assert pair != Aligned((1, 2), (4, 3))
+    assert Aligned((), ()) == Aligned(_TwoEntries(), _TwoEntries())
+
+
+def test_two_lists_of_two_counts_are_refused_as_inconsistent():
+    with pytest.raises(InconsistentSource) as refused:
+        Aligned([1, 2], [3])
+    assert str(refused.value) == "Aligned"
+
+
+def test_two_lists_of_one_count_cannot_change_after_they_are_made():
+    pair = Aligned((1,), (2,))
+    with pytest.raises(AttributeError):
+        pair.first = (1, 2)  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        pair._second = (2, 3)  # type: ignore[misc]
+    assert hash(pair) == hash(Aligned((1,), (2,)))

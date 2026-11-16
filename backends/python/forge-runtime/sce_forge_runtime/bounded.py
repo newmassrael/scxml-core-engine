@@ -16,9 +16,9 @@ C++ runtime.
 
 from __future__ import annotations
 
-from typing import Iterable, Optional, Union
+from typing import Generic, Iterable, Optional, Sized, TypeVar, Union
 
-from .codec import InvalidUtf8, LengthOutOfRange, TooManyElements
+from .codec import InconsistentSource, InvalidUtf8, LengthOutOfRange, TooManyElements
 
 
 class BoundedBytes(bytes):
@@ -94,3 +94,56 @@ class BoundedTuple(tuple):
         if len(held) < cls.LEAST:
             raise LengthOutOfRange(cls.__name__)
         return held
+
+
+A = TypeVar("A", bound=Sized)
+B = TypeVar("B", bound=Sized)
+
+
+class Aligned(Generic[A, B]):
+    """Two lists of one count (docs/adr/0065 §6 R5): a codec that writes one
+    number for two lists holds both as this, so the number cannot disagree with
+    either.
+
+    Made only by its constructor, which compares the two counts once and raises
+    :class:`InconsistentSource`, naming the class, where they differ; the two
+    lists are held in read-only attributes, so they stay of one count for as
+    long as the value lives, as a :class:`BoundedTuple` stays within its bound.
+    Mirrors ``Aligned`` of the Rust runtime and ``SCE::Forge::Aligned`` of the
+    C++ runtime."""
+
+    __slots__ = ("_first", "_second")
+
+    def __init__(self, first: A, second: B) -> None:
+        if len(first) != len(second):
+            raise InconsistentSource(type(self).__name__)
+        object.__setattr__(self, "_first", first)
+        object.__setattr__(self, "_second", second)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"{type(self).__name__} cannot change after it is made")
+
+    @property
+    def first(self) -> A:
+        """The first list."""
+        return self._first
+
+    @property
+    def second(self) -> B:
+        """The second list."""
+        return self._second
+
+    def __len__(self) -> int:
+        """How many entries each list holds."""
+        return len(self._first)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Aligned):
+            return NotImplemented
+        return self._first == other._first and self._second == other._second
+
+    def __hash__(self) -> int:
+        return hash((self._first, self._second))
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._first!r}, {self._second!r})"

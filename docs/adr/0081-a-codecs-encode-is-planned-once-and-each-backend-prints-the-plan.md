@@ -1066,6 +1066,15 @@ old encode, the old encode and its templates are removed in the same landing.
    read select, from the locals it read each member into, and its members are no fields of the value of their own.
    The case printer states a group as the arm's class made of its members, compared whole. A group of a chain's
    memberships (R6) and two lists of one count (R5) wait for their landings.
+
+   *The eleventh Python landing, 2026-11-16:* two lists of one count (docs/adr/0065 §6 R5). The arm that holds both
+   holds them as one member, named as every printer names it (`aligned_name`), a value of the runtime's `Aligned`
+   (`sce_forge_runtime/bounded.py`): made only by a constructor that compares the two counts and raises
+   `InconsistentSource` where they differ, with no way to set either list after, as `Aligned` is in Rust and C++.
+   Each list in it is held in the class of its bound, made where the arm's member is set. The encode binds each list
+   to its local off the pair where the arm holds both and off the arm where it holds the first alone, so the count is
+   derived from the first as before and the second is no measure of it; the decode pairs the two lists it read. The
+   case printer states the pair as `Aligned` of the two lists the source states by their own ids.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

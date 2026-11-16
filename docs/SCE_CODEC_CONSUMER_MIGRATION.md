@@ -2023,3 +2023,15 @@ a disjunction of the codec's own flags, or a flag input), the Zenoh init, join a
   or `None` where the gates allow no arm. Make the arm you mean; test which one a value holds with `isinstance`.
 - The gate flags of the group are derived from the arm on encode; the bits the value holds there are not written.
 
+## A printed Python codec holds two lists of one count as one `Aligned` (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. The printed set grows by the
+codecs whose gated list takes its count from a list always there (docs/adr/0065 §6 R5), as
+`codec_repeat_unconditional_count` takes its weights' count from its links.
+
+- The arm that holds both lists holds them as one member, `{first}_{second}` (`links_weights`), a value of
+  `sce_forge_runtime.bounded.Aligned`. Make it as `Aligned(links, weights)`; it raises `InconsistentSource` where
+  the two counts differ, and read each list as `.first` and `.second`. The arm that holds the first list alone holds
+  it as its own member, as before.
+- Neither list can be set apart from the other: replace the pair whole, which compares the counts again.
+

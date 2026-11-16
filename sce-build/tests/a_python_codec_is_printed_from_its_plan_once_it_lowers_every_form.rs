@@ -577,6 +577,40 @@ fn an_input_a_group_says_is_read_off_the_arm_the_value_holds() {
     );
 }
 
+/// Two lists of one count are one member of the arm that holds both, an
+/// `Aligned` of the two, each held in the class of its bound (docs/adr/0065
+/// §6 R5): the encode reads each list off the pair where the arm holds it and
+/// off the arm where it holds the first alone, and the decode pairs the two
+/// lists it read.
+///
+/// Turns red where `python_source::positional_forms` names two lists of one
+/// count unlowered again, `group_part` declares the second list as a member
+/// of its own, or `encode_source` binds `_e_links` off the arm alone.
+#[test]
+fn two_lists_of_one_count_are_one_aligned_member_of_their_arm() {
+    let name = "codec_repeat_unconditional_count";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.bounded import Aligned, BoundedTuple\n",
+            "    links_weights: Aligned[CodecRepeatUnconditionalCountLinksList, \
+             CodecRepeatUnconditionalCountWeightsList] = \
+             Aligned(CodecRepeatUnconditionalCountLinksList(), \
+             CodecRepeatUnconditionalCountWeightsList())\n",
+            "            value = Aligned(CodecRepeatUnconditionalCountLinksList(value.first), \
+             CodecRepeatUnconditionalCountWeightsList(value.second))\n",
+            ".links_weights.first if isinstance(",
+            ".links_weights.second if isinstance(",
+            "    _d_links_len = len(_e_links)\n",
+            "links_weights=Aligned(f_links, f_weights)",
+        ],
+    );
+    holds_none(name, &text, &["    weights: ", "weights=f_weights"]);
+}
+
 /// A codec whose plan uses a form the Python printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// so does a group of a chain's memberships.

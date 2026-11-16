@@ -196,22 +196,41 @@ fn value_literal(
             None => "None".to_string(),
             Some(chosen) => {
                 let class = &super::arm_classes(&path.type_name, group)[chosen.index];
-                let mut members = Vec::new();
-                for id in &chosen.arm.fields {
+                let spell = |id: &str, held: &mut dyn HeldCodecs| -> Result<String, String> {
                     let field = plan
                         .model
                         .fields
                         .iter()
-                        .find(|f| &f.id == id)
+                        .find(|f| f.id == id)
                         .expect("a group's member is a field of the codec");
                     let json = chosen
                         .members
                         .get(id)
                         .filter(|json| !json.is_null())
                         .ok_or_else(|| format!("`{label}`: the arm holds `{id}`"))?;
-                    let member = member_literal(&plan.value(field), path, json, held)
-                        .map_err(|e| format!("`{label}`: `{id}`: {e}"))?;
-                    members.push(format!("{}={member}", l.codec_field_id(id)));
+                    member_literal(&plan.value(field), path, json, held)
+                        .map_err(|e| format!("`{label}`: `{id}`: {e}"))
+                };
+                let mut members = Vec::new();
+                for id in &chosen.arm.fields {
+                    // Two lists of one count are one member of the arm, an
+                    // `Aligned` of the two (docs/adr/0065 §6 R5), each stated
+                    // by its own id.
+                    if group.is_second_in(chosen.arm, id) {
+                        continue;
+                    }
+                    let (name, member) = match group.second_of(chosen.arm, id) {
+                        Some(second) => {
+                            let first_list = spell(id, &mut *held)?;
+                            let second_list = spell(second, &mut *held)?;
+                            (
+                                super::aligned_member(&l, id, second),
+                                format!("{}.Aligned({first_list}, {second_list})", path.module),
+                            )
+                        }
+                        None => (l.codec_field_id(id), spell(id, &mut *held)?),
+                    };
+                    members.push(format!("{name}={member}"));
                 }
                 format!("{}.{class}({})", path.module, members.join(", "))
             }
