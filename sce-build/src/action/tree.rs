@@ -34,7 +34,7 @@
 //! generation a set of documents it compiles together (`set`). A tree the
 //! checkout does not commit says so (`committed = false`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -205,6 +205,20 @@ pub struct Each {
 }
 
 impl Each {
+    /// What decides the members, relative to the root: the directory a
+    /// pattern lists, up to its first wildcard, and the catalog a set is read
+    /// from. A list is decided by the manifest alone.
+    fn listed(&self) -> Vec<String> {
+        let under = self.under.as_deref();
+        let mut listed: Vec<String> = [&self.directories, &self.files, &self.paths]
+            .into_iter()
+            .flatten()
+            .map(|pattern| listed_directory(under, pattern))
+            .collect();
+        listed.extend(self.catalog.clone());
+        listed
+    }
+
     /// The members, in byte order for a pattern or a catalog and as written
     /// for a list, less those `except` names.
     fn members(&self, root: &Path) -> Result<Vec<String>, String> {
@@ -459,6 +473,25 @@ pub struct ExpandedTree {
     pub generations: Vec<PlacedGeneration>,
     pub indexes: Vec<IndexRule>,
     pub formats: Vec<FormatRule>,
+    /// What the expansion listed to find its members, relative to the root:
+    /// the directory each pattern lists and each catalog read. A member that
+    /// arrives or leaves changes one of them, so a build that watches them
+    /// with the files its generations read knows when the tree has moved. An
+    /// empty path is the root itself.
+    pub listed: BTreeSet<String>,
+}
+
+/// The directory `pattern` lists below `under`, relative to the root: its
+/// components before the first that holds `*`, or the whole pattern when
+/// none does. Empty when the pattern lists the root itself.
+fn listed_directory(under: Option<&str>, pattern: &str) -> String {
+    let fixed: Vec<&str> = under
+        .into_iter()
+        .flat_map(|u| u.split('/'))
+        .chain(pattern.split('/').take_while(|c| !c.contains('*')))
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    fixed.join("/")
 }
 
 impl TreeManifest {
@@ -470,7 +503,14 @@ impl TreeManifest {
             detail,
         };
         let mut generations = Vec::new();
+        let mut listed = BTreeSet::new();
         for rule in &self.generation {
+            if let Some(set) = &rule.set {
+                listed.insert(listed_directory(None, &set.paths));
+            }
+            if let Some(each) = &rule.each {
+                listed.extend(each.listed());
+            }
             let set = match &rule.set {
                 Some(set) => set.arguments(root).map_err(invalid)?,
                 None => Vec::new(),
@@ -524,6 +564,7 @@ impl TreeManifest {
             generations,
             indexes: self.index.clone(),
             formats: self.format.clone(),
+            listed,
         })
     }
 }
@@ -698,6 +739,24 @@ pub(crate) fn stem(path: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A pattern lists the directory before its first wildcard, below the
+    /// set's `under`; one with no wildcard names its own path, and one that
+    /// begins with a wildcard lists the root, which is the empty path.
+    #[test]
+    fn a_pattern_lists_the_directory_before_its_first_wildcard() {
+        assert_eq!(
+            listed_directory(None, "integration_resources/*"),
+            "integration_resources"
+        );
+        assert_eq!(
+            listed_directory(None, "sce-build/tests/fixtures/static_datamodel/*.scxml"),
+            "sce-build/tests/fixtures/static_datamodel"
+        );
+        assert_eq!(listed_directory(Some("stdlib"), "*/x/*.scxml"), "stdlib");
+        assert_eq!(listed_directory(None, "a/b.scxml"), "a/b.scxml");
+        assert_eq!(listed_directory(None, "*.scxml"), "");
+    }
 
     #[test]
     fn a_wildcard_matches_within_a_component() {

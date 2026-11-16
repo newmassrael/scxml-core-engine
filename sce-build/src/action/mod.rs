@@ -19,7 +19,11 @@
 //! - [`tree`]: the manifest of a generated tree, `tools/codegen/trees/<tree>.toml`.
 //! - [`materialize`]: a tree written into a directory from its actions, and
 //!   compared with a committed copy.
+//! - `build_script` (with the `cli` feature): the trees of a package written
+//!   into its `OUT_DIR` by its build script, which runs as their generator.
 
+#[cfg(feature = "cli")]
+pub mod build_script;
 pub mod generation;
 pub mod identity;
 pub mod input_root;

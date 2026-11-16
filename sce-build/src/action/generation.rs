@@ -62,6 +62,12 @@ pub const OUTPUT_PLACEHOLDER: &str = "{out}";
 /// The output directory as an action's command names it.
 pub const OUTPUT_DIRECTORY: &str = "sce-out";
 
+/// The first argument of every run: the generator's flag naming the file it
+/// lists what it read in. A program that carries the generator and is also
+/// something else (a build script) knows by it that it was started as the
+/// generator (`build_script::serve_generator_runs`).
+pub const READS_FLAG: &str = "--reads";
+
 /// The salt of a stage-1 action, so that its key can never be a stage-2 key.
 const READ_SET_SALT: &[u8] = b"sce.read-set/1";
 
@@ -146,6 +152,12 @@ pub struct Produced {
     pub provenance: Provenance,
     /// The action key of the generation.
     pub key: Digest,
+    /// The files the generation read, relative to the checkout's root: what
+    /// a build that runs it has to watch to know when to run it again.
+    pub reads: BTreeSet<String>,
+    /// The files the generation looked for and did not find, relative to the
+    /// checkout's root: one appearing is a change of its inputs too.
+    pub absent: BTreeSet<String>,
 }
 
 /// Why a generation produced nothing.
@@ -446,6 +458,8 @@ impl Generator {
             files,
             provenance: Provenance::Hit,
             key,
+            reads: reads.present,
+            absent: reads.absent,
         }))
     }
 
@@ -465,7 +479,7 @@ impl Generator {
         let out_text = out.display().to_string();
         let started = SystemTime::now();
         let output = Process::new(&self.binary)
-            .arg("--reads")
+            .arg(READS_FLAG)
             .arg(&reads_file)
             .args(
                 generation
@@ -568,6 +582,8 @@ impl Generator {
             files,
             provenance: Provenance::Ran,
             key,
+            reads: reads.present,
+            absent: reads.absent,
         })
     }
 
