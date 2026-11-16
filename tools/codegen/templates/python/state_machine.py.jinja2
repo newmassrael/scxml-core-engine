@@ -591,13 +591,31 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% if static_fields and ns_seed.any %}
 
     def accept_params(self, params: {{ machine_name }}InvokeParams) -> None:
-        """Give this machine the values `params` carries, in place of the ones
-        its `<data>` gave. Called before it initializes (§scxml-6.4.1)."""
+        """Give this machine the values `params` carries, each as the initial
+        value of its variable in place of the one its `<data>` gives, so that a
+        variable declared after it whose initial value reads it reads the
+        handed value (§scxml-6.4, docs/adr/0098). Called before it
+        initializes."""
+{# The variables are declared again in document order, as the constructor
+   declares them, by the local name each initial value reads: a variable
+   handed a value is declared with it, every other one with its own initial
+   value, which reads only the variables declared before it and can neither
+   fail nor act (one that could fail is refused where it is written), so
+   declaring it a second time is not observable. A module parameter keeps what
+   its component filled. #}
 {% for field in static_fields %}
-{% if field.seeded %}
-        if params.{{ field.name }} is not None:
-            self.{{ field.name }} = params.{{ field.name }}
+{% if field.module_parameter %}
+        {{ field.name }}: {{ field.ty }} = self.{{ field.name }}
+{% elif field.seeded %}
+        {{ field.name }}: {{ field.ty }} = (
+            params.{{ field.name }} if params.{{ field.name }} is not None else {{ field.init }}
+        )
+{% else %}
+        {{ field.name }}: {{ field.ty }} = {{ field.init }}
 {% endif %}
+{% endfor %}
+{% for field in static_fields %}
+        self.{{ field.name }} = {{ field.name }}
 {% endfor %}
 {% endif %}
 {% if static_fields %}

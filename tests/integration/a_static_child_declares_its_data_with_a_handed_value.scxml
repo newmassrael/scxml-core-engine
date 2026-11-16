@@ -12,10 +12,14 @@
   handed one over `start` afterwards holds `copied = 0`, never ends, and leaves
   the parent in `working`.
 
-  It sits beside its driver rather than under `integration_resources/`: the
-  Rust channel lands docs/adr/0098 before the others, and the canonical
-  fixture of every channel lands last. See
-  `tools/codegen/trees/rust-integration.toml`.
+  It sits beside its drivers rather than under `integration_resources/`: a
+  `datamodel="sce-static"` child is handed typed values (`InvokeParams`,
+  docs/adr/0098, "The typed `InvokeParams` of a static child"), which the
+  script-engine fixture of that decision,
+  `integration_resources/a_child_takes_a_handed_value_in_place_of_its_data/`,
+  does not reach, and not every channel declares a static child's variables
+  in document order yet (the same section names which). Driven on Rust, Go
+  and Python.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static"
