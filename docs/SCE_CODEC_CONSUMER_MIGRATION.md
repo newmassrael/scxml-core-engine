@@ -2376,3 +2376,14 @@ derived length past its field (`CodecError.LengthOutOfRange`), and what a codec 
 - A codec that holds a codec whose encode can refuse writes its frame whole before it hands it to your sink, so a
   refusal leaves the sink as it was.
 
+## A printed Kotlin codec states a length only while its content is absent (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs with a length the value states while every byte string it measures is absent.
+
+- The length's property is now the optional of its type (`UByte?`), `null` by default. Leave it `null` where any
+  content it measures is there: the encode writes the content's length. Set it only where none is, to the length
+  the frame says of absent content.
+- A value that states it beside content of another length is refused with `CodecError.InconsistentSource`.
+- `decode` gives it back `null` where it read any of the content, and the number the frame holds where it read none.
+

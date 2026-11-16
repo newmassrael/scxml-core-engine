@@ -1382,6 +1382,14 @@ old encode, the old encode and its templates are removed in the same landing.
    The Kotlin harness runs the codec's `refused` cases (`EncodeFailure::symbol` names each refusal as
    `com.sce.forge.runtime.CodecError.<Name>`) and holds the sink to empty. An input a held codec says, held to
    what the codec is handed, stays unlowered.
+
+   *The sixth Kotlin landing, 2026-11-16:* a length the value states while the content it measures is absent
+   (§4.6 R4b, docs/adr/0058 §1), as the Python landing of it. The source presents it as the optional of its type
+   and the data class holds it, `null` by default. The encode derives it from the first content there and reads
+   what the value states only where none is, zero where the value states nothing; a value that states it beside
+   content that says another number is refused as `InconsistentSource`. The decode makes it `null` where it read
+   any of the content, so a decoded value states it exactly where an encode reads it. A group that holds such a
+   length beside its content (R4b's group form) stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

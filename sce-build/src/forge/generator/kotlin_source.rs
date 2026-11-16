@@ -124,12 +124,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 }
             }
         }
+        // A number the value states while its content is absent is `null`
+        // where any of its content is there.
         match element.presence {
-            Presence::Always => {}
+            Presence::Always | Presence::Stated => {}
             Presence::Gated => forms.extend(gate_form(plan, element.field)),
-            Presence::Stated => forms.push(format!(
-                "field '{id}': a length the value states where its content is absent"
-            )),
         }
     }
     if !plan.groups().is_empty() {
@@ -238,15 +237,13 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
         }
     }
     match &number.into {
-        NumberInto::Field { absent, .. } => match absent {
-            Absent::Never | Absent::Zero => {}
-            Absent::Group => forms.push(format!(
-                "element '{element}': a length a group holds on the side without its content"
-            )),
-            Absent::Stated => forms.push(format!(
-                "element '{element}': a length the value states where its content is absent"
-            )),
-        },
+        NumberInto::Field { absent, .. } => {
+            if *absent == Absent::Group {
+                forms.push(format!(
+                    "element '{element}': a length a group holds on the side without its content"
+                ));
+            }
+        }
         NumberInto::Flag => forms.push(format!(
             "element '{element}': a length held in a flag of a carrier"
         )),
@@ -309,9 +306,30 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 }
 
 /// Whether the Kotlin value of `plan`, a plan [`unlowered`] answers `None` for,
-/// holds no field `id`: the encode derives it (docs/adr/0081 §3).
+/// holds no field `id`: the encode derives it (docs/adr/0081 §3) and the value
+/// does not state it while its content is absent.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_numbers(plan).contains(id)
+    derived_numbers(plan).contains(id) && element_of(plan, id).is_none()
+}
+
+/// The fields the number the value states as `id` measures, each gated: the
+/// value states the number only while none of them is there.
+fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
+    plan.derivations
+        .iter()
+        .filter(|derived| matches!(&derived.element, ElementId::Field(field) if field == id))
+        .filter_map(|derived| match &derived.by {
+            Derive::Number(number) => Some(number),
+            _ => None,
+        })
+        .flat_map(|number| number.measures.iter())
+        .map(|measure| match &measure.of {
+            Measured::Bytes { field, .. } => *field,
+            Measured::Entries { list } => *list,
+            Measured::Encoded { body, .. } => *body,
+            _ => unreachable!("a number the value states is a length or a count of gated content"),
+        })
+        .collect()
 }
 
 /// The class the Kotlin value of the codec whose data class is `struct_name`
@@ -327,9 +345,10 @@ pub(crate) fn refinement_class(struct_name: &str, id: &str, ty: &SceType) -> Str
     }
 }
 
-/// How the Kotlin value holds an element that is no Kotlin type of its own:
-/// the type its property is declared as, the value it holds by default, and
-/// what its decode makes it of from the local it read, where it reads one.
+/// How the Kotlin value holds an element that is no Kotlin type of its own, or
+/// a number it states only while its content is absent: the type its property
+/// is declared as, the value it holds by default, and what its decode makes it
+/// of from the locals it read.
 pub(super) struct Held {
     /// The type of the property.
     pub(super) ty: String,
@@ -347,8 +366,9 @@ pub(super) struct KotlinSource {
     /// The encode over any source, `encodeSource`, a function of the value's
     /// companion object, at its indentation there.
     pub(super) encode: String,
-    /// For each element the value holds in a class of the printer's, by field
-    /// id, how it holds it.
+    /// For each element the value holds in a class of the printer's, and each
+    /// number it states while its content is absent, by field id, how it holds
+    /// it.
     pub(super) held: BTreeMap<String, Held>,
     /// Whether the file declares a value class, for which it imports
     /// `JvmInline`.
@@ -372,6 +392,8 @@ pub(super) fn render(
 ) -> KotlinSource {
     let mut before = String::new();
     let mut held = BTreeMap::new();
+    // Whether the file declares a value class of a bound.
+    let mut inline = false;
     // The type the source presents each element as.
     let mut presented: BTreeMap<String, String> = BTreeMap::new();
     for element in &plan.elements {
@@ -415,13 +437,37 @@ pub(super) fn render(
                 class
             }
             _ => {
-                presented.insert(
-                    id.clone(),
-                    optional(l.type_name(&element.field.sce_type).into_owned()),
-                );
+                let ty = l.type_name(&element.field.sce_type).into_owned();
+                // A number the value states only while the content it measures
+                // is absent (docs/adr/0058 §1): `null` while it is there, which
+                // the encode then derives from it, and the decode gives back
+                // `null` where it read any of it.
+                if element.presence == Presence::Stated {
+                    let ty = l.optional_of(&ty).expect("Kotlin wraps the present type");
+                    let absent: Vec<String> = stated_contents(plan, id)
+                        .iter()
+                        .map(|content| format!("{} == null", l.codec_field_id(&content.id)))
+                        .collect();
+                    presented.insert(id.clone(), ty.clone());
+                    held.insert(
+                        id.clone(),
+                        Held {
+                            ty,
+                            default: "null".to_string(),
+                            made: format!(
+                                "if ({}) {} else null",
+                                absent.join(" && "),
+                                l.codec_field_id(id)
+                            ),
+                        },
+                    );
+                    continue;
+                }
+                presented.insert(id.clone(), optional(ty));
                 continue;
             }
         };
+        inline = true;
         let local = l.codec_field_id(id);
         let (default, made) = if gated {
             (
@@ -438,7 +484,6 @@ pub(super) fn render(
         presented.insert(id.clone(), ty.clone());
         held.insert(id.clone(), Held { ty, default, made });
     }
-    let inline = !held.is_empty();
 
     // The source: what the encode reads, each element by the property a value
     // holds it in, `null` where a gate leaves it out.

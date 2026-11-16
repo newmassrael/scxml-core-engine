@@ -408,6 +408,43 @@ fn a_frame_that_holds_a_codec_that_can_refuse_is_written_whole_first() {
     );
 }
 
+/// A length the value states while the byte strings it measures are absent is
+/// `null` while any of them is there, derived then from them, each one there
+/// saying the same, and what the value states where none is; a value that
+/// states it beside content that says otherwise is refused, and the decode
+/// gives it back `null` where it read any of the content.
+///
+/// Turns red where `kotlin_source::derive_number` reads the stated number
+/// where content is there, drops the check of a stated number against the
+/// content, `render` decodes the number where the content was read, or
+/// `derived_field` drops the stated number from the data class.
+#[test]
+fn a_length_the_value_states_is_read_only_where_its_content_is_absent() {
+    assert!(unlowered("codec_length_stated").is_empty());
+    let text = resource_file("codec_length_stated");
+    holds(
+        "codec_length_stated",
+        &text,
+        &[
+            "    val span_len: UByte?\n",
+            "    override var span_len: UByte? = null",
+            "            var _f_span_len: Int? = null\n\
+             \x20           if (_e_alpha != null) {\n\
+             \x20               _f_span_len = _e_alpha.bytes.size\n\
+             \x20           } else if (_e_beta != null) {\n\
+             \x20               _f_span_len = _e_beta.bytes.size\n\
+             \x20           }\n",
+            "            if (_e_beta != null && _e_beta.bytes.size != _f_span_len) {\n\
+             \x20               return CodecError.InconsistentSource\n",
+            "            val _d_span_len = if (_f_span_len != null) _f_span_len.toUByte() \
+             else (_e_span_len ?: 0.toUByte())\n",
+            "            if (_f_span_len != null && _e_span_len != null && \
+             _e_span_len != _d_span_len) {\n",
+            "                span_len = if (alpha == null && beta == null) span_len else null",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a variant, a CBOR map and a group that holds a
 /// length the value states beside its content each name their form.
@@ -500,6 +537,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_present_if_checked",
         "codec_length_shared",
         "codec_encoded_length_checked",
+        "codec_length_stated",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
