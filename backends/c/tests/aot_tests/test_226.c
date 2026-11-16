@@ -34,12 +34,11 @@
 // `<sm>_dispatch_external_by_name` shim converts the name to the parent's
 // event enum (analyzer-promoted) and enqueues onto the external queue.
 // Parent-side: `execute_pending_invokes` evaluates each `<param expr>` on its
-// own lua_State and transfers the top-of-stack value to the child's lua_State
-// via `lua_xfer_top_to_child`, gated per-name on `child_datamodel_vars` so
-// undeclared namelist names (test245) silently drop. Child-side: `_init`
-// skips the post-entry eventless loop when `has_parent_communication=true` so
-// the parent has a chance to apply param/namelist overrides + stamp
-// `parent_dispatch` before the child's first macrostep runs.
+// own lua_State and hands every value it evaluated to the child's start
+// (`_init_with_parent`, `_init_invoked`). Child-side: the start copies the
+// values whose names its top-level <data> declares into its own lua_State in
+// place of those <data>'s own values (docs/adr/0098), so an undeclared
+// namelist name (test245) is never added.
 
 #define _POSIX_C_SOURCE 199309L
 

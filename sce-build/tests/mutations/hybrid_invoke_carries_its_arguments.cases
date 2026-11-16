@@ -22,22 +22,8 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_a_hybrid_invoke_carries_its_arguments)$'
-mutation_targets sce-build/src/parser.rs sce-build/src/bin/sce_codegen.rs tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_targets sce-build/src/bin/sce_codegen.rs tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
 mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp backends/c/tests/integration/test_a_hybrid_invoke_carries_its_arguments.c
-
-# ── The build forgets what each candidate declares ─────────────────
-#
-# The candidate keeps its engine but loses its `<data>` list, so every
-# argument is evaluated and none is kept — `paramsOk` and `namelistOk` stay 0
-# on the C11 channel. Neither the C++ AOT nor a C11 parent reads the list any
-# more: each hands every argument and the candidate's own start chooses
-# (docs/adr/0098), so no oracle here is red when the list is lost.
-
-mutation_case "a candidate's declared names are not recorded" <<'PY'
-edit("sce-build/src/parser.rs",
-     "    candidate.child_datamodel_vars = common.child_datamodel_vars;",
-     "    candidate.child_datamodel_vars = None;")
-PY
 
 # ── The build looks for a candidate only beside a staged copy ──────
 #

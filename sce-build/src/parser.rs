@@ -8932,24 +8932,24 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
     false
 }
 
-/// Parse a child SCXML file to extract metadata (needs_script_engine, datamodel vars).
+/// Parse a child SCXML file to extract metadata (needs_script_engine, static variables).
 ///
-/// The fields written (`child_needs_script_engine`, `child_datamodel_vars`)
+/// The fields written (`child_needs_script_engine`, `child_static_variables`)
 /// are session-only — they live on [`InvokeSessionCommon`]. Both
 /// `ScxmlInvokeInfo` and `HybridInvokeInfo` expose this via `&mut si.common`.
 /// Populate child-side invoke metadata from an already-parsed
 /// [`SCXMLModel`]. Shared by the in-memory inline-child path
 /// (`parse_invoke` → `ScxmlInvokeInfo::inline_child`) and the on-disk
 /// external path ([`SCXMLParser::parse_child_metadata`]), so both invoke flavours
-/// derive the same `child_needs_script_engine` / `child_datamodel_vars`
-/// / `child_needs_event_scheduler` from the same walker.
+/// derive the same `child_needs_script_engine` / `child_static_variables`
+/// / `child_needs_event_scheduler` from the same walker. Which handed names a
+/// child under a script-engine data model takes is the child's own answer
+/// (docs/adr/0098), so no list of its names is carried to the parent.
 fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut InvokeSessionCommon) {
     common.child_needs_script_engine = child_model.needs_script_engine;
     // §scxml-6.4: whether the child has done data for the parent to ask it
     // for when it ends; where the child holds it is the child's own answer.
     common.child_ends_with_done_data = child_model.ends_with_done_data();
-    common.child_datamodel_vars =
-        Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
     // §scxml-6.4.1: a static parent types each value it hands the child
     // against the variable it lands in, which only a static child declares.
     common.child_static_variables =
@@ -9095,7 +9095,6 @@ impl SCXMLParser {
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let Some(child_path) = child_path.filter(|path| crate::confine::exists(path)) else {
             common.child_needs_script_engine = true;
-            common.child_datamodel_vars = Some(Vec::new());
             return Ok(());
         };
         let child_model = Self::new()
@@ -9127,7 +9126,6 @@ impl SCXMLParser {
         let mut common = InvokeSessionCommon::default();
         self.parse_child_metadata(candidate_path, named_at, &mut common)?;
         candidate.child_needs_script_engine = common.child_needs_script_engine;
-        candidate.child_datamodel_vars = common.child_datamodel_vars;
         candidate.child_static_variables = common.child_static_variables;
         candidate.child_is_static = common.child_is_static;
         candidate.child_declares_host_acts = common.child_declares_host_acts;
@@ -9216,10 +9214,9 @@ mod tests {
                 SCXMLParser::new().parse_child_metadata(Some(path), &named_at, &mut common)
             })
             .expect("a child that is read and one that is not there refuse nothing");
-            (
-                common.child_needs_script_engine,
-                common.child_datamodel_vars,
-            )
+            // A child that is not there is given an engine; this one, read,
+            // needs none.
+            common.child_needs_script_engine
         };
         let confined = || Root::named(Some(inside.path().as_os_str()));
 

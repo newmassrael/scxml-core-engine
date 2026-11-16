@@ -5,14 +5,14 @@
 // invoked session with the INVOKING session's value — C11 AOT channel.
 //
 // This backend is the one that already answered both halves of the clause:
-// `lua_xfer_top_to_child` moves the evaluated VALUE across the two Lua
-// states rather than re-evaluating source in the child, and the emission is
-// gated on `param.name in invoke_info.child_datamodel_vars`. Its own
-// comment records why ("a parent-side variable name is undefined in the
-// child's state ... for literal exprs both shapes converge"), which is the
-// rule the other channels are being brought up to. Without a driver here
-// that correctness is an unasserted property — the shape a channel loses
-// first is the one no test names.
+// the parent evaluates each argument in its own Lua state and hands the
+// VALUE, which the child's start copies into its own rather than
+// re-evaluating source there, and the child takes only the names its
+// top-level <data> declares (docs/adr/0098). A parent-side variable name is
+// undefined in the child's state, and for literal exprs both shapes converge,
+// which is why the rule needs this fixture. Without a driver here that
+// correctness is an unasserted property — the shape a channel loses first is
+// the one no test names.
 //
 // Fixture: integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml
 //

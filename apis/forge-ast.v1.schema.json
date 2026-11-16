@@ -5268,15 +5268,6 @@
             "autoforward": {
               "type": "boolean"
             },
-            "child_datamodel_vars": {
-              "items": {
-                "type": "string"
-              },
-              "type": [
-                "array",
-                "null"
-              ]
-            },
             "child_has_send_to_parent": {
               "default": false,
               "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML may address its parent — the child model's [`SCXMLModel::may_address_parent`], a literal `#_parent` or a `targetexpr`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Populated by `collect_child_to_parent_events` during invoke metadata resolution.",
@@ -5437,15 +5428,6 @@
                 "$ref": "#/definitions/InvokeCandidate"
               },
               "type": "array"
-            },
-            "child_datamodel_vars": {
-              "items": {
-                "type": "string"
-              },
-              "type": [
-                "array",
-                "null"
-              ]
             },
             "child_has_send_to_parent": {
               "default": false,
@@ -5875,16 +5857,6 @@
     "InvokeCandidate": {
       "description": "One document a hybrid `<invoke>` may start, as `sce:candidates` named it.\n\n`stem` is the identity: it is what the runtime compares the evaluated value against, and what codegen names the generated child by. `path` is kept because the build has to find the document, and because a refusal that says which entry was wrong needs the author's own spelling.",
       "properties": {
-        "child_datamodel_vars": {
-          "description": "§scxml-6.4.3: the candidate's top-level `<data>` ids — the names a `<param>` or `namelist` item may add to ITS data model and no other.",
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
         "child_needs_script_engine": {
           "description": "§scxml-6.4: the candidate's own [`InvokeSessionCommon::child_needs_script_engine`].\n\n⚠ Per candidate, not per invoke: each is a different document, and only the one the value names is started. The invoke-level field is never populated for a hybrid invoke, so a candidate that runs a script engine was started without one before this existed.\n\nNamed as the invoke-level fields are, so a template that seeds a child reads the same names whichever it was handed.",
           "type": "boolean"

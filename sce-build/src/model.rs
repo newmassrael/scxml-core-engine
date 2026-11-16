@@ -2221,16 +2221,15 @@ pub struct InvokeSessionCommon {
     /// §scxml-6.4: Use specific done.invoke.{id} event instead of generic done.invoke
     #[serde(default)]
     pub use_specific_event: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub child_datamodel_vars: Option<Vec<String>>,
     /// §scxml-6.4.1: the child's own top-level `<data>`, as declared, when the
     /// child is a `datamodel="sce-static"` document this build could read;
     /// `None` for a child under another data model or one that could not be
     /// read. A static parent holds each `<param>` and `namelist` name it hands
     /// the child to one of these, so a value is typed against the variable it
-    /// lands in rather than accepted and dropped. Derived beside
-    /// [`Self::child_datamodel_vars`], from the same child model; not part of
-    /// the IR.
+    /// lands in rather than accepted and dropped (the typed `InvokeParams` of
+    /// docs/adr/0098). A child under a script-engine data model is handed every
+    /// name and decides itself which it takes, so no parent reads its
+    /// declarations. Derived from the child model; not part of the IR.
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_static_variables: Option<Vec<Variable>>,
@@ -2999,10 +2998,6 @@ pub struct InvokeCandidate {
     /// Named as the invoke-level fields are, so a template that seeds a
     /// child reads the same names whichever it was handed.
     pub child_needs_script_engine: bool,
-    /// §scxml-6.4.3: the candidate's top-level `<data>` ids — the names a
-    /// `<param>` or `namelist` item may add to ITS data model and no other.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub child_datamodel_vars: Option<Vec<String>>,
     /// §scxml-6.4.1: the candidate's own top-level `<data>`, as declared, when
     /// it is a `datamodel="sce-static"` document this build could read; `None`
     /// for one under another data model or one that could not be read. A static
