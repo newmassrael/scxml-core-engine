@@ -5556,6 +5556,44 @@ first (`sce_payload_union_open`); a `<sce:lift>` reads a text into one by the sa
 function, its refused path written as the refusal's pointer
 (`sce_payload_pointer_of_path`).
 
+The Swift backend reads a composed payload as the Go and Python backends do
+(docs/adr/0086, section 7.1, the Swift row): its payload struct holds each field in
+`[T]`, `String`, `[UInt8]`, `T?` and the machine's struct, each record it names
+declared once with the initializer a host builds one by; the lift reads each field by
+one closure per constructor, which names the type it answers, over the runtime's
+`PayloadValue` (`list`, `optional`, `record`, `text`, `bytes`, ...), builds the payload
+whole once every field is read, and refuses the delivery whole, naming the path, at the
+first value outside its type; and `len`, an index, a field of a record element and a
+`<foreach>` over a list the payload or an enclosing loop's item holds lower at any
+depth, an element read by the one checked read, which throws for an index outside the
+list and gives no value in its place (docs/adr/0099). No Swift type carries a bound,
+so the inject seam, `raise<Event>`, holds what a host hands it to every bound its type
+declares, at any depth, before it builds anything (docs/adr/0086, section 5.4): it
+throws the runtime's refusal, naming the path, and raises nothing; within every bound
+it writes the payload as the JSON a lift reads back. A list a place holds is taken
+whole into a list variable whose type it fits as the value it is: an array, an
+optional and a struct are values in Swift, so the assignment copies them at every
+depth. A payload that holds a union, at any depth, holds it in the machine's own enum,
+one case per case of the union holding that case's record (docs/adr/0092, section 7,
+the Swift row).
+
+The Interpreter's lowering reads a composed payload whole where the event is taken
+(docs/adr/0086, sections 4.2 and 6, the Interpreter row of section 7.1): the event's
+door, `SceStatic.door(<event>, <type>, true)`, reads the data by the descriptor of the
+schema's record, every bound of the type in it at every depth, before any transition
+is selected, refuses a delivery outside its type whole with `error.execution` in its
+place, so none of its transition's content runs, and keeps the value it read, which
+every expression reads through `SceStatic.taken`. A list is an array, a record a plain
+object, a value that may be absent `null` or the value, a text a string and a byte
+string the text of its bytes; an integer past 2^53 - 1, which the data model would not
+hold exactly, is refused where it is read. `len`, an index, a field of a record element
+and a `<foreach>` over a list the payload or an enclosing loop's item holds lower at
+any depth. The Interpreter has no typed seam a host writes a value into: a host's value
+reaches it as the JSON of an event, held to its type by the same door. A list a place
+holds is taken whole into a list variable whose type it fits as the value it is, since
+the data model changes no list or record in place. A payload that holds a union holds
+it as the wire's own object (docs/adr/0092, section 7, the Interpreter row).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the
@@ -5598,7 +5636,15 @@ carries, and builds no object. A part past its room, or a list short of
 its lower count, refuses the whole send with `error.execution`. A place read through
 an index is refused by name on C11 too, and so is a composed value an `<invoke>`'s
 `<param>`, a `<donedata>` or a `<content expr>` carries, whose writers open no pair
-for one yet.
+for one yet. The Swift backend writes the value as its JSON by walking its type
+(`listJSON`, `recordJSON`, `optionalJSON`, each scalar as the `WireValue` a scalar
+param crosses as), keys ascending by their bytes at every depth, and holds that text
+as the `WireValue.composed` its send holds each param in; a place read through an
+index is refused by name on Swift too. The Interpreter's lowering writes the value
+its `<param>` carries, which the Interpreter's own `<send>` writes as the event's
+JSON: a list as an array, a record as an object, an absent value as `null`, each
+scalar as a scalar param crosses, a 64-bit integer as the text of its digits, and a
+part that crosses unchanged as it is.
 
 **Which backend lowers a composed value** (docs/adr/0086, section 7.3). One table
 decides what each backend lowers of a composed value, a row per backend
