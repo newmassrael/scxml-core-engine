@@ -2958,3 +2958,17 @@ length of one of them in a field of its own (`sce_build::c11_codec_printed_file`
   (or `_text_make`), which answers `SCE_FORGE_CODEC_OK` or the refusal of a length outside the bound or of a text
   no UTF-8 holds; the encode over a source then refuses nothing of it.
 
+## A printed C11 codec of a streamed layout derives the lengths it carries (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the
+streamed codecs that hold byte strings and texts, each always there, and carry each one's length in a fixed field
+or a variable-length integer of its own (`codec_zenoh_locator`, `codec_fixed_after_lengthref`, `codec_zenoh_frame`
+among the resources; `sce_build::c11_codec_printed_file` answers `Some(true)`).
+
+- What the section above says of a positional codec now holds of these: the length the encode derives is no member
+  of `{codec}_t` (`msg.value_len`, `msg.len` and the like are gone, and `decode` sets none), and the byte string's
+  own `size_t` length member is the one to set and read. Where the length's field was named as that member
+  (`locator_len` beside `locator`), the member stays and is the text's own length.
+- A view's maker refuses the same lengths as before; it is now spelled through `sce_forge_length_within_bound`, so
+  a header compiled for a target with a 32-bit `size_t` raises no `-Wtype-limits` warning on a bound of 2^32 - 1.
+
