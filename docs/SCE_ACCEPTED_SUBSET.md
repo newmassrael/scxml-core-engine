@@ -5577,22 +5577,8 @@ depth. A payload that holds a union, at any depth, holds it in the machine's own
 one case per case of the union holding that case's record (docs/adr/0092, section 7,
 the Swift row).
 
-The Interpreter's lowering reads a composed payload whole where the event is taken
-(docs/adr/0086, sections 4.2 and 6, the Interpreter row of section 7.1): the event's
-door, `SceStatic.door(<event>, <type>, true)`, reads the data by the descriptor of the
-schema's record, every bound of the type in it at every depth, before any transition
-is selected, refuses a delivery outside its type whole with `error.execution` in its
-place, so none of its transition's content runs, and keeps the value it read, which
-every expression reads through `SceStatic.taken`. A list is an array, a record a plain
-object, a value that may be absent `null` or the value, a text a string and a byte
-string the text of its bytes; an integer past 2^53 - 1, which the data model would not
-hold exactly, is refused where it is read. `len`, an index, a field of a record element
-and a `<foreach>` over a list the payload or an enclosing loop's item holds lower at
-any depth. The Interpreter has no typed seam a host writes a value into: a host's value
-reaches it as the JSON of an event, held to its type by the same door. A list a place
-holds is taken whole into a list variable whose type it fits as the value it is, since
-the data model changes no list or record in place. A payload that holds a union holds
-it as the wire's own object (docs/adr/0092, section 7, the Interpreter row).
+The Interpreter's lowering reads a composed payload whole at the event's door, at
+any depth, and sends one by its name, as "It runs once lowered" below states.
 
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
@@ -5640,11 +5626,7 @@ for one yet. The Swift backend writes the value as its JSON by walking its type
 (`listJSON`, `recordJSON`, `optionalJSON`, each scalar as the `WireValue` a scalar
 param crosses as), keys ascending by their bytes at every depth, and holds that text
 as the `WireValue.composed` its send holds each param in; a place read through an
-index is refused by name on Swift too. The Interpreter's lowering writes the value
-its `<param>` carries, which the Interpreter's own `<send>` writes as the event's
-JSON: a list as an array, a record as an object, an absent value as `null`, each
-scalar as a scalar param crosses, a 64-bit integer as the text of its digits, and a
-part that crosses unchanged as it is.
+index is refused by name on Swift too.
 
 **Which backend lowers a composed value** (docs/adr/0086, section 7.3). One table
 decides what each backend lowers of a composed value, a row per backend
@@ -7447,23 +7429,26 @@ reads the one that does not fit before it writes any, so that the engines
 answer it alike (`static_send_params`, `static_record_real32`).
 
 The data of an event whose schema holds a composed value (docs/adr/0086) is
-read whole, by the library's `payload` handed the descriptor of the schema's
-record, every bound at every depth in it: each field as `field` reads it, so a
-delivery outside its type is refused, at the first place that is not one, by
-any expression that reads any part of it, and none of the fields it holds is
-refused alone while another is read. A read at any depth is that value and the
-fields, elements and lengths after it; a `<foreach>` walks a list it holds, a
-list taken whole into a list variable is the value itself, and a `<send>` that
-names a composed value carries it as its `<param>` writes it, a 64-bit integer
-as the text of its digits. Its parts are walked into the data model, which holds
-no integer past 2^53 - 1, so one there is refused at its pointer as `outOfRange`,
+read whole at the event's door, `SceStatic.door(<event>, <type>, true)`, by the
+descriptor of the schema's record the composed walk spells, every bound and
+every lower count at every depth in it, each field as `field` reads it and a
+field a later revision added read as its default where the delivery lacks it.
+The door reads it when the event is taken, before any transition is selected:
+a delivery outside its type is refused there whole, at the first place that is
+not one, `error.execution` is taken once in its place and none of any
+transition's content runs, as a generated machine, which lifts the payload when
+the event is dequeued, runs none of it (docs/adr/0086, section 4.2). The door
+keeps the value it read, which every expression reads through `SceStatic.taken`,
+so a delivery is walked once. A read at any depth is that value and the fields,
+elements and lengths after it; a `<foreach>` walks a list it holds, a list
+taken whole into a list variable is the value itself, and a `<send>` that names
+a composed value carries it as its `<param>` writes it, a 64-bit integer as the
+text of its digits. Its parts are walked into the data model, which holds no
+integer past 2^53 - 1, so one there is refused at its pointer as `outOfRange`,
 as a lift refuses it (docs/adr/0087, section 2.1), where a generated machine
-whose int64 holds it reads it. None of the differences above stands for such a
-delivery: each transition taken on an event whose composed payload the machine
-reads opens its content with a `<script>` that reads the whole data, so a
-delivery outside its type raises `error.execution` once there and the block
-ends before any of the transition's content runs, as a generated machine, which
-lifts the payload when the event is dequeued, runs none of it.
+whose int64 holds it reads it. The Interpreter has no typed seam a host writes a
+value into: a host's value reaches it as the JSON of an event, held to its type
+by the same door.
 
 A list is an array and a record a plain object, and neither is changed in
 place: `<sce:append>` becomes the `<assign>` of the list written again with the
