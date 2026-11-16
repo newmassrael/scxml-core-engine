@@ -145,6 +145,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # SEVENTH, in a file that does not exist today. A filter written over the
 # places already cleaned names the answers and not the case.
 #
+# `the_licence_expression_names_its_exception_as_an_addition` reads the SPDX
+# expression on every tracked file, and the licence field of every Cargo and
+# Python manifest, against the expression LICENSE-EXCEPTION.md gives. Every
+# source file carries one, so the next one spelled wrongly is in a file that
+# does not exist today, in any directory.
+#
 # `spec_surface_registration` is here for the registry's own reason, and it
 # is the sharpest instance of it. What it reads is every tracked path, and
 # what it judges is whether `SCE_WIRE_CONTRACTS.md` names the spec-bearing
@@ -206,6 +212,7 @@ cargo test -p sce-build --features cli,ffi \
     --test an_sce_attribute_nothing_reads_is_refused_not_ignored \
     --test an_scxml_attribute_outside_the_standard_is_refused \
     --test non_latin_prose_declares_why_it_is_here \
+    --test the_licence_expression_names_its_exception_as_an_addition \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
     --test scope_terminology \

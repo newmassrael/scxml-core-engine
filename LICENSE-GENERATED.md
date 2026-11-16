@@ -49,7 +49,7 @@ Generated code is made of two kinds of material:
 Each generated file's header states both:
 
 ```
-SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 SPDX-FileCopyrightText: <year> <author of the input document> (content derived from the input document)
 SPDX-FileCopyrightText: 2025-2026 newmassrael (content copied from SCE templates)
 ```

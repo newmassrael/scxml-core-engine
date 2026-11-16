@@ -101,6 +101,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // written over the tree as it stands would name the places already
     // cleaned and by construction miss the next one.
     "non_latin_prose_declares_why_it_is_here",
+    // Asks `git ls-files` for every tracked file and reads each SPDX licence
+    // expression it carries, and every Cargo or Python manifest's licence
+    // field, against the expression LICENSE-EXCEPTION.md gives. Every source
+    // file carries one, so the file that spells it wrongly next is a file
+    // that does not exist today, in any directory.
+    "the_licence_expression_names_its_exception_as_an_addition",
     // Sweeps every tracked file under `scripts/` for a second spelling of the
     // parallel-jobs rule, so a script added anywhere under that tree changes
     // what it reads — and a NEW script carrying its own copy is the case the
