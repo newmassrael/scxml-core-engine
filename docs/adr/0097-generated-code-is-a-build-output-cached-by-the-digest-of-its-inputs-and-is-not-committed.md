@@ -767,10 +767,50 @@ recorded here because each changes what a manifest is.
    the commands move into the library first, behind one entry point a `Generator` calls in process
    with the same arguments and the same read set, and the binary becomes a thin parser over it; the
    test crate's `build.rs` then calls `action::materialize` as section 4 has it.
+9. **The commands are the library's, and a build script runs as its own generator** (amends
+   item 8, decided 2026-11-16 under the owner's standing rule). Every command of `sce-codegen`,
+   its argument parser with them, is the module `sce_build::cli` (`sce-build/src/cli/mod.rs`,
+   with the `cli` feature), and the binary is `sce_build::cli::main()` and nothing else. A
+   generation still runs as a process, not as a call: an action is a command run in a working
+   directory with a declared environment (REAPI's `Command`, section 2), and the generator reads
+   its documents relative to that directory, takes its template tree and root from that
+   environment, keeps its run state (the read set it lists, the output mode, the error format) for
+   the life of the process and leaves through the exit statuses of `SCE_ERROR_CONTRACT.md`. A
+   call in process would have to emulate each of them for every caller, and would let one
+   generation's state reach the next. What the build script lacked was not the call but the
+   program, and with the commands in the library it has one: it links `sce-build` with `cli` as a
+   build-dependency and is the program each of its generations runs
+   (`sce_build::action::build_script`), started as `sce-codegen` would be, and it knows it was so
+   started by the first argument every run is given (`--reads`, `generation::READS_FLAG`), which
+   Cargo never passes a build script. `sce-codegen materialize` already ran its own executable as
+   the generator; a build script now does what it does. The arguments, the read set and the exit
+   statuses are those of `sce-codegen`, since the same code reads them.
+10. **A build script watches what decided its trees.** It names to Cargo each tree's manifest,
+    every file a generation read (`generation::Produced::reads`), the nearest existing directory
+    of each file a generation looked for and did not find, and each directory whose listing
+    decided a tree's members (`tree::ExpandedTree::listed`: a pattern's directory before its
+    first wildcard, a catalog), so that a fixture added to a set, or a template changed, reruns
+    the build that compiles it. The checkout's root is never watched, since Cargo reads a watched
+    directory whole and the build's own output is in it. The generator's own sources are watched
+    by Cargo already: a change to them rebuilds the build-dependency and so the script.
+11. **The trees land in `OUT_DIR/sce-trees` at the paths they have under the root**, so that a
+    tree manifest declares one placement for every route, and the crate declares the modules from
+    what was placed: `#[path]` cannot take `env!("OUT_DIR")`, so the build script writes the
+    declarations (`#[path = "<absolute path>"] pub mod <name>;`) into `OUT_DIR`, and the crate
+    `include!`s them where it declared the committed modules by hand (`src/lib.rs`'s
+    `generated`, `src/integration/mod.rs`'s one module per directory, and `tests/w3c.rs`, the one
+    target the 202 W3C tests become, a module each). A tree a build script materializes is
+    `committed = false` and declares no `[[format]]`: its bytes are the generator's own (section
+    2).
 
-Still owed, in order: the commands in the library (item 8), landing 1 (the Rust test trees built by
-`build.rs` into `OUT_DIR`, the W3C tests one target), the release pipeline, and with the fleet cache
-the `generated-deterministic` gate of section 5. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
+Item 8's first half is done (items 9 and 10: `sce_build::cli`, `sce_build::action::build_script`).
+Still owed, in order: landing 1 (item 11: the Rust test crate's `build.rs` over `rust-w3c`,
+`rust-integration` and `rust-static-datamodel`, the three trees deleted with their step, their bx
+action and the `rust-modrs-drift` gate, whose check the derived declarations make true by
+construction, and every reader re-aimed: the drift and sourcemap tests that read the committed
+trees read a materialization, the casefiles that mutate a generated file name it as `<tree>:<path>`
+(answer 7) and those that select `--test test_<n>` select `--test w3c test_<n>::`), the release
+pipeline, and with the fleet cache the `generated-deterministic` gate of section 5. The fleet cache is bx's (RFC 0049 section 4.11); SCE's side is the REAPI client
 `sce_build::action::store` already speaks (an `ActionResult` per action key, SHA-256 digests) and a
 store configured to the site's instance in place of `LocalStore`.
 
