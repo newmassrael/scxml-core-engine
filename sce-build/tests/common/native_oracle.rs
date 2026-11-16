@@ -12,7 +12,9 @@
 //! through a qualifier (C++ and Rust can, C cannot). [`run`] is the rest: every
 //! document of the eight kinds is generated with each name it declares renamed
 //! to each candidate, written beside the sibling units it names, and compiled
-//! as a probe. A name the generator refuses is an answer. What may not happen
+//! as a probe, many cases to a probe and each alone where that probe does not
+//! build ([`compile_probes_together`]). A name the generator refuses is an
+//! answer. What may not happen
 //! is a name that is accepted and then makes the generated code not compile.
 //!
 //! The generated code is compiled, not run: a name that is accepted, compiles
@@ -277,14 +279,75 @@ fn compile_all(
     plans: &[Plan],
 ) -> BTreeMap<String, String> {
     match &native.batch {
-        None => {
-            let uniques: Vec<String> = plans.iter().map(|p| p.unique.clone()).collect();
-            run_parallel(&uniques, |unique| {
-                compile(native, cc, proj, &format!("probe_{unique}"))
-            })
-        }
+        None => compile_probes_together(native, cc, proj, plans),
         Some(batch) => compile_in_batches(native, batch, cc, proj, plans),
     }
+}
+
+/// How many cases one probe of a unit-and-probe backend holds before each is
+/// compiled alone.
+const CASES_PER_PROBE: usize = 48;
+
+/// Compile the plans [`CASES_PER_PROBE`] to a probe, and a probe that does not
+/// build case by case, each in the probe of its own that [`run`] wrote.
+///
+/// One compiler process for each case was what made the C++ oracle the longest
+/// test target of the workspace suite: 26 minutes on 2026-11-15 (Rust Workspace
+/// Tests, job 132834013098), the C oracle 8. Every case's probe pulls in the same
+/// standard and runtime headers (`<string>`, `<vector>`, `sce/forge/...`), and
+/// thousands of probes parsed them thousands of times, for a unit of a few
+/// lines each. A probe of many cases parses them once.
+///
+/// What a case answers is still its own compile. A probe that builds says that
+/// every case in it builds: the units are each in a namespace, a module or under
+/// a prefix of their document's unique name, and siblings are included once, so
+/// one case's unit neither declares nor hides a name another case's needs. A
+/// probe that does not build says nothing about which case, or whether two
+/// cases merely met, so then every case in it is compiled alone and answers for
+/// itself, exactly as before.
+fn compile_probes_together(
+    native: &Native,
+    cc: &Path,
+    proj: &Path,
+    plans: &[Plan],
+) -> BTreeMap<String, String> {
+    let groups: Vec<&[Plan]> = plans.chunks(CASES_PER_PROBE).collect();
+    let items: Vec<String> = (0..groups.len()).map(|i| i.to_string()).collect();
+    let answers: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+    run_parallel(&items, |item| {
+        let index: usize = item.parse().expect("a probe index");
+        let group = groups[index];
+        // Each file once, in the order the cases need them: a C or C++ unit is
+        // guarded, and a Rust module declared twice is an error of the probe's.
+        let mut lines: Vec<String> = Vec::new();
+        for plan in group {
+            for file in &plan.needed {
+                let line = (native.probe_line)(file);
+                if !lines.contains(&line) {
+                    lines.push(line);
+                }
+            }
+        }
+        let probe = format!("probe_group_{index}");
+        std::fs::write(
+            proj.join(format!("{probe}.{}", native.probe_extension)),
+            lines.concat(),
+        )
+        .expect("write a probe of many cases");
+        if compile(native, cc, proj, &probe).is_none() {
+            return None;
+        }
+        for plan in group {
+            if let Some(why) = compile(native, cc, proj, &format!("probe_{}", plan.unique)) {
+                answers
+                    .lock()
+                    .expect("no compile panics while holding the lock")
+                    .insert(plan.unique.clone(), why);
+            }
+        }
+        None
+    });
+    answers.into_inner().expect("no compile panics")
 }
 
 /// Compile the plans a run at a time, one compiler process on all the units of a
