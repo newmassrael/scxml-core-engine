@@ -1453,7 +1453,7 @@ fn a_gate_that_builds_against_third_party_is_preflighted_for_submodules() {
     // Measured against the push that produced this test: these reached a
     // verdict in a tree with no submodules, and `w3c-kotlin` was the one that
     // could not.
-    for exempt in ["ledger-citations", "rustdoc-links", "rust-modrs-drift"] {
+    for exempt in ["ledger-citations", "rustdoc-links"] {
         assert!(
             !needing.contains(exempt),
             "`{exempt}` was reported as needing submodules, but it reached a verdict \

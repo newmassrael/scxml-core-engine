@@ -213,13 +213,6 @@ COST_MEASURED: dict[str, str] = {
     # dev-profile build, under load 20. Not taken by `scripts/gate --measure`,
     # which is refused locally for this repository.
     "wasm32-scenarios": "2026-10-08",
-    # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
-    # the same figure the table already carried. That is the point rather
-    # than an anticlimax: the NUMBER was right and unaskable, and what the
-    # run produced was the date. A cost that has not moved in three weeks
-    # and a cost nobody has timed since look identical until one of them
-    # carries this.
-    "rust-modrs-drift": "2026-09-02",
     # The four cheapest unmeasured gates, timed together on 2026-09-02.
     # Every `cost_s` here survived the re-measurement unchanged, and the two
     # that looked like drift are why this field is a DATE and not a second
@@ -620,24 +613,6 @@ GATES: dict[str, dict] = {
         "deps": ["codegen-build"],
         "cost_s": 1.3,
         "summary": "the NL→IR closure ledger vs the tree it describes",
-        "cache": True,
-        "inputs": None,
-        "commits": [],
-        "peak_gb": 1,
-    },
-    # Structural check over the Rust module tree — only a .rs add/remove can
-    # break it, so the Rust trigger set is exactly right.
-    "rust-modrs-drift": {
-        "local": ["**/*.rs"],
-        "no_ci_reason": "CI catches the same defect as a compile error in "
-                        "rust-workspace-tests.yml — an aggregator naming a "
-                        "missing subdir is E0432, and an unnamed subdir is "
-                        "dead code its importers fail on. This gate exists "
-                        "to say so in under a second instead of after 30s "
-                        "of compilation, so a bypass loses speed, not "
-                        "coverage.",
-        "cost_s": 0,
-        "summary": "mod.rs <-> subdirectory drift",
         "cache": True,
         "inputs": None,
         "commits": [],
@@ -4661,7 +4636,7 @@ def self_test(repo_root: Path) -> int:
     # triggers for exactly this reason — they are what stop rule 1 from
     # handing back the whole table for a path the registry does understand.
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build", "rust-modrs-drift"],
+          want_has=["codegen-build"],
           want_lacks=["workspace-tests", "clippy"])
     # Dependency closure: an example-only change still builds sce-codegen.
     # `example-codegen` is `ci_only` now, but the closure it pulls in is not:

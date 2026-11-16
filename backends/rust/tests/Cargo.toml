@@ -37,6 +37,13 @@ linkme = { workspace = true }
 reqwest = { version = "0.12", features = ["blocking"] }
 serde_json = "1"
 
+# The generator, with its commands (`cli`): the build script is the generator
+# of every action of the three trees this crate compiles (`rust-w3c`,
+# `rust-integration`, `rust-static-datamodel`), which it writes into OUT_DIR
+# (docs/adr/0097, section 4 and items 9 to 11 of its 2026-11-16 amendment).
+[build-dependencies]
+sce-build = { path = "../../../sce-build", features = ["cli"] }
+
 [dev-dependencies]
 env_logger = "0.11"
 # Engine DI Parity RFC (Path B+): the test wrappers under `tests/` construct
