@@ -334,6 +334,13 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // window. The heavy tail moved and the middle did not, so moving this row
     // needs a faster lane, not a quieter day.
     ("forge-conformance.yml", 25.5, 4, 19, 2),
+    // ⚠ STAND-IN, borrowed 2026-11-16 for a lane of no history: it builds `sce-codegen` and
+    // materializes every declared tree, as `regen-reproduces.yml` does (13.9). It does both twice,
+    // once at the base and once at the head, so the true median may sit near twice the borrowed
+    // figure, past the 17.6-minute push gap; the lane already declares `false` like every other,
+    // so the cost of being wrong is a row filed under the wrong population, not a missing guard.
+    // Replace it after 25 runs of its own and delete this paragraph.
+    ("generated-diff.yml", 13.9, 0, 0, 0),
     // Landed 2026-10-10 with the GenMC gate it runs, and reached this table by
     // failing `every_workflow_is_classified` on the push that added it.
     //

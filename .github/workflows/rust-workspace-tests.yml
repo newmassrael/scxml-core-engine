@@ -211,6 +211,11 @@ on:
       - 'docs/spec/*/.atomic/workspace.atomic.json'
       - 'docs/sce-ledger/*/mnemosyne.toml'
       - 'docs/sce-ledger/*/.atomic/workspace.atomic.json'
+      # The generated diff's renderer and the locator it resolves the
+      # generator through, which
+      # `a_change_shows_what_it_does_to_the_generated_code` runs.
+      - 'scripts/generated_diff.sh'
+      - 'scripts/lib/sce_codegen.sh'
   pull_request:
     branches: [ main ]
     paths:
@@ -368,6 +373,11 @@ on:
       - 'docs/spec/*/.atomic/workspace.atomic.json'
       - 'docs/sce-ledger/*/mnemosyne.toml'
       - 'docs/sce-ledger/*/.atomic/workspace.atomic.json'
+      # The generated diff's renderer and the locator it resolves the
+      # generator through, which
+      # `a_change_shows_what_it_does_to_the_generated_code` runs.
+      - 'scripts/generated_diff.sh'
+      - 'scripts/lib/sce_codegen.sh'
 
 # This lane is not superseded by the push that follows it.
 #
