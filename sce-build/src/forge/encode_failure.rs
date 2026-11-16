@@ -75,7 +75,8 @@ impl EncodeFailure {
     /// whose encode of a source answers the runtime's typed error, or `None`
     /// where the backend has no name for this refusal: no harness of it can
     /// state the case, and a fold that meets one says so by name. Rust, C++,
-    /// Python, Swift, Kotlin and Go name every refusal.
+    /// Python, Swift, Kotlin and Go name every refusal, and C11 each its
+    /// runtime holds a status for.
     pub fn symbol(self, lang: Language) -> Option<&'static str> {
         match lang {
             Language::Rust => Some(match self {
@@ -129,9 +130,14 @@ impl EncodeFailure {
                 EncodeFailure::PresentIfMismatch => "codec.ErrPresentIfMismatch",
                 EncodeFailure::InconsistentSource => "codec.ErrInconsistentSource",
             }),
-            // These harnesses run no source of a printed encode (docs/adr/0081
-            // §5), so none of them states a refused case.
-            Language::C11 => None,
+            // The C runtime's status codes (`sce/forge/codec.h`). It has no
+            // status for an inconsistent source yet, so no C11 harness states
+            // that case until it does.
+            Language::C11 => match self {
+                EncodeFailure::LengthOutOfRange => Some("SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE"),
+                EncodeFailure::PresentIfMismatch => Some("SCE_FORGE_CODEC_PRESENT_IF_MISMATCH"),
+                EncodeFailure::InconsistentSource => None,
+            },
         }
     }
 }
@@ -207,6 +213,17 @@ mod tests {
                 format!("codec.Err{variant}"),
                 "Go {f:?}: `{symbol}` does not name `{variant}`"
             );
+            // The C runtime names a status after the variant in upper snake
+            // case (`LengthOutOfRange`, `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`).
+            if let Some(symbol) = f.symbol(Language::C11) {
+                assert_eq!(
+                    symbol
+                        .strip_prefix("SCE_FORGE_CODEC_")
+                        .map(|s| s.replace('_', "")),
+                    Some(variant.to_ascii_uppercase()),
+                    "C11 {f:?}: `{symbol}` does not name `{variant}`"
+                );
+            }
         }
     }
 
@@ -215,8 +232,11 @@ mod tests {
     /// Rust and C++ runtimes, the exception `InconsistentSource` of the Python
     /// one, the case `inconsistentSource` of the Swift one,
     /// `CodecError.InconsistentSource` of the Kotlin one, the sentinel
-    /// `codec.ErrInconsistentSource` of the Go one), and no other backend's
-    /// harness states a refused case.
+    /// `codec.ErrInconsistentSource` of the Go one); the C runtime names the
+    /// two its status codes hold and not the inconsistent source.
+    ///
+    /// Turns red where `symbol` drops the C11 arm, or names an inconsistent
+    /// source the C runtime has no status for.
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
@@ -226,7 +246,11 @@ mod tests {
             assert!(f.symbol(Language::Swift).is_some(), "{f:?}");
             assert!(f.symbol(Language::Kotlin).is_some(), "{f:?}");
             assert!(f.symbol(Language::Go).is_some(), "{f:?}");
-            assert!(f.symbol(Language::C11).is_none(), "{f:?}");
+            assert_eq!(
+                f.symbol(Language::C11).is_some(),
+                f != EncodeFailure::InconsistentSource,
+                "C11 {f:?}"
+            );
         }
     }
 }
