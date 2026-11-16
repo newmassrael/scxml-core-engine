@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5, §12.3: a test component whose receive
+     branch reads every part of received_parts through the machine's types: the
+     length of each byte string of a list, each number of a list of lists, the
+     present value of a list of values that may be absent, the length of a list
+     that may be absent, the case of a union and the field of its card, a
+     field of a record within the record, and the numbers and the enum of a
+     list of records. It logs what it read, and passes when every part is what
+     the system port was handed. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="parts_reader"
+       datamodel="sce-static" initial="reading">
+  <sce:import kind="test-port-type" src="parts_port.scxml" as="PartsPort"/>
+  <sce:import kind="test-template" src="received_parts_any.scxml" as="AnyParts"/>
+  <sce:import kind="event-schema" src="received_parts.scxml" as="ReceivedParts"/>
+  <sce:import kind="event-schema" src="../imports/order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="../imports/order_customer.scxml" as="Customer"/>
+  <sce:import kind="event-schema" src="../imports/card_payment.scxml" as="Card"/>
+  <sce:import kind="event-schema" src="../imports/voucher_payment.scxml" as="Voucher"/>
+  <sce:import kind="union" src="../imports/order_payment.scxml" as="Payment"/>
+  <sce:import kind="enum" src="../imports/payment_kind.scxml" as="PaymentKind"/>
+  <sce:import kind="enum" src="../imports/paint_color.scxml" as="Color"/>
+  <sce:test-port id="sut" type="PartsPort"/>
+  <datamodel>
+    <data id="blob_bytes" sce:type="uint32" expr="0"/>
+    <data id="cell_sum" sce:type="uint32" expr="0"/>
+    <data id="cell" sce:type="uint8" expr="0"/>
+    <data id="slot_count" sce:type="uint32" expr="0"/>
+    <data id="last_slot" sce:type="optional&lt;uint16&gt;" expr="null"/>
+    <data id="slot_value" sce:type="uint16" expr="0"/>
+    <data id="spare_count" sce:type="uint32" expr="0"/>
+    <data id="paid_by" sce:type="enum:PaymentKind" expr="PaymentKind.cash"/>
+    <data id="amount" sce:type="uint32" expr="0"/>
+    <data id="vip" sce:type="bool" expr="false"/>
+    <data id="quantity_sum" sce:type="uint32" expr="0"/>
+    <data id="first_color" sce:type="enum:Color" expr="Color.red"/>
+  </datamodel>
+  <state id="reading">
+    <transition sce:receive="sut" sce:test-template="AnyParts" target="done">
+      <foreach array="_event.data.blobs" item="blob">
+        <assign location="blob_bytes" expr="blob_bytes + len(blob)"/>
+      </foreach>
+      <foreach array="_event.data.grid" item="cells">
+        <foreach array="cells" item="n">
+          <assign location="cell_sum" expr="cell_sum + n"/>
+        </foreach>
+      </foreach>
+      <if cond="len(_event.data.grid) &gt; 1 &amp;&amp; len(_event.data.grid[1]) &gt; 0">
+        <assign location="cell" expr="_event.data.grid[1][0]"/>
+      </if>
+      <assign location="slot_count" expr="len(_event.data.slots)"/>
+      <if cond="len(_event.data.slots) &gt; 1">
+        <assign location="last_slot" expr="_event.data.slots[1]"/>
+      </if>
+      <if cond="last_slot !== null">
+        <assign location="slot_value" expr="last_slot.value"/>
+      </if>
+      <if cond="_event.data.spare !== null">
+        <assign location="spare_count" expr="len(_event.data.spare.value)"/>
+      </if>
+      <assign location="paid_by" expr="_event.data.payment.kind"/>
+      <if cond="_event.data.payment.kind === PaymentKind.card">
+        <assign location="amount" expr="_event.data.payment.amount"/>
+      </if>
+      <assign location="vip" expr="_event.data.customer.vip"/>
+      <foreach array="_event.data.lines" item="row">
+        <assign location="quantity_sum" expr="quantity_sum + row.quantity"/>
+      </foreach>
+      <if cond="len(_event.data.lines) &gt; 0">
+        <assign location="first_color" expr="_event.data.lines[0].color"/>
+      </if>
+      <log label="blob_bytes" expr="blob_bytes"/>
+      <log label="cell_sum" expr="cell_sum"/>
+      <log label="cell" expr="cell"/>
+      <log label="slot_count" expr="slot_count"/>
+      <log label="slot_value" expr="slot_value"/>
+      <log label="spare_count" expr="spare_count"/>
+      <log label="amount" expr="amount"/>
+      <log label="vip" expr="vip"/>
+      <log label="quantity_sum" expr="quantity_sum"/>
+      <if cond="paid_by === PaymentKind.card &amp;&amp; first_color === Color.blue">
+        <sce:setverdict value="pass"/>
+      <else/>
+        <sce:setverdict value="fail" reason="'the union or the enum read back as another value'"/>
+      </if>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

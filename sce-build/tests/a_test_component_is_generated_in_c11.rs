@@ -1158,6 +1158,55 @@ fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_c11() 
     assert!(checked < first, "{code}");
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.3: the reader of every part a C11 unit holds
+/// in a type of its own (`received/parts_reader.scxml`, which
+/// `backends/c/tests/integration/test_a_received_message_is_made_in_the_machines_types.c`
+/// compiles and runs) takes each member of its message by a function of the
+/// machine named by the machine's type and the unit's: a list of byte strings,
+/// a list of lists, a list of values that may be absent, a list that may be
+/// absent, a union and a list of records; the record within it is a compound
+/// literal of the machine's struct.
+#[test]
+fn a_message_of_every_part_its_content_reads_is_made_by_functions_on_c11() {
+    let code = text_at(&profile_dir().join("received/parts_reader.scxml"));
+    let member = |id: &str, made: &str| {
+        format!(
+            " sm->pending_payload.as.received_parts.{id} = {made}(((*sce_test_received_).{id}));"
+        )
+    };
+    for needle in [
+        member("blobs", "sce_static_bytes_4_list_2_from_sce_list_2_bytes_4"),
+        member(
+            "grid",
+            "sce_static_list_uint8_2_list_2_from_sce_list_2_list_2_uint8",
+        ),
+        member(
+            "slots",
+            "sce_optional_uint16_list_2_from_sce_list_2_opt_uint16",
+        ),
+        member(
+            "spare",
+            "sce_optional_record_sce_static_list_uint8_2_from_sce_opt_list_2_uint8",
+        ),
+        member(
+            "payment",
+            "parts_reader_union_order_payment_from_order_payment",
+        ),
+        member(
+            "lines",
+            "parts_reader_record_line_list_2_from_sce_list_2_record_OrderLinePayload",
+        ),
+        " sm->pending_payload.as.received_parts.customer = (parts_reader_record_customer_t){ \
+         .full_name = (((*sce_test_received_).customer).full_name), \
+         .vip = (((*sce_test_received_).customer).vip) };"
+            .to_string(),
+        "        made.data[i] = sce_optional_uint16_from_sce_opt_uint16((*sce_copied));\n"
+            .to_string(),
+    ] {
+        assert!(code.contains(&needle), "`{needle}` in:\n{code}");
+    }
+}
+
 /// docs/SCE_TEST_PROFILE.md §12.3, docs/adr/0092 section 7: a receive branch
 /// whose content reads a message that holds a union (`order_placed`'s
 /// `payment`), a record within the record (`customer`) and a list of records

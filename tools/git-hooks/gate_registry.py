@@ -2221,7 +2221,16 @@ GATES: dict[str, dict] = {
                   # and templates over a union they import, and the unions.
                   "sce-build/tests/fixtures/ttcn3_export/**",
                   "sce-build/tests/fixtures/test_profile/imports/**",
-                  "sce-build/tests/fixtures/union/**"],
+                  "sce-build/tests/fixtures/union/**",
+                  # The configurations of every form the build generates,
+                  # whose readers and writers
+                  # `test_a_record_reads_back_the_form_it_writes.c` round-trips,
+                  # and the reader of a received message's every part the
+                  # build generates and
+                  # `test_a_received_message_is_made_in_the_machines_types.c`
+                  # runs.
+                  "sce-build/tests/fixtures/test_profile/trace_forms/**",
+                  "sce-build/tests/fixtures/test_profile/received/**"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "

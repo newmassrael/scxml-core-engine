@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §12.3: a message whose every part a backend's unit
+     may hold in a type of its own, which a receive branch's content takes into
+     the machine's types: a list of byte strings, a list of lists, a list of
+     values that may be absent, a value that may be absent of a list, a union
+     of a case with a record, one with nothing and one with a byte string, a
+     record within the record, and a list of records that hold an enum. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="received_parts"
+       sce:event-name="received.parts">
+  <sce:import kind="event-schema" src="../imports/order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="../imports/order_customer.scxml" as="Customer"/>
+  <sce:import kind="union" src="../imports/order_payment.scxml" as="Payment"/>
+  <datamodel>
+    <data id="blobs" sce:type="list&lt;bytes[4]&gt;[2]" sce:direction="in"/>
+    <data id="grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]" sce:direction="in"/>
+    <data id="slots" sce:type="list&lt;optional&lt;uint16&gt;&gt;[2]" sce:direction="in"/>
+    <data id="spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;" sce:direction="in"/>
+    <data id="payment" sce:type="union:Payment" sce:direction="in"/>
+    <data id="customer" sce:type="record:Customer" sce:direction="in"/>
+    <data id="lines" sce:type="list&lt;record:Line&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>

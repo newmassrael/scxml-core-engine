@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.6, docs/SCE_TTCN3_LANE.md §10.5: the reader of
+     every part as the MTC, its port mapped to a system port that takes
+     received_parts, so a recorded trace hands it one. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="parts_configuration">
+  <sce:import kind="test-component" src="parts_reader.scxml" as="PartsReader"/>
+  <sce:import kind="test-port-type" src="parts_port.scxml" as="PartsPort"/>
+  <sce:mtc type="PartsReader"/>
+  <sce:system-port id="sut" type="PartsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

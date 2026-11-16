@@ -4802,6 +4802,59 @@ set_tests_properties(c11_integration_a_record_reads_back_the_form_it_writes PROP
     LABELS "integration;c11;aot"
 )
 
+# ─── a received message's parts: docs/SCE_TEST_PROFILE.md §12.3 ─────
+#
+# A test component whose receive branch reads a message holding every part a
+# C11 unit holds in a type of its own (a list of byte strings, a list of
+# lists, a list of values that may be absent, a list that may be absent, a
+# union, a record within the record, a list of records holding an enum), which
+# the machine makes from the unit's value by the functions the generator writes
+# beside its statements. They are compiled here under the strict flags, and run
+# with a trace that hands the component one value it reads back
+# (integration/test_a_received_message_is_made_in_the_machines_types.c). The
+# records, the union and the enums the message holds are generated above for
+# the templates; the port type writes no file.
+set(_RP_FIXTURE_DIR "${_TP_FIXTURE_DIR}/received")
+set(_RP_HEADERS ${_TP_HEADERS})
+set(_RP_SOURCES "")
+foreach(_RP_DOCUMENT received_parts received_parts_any parts_reader parts_configuration reads_every_part)
+    sce_c_integration_generation(_RP_${_RP_DOCUMENT} "${_RP_FIXTURE_DIR}/${_RP_DOCUMENT}.scxml"
+        INPUT_ROOT "${_RP_FIXTURE_DIR}")
+    list(APPEND _RP_HEADERS ${_RP_${_RP_DOCUMENT}_HEADERS})
+    list(APPEND _RP_SOURCES ${_RP_${_RP_DOCUMENT}_SOURCES})
+endforeach()
+
+add_executable(sce_c_integration_a_received_message_is_made_in_the_machines_types
+    integration/test_a_received_message_is_made_in_the_machines_types.c
+    ${_RP_SOURCES}
+    ${_RP_HEADERS}
+)
+target_include_directories(sce_c_integration_a_received_message_is_made_in_the_machines_types PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+sce_c_link_runtime(sce_c_integration_a_received_message_is_made_in_the_machines_types EXCLUDES lua dom http clock)
+# `strtod`, which the trace's reader holds a number of a value to its canonical
+# spelling through, and the saved value readers.
+target_link_libraries(sce_c_integration_a_received_message_is_made_in_the_machines_types PRIVATE m)
+target_compile_options(sce_c_integration_a_received_message_is_made_in_the_machines_types PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_a_received_message_is_made_in_the_machines_types PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_a_received_message_is_made_in_the_machines_types
+    COMMAND sce_c_integration_a_received_message_is_made_in_the_machines_types
+)
+set_tests_properties(c11_integration_a_received_message_is_made_in_the_machines_types PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── the runner program: docs/SCE_TTCN3_LANE.md §4, §10.5 ───────────
 #
 # The runner program of the generated runtime_suite: the suite's header declares
