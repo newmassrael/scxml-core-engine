@@ -18,20 +18,33 @@
 //! Every forge document under `tests/forge/resources` that parses is
 //! parsed again with a `<sce:helper>` — a real SCE element, valid where a
 //! procedure's `<datamodel>` holds it — written as the root's first child,
-//! where no kind reads one. Each must be refused as an unexpected child on
-//! the row that holds it. The documents are the population, so a kind is
+//! where no kind reads one. Each must be refused on the row that holds it:
+//! as misplaced, with the move to the element that reads helpers, where the
+//! document has one (a procedure's `<datamodel>`), and as an unexpected
+//! child everywhere else. The documents are the population, so a kind is
 //! covered by having a document, not by a list here.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use sce_build::forge::diagnostic::ToDiagnostics;
+use sce_build::forge::error::RelatedRole;
 use sce_build::DocumentLabel;
 
 const MISPLACED: &str =
     r#"<sce:helper name="misplaced" args="bytes" returns="bytes" sce:returns-max-size="64"/>"#;
 
-fn parse(text: &str, stem: &str) -> Result<Option<String>, (String, Option<u32>)> {
+/// What a refusal said: its code, its row, and for a misplaced element the
+/// fix's `under` and the row of its `destination` site.
+#[derive(Debug)]
+struct Refusal {
+    code: String,
+    line: Option<u32>,
+    under: Option<String>,
+    destination_line: Option<u32>,
+}
+
+fn parse(text: &str, stem: &str) -> Result<Option<String>, Refusal> {
     let label = DocumentLabel {
         identifier: stem,
         diagnostic_label: stem,
@@ -39,11 +52,33 @@ fn parse(text: &str, stem: &str) -> Result<Option<String>, (String, Option<u32>)
     match sce_build::forge::parser::parse_forge_with_imports(text, label) {
         Ok(parsed) => Ok(parsed.map(|p| format!("{:?}", p.document.kind()))),
         Err(refusal) => {
-            let code = serde_json::to_string(&refusal.error.to_diagnostics()[0].code)
-                .expect("a code serialises");
-            Err((code, refusal.location.line))
+            let record = &refusal.error.to_diagnostics()[0];
+            let code = serde_json::to_string(&record.code).expect("a code serialises");
+            let fix = serde_json::to_value(&record.fix).expect("a fix serialises");
+            Err(Refusal {
+                code,
+                line: refusal.location.line,
+                under: fix
+                    .get("under")
+                    .and_then(|u| u.as_str())
+                    .map(str::to_string),
+                destination_line: refusal
+                    .related()
+                    .iter()
+                    .find(|site| site.role == RelatedRole::Destination)
+                    .and_then(|site| site.location.line),
+            })
         }
     }
+}
+
+/// The row of the root's `<datamodel>` child in `text`, when it has one.
+fn datamodel_row(text: &str) -> Option<u32> {
+    let doc = roxmltree::Document::parse(text).expect("the document parses");
+    doc.root_element()
+        .children()
+        .find(|n| n.has_tag_name("datamodel"))
+        .map(|n| doc.text_pos_at(n.range().start).row)
 }
 
 /// `text` with `MISPLACED` on a row of its own right after the root's start
@@ -78,6 +113,7 @@ fn an_sce_element_no_reader_asks_for_is_refused_in_every_kind() {
 
     let mut kinds = BTreeSet::new();
     let mut judged = 0usize;
+    let mut moved = 0usize;
     let mut wrong = Vec::new();
     for path in &paths {
         let text = std::fs::read_to_string(path).expect("a resource reads");
@@ -88,10 +124,26 @@ fn an_sce_element_no_reader_asks_for_is_refused_in_every_kind() {
             continue;
         };
         let (misplaced, row) = with_misplaced_child(&text);
-        match parse(&misplaced, stem) {
-            Err((code, line))
-                if code == "\"validation/unexpected-child-element\"" && line == Some(row) => {}
-            other => wrong.push(format!("{} ({kind}): {other:?}", path.display())),
+        // A procedure's `<datamodel>` is where a helper is read, so there
+        // the parse knows the move; in every other kind nothing reads one.
+        let home = if kind == "Procedure" {
+            datamodel_row(&misplaced)
+        } else {
+            None
+        };
+        match (parse(&misplaced, stem), home) {
+            (Err(refusal), Some(home_row))
+                if refusal.code == "\"validation/misplaced-element\""
+                    && refusal.line == Some(row)
+                    && refusal.under.as_deref() == Some("datamodel")
+                    && refusal.destination_line == Some(home_row) =>
+            {
+                moved += 1;
+            }
+            (Err(refusal), None)
+                if refusal.code == "\"validation/unexpected-child-element\""
+                    && refusal.line == Some(row) => {}
+            (other, _) => wrong.push(format!("{} ({kind}): {other:?}", path.display())),
         }
         kinds.insert(kind);
         judged += 1;
@@ -99,8 +151,12 @@ fn an_sce_element_no_reader_asks_for_is_refused_in_every_kind() {
 
     // Floors: a scan of nothing refuses nothing. The resources hold well
     // over a hundred documents that parse on their own, across the kinds
-    // the conformance catalog names.
+    // the conformance catalog names, and procedures among them.
     assert!(judged >= 100, "only {judged} document(s) were judged");
+    assert!(
+        moved >= 1,
+        "no procedure was judged, so the move was never asked for"
+    );
     assert!(
         kinds.len() >= 12,
         "only {} kind(s) were judged: {kinds:?}",

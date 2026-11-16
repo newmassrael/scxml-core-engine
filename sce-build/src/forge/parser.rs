@@ -148,16 +148,57 @@ fn written_tag(node: &roxmltree::Node) -> String {
 /// `<sce:helper>` written under a procedure's `<scxml>` root rather than its
 /// `<datamodel>` was never parsed, and the refusal that followed named the
 /// call that used it.
+///
+/// Where another element of the document was asked for the name, the
+/// element is misplaced rather than unknown, and the refusal says where it
+/// is read: offering the names its parent takes as renames would send the
+/// author to change a name that was right (`validation/misplaced-element`).
 fn refuse_unread(
     recording: read_ledger::Recording,
     root: &roxmltree::Node,
     doc_name: &str,
 ) -> Result<read_ledger::Ledger, Located<ForgeError>> {
     let ledger = recording.finish();
-    read_ledger::refuse_unread(&ledger, root, |child, parent, asked| {
-        unexpected_child(child, doc_name, format!("<{}>", written_tag(parent)), asked)
+    read_ledger::refuse_unread(&ledger, root, |unread| {
+        let parent = format!("<{}>", written_tag(&unread.parent));
+        match &unread.belongs_under {
+            Some(home) => misplaced_child(&unread.element, doc_name, parent, home),
+            None => unexpected_child(&unread.element, doc_name, parent, &unread.asked),
+        }
     })?;
     Ok(ledger)
+}
+
+/// The refusal of an SCE element written under a parent that does not take
+/// it while `home` does, located at the element, with `home` as the
+/// `destination` site the move goes to (SCE_ERROR_CONTRACT.md §2.4). Both
+/// tags are spelled as the document spells them.
+fn misplaced_child(
+    child: &roxmltree::Node,
+    doc_name: &str,
+    parent: String,
+    home: &roxmltree::Node,
+) -> Located<ForgeError> {
+    let under = written_tag(home);
+    let home_pos = home.document().text_pos_at(home.range().start);
+    located(
+        child,
+        doc_name,
+        ValidationError::MisplacedElement {
+            parent,
+            child: written_tag(child),
+            belongs_under: under.clone(),
+        },
+    )
+    .related_to(crate::forge::error::RelatedSite {
+        role: crate::forge::error::RelatedRole::Destination,
+        location: SourceLocation {
+            file: doc_name.to_string(),
+            line: Some(home_pos.row),
+            col: Some(home_pos.col),
+        },
+        actual: Some(under),
+    })
 }
 
 /// The refusal of an element that takes exactly one of several FORMS —

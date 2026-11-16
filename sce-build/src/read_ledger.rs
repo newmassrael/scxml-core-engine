@@ -203,14 +203,31 @@ pub(crate) fn attribute_read(node: &Node, attribute: &roxmltree::Attribute) {
     });
 }
 
+/// What [`refuse_unread`] knows about an SCE element nothing read: where it
+/// was written, what its parent was asked for, and where a reader asks for
+/// its name instead.
+pub(crate) struct UnreadElement<'l, 'a, 'input> {
+    /// The element itself.
+    pub element: Node<'a, 'input>,
+    /// The parent it was written under.
+    pub parent: Node<'a, 'input>,
+    /// The SCE names a reader asked `parent` for.
+    pub asked: Vec<&'l str>,
+    /// The first element at or below the root, in document order, that a
+    /// reader asked for an SCE child of `element`'s name: where an element
+    /// of that name is read. `None` when no reader asked anywhere, and the
+    /// name is read nowhere in this document.
+    pub belongs_under: Option<Node<'a, 'input>>,
+}
+
 /// The refusal of the first SCE element under `root`, in document order,
 /// that nothing read: not taken, under a parent no reader closed, and outside
-/// every delegated subtree. `refuse` builds it from the element, its parent,
-/// and the SCE names the parent was asked for.
-pub(crate) fn refuse_unread(
+/// every delegated subtree. `refuse` builds it from what the ledger knows of
+/// the element ([`UnreadElement`]).
+pub(crate) fn refuse_unread<'a, 'input>(
     ledger: &Ledger,
-    root: &Node,
-    refuse: impl Fn(&Node, &Node, &[&str]) -> Located<ForgeError>,
+    root: &Node<'a, 'input>,
+    refuse: impl Fn(&UnreadElement<'_, 'a, 'input>) -> Located<ForgeError>,
 ) -> Result<(), Located<ForgeError>> {
     let mut pending: Vec<Node> = root.children().filter(Node::is_element).collect();
     pending.reverse();
@@ -228,13 +245,39 @@ pub(crate) fn refuse_unread(
                 .get(&parent.id())
                 .map(|names| names.iter().map(String::as_str).collect())
                 .unwrap_or_default();
-            return Err(refuse(&node, &parent, &asked));
+            let belongs_under = asked_for(ledger, root, node.tag_name().name());
+            return Err(refuse(&UnreadElement {
+                element: node,
+                parent,
+                asked,
+                belongs_under,
+            }));
         }
         let mut children: Vec<Node> = node.children().filter(Node::is_element).collect();
         children.reverse();
         pending.extend(children);
     }
     Ok(())
+}
+
+/// The first element at or below `root`, in document order, that a reader
+/// asked for an SCE child named `local`.
+///
+/// The parent an unread element was written under never qualifies: a
+/// reader that asks a parent for a name takes every child of that name
+/// ([`crate::forge::parser`]'s accessors record both at once), so a child
+/// left over was not asked for there.
+fn asked_for<'a, 'input>(
+    ledger: &Ledger,
+    root: &Node<'a, 'input>,
+    local: &str,
+) -> Option<Node<'a, 'input>> {
+    root.descendants().filter(Node::is_element).find(|node| {
+        ledger
+            .asked
+            .get(&node.id())
+            .is_some_and(|names| names.contains(local))
+    })
 }
 
 /// An `sce:` attribute a W3C element carries that the parse never asked
@@ -376,6 +419,65 @@ mod tests {
                 "the ledger closes with its recording"
             )
         });
+    }
+
+    const MISPLACED: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext">
+  <sce:helper name="h"/>
+  <datamodel/>
+</scxml>"#;
+
+    /// The unread element's name, its parent's asked names, and the tag of
+    /// the element it belongs under, as `refuse_unread` hands them out.
+    fn judged(asks: &[(&str, &str)]) -> (String, Vec<String>, Option<String>) {
+        let document = roxmltree::Document::parse(MISPLACED).unwrap();
+        let root = document.root_element();
+        let recording = Recording::open(&root);
+        for (parent, local) in asks {
+            let parent = document
+                .descendants()
+                .find(|n| n.has_tag_name(*parent))
+                .unwrap();
+            asked(&parent, local);
+        }
+        let ledger = recording.finish();
+        let seen = RefCell::new(None);
+        let refused = refuse_unread(&ledger, &root, |unread| {
+            *seen.borrow_mut() = Some((
+                unread.element.tag_name().name().to_string(),
+                unread.asked.iter().map(|s| s.to_string()).collect(),
+                unread
+                    .belongs_under
+                    .map(|home| home.tag_name().name().to_string()),
+            ));
+            Located::new(
+                crate::forge::error::ValidationError::MissingAttribute {
+                    element: "probe".into(),
+                    attr: "probe".into(),
+                }
+                .into(),
+                "probe",
+                None,
+                None,
+            )
+        });
+        assert!(refused.is_err(), "the helper nothing took is refused");
+        seen.into_inner().expect("the refusal was built")
+    }
+
+    #[test]
+    fn an_element_another_parent_asked_for_belongs_under_that_parent() {
+        let (element, asked, home) = judged(&[("datamodel", "helper"), ("scxml", "import")]);
+        assert_eq!(element, "helper");
+        assert_eq!(asked, vec!["import".to_string()]);
+        assert_eq!(home.as_deref(), Some("datamodel"));
+    }
+
+    #[test]
+    fn an_element_no_parent_asked_for_belongs_nowhere() {
+        let (element, asked, home) = judged(&[("scxml", "import")]);
+        assert_eq!(element, "helper");
+        assert_eq!(asked, vec!["import".to_string()]);
+        assert_eq!(home, None, "no reader asked for a helper anywhere");
     }
 
     #[test]

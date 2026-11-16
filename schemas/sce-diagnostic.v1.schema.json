@@ -56,6 +56,7 @@
         "validation/exactly-one-attribute",
         "validation/send-operand-type",
         "validation/unexpected-child-element",
+        "validation/misplaced-element",
         "validation/unknown-sce-attribute",
         "validation/default-covers-unknown-variant",
         "validation/default-covers-tested-variant",
@@ -622,7 +623,7 @@
         "required": ["role", "location"],
         "additionalProperties": false,
         "properties": {
-          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow", "reached-from", "referent"] },
+          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow", "reached-from", "referent", "destination"] },
           "location": {
             "type": "object",
             "required": ["file"],
@@ -756,6 +757,16 @@
               "minItems": 1
             },
             "type": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "element", "under"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "move_element" },
+            "element": { "type": "string" },
+            "under": { "type": "string" }
           }
         }
       ]

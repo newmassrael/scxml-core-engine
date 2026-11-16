@@ -107,6 +107,21 @@ acknowledged at the site that makes the choice; and one inside a value
 carried as written — `<content>`, a `<data>` or `<assign>` value — which
 is the value's, for whoever reads it.
 
+**An SCE element of a forge document has a reader, or is refused, and a
+misplaced one is told where it is read.** The `<scxml>` root admits SCE
+elements laxly, because one root serves every kind, so the same ledger
+records which SCE names each reader asked each parent for. When the parse
+ends, the first SCE element nothing took is refused at its own row. If
+another element of the document was asked for that name (a `<sce:helper>`
+under a procedure's root, where its `<datamodel>` reads helpers), the
+refusal is `validation/misplaced-element`: `actual` is the element's tag,
+`fix` is `move_element` with the element it moves under, and a
+`destination` related site gives that element's row (SCE_ERROR_CONTRACT
+§2.4, §3.1). Otherwise it is `validation/unexpected-child-element`, with
+the names its parent was asked for as the candidates. Until 2026-11-16 a
+misplaced element was offered those names as renames, which sent the author
+to change a name that was right.
+
 **An unqualified attribute on a W3C element is one the Recommendation
 defines for it, or is refused.** The same `lax` wildcard admits any
 attribute on a W3C element, and the parsers read the attributes they know
@@ -10065,7 +10080,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (536 codes)
+## Appendix — `DiagnosticCode` index (537 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10116,6 +10131,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/exactly-one-attribute` | Validation |
 | `validation/send-operand-type` | Validation |
 | `validation/unexpected-child-element` | Validation |
+| `validation/misplaced-element` | Validation |
 | `validation/unknown-sce-attribute` | Validation |
 | `validation/default-covers-unknown-variant` | Validation |
 | `validation/default-covers-tested-variant` | Validation |

@@ -166,6 +166,10 @@ pub enum RelatedRole {
     /// configuration removes while the element that names it stays (ADR 0057
     /// §5).
     Referent,
+    /// The element the record's element is read under, where the record's
+    /// element was written under another: the `<datamodel>` a misplaced
+    /// `<sce:helper>` moves into (`validation/misplaced-element`).
+    Destination,
 }
 
 impl RelatedRole {
@@ -177,6 +181,7 @@ impl RelatedRole {
         RelatedRole::MustFollow,
         RelatedRole::ReachedFrom,
         RelatedRole::Referent,
+        RelatedRole::Destination,
     ];
 }
 
@@ -825,6 +830,25 @@ pub enum ValidationError {
         parent: String,
         child: String,
         allowed: Vec<String>,
+    },
+
+    /// An SCE element written under a parent that does not take it, where
+    /// another element of the same document does: a `<sce:helper>` under a
+    /// procedure's root rather than its `<datamodel>`. `belongs_under` is
+    /// that other element's tag as written, without brackets, as `child`
+    /// is, and rides the wire as the fix's `under`; the record carries its
+    /// position as a `destination` site.
+    ///
+    /// ⚠ Derived from what the parse asked for (`crate::read_ledger`), never
+    /// from a list of where elements belong: a parent that asked for the
+    /// name is the proof that the name is read there. Where no parent asked,
+    /// the element is [`Self::UnexpectedChildElement`], with the children
+    /// its own parent does take as the candidates.
+    #[error("{parent}: <{child}> is not read here; it is read under <{belongs_under}>")]
+    MisplacedElement {
+        parent: String,
+        child: String,
+        belongs_under: String,
     },
 
     /// An attribute's value breaks a rule no list of values can state —

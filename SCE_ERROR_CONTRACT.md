@@ -518,6 +518,7 @@ involves is an entry of `related`:
 | `must-follow` | a site that must come after the record's own in the document and does not — the field a flags carrier has to be declared before |
 | `reached-from` | a site in another document that names the record's document — an `<sce:import>`, the `src` of an `<invoke>`, or an entry of a hybrid `<invoke>`'s `sce:candidates` — through which `sce-codegen generate --with-imports` reached it, or through which the parse of a statechart read a child it starts. One entry per step, the document named on the command line first, so the entries read as the chain of documents that brought the refused one into the run. A document named on the command line carries none, and its records are the ones `generate` gives it alone. A child that a statechart's parse reads and refuses refuses the statechart with the child's own record — its code, its message, its row in the child's file — whose entries name the `src` or the `sce:candidates` entry the parse read it through, `actual` being that reference as written; it is never reported as a child that needs a script engine |
 | `referent` | the element the record's site names — a transition's target state — when the relation between the two is what is refused: `validation/feature-gate-escapes` places the record on the element that names and this site on the state some configuration removes while the element stays (ADR 0057 §5) |
+| `destination` | the element the record's element is read under, when it was written under another: `validation/misplaced-element` places the record on the misplaced element and this site on the element its `move_element` fix moves it under, `actual` being that element's tag as written |
 
 `related` is not part of `id`: which other sites a relation reaches is
 a fact about the document around the error, not about the error.
@@ -548,6 +549,7 @@ There is no fallback from `fix` to `expected`.
 | `add_one_of` | `element`, `attrs[]` | Add one of the listed `attrs` to `element`. Used for "require either X or Y" constraints (e.g. `<send>` needs `event` or `eventexpr`). Choice-based. |
 | `rewrite_codec_format` | `format`, `entries[]` (each `id`, `type`) | Rewrite the CBOR or content-line codec document into codec format `format` (ADR 0055 section 8): declare `sce:codec-format="<format>"` on the root, set the `sce:type` of the entry named `id` to `type` for each of `entries`, and remove every `sce:required`. Emitted by `validation/codec-format-superseded` only, where the rewrite is the one format 1 says of each entry: several edits, none of them a choice. `sce-codegen codec-format <document>` prints the document so rewritten. Deterministic. |
 | `move_bound_into_type` | `element`, `attrs[]`, `type` | Move a bound written as an attribute into the type of the declaration `element` names (ADR 0086 section 1.3): remove every attribute of `attrs` (the bound, then the `sce:limit` that names it) and write `type` as the declaration's type, its outermost bound in the bracket (`[N]`, or `[name=N]` where a `sce:limit` named it). Emitted by `validation/bound-attribute-superseded` only, a record that does not stop the run ([§1](#1-streams)): the attribute means exactly what the bracket means, so the edit is no choice. `sce-codegen bound-spelling <document>` prints the document so rewritten. Deterministic. |
+| `move_element` | `element`, `under` | Move the element written as `element` (the record's `actual`), with everything inside it, under the element written as `under`, whose position the record's `destination` site gives ([§2.4](#24-related-sites)). Emitted by `validation/misplaced-element` only, where the parse asked another element of the document for an element of that name: the move is to where the name is read, not a rename. Deterministic. |
 
 The variant name encodes the *shape* of the repair: deterministic
 variants can be applied without further judgment; choice variants
@@ -1042,6 +1044,7 @@ references against a real document and drift silently.
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-reserved-param` | `validation` | no | SCE Mesh §9.5 |
+| `validation/misplaced-element` | `validation` | `move_element` |  |
 | `validation/missing-attribute` | `validation` | `add_attribute` |  |
 | `validation/missing-context` | `validation` | no |  |
 | `validation/missing-element` | `validation` | no |  |

@@ -743,6 +743,13 @@ pub enum DiagnosticCode {
     /// take are a closed set, which rides `fix`.
     #[serde(rename = "validation/unexpected-child-element")]
     ValidationUnexpectedChildElement,
+    /// An SCE element written under a parent that does not take it, where
+    /// another element of the document does: the repair is a move, which
+    /// rides `fix` as `move_element`, and the element it moves under rides
+    /// `related` as the `destination` site. Distinct from
+    /// `unexpected-child-element`, whose candidates are renames.
+    #[serde(rename = "validation/misplaced-element")]
+    ValidationMisplacedElement,
     /// An SCE-namespace attribute the parser does not read. Distinct from
     /// `invalid-attribute`, which is a known name carrying a value outside
     /// its set: here the NAME is the thing nothing knows, so a consumer
@@ -3946,6 +3953,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationExactlyOneAttribute,
         ValidationSendOperandType,
         ValidationUnexpectedChildElement,
+        ValidationMisplacedElement,
         ValidationUnknownSceAttribute,
         ValidationDefaultCoversUnknownVariant,
         ValidationDefaultCoversTestedVariant,
@@ -5400,6 +5408,7 @@ impl DiagnosticCode {
             | ValidationAttributeRuleViolated
             | ValidationExactlyOneAttribute
             | ValidationUnexpectedChildElement
+            | ValidationMisplacedElement
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
@@ -5676,6 +5685,7 @@ impl DiagnosticCode {
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement
+            | ValidationMisplacedElement
             | ValidationUnknownSceAttribute
             | ValidationDefaultCoversUnknownVariant
             | ValidationDefaultCoversTestedVariant
@@ -6209,6 +6219,7 @@ impl DiagnosticCode {
             ValidationExactlyOneAttribute => "validation/exactly-one-attribute",
             ValidationSendOperandType => "validation/send-operand-type",
             ValidationUnexpectedChildElement => "validation/unexpected-child-element",
+            ValidationMisplacedElement => "validation/misplaced-element",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
             ValidationDefaultCoversUnknownVariant => "validation/default-covers-unknown-variant",
             ValidationDefaultCoversTestedVariant => "validation/default-covers-tested-variant",
@@ -6933,8 +6944,8 @@ impl From<&crate::forge::error::RelatedSite> for Related {
 /// The variant encodes the *shape* of the repair:
 ///
 /// * Deterministic: `AddAttribute`, `RenameDuplicate`, `RemoveFields`,
-///   `ReplaceWith`, `RewriteCodecFormat`, `MoveBoundIntoType` — applicable
-///   without further judgment.
+///   `ReplaceWith`, `RewriteCodecFormat`, `MoveBoundIntoType`, `MoveElement`
+///   — applicable without further judgment.
 /// * Choice-based: `ReplaceOneOf`, `AddOneOf` — the producer lists the
 ///   closed candidate set and the consumer (or the human) picks.
 ///
@@ -7013,6 +7024,15 @@ pub enum Fix {
         #[serde(rename = "type")]
         sce_type: String,
     },
+
+    /// Move the element `element` names, with everything inside it, under
+    /// the element `under` names — the one element of the document a reader
+    /// asks for an element of that name under. Both are spelled as the
+    /// document spells them; the record's `destination` related site gives
+    /// `under`'s position (SCE_ERROR_CONTRACT.md §2.4). Deterministic: the
+    /// parse proved where the name is read, so nothing is the consumer's to
+    /// choose.
+    MoveElement { element: String, under: String },
 }
 
 impl Fix {
@@ -7826,6 +7846,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 candidates: allowed.clone(),
             }),
             key_fragments: vec![parent.clone(), child.clone()],
+        },
+        // The tag as written is `actual`; the repair is a move, not a
+        // rename, so it is the one element the name is read under.
+        ValidationError::MisplacedElement {
+            parent,
+            child,
+            belongs_under,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMisplacedElement,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(child.clone()),
+            fix: Some(Fix::MoveElement {
+                element: child.clone(),
+                under: belongs_under.clone(),
+            }),
+            key_fragments: vec![parent.clone(), child.clone(), belongs_under.clone()],
         },
         ValidationError::UnsupportedKind(value) => DiagnosticPayload {
             code: DiagnosticCode::ValidationUnsupportedKind,
@@ -13632,6 +13669,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d3a65ca642db9e36","code":"validation/unexpected-child-element","stage":"validation","message":"<sce:flags id='hdr'>: <sce:flga> is not a child it accepts (expected: sce:flag)","actual":"sce:flga","fix":{"kind":"replace_one_of","candidates":["sce:flag"]}}"#,
+            ),
+            (
+                // A child its parent does not take, which another element
+                // of the document asked for: the repair is the move.
+                "forge/misplaced-element",
+                ValidationError::MisplacedElement {
+                    parent: "<scxml>".into(),
+                    child: "sce:helper".into(),
+                    belongs_under: "datamodel".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1f4536265dcb482b","code":"validation/misplaced-element","stage":"validation","message":"<scxml>: <sce:helper> is not read here; it is read under <datamodel>","actual":"sce:helper","fix":{"kind":"move_element","element":"sce:helper","under":"datamodel"}}"#,
             ),
             (
                 // A misspelling, which is the likely cause: the NAME is
@@ -20683,6 +20732,9 @@ mod tests {
             | ValidationLiftText
             | ValidationLiftPathBound
             | ValidationLowerCountMisplaced
+            // One move, to the one element a reader asked for the name
+            // under: deterministic, and `expected` stays absent.
+            | ValidationMisplacedElement
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
@@ -21693,6 +21745,7 @@ mod tests {
                 | ValidationExactlyOneAttribute
                 | ValidationSendOperandType
                 | ValidationUnexpectedChildElement
+                | ValidationMisplacedElement
                 | ValidationUnknownSceAttribute
                 | ValidationDefaultCoversUnknownVariant
                 | ValidationDefaultCoversTestedVariant
@@ -22156,9 +22209,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            536,
+            537,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 536 distinct variants to match the DiagnosticCode \
+             expected 537 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22754,6 +22807,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement
+            | ValidationMisplacedElement
             // Same bucket and the same reason as the sweep described
             // below: the unknown-attribute check runs over the
             // roxmltree tree so it can name the attribute's own

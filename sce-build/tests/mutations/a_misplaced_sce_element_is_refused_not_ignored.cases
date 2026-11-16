@@ -6,12 +6,14 @@
 # The forge kind parsers record on a read ledger (`read_ledger`, shared with
 # the statechart parser since 2026-09-28, when the forge-only one it began as
 # was replaced by it) what they ask each parent for and what they take;
-# after the parse, an SCE element nothing took is refused as an unexpected
-# child. Each case takes
+# after the parse, an SCE element nothing took is refused: as misplaced,
+# with the move, where another parent was asked for its name, and as an
+# unexpected child otherwise. Each case takes
 # one part of that away: the sweep that refuses, a record the sweep relies
-# on, or the recording itself. The integration test
-# `a_misplaced_sce_element_is_refused_not_ignored.rs` writes a misplaced
-# `<sce:helper>` into every forge resource that parses and refuses them.
+# on, the search for where the name is read, or the recording itself. The
+# integration test `a_misplaced_sce_element_is_refused_not_ignored.rs`
+# writes a misplaced `<sce:helper>` into every forge resource that parses
+# and refuses them.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -21,8 +23,16 @@ mutation_targets sce-build/src/read_ledger.rs sce-build/src/forge/parser.rs
 
 mutation_case "the sweep refuses nothing" <<'PY'
 edit("sce-build/src/read_ledger.rs",
-     r'''            return Err(refuse(&node, &parent, &asked));''',
-     r'''            let _ = (&refuse, &asked);''')
+     r'''        let is_sce = node.tag_name().namespace() == Some(SCE_NAMESPACE);''',
+     r'''        let is_sce = false;''')
+PY
+
+# A procedure's misplaced helper is then refused as an unknown child, with
+# renames for candidates, and the test's procedures expect the move.
+mutation_case "no parent is ever found to read the name" <<'PY'
+edit("sce-build/src/read_ledger.rs",
+     r'''            let belongs_under = asked_for(ledger, root, node.tag_name().name());''',
+     r'''            let belongs_under: Option<Node> = None;''')
 PY
 
 mutation_case "the sweep refuses nothing once any parent is closed" <<'PY'
