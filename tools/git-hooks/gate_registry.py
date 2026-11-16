@@ -1375,7 +1375,13 @@ GATES: dict[str, dict] = {
         # workflow's `paths:` names both, as a `ci_only` gate's triggers must be
         # (`ci-only-coverage`).
         "extra": ["sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json"],
+                  "schemas/sce-test-trace.v1.schema.json",
+                  # The corpus's suites `ACorpusSuiteReplaysToItsExpectedLogsTests.swift`
+                  # replays: the traces and expected logs of each, read at run time, and the
+                  # documents of orders_suite and nested_suite, which the regeneration
+                  # writes into the machines' target.
+                  "sce-build/tests/fixtures/test_profile/runs/**",
+                  "sce-build/tests/fixtures/ttcn3_export/**"],
         "summary": "Swift backend: runtime, host features and generated machines",
         # The toolchain is a pinned tool of the platform, so its version is in
         # the key, and a machine without it fails the gate loudly.
@@ -1944,7 +1950,12 @@ GATES: dict[str, dict] = {
                   # The union documents every algorithm lane is held to, which
                   # the Interpreter's lowered-algorithm test lowers and runs
                   # (AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp).
-                  "sce-build/tests/fixtures/union/**"],
+                  "sce-build/tests/fixtures/union/**",
+                  # The test profile's documents the build generates the
+                  # suites from, their traces and their expected logs, which
+                  # ATestSuiteRunsEndToEndTest and
+                  # ACorpusSuiteReplaysToItsExpectedLogsTest read at run time.
+                  "sce-build/tests/fixtures/test_profile/**"],
         "deps": ["codegen-build"],
         "ci_only": "110s building and running the whole C++ ctest tree. "
                    "cpp-suite.yml runs it. Its `extra` list is wide on "
@@ -2181,7 +2192,14 @@ GATES: dict[str, dict] = {
                   # whose status `input_trace_test.c` holds the runtime's to,
                   # all read at run time.
                   "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json"],
+                  "schemas/sce-test-trace.v1.schema.json",
+                  # The documents of the corpus's boundary_suite, which the
+                  # build generates, and the traces and expected logs of the
+                  # corpus's other suites, which
+                  # `test_a_corpus_suite_replays_to_its_expected_logs.c`
+                  # replays and reads at run time.
+                  "sce-build/tests/fixtures/test_profile/boundary/**",
+                  "sce-build/tests/fixtures/test_profile/runs/**"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "
@@ -2222,7 +2240,11 @@ GATES: dict[str, dict] = {
                   # `TestSchemaFileDeclaresStatus` holds its own to, both read
                   # at run time.
                   "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json"],
+                  "schemas/sce-test-trace.v1.schema.json",
+                  # The traces and expected logs of the corpus's other suites,
+                  # which `a_corpus_suite_replays_to_its_expected_logs_test.go`
+                  # replays and reads at run time.
+                  "sce-build/tests/fixtures/test_profile/runs/**"],
         "deps": ["codegen-build"],
         # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
         # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
@@ -2300,7 +2322,11 @@ GATES: dict[str, dict] = {
                   # and the trace's wire schema, whose status `TraceTest` holds
                   # the runtime's to, both read at run time.
                   "sce-build/tests/fixtures/test_profile/runtime/traces/**",
-                  "schemas/sce-test-trace.v1.schema.json"],
+                  "schemas/sce-test-trace.v1.schema.json",
+                  # The traces and expected logs of the corpus's other suites,
+                  # which `ACorpusSuiteReplaysToItsExpectedLogsTest` replays and
+                  # reads at run time.
+                  "sce-build/tests/fixtures/test_profile/runs/**"],
         "deps": ["codegen-build"],
         # 69s was measured on a push whose Kotlin tree was already current.
         # 152s, pace-normalised, is what it cost on 2026-08-24 when a
@@ -2349,7 +2375,15 @@ GATES: dict[str, dict] = {
                   # The trace's wire schema, whose status
                   # `test_a_recorded_trace_is_read_and_replayed.py` holds the
                   # runtime's to, read at run time.
-                  "schemas/sce-test-trace.v1.schema.json"],
+                  "schemas/sce-test-trace.v1.schema.json",
+                  # The documents of the corpus's boundary_suite, which the
+                  # gate's regeneration writes the modules of (they are not
+                  # committed), and the traces and expected logs of the
+                  # corpus's other suites, which
+                  # `test_a_corpus_suite_replays_to_its_expected_logs.py`
+                  # replays and reads at run time.
+                  "sce-build/tests/fixtures/test_profile/boundary/**",
+                  "sce-build/tests/fixtures/test_profile/runs/**"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",

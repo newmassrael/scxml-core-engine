@@ -600,6 +600,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ATestComponentRunsThroughItsDoorsTest.cpp
     integration/ATestSuiteRunsEndToEndTest.cpp
     integration/ARecordReadsBackTheFormItWritesTest.cpp
+    integration/ACorpusSuiteReplaysToItsExpectedLogsTest.cpp
     integration/AComposedPayloadIsReadAtAnyDepthTest.cpp
     integration/AComposedValueIsSentByItsNameTest.cpp
 )
@@ -884,6 +885,35 @@ foreach(_TRACE_FORMS_DOCUMENT unionless_forms_configuration replays_every_unionl
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/${_TRACE_FORMS_DOCUMENT}.scxml
     )
 endforeach()
+# ACorpusSuiteReplaysToItsExpectedLogsTest's (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite,
+# of what runtime_suite leaves out of every run, its record and templates, its components'
+# machines and its tables, beside the runtime's records, templates and asking_configuration
+# above, which it reuses. orders_suite and nested_suite are not generated here: their mapped
+# record holds a union, which C++'s test profile matches no value of
+# (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its tester's receive
+# branch reads a message whose record holds a list, of which the C++ machine makes no value
+# (docs/SCE_TEST_PROFILE.md §12.6).
+foreach(_BOUNDARY_DOCUMENT signed_reading signed_reading_sent signed_reading_within)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/boundary/${_BOUNDARY_DOCUMENT}.scxml
+    )
+endforeach()
+foreach(_BOUNDARY_COMPONENT signed_tester no_verdict_setter stalled_listener request_listener ptc_remover
+                            leaving_logger)
+    sce_add_state_machine(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/boundary/${_BOUNDARY_COMPONENT}.scxml
+    )
+endforeach()
+foreach(_BOUNDARY_DOCUMENT signed_configuration unset_configuration stalled_configuration removing_configuration
+                           leaving_configuration exchanges_signed_numbers answers_another_job sets_no_verdict
+                           never_ends sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/boundary/${_BOUNDARY_DOCUMENT}.scxml
+    )
+endforeach()
 
 # A host action's argument that overflows. The fixture sits beside the test
 # that reads it, as test_thermostat.scxml does: the host recorder is the C++
@@ -972,6 +1002,24 @@ target_link_libraries(runtime_suite_runner
 )
 add_dependencies(runtime_suite_runner static_datamodel_generated_cpp_test)
 apply_sce_test_policies(runtime_suite_runner)
+
+# The runner program of the corpus's boundary_suite (docs/SCE_TTCN3_LANE.md §4, §12.1),
+# which the downstream's lane runs as a process, built as runtime_suite_runner is; the
+# suite's traces are replayed in the process by ACorpusSuiteReplaysToItsExpectedLogsTest.
+add_executable(boundary_suite_runner integration/boundary_suite_runner.cpp)
+target_include_directories(boundary_suite_runner
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(boundary_suite_runner
+    PRIVATE
+        sce_runtime
+        pthread
+)
+add_dependencies(boundary_suite_runner static_datamodel_generated_cpp_test)
+apply_sce_test_policies(boundary_suite_runner)
 
 # The runner program run as a process, against the committed traces of the suite
 # (ARunnerProgramWritesTheLogOfEachTraceTest.cpp, the twin of the Rust

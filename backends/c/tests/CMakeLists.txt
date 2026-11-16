@@ -4778,6 +4778,70 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
         TIMEOUT 60
         LABELS "integration;c11;aot"
     )
+
+    # ─── the corpus: docs/SCE_TTCN3_LANE.md §12.1, §13.1 S2 ─────────────
+    #
+    # boundary_suite, of what runtime_suite leaves out of every run: its record
+    # and templates, its components' machines and its tables, each generated from
+    # its document beside the runtime's records, templates and asking_configuration
+    # above, which it reuses, and replayed in the process from its committed traces
+    # to its expected logs (integration/test_a_corpus_suite_replays_to_its_expected_logs.c,
+    # the twin of the Rust `the_corpus_replays_to_its_expected_logs.rs`). Its
+    # documents import the runtime's from `../runtime/`, so they are read under the
+    # profile's fixture directory. orders_suite and nested_suite are not generated
+    # here: their mapped record holds a union, which C11's test profile matches no
+    # value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its
+    # tester's receive branch reads a message whose record holds a list, of which
+    # the C11 machine makes no value (docs/SCE_TEST_PROFILE.md §12.6). The program
+    # makes the directory of its logs through `sce_directory_make`, so it is built
+    # where the POSIX tier is, as the runner program is.
+    set(_CS_FIXTURE_DIR "${_TP_FIXTURE_DIR}/boundary")
+    set(_CS_HEADERS ${_TS_HEADERS})
+    set(_CS_SOURCES ${_TS_SOURCES})
+    foreach(_CS_DOCUMENT signed_reading signed_reading_sent signed_reading_within
+                         signed_tester no_verdict_setter stalled_listener request_listener ptc_remover
+                         leaving_logger
+                         signed_configuration unset_configuration stalled_configuration removing_configuration
+                         leaving_configuration
+                         exchanges_signed_numbers answers_another_job sets_no_verdict never_ends
+                         sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
+        sce_c_integration_generation(_CS_${_CS_DOCUMENT} "${_CS_FIXTURE_DIR}/${_CS_DOCUMENT}.scxml"
+            INPUT_ROOT "${_TP_FIXTURE_DIR}")
+        list(APPEND _CS_HEADERS ${_CS_${_CS_DOCUMENT}_HEADERS})
+        list(APPEND _CS_SOURCES ${_CS_${_CS_DOCUMENT}_SOURCES})
+    endforeach()
+    add_executable(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs
+        integration/test_a_corpus_suite_replays_to_its_expected_logs.c
+        ${_CS_SOURCES}
+        ${_CS_HEADERS}
+    )
+    target_include_directories(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+    )
+    sce_c_link_runtime(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs
+        EXCLUDES lua dom http clock)
+    target_link_libraries(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
+        sce_c_runtime_posix m)
+    target_compile_definitions(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_options(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PRIVATE
+        -Wall -Wextra -Werror -Wpedantic
+        -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+    )
+    set_target_properties(sce_c_integration_a_corpus_suite_replays_to_its_expected_logs PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_corpus_suite_replays_to_its_expected_logs
+        COMMAND sce_c_integration_a_corpus_suite_replays_to_its_expected_logs
+    )
+    set_tests_properties(c11_integration_a_corpus_suite_replays_to_its_expected_logs PROPERTIES
+        TIMEOUT 60
+        LABELS "integration;c11;aot"
+    )
 endif()
 
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─

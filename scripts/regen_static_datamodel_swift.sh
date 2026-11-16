@@ -356,6 +356,26 @@ TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
 TRACE_FORMS_RECORDS=(closed_enum_form_extras)
 TRACE_FORMS_COMPONENTS=(closed_enum_forms_listener)
 TRACE_FORMS_TABLES=(closed_enum_forms_configuration replays_every_closed_enum_form)
+# The corpus's suites ACorpusSuiteReplaysToItsExpectedLogsTests.swift replays from their traces
+# (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite, of what runtime_suite leaves out of every run,
+# its record and templates and its tables a unit each as above, its components' machines alone as
+# above, beside the runtime's records, templates and asking_configuration, which it reuses; and
+# orders_suite and nested_suite, whose records, union and templates TEST_PROFILE_IMPORTS generates
+# above. job_suite is not replayed on Swift: its tester's receive branch reads a message whose
+# record holds a list, which the Swift machine makes no value of (docs/SCE_TEST_PROFILE.md §12.6).
+# The Rust tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
+BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
+BOUNDARY_UNITS=(signed_reading signed_reading_sent signed_reading_within)
+BOUNDARY_UNITS+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
+BOUNDARY_UNITS+=(leaving_configuration)
+BOUNDARY_UNITS+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
+BOUNDARY_UNITS+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
+BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
+BOUNDARY_COMPONENTS+=(leaving_logger)
+TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
+TTCN3_EXPORT_UNITS=(orders_configuration orders_case orders_suite)
+TTCN3_EXPORT_UNITS+=(nested_configuration nested_case nested_suite)
+TTCN3_EXPORT_COMPONENTS=(orders_tester nested_tester)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -418,6 +438,18 @@ for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
 done
 for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
+done
+for document in "${BOUNDARY_UNITS[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$document.scxml" -l swift -o "$TMP/corpus_$document/"
+done
+for component in "${BOUNDARY_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
+done
+for document in "${TTCN3_EXPORT_UNITS[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$document.scxml" -l swift -o "$TMP/corpus_$document/"
+done
+for component in "${TTCN3_EXPORT_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -582,10 +614,24 @@ for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
         TEST_PROFILE_UNITS+=("$unit")
     done
 done
+# The documents of the corpus's suites: a unit each, of a name no unit above may take.
+for document in "${BOUNDARY_UNITS[@]}" "${TTCN3_EXPORT_UNITS[@]}"; do
+    for generated in "$TMP/corpus_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the corpus fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.swift` alone. A fixture's machine of
 # the same name would be one file holding whichever was copied last, the defect two units of one
 # name are above.
-for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" \
+    "${TTCN3_EXPORT_COMPONENTS[@]}"; do
     for generated in "$TMP/component_$component"/*_sm.swift; do
         if [ -e "$GENERATED_DIR/$(basename "$generated")" ]; then
             echo "error: a machine and the test component $component are both written as $(basename "$generated"); one of them needs another name" >&2

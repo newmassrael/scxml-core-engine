@@ -56,6 +56,10 @@ on:
       # The test profile's templates and the documents they name, which
       # `scripts/regen_static_datamodel_swift.sh` generates into the machines' target.
       - 'sce-build/tests/fixtures/test_profile/**'
+      # The corpus's orders_suite and nested_suite, generated into the same target and
+      # replayed from their traces under `test_profile/runs/` by
+      # `ACorpusSuiteReplaysToItsExpectedLogsTests.swift`.
+      - 'sce-build/tests/fixtures/ttcn3_export/**'
       # The union kind's fixtures the template over a union names, generated into the same
       # target: its union, the tag's enum and its cases' records.
       - 'sce-build/tests/fixtures/union/**'

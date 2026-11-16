@@ -222,6 +222,23 @@ TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
 TRACE_FORMS=(order_taken form_extras unionless_forms_configuration replays_every_unionless_form)
 TRACE_FORMS_IMPORTS=("$TEST_PROFILE_DIR/imports/order_customer.scxml" "sce-build/tests/fixtures/union/shape_kind_open.scxml")
 TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
+# The corpus's suite test_a_corpus_suite_replays_to_its_expected_logs.py replays from its traces
+# (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite, of what runtime_suite leaves out of every run,
+# its record, templates and tables a module each, its components' machines alone as above,
+# beside the runtime's records, templates and asking_configuration, which it reuses. orders_suite
+# and nested_suite are not replayed on Python: their mapped record holds a union, which Python's
+# test profile matches no value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is
+# job_suite: its tester's receive branch reads a message whose record holds a list, which the
+# Python machine makes no value of (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the
+# same documents (scripts/regen_static_datamodel_rust.sh).
+BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
+BOUNDARY_MODULES=(signed_reading signed_reading_sent signed_reading_within)
+BOUNDARY_MODULES+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
+BOUNDARY_MODULES+=(leaving_configuration)
+BOUNDARY_MODULES+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
+BOUNDARY_MODULES+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
+BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
+BOUNDARY_COMPONENTS+=(leaving_logger)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -261,6 +278,12 @@ for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
 done
 for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
+done
+for document in "${BOUNDARY_MODULES[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$document.scxml" -l python -o "$TMP/boundary_$document/"
+done
+for component in "${BOUNDARY_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -329,13 +352,20 @@ for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
         MODULES+=("$(basename "$generated" .py)")
     done
 done
+
+for document in "${BOUNDARY_MODULES[@]}"; do
+    for generated in "$TMP/boundary_$document"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.py` alone, which the test's
 # factory of machines and each configuration's table above import (`<machine>_sm`).
 for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done
-for component in "${TEST_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done

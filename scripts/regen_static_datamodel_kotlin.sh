@@ -369,5 +369,46 @@ for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
     install_generated "$TMP/machine_$component"
 done
+# The corpus's suites ACorpusSuiteReplaysToItsExpectedLogsTest.kt replays from their traces
+# (docs/SCE_TTCN3_LANE.md §12.1): boundary_suite, of what runtime_suite leaves out of every
+# run, its record and templates generated as the units above, its components' machines alone
+# as above, and its tables, beside the runtime's records, templates and asking_configuration,
+# which it reuses; and orders_suite and nested_suite, whose records, union and templates
+# TEST_PROFILE_IMPORTS generates above. job_suite is not replayed on Kotlin: its tester's
+# receive branch reads a message whose record holds a list, which the Kotlin machine makes no
+# value of (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the same documents
+# (scripts/regen_static_datamodel_rust.sh).
+BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
+BOUNDARY_RECORDS=(signed_reading signed_reading_sent signed_reading_within)
+BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
+BOUNDARY_COMPONENTS+=(leaving_logger)
+BOUNDARY_TABLES=(signed_configuration unset_configuration stalled_configuration removing_configuration)
+BOUNDARY_TABLES+=(leaving_configuration)
+BOUNDARY_TABLES+=(exchanges_signed_numbers answers_another_job sets_no_verdict never_ends)
+BOUNDARY_TABLES+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
+for document in "${BOUNDARY_RECORDS[@]}" "${BOUNDARY_TABLES[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$document.scxml" -l kotlin -o "$TMP/boundary_$document/"
+    install_generated "$TMP/boundary_$document"
+done
+for component in "${BOUNDARY_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$BOUNDARY_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/"
+    mkdir -p "$TMP/machine_$component"
+    cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
+    install_generated "$TMP/machine_$component"
+done
+TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
+TTCN3_EXPORT_COMPONENTS=(orders_tester nested_tester)
+TTCN3_EXPORT_TABLES=(orders_configuration orders_case orders_suite)
+TTCN3_EXPORT_TABLES+=(nested_configuration nested_case nested_suite)
+for document in "${TTCN3_EXPORT_TABLES[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$document.scxml" -l kotlin -o "$TMP/export_$document/"
+    install_generated "$TMP/export_$document"
+done
+for component in "${TTCN3_EXPORT_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/"
+    mkdir -p "$TMP/machine_$component"
+    cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
+    install_generated "$TMP/machine_$component"
+done
 
 echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${PACKAGES[*]:-none} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
