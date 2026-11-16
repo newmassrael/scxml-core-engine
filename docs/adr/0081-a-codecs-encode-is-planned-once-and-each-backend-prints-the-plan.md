@@ -901,6 +901,25 @@ old encode, the old encode and its templates are removed in the same landing.
    whose cases are `sources` alone, and Swift where its generator writes it; the codec joins
    `entries_that_take_a_flag_compile_on_every_backend`.
 5. Swift, when its codec lowers what the plan holds.
+   *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
+   but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
+   enum field through its carrier, an arm under a build feature by a condition that leaves it out (docs/adr/0072,
+   amendment of 2026-11-16), a word in the native byte order, and whole bytes fewer than a field's type in a frame
+   read field by field, each of which it had refused by name. The codec matrix answers that Swift ships a codec
+   whole (`codegen_matrix::template_ships`), as it answers for Go, Kotlin, Python and C11, which ship on the encode
+   of their templates while step 4 reaches them. What is left by name is no codec of the repository's shape: a
+   float or a bool field (which the C++ printer refuses too), a signed field narrower than its type, bits that are
+   not whole bytes in a frame read field by field, a count or a length held in a signed field, two arms of one
+   entry codec, a chain closed by a flag wider than one bit, and a member or local of the generated struct used as
+   a field's or an input's name. Swift's decode throws the runtime's typed
+   `CodecError`, and its harness holds each reject vector to the case it names (`CodecFailure::observable_symbol`),
+   as Rust's and Go's are held.
+   What step 5 still owes is the printer: Swift's encode is its template's, which writes a stored count, length,
+   tag and continuation flag from the value rather than deriving each (§3), and its harness runs the catalog's
+   `cases` and not its `sources` or `refused`, which a printer's value states (§5). The printer lands as §6 says,
+   one form at a time, with a protocol for the interface (the presented elements as read-only properties), an
+   abstract type with one failable initializer for each refinement Swift's types cannot carry, a case printer for
+   its harness, and the template's encode removed with its last codec.
 
 ## Consequences
 
