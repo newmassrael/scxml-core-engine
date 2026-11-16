@@ -279,6 +279,28 @@ compile verdict is the Swift packages (`scripts/test_swift_backend.sh`), run whe
      conformance manifest has no argument of that type, so the conformance algorithm over one follows that
      extension.
 
+### Still open (2026-11-16)
+
+The three items the decisions above defer are this ADR's open debts, and each waits on a lowering that is not this
+ADR's:
+
+1. **A record that holds a union field, on Swift, Python, Go, C++ and C11**, and the non-optional record variable
+   holding a union on every lane. Each lane's slice is ADR 0087 "Landing order" item 8 for that lane (its row of
+   `ComposedLowering::records`, the saved form of a record that holds a composition, the lift of a value read whole
+   and the replay of `static_lift_list.json`), after which `static_union` gains the record variable of step 4 on that
+   lane. The non-optional record variable needs what decision 1 of that item's "Decided while landing" defers: a
+   statechart that can build such a record where it is declared.
+2. **The conformance algorithm over `list<union:...>`**: the algorithm slot of a list of unions on every lane (the
+   `value_type.rs` case "a list of unions is held by neither yet", `algorithm_view`), then a manifest argument form
+   for such a list in `tests/forge/conformance/fixtures.json` and `numerical_reference.json`, then the fixture of
+   step 4 with its `"fails": "out-of-range"` case.
+3. **A union read through an index of a list itself reached through an index** (`xs[i].us[j]`, `uss[i][j]`).
+   `place_text` spells no element, so the list is refused by name. The lowering is a spelling of the inner list as
+   the lane's checked read of the outer element (`element_at`, which nests on Rust, Kotlin, C++, Python, Swift and
+   C11 as written) with the field read after it. Go's checked read takes a slice (`scealgorithm.At(&f, xs[:], i)`),
+   and a fixed array field of the value it answers is not addressable, so Go needs the element held in a local before
+   its field is sliced. The fixture is a second index read in `static_union`, in range and out of range at each level.
+
 ## Consequences
 
 - Swift needs no value nobody wrote, for any type. The two refusals go, and so does the reason any later type
