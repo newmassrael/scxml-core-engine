@@ -27,6 +27,12 @@
 //! tool = "rustfmt"
 //! directories = ["sce-specs/src/*/generated"]
 //! ```
+//!
+//! A rule's members (`each`) are the directories, the files (by stem or by
+//! path, below the root or a directory `under` it, of those holding a text),
+//! the documents of a fixture catalog, or a list. A rule may hand one
+//! generation a set of documents it compiles together (`set`). A tree the
+//! checkout does not commit says so (`committed = false`).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -54,8 +60,9 @@ pub struct TreeManifest {
 }
 
 /// The name of a tree and the directories it owns, relative to the root,
-/// each a pattern whose components may hold `*`; a directory `except` names
-/// is another tree's, though a pattern of this one matches it.
+/// each a pattern whose components may hold `*`; a directory an `except`
+/// pattern matches is another tree's, though a pattern of this one matches
+/// it.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TreeHead {
@@ -63,6 +70,19 @@ pub struct TreeHead {
     pub roots: Vec<String>,
     #[serde(default)]
     pub except: Vec<String>,
+    /// Whether the checkout commits the tree. A tree that is not committed
+    /// (its files ignored by version control, written by the lane that
+    /// compiles them) is a build output and nothing else: it has no committed
+    /// copy to be compared with, and is held only to being the same from
+    /// every run of its actions.
+    #[serde(default = "committed_by_default")]
+    pub committed: bool,
+}
+
+/// A tree is committed unless its manifest says it is not, which every tree
+/// was before ADR 0097.
+fn committed_by_default() -> bool {
+    true
 }
 
 /// One generation, or one for each member of a set.
@@ -88,10 +108,64 @@ pub struct GenerationRule {
     /// the tree.
     #[serde(default)]
     pub skip_unsupported: bool,
+    /// Documents one generation compiles together, each handed to the
+    /// generator after its own flag, appended to the arguments.
+    #[serde(default)]
+    pub set: Option<DocumentSet>,
+}
+
+/// The documents of a set one generation compiles together
+/// (`orchestrate --forge <document>...`): the files a pattern matches, in
+/// byte order, each given after `flag`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DocumentSet {
+    /// The files, relative to the root, a pattern whose components may hold
+    /// `*`.
+    pub paths: String,
+    /// The flag each document is given after.
+    pub flag: String,
+}
+
+impl DocumentSet {
+    /// `flag document` for each document of the set, in byte order.
+    fn arguments(&self, root: &Path) -> Result<Vec<String>, String> {
+        let documents = matching(root, &self.paths, Kind::File)?;
+        if documents.is_empty() {
+            return Err(format!(
+                "the set `{}` matched no document, so the generation would compile nothing",
+                self.paths
+            ));
+        }
+        Ok(documents
+            .into_iter()
+            .flat_map(|document| [self.flag.clone(), document])
+            .collect())
+    }
+}
+
+/// The text a document has to hold to be a member: one text, or any of
+/// several.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Containing {
+    One(String),
+    Any(Vec<String>),
+}
+
+impl Containing {
+    /// Whether `content` holds the text, or one of the texts.
+    fn holds(&self, content: &str) -> bool {
+        match self {
+            Containing::One(text) => content.contains(text.as_str()),
+            Containing::Any(texts) => texts.iter().any(|text| content.contains(text.as_str())),
+        }
+    }
 }
 
 /// The members a rule is repeated for, each named `{<as>}` in it. Exactly one
-/// of `directories`, `files` and `list` says what they are.
+/// of `directories`, `files`, `paths`, `catalog` and `list` says what they
+/// are.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Each {
@@ -102,12 +176,27 @@ pub struct Each {
     /// extension).
     #[serde(default)]
     pub files: Option<String>,
+    /// The paths of the files a pattern matches, relative to `under` (the
+    /// root when `under` is not given), their extension kept.
+    #[serde(default)]
+    pub paths: Option<String>,
+    /// The documents of the fixtures a fixture catalog lists
+    /// (`tests/forge/conformance/fixtures.json`), each as the generator takes
+    /// it: a file of the resources directory beside the catalog's directory,
+    /// relative to the root, or a standard document by its library name.
+    #[serde(default)]
+    pub catalog: Option<String>,
     /// The values written.
     #[serde(default)]
     pub list: Option<Vec<String>>,
-    /// Of the files a pattern matches, only those holding this text.
+    /// The directory, relative to the root, a pattern is matched in and its
+    /// members are named from.
     #[serde(default)]
-    pub containing: Option<String>,
+    pub under: Option<String>,
+    /// Of the documents a pattern or a catalog yields, only those holding
+    /// this text, or one of these texts.
+    #[serde(default)]
+    pub containing: Option<Containing>,
     /// Members left out: a rule of their own generates them.
     #[serde(default)]
     pub except: Vec<String>,
@@ -116,42 +205,70 @@ pub struct Each {
 }
 
 impl Each {
-    /// The members, in byte order for a pattern and as written for a list,
-    /// less those `except` names.
+    /// The members, in byte order for a pattern or a catalog and as written
+    /// for a list, less those `except` names.
     fn members(&self, root: &Path) -> Result<Vec<String>, String> {
-        if self.containing.is_some() && self.files.is_none() {
+        let name = &self.r#as;
+        if self.containing.is_some()
+            && self.files.is_none()
+            && self.paths.is_none()
+            && self.catalog.is_none()
+        {
             return Err(format!(
-                "the set named `{}` filters by content, which only `files` have",
-                self.r#as
+                "the set named `{name}` filters by content, which only `files`, `paths` and \
+                 `catalog` have"
             ));
         }
-        let members: Vec<String> = match (&self.directories, &self.files, &self.list) {
-            (Some(pattern), None, None) => matching(root, pattern, Kind::Directory)?
+        if self.under.is_some() && self.list.is_some() {
+            return Err(format!(
+                "the set named `{name}` matches no pattern under `under`, since it is a `list`"
+            ));
+        }
+        if self.under.is_some() && self.catalog.is_some() {
+            return Err(format!(
+                "the set named `{name}` names its documents from its catalog, not from `under`"
+            ));
+        }
+        let base = match &self.under {
+            Some(under) => {
+                if under.starts_with('/') || under.contains("..") {
+                    return Err(format!(
+                        "`{under}` is not a directory under the root (the set named `{name}`)"
+                    ));
+                }
+                root.join(under)
+            }
+            None => root.to_path_buf(),
+        };
+        let sources = [
+            self.directories.is_some(),
+            self.files.is_some(),
+            self.paths.is_some(),
+            self.catalog.is_some(),
+            self.list.is_some(),
+        ];
+        if sources.iter().filter(|given| **given).count() != 1 {
+            return Err(format!(
+                "the set named `{name}` has to say exactly one of `directories`, `files`, \
+                 `paths`, `catalog` and `list`"
+            ));
+        }
+        let members: Vec<String> = if let Some(pattern) = &self.directories {
+            matching(&base, pattern, Kind::Directory)?
                 .iter()
                 .map(|p| leaf(p).to_string())
-                .collect(),
-            (None, Some(pattern), None) => {
-                let mut kept = Vec::new();
-                for path in matching(root, pattern, Kind::File)? {
-                    if let Some(text) = &self.containing {
-                        let content = fs::read_to_string(root.join(&path))
-                            .map_err(|e| format!("{path}: {e}"))?;
-                        if !content.contains(text.as_str()) {
-                            continue;
-                        }
-                    }
-                    kept.push(stem(&path).to_string());
-                }
-                kept
-            }
-            (None, None, Some(list)) => list.clone(),
-            _ => {
-                return Err(format!(
-                    "the set named `{}` has to say exactly one of `directories`, `files` and \
-                     `list`",
-                    self.r#as
-                ))
-            }
+                .collect()
+        } else if let Some(pattern) = &self.files {
+            self.holding(&base, matching(&base, pattern, Kind::File)?)?
+                .iter()
+                .map(|p| stem(p).to_string())
+                .collect()
+        } else if let Some(pattern) = &self.paths {
+            self.holding(&base, matching(&base, pattern, Kind::File)?)?
+        } else if let Some(catalog) = &self.catalog {
+            self.holding(root, catalog_documents(root, catalog)?)?
+        } else {
+            self.list.clone().unwrap_or_default()
         };
         for name in &self.except {
             if !members.contains(name) {
@@ -166,6 +283,48 @@ impl Each {
             .filter(|m| !self.except.contains(m))
             .collect())
     }
+
+    /// Of `documents`, each named relative to `base` or by its library name,
+    /// those holding the text `containing` asks for; all of them when it asks
+    /// for none.
+    fn holding(&self, base: &Path, documents: Vec<String>) -> Result<Vec<String>, String> {
+        let Some(containing) = &self.containing else {
+            return Ok(documents);
+        };
+        let mut kept = Vec::new();
+        for document in documents {
+            let path = crate::forge::stdlib::resolve(base, &document);
+            let content =
+                crate::conformance::read_document(&path).map_err(|e| format!("{document}: {e}"))?;
+            if containing.holds(&content) {
+                kept.push(document);
+            }
+        }
+        Ok(kept)
+    }
+}
+
+/// The document of every fixture the catalog at `catalog` (relative to
+/// `root`) lists, in byte order, each once: as `list-fixtures --documents`
+/// names it, a file of the resources directory beside the catalog's
+/// directory, relative to the root, or a standard document by its library
+/// name.
+fn catalog_documents(root: &Path, catalog: &str) -> Result<Vec<String>, String> {
+    if catalog.starts_with('/') || catalog.contains("..") {
+        return Err(format!("`{catalog}` is not a catalog under the root"));
+    }
+    let manifest = crate::conformance::Manifest::load(&root.join(catalog))?;
+    let resources = Path::new(catalog)
+        .parent()
+        .and_then(Path::parent)
+        .map(|dir| dir.join("resources"))
+        .ok_or_else(|| format!("`{catalog}` has no directory beside which its resources are"))?;
+    let documents: std::collections::BTreeSet<String> = manifest
+        .fixtures
+        .iter()
+        .map(|fixture| fixture.document_path(&resources).display().to_string())
+        .collect();
+    Ok(documents.into_iter().collect())
 }
 
 /// The index file each of some directories holds: a header, then a line for
@@ -295,6 +454,8 @@ pub struct ExpandedTree {
     pub roots: Vec<String>,
     /// [`TreeHead::except`].
     pub except: Vec<String>,
+    /// [`TreeHead::committed`].
+    pub committed: bool,
     pub generations: Vec<PlacedGeneration>,
     pub indexes: Vec<IndexRule>,
     pub formats: Vec<FormatRule>,
@@ -310,6 +471,10 @@ impl TreeManifest {
         };
         let mut generations = Vec::new();
         for rule in &self.generation {
+            let set = match &rule.set {
+                Some(set) => set.arguments(root).map_err(invalid)?,
+                None => Vec::new(),
+            };
             let members: Vec<(Option<&str>, String)> = match &rule.each {
                 None => vec![(None, String::new())],
                 Some(each) => {
@@ -332,7 +497,8 @@ impl TreeManifest {
                     Some(name) => text.replace(&format!("{{{name}}}"), &value),
                     None => text.to_string(),
                 };
-                let arguments: Vec<String> = rule.arguments.iter().map(|a| fill(a)).collect();
+                let mut arguments: Vec<String> = rule.arguments.iter().map(|a| fill(a)).collect();
+                arguments.extend(set.iter().cloned());
                 if !arguments.iter().any(|a| a.contains(OUTPUT_PLACEHOLDER)) {
                     return Err(invalid(format!(
                         "`{}` writes to no `{OUTPUT_PLACEHOLDER}`",
@@ -354,6 +520,7 @@ impl TreeManifest {
             name: self.tree.name.clone(),
             roots: self.tree.roots.clone(),
             except: self.tree.except.clone(),
+            committed: self.tree.committed,
             generations,
             indexes: self.index.clone(),
             formats: self.format.clone(),
@@ -367,6 +534,15 @@ impl TreeManifest {
 const SCRIPT_ENGINE_ARGUMENT: &str = "--script-engine";
 
 impl ExpandedTree {
+    /// Whether the directory `dir`, relative to the root, is another tree's
+    /// though a root pattern of this one matches it: an `except` pattern
+    /// matches it component by component.
+    pub fn excepts(&self, dir: &str) -> bool {
+        self.except
+            .iter()
+            .any(|pattern| matches_components(pattern, dir))
+    }
+
     /// This tree as a host whose script engine reads `language` compiles it:
     /// every generation that leaves the language to its backend's default is
     /// also given `--script-engine <language>`, and the children it writes
@@ -498,6 +674,14 @@ pub(crate) fn wildcard(pattern: &str, name: &str) -> bool {
         remaining = &remaining[at + part.len()..];
     }
     remaining.len() >= last.len() && remaining.ends_with(last)
+}
+
+/// Whether `path` matches `pattern` component by component, each component
+/// of the pattern a [`wildcard`] of the path's.
+pub(crate) fn matches_components(pattern: &str, path: &str) -> bool {
+    let p: Vec<&str> = pattern.split('/').collect();
+    let r: Vec<&str> = path.split('/').collect();
+    p.len() == r.len() && p.iter().zip(&r).all(|(p, r)| wildcard(p, r))
 }
 
 /// The last component of a path.
@@ -675,6 +859,176 @@ mod tests {
         )
         .unwrap();
         assert!(manifest.expand(tmp.path()).is_err());
+    }
+
+    /// A tree is committed unless its manifest says otherwise; one that says
+    /// so is expanded as any other, carrying the word.
+    #[test]
+    fn a_tree_is_committed_unless_its_manifest_says_it_is_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let head = |extra: &str| {
+            let manifest: TreeManifest = toml::from_str(&format!(
+                r#"
+                [tree]
+                name = "t"
+                roots = ["out"]
+                {extra}
+                "#
+            ))
+            .unwrap();
+            manifest.expand(tmp.path()).unwrap().committed
+        };
+        assert!(head(""));
+        assert!(!head("committed = false"));
+    }
+
+    /// An `except` is a pattern: every directory it matches is another
+    /// tree's, and one it does not match is this tree's.
+    #[test]
+    fn an_except_pattern_leaves_every_directory_it_matches_to_another_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest: TreeManifest = toml::from_str(
+            r#"
+            [tree]
+            name = "t"
+            roots = ["gen/*"]
+            except = ["gen/test*", "gen/fixed"]
+            "#,
+        )
+        .unwrap();
+        let tree = manifest.expand(tmp.path()).unwrap();
+        assert!(tree.excepts("gen/test144"));
+        assert!(tree.excepts("gen/fixed"));
+        assert!(!tree.excepts("gen/ledger_add"));
+        assert!(!tree.excepts("gen/fixed/deeper"));
+        assert!(!tree.excepts("other/test144"));
+    }
+
+    /// `paths` names a member by its path below `under`, extension kept, and
+    /// `containing` may ask for any of several texts.
+    #[test]
+    fn a_path_under_a_directory_is_named_from_it_and_filtered_by_any_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        for dir in ["lib/a", "lib/b"] {
+            fs::create_dir_all(tmp.path().join(dir)).unwrap();
+        }
+        fs::write(tmp.path().join("lib/a/one.scxml"), "kind=\"algorithm\"").unwrap();
+        fs::write(tmp.path().join("lib/a/two.scxml"), "kind=\"enum\"").unwrap();
+        fs::write(tmp.path().join("lib/b/three.scxml"), "kind=\"codec\"").unwrap();
+        let manifest: TreeManifest = toml::from_str(
+            r#"
+            [tree]
+            name = "t"
+            roots = ["out"]
+
+            [[generation]]
+            each = { paths = "*/*.scxml", under = "lib", containing = ["kind=\"algorithm\"", "kind=\"codec\""], as = "doc" }
+            arguments = ["generate", "sce:std/{doc}", "-o", "{out}"]
+            place = "out"
+            "#,
+        )
+        .unwrap();
+        let tree = manifest.expand(tmp.path()).unwrap();
+        let documents: Vec<&str> = tree
+            .generations
+            .iter()
+            .map(|g| g.generation.arguments[1].as_str())
+            .collect();
+        assert_eq!(documents, ["sce:std/a/one.scxml", "sce:std/b/three.scxml"]);
+    }
+
+    /// A set is one generation that is handed every document of a pattern,
+    /// each after its flag, in byte order; a set that matches nothing is
+    /// refused, as an empty `each` is.
+    #[test]
+    fn a_document_set_is_handed_to_one_generation_after_its_flag() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("set")).unwrap();
+        fs::write(tmp.path().join("set/log.scxml"), "").unwrap();
+        fs::write(tmp.path().join("set/element.scxml"), "").unwrap();
+        let manifest = |paths: &str| -> TreeManifest {
+            toml::from_str(&format!(
+                r#"
+                [tree]
+                name = "t"
+                roots = ["out"]
+
+                [[generation]]
+                arguments = ["orchestrate", "--language", "swift", "--output-dir", "{{out}}"]
+                set = {{ paths = "{paths}", flag = "--forge" }}
+                place = "out"
+                "#
+            ))
+            .unwrap()
+        };
+        let tree = manifest("set/*.scxml").expand(tmp.path()).unwrap();
+        assert_eq!(tree.generations.len(), 1);
+        assert_eq!(
+            tree.generations[0].generation.arguments[5..],
+            ["--forge", "set/element.scxml", "--forge", "set/log.scxml"]
+        );
+        assert!(manifest("none/*.scxml").expand(tmp.path()).is_err());
+    }
+
+    /// A catalog names the document of each fixture it lists as
+    /// `list-fixtures --documents` does: a file of the resources beside the
+    /// catalog's directory, or a standard document by its library name.
+    #[test]
+    fn a_catalog_names_the_document_of_each_fixture() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the checkout")
+            .to_path_buf();
+        let each = Each {
+            directories: None,
+            files: None,
+            paths: None,
+            catalog: Some("tests/forge/conformance/fixtures.json".to_string()),
+            list: None,
+            under: None,
+            containing: None,
+            except: Vec::new(),
+            r#as: "doc".to_string(),
+        };
+        let members = each.members(&root).expect("the catalog reads");
+        assert!(!members.is_empty());
+        assert!(members.contains(&"sce:std/time/add_months.scxml".to_string()));
+        assert!(
+            members.iter().all(|m| m.starts_with("sce:std/")
+                || (m.starts_with("tests/forge/resources/") && m.ends_with(".scxml"))),
+            "{members:?}"
+        );
+        let mut sorted = members.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(members, sorted, "in byte order, each once");
+    }
+
+    /// A list is written, not matched, so it has nothing to filter by content
+    /// and no directory to be matched under.
+    #[test]
+    fn a_list_is_refused_a_content_filter_and_a_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        for each in [
+            r#"{ list = ["a"], containing = "x", as = "m" }"#,
+            r#"{ list = ["a"], under = "lib", as = "m" }"#,
+            r#"{ list = ["a"], files = "*.scxml", as = "m" }"#,
+        ] {
+            let manifest: TreeManifest = toml::from_str(&format!(
+                r#"
+                [tree]
+                name = "t"
+                roots = ["out"]
+
+                [[generation]]
+                each = {each}
+                arguments = ["generate", "{{m}}", "-o", "{{out}}"]
+                place = "out"
+                "#
+            ))
+            .unwrap();
+            assert!(manifest.expand(tmp.path()).is_err(), "{each}");
+        }
     }
 
     #[test]

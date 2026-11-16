@@ -23,7 +23,7 @@ use super::generation::{GenerationError, Generator, Provenance};
 use super::input_root::{input_root, InputFile};
 use super::reapi::{platform, Action, ActionResult, Command, Digest, OutputFile, Property};
 use super::store::ContentStore;
-use super::tree::{matching, wildcard, ExpandedTree, FormatTool, Kind};
+use super::tree::{matches_components, matching, wildcard, ExpandedTree, FormatTool, Kind};
 
 /// What a materialization did.
 #[derive(Clone, Debug, Default)]
@@ -205,11 +205,9 @@ pub fn materialize(
 /// component by component.
 fn kept(keep: &[String], relative: &str) -> bool {
     keep.is_empty()
-        || keep.iter().any(|pattern| {
-            let p: Vec<&str> = pattern.split('/').collect();
-            let r: Vec<&str> = relative.split('/').collect();
-            p.len() == r.len() && p.iter().zip(&r).all(|(p, r)| wildcard(p, r))
-        })
+        || keep
+            .iter()
+            .any(|pattern| matches_components(pattern, relative))
 }
 
 fn write_file(path: &Path, bytes: &[u8], is_executable: bool) -> io::Result<()> {
@@ -446,7 +444,7 @@ pub fn remove_unproduced(
     let mut removed = Vec::new();
     for pattern in &tree.roots {
         for dir in matching(into, pattern, Kind::Directory).map_err(invalid)? {
-            if tree.except.contains(&dir) {
+            if tree.excepts(&dir) {
                 continue;
             }
             for file in files_under(into, &dir)? {
@@ -513,7 +511,7 @@ pub fn compare(
     };
     let mut committed = BTreeSet::new();
     let mut produced = BTreeSet::new();
-    let owned = |dir: &String| !tree.except.contains(dir);
+    let owned = |dir: &String| !tree.excepts(dir);
     for pattern in &tree.roots {
         for dir in matching(root, pattern, Kind::Directory)
             .map_err(invalid)?

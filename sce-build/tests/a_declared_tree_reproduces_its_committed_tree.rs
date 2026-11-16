@@ -11,6 +11,10 @@
 // lost nothing, because the commit that removes it is judged by a tree this
 // test proved equal to the one removed.
 //
+// A tree whose manifest says the checkout does not commit it (`committed =
+// false`, a build output ignored by version control) has nothing committed to
+// be compared with, and is held by the determinism test alone.
+//
 // The binary is driven as a build hook drives it (`sce-codegen materialize`),
 // with an action cache of the test's own, so that a result kept by an earlier
 // run on this machine cannot stand in for one this generator produces.
@@ -58,6 +62,11 @@ fn every_declared_tree_is_the_committed_tree() {
     let mut report = Vec::new();
     for manifest in &manifests {
         let name = &manifest.tree.name;
+        // A tree the checkout does not commit has no copy here to be equal
+        // to; `every_declared_tree_is_the_same_from_two_runs` holds it.
+        if !manifest.tree.committed {
+            continue;
+        }
         let into = tempfile::tempdir().expect("a directory to materialize into");
         materialize(name, into.path(), cache.path());
         let expanded = manifest.expand(&root).expect("the manifest expands");
