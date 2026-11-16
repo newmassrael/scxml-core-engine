@@ -5,9 +5,10 @@
    and reject vectors, as the generic codec fragment has them, with what a
    content-line component adds: an entry can be absent (`std::optional`) or a
    list, a case marked `decode_only` is an input the codec reads and does not
-   write, and a refused decode leaves the cursor where it found it. C++ names no
-   failure (the nullopt convention), so a reject asserts refusal. The rejects are
-   read from the reference like the cases are, and not inlined as byte literals.
+   write, and a refused decode leaves the cursor where it found it. A reject
+   asserts the kind the decode is refused with, as every backend's does. The
+   rejects are read from the reference like the cases are, and not inlined as
+   byte literals.
 
    The codec is printed from its plan (docs/adr/0081 step 4): a value is made by
    its constructor, its elements in the order the manifest lists them, which is
@@ -82,7 +83,8 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
 
         ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
         auto round_tripped = Codec::decode(cursor);
-        CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode returned nullopt", i);
+        CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode refused (kind %d)", i,
+              round_tripped.has_value() ? 0 : static_cast<int>(round_tripped.error()));
         if (round_tripped.has_value()) {
 {% for field in f.fields %}
 {% if field.members %}
@@ -183,6 +185,20 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
         ++i;
     }
 
+    // The kind of rejection each vector's `error` names, spelled once per kind
+    // from the folded `r.symbol` (docs/adr/0099, amendment of 2026-11-16).
+{% set kinds = namespace(seen=[]) %}
+    const auto reject_kind = [](const std::string &error) -> std::optional<::SCE::Forge::CodecError> {
+{% for r in f.rejects %}
+{% if r.error not in kinds.seen %}
+{% set kinds.seen = kinds.seen + [r.error] %}
+        if (error == "{{ r.error }}") {
+            return {{ r.symbol }};
+        }
+{% endif %}
+{% endfor %}
+        return std::nullopt;
+    };
     int reject_index = 0;
     for (const auto &reject : spec["rejects"]) {
         std::vector<std::uint8_t> reject_bytes;
@@ -191,7 +207,10 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
         }
         ::SCE::Forge::SceCursor reject_cursor(reject_bytes.data(), reject_bytes.size());
         auto refused = Codec::decode(reject_cursor);
-        CHECK(!refused.has_value(), "{{ f.name }} reject %d: %s", reject_index,
+        const auto error = reject["error"].get<std::string>();
+        const auto kind = reject_kind(error);
+        CHECK(kind.has_value() && !refused.has_value() && refused.error() == *kind,
+              "{{ f.name }} reject %d is refused as %s: %s", reject_index, error.c_str(),
               reject["why"].get<std::string>().c_str());
         CHECK(reject_cursor.remaining() == reject_bytes.size(), "{{ f.name }} reject %d: the cursor moved",
               reject_index);

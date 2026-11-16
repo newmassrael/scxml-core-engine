@@ -17,10 +17,11 @@
 // refuses what the codec cannot read as its entry: a reserved
 // additional-information value, an indefinite length, another major type.
 //
-// Decode refusals are `std::nullopt` / `false`, the C++ decode convention
-// (sce/forge/codec.h); the reason is not carried. A reader that refuses may
-// have advanced the cursor, so a generated decode works on a copy of the
-// caller's cursor and assigns it back only once the whole map is read.
+// A read answers a `Decoded`: the item, or the `CodecError` that refused it
+// (docs/adr/0099, amendment of 2026-11-16), each kind the one the Rust
+// reader answers for the same bytes. A reader that refuses may have advanced
+// the cursor, so a generated decode works on a copy of the caller's cursor
+// and assigns it back only once the whole map is read.
 
 #pragma once
 
@@ -132,12 +133,16 @@ struct Head {
     std::uint64_t value;
 };
 
+/// What a skip answers when it skipped its item whole: a skip has no value to
+/// answer, so its `Decoded` holds this or the refusal.
+struct Skipped {};
+
 namespace detail {
 
-[[nodiscard]] inline std::optional<std::uint64_t> read_be(SceCursor &c, std::size_t n) noexcept {
+[[nodiscard]] inline Decoded<std::uint64_t> read_be(SceCursor &c, std::size_t n) noexcept {
     const std::uint8_t *p = c.peek_slice(n);
     if (p == nullptr) {
-        return std::nullopt;
+        return CodecError::NeedMoreBytes;
     }
     std::uint64_t value = 0;
     for (std::size_t i = 0; i < n; ++i) {
@@ -148,10 +153,10 @@ namespace detail {
 }
 
 /// The payload of a string whose head said `len`, as a pointer into the
-/// input — or `nullptr` when the input is shorter.
-[[nodiscard]] inline const std::uint8_t *read_payload(SceCursor &c, std::uint64_t len) noexcept {
+/// input, refused as `NeedMoreBytes` when the input is shorter.
+[[nodiscard]] inline Decoded<const std::uint8_t *> read_payload(SceCursor &c, std::uint64_t len) noexcept {
     if (len > c.remaining()) {
-        return nullptr;
+        return CodecError::NeedMoreBytes;
     }
     const std::uint8_t *p = c.peek_slice(static_cast<std::size_t>(len));
     (void)c.advance(static_cast<std::size_t>(len));
@@ -161,40 +166,50 @@ namespace detail {
 }  // namespace detail
 
 /// Read one head. An indefinite length and the reserved values 28–30 are
-/// refused.
-[[nodiscard]] inline std::optional<Head> read_head(SceCursor &c) noexcept {
-    auto initial = detail::read_be(c, 1);
+/// refused as `CborMalformed`.
+[[nodiscard]] inline Decoded<Head> read_head(SceCursor &c) noexcept {
+    const auto initial = detail::read_be(c, 1);
     if (!initial) {
-        return std::nullopt;
+        return initial.error();
     }
     const auto major = static_cast<std::uint8_t>(*initial >> 5);
     const auto info = static_cast<std::uint8_t>(*initial & 0x1F);
-    std::optional<std::uint64_t> value;
     if (info < 24) {
-        value = info;
-    } else if (info == 24) {
-        value = detail::read_be(c, 1);
-    } else if (info == 25) {
-        value = detail::read_be(c, 2);
-    } else if (info == 26) {
-        value = detail::read_be(c, 4);
-    } else if (info == 27) {
-        value = detail::read_be(c, 8);
-    } else {
-        return std::nullopt;
+        return Head{major, info};
     }
+    std::size_t width = 0;
+    switch (info) {
+    case 24:
+        width = 1;
+        break;
+    case 25:
+        width = 2;
+        break;
+    case 26:
+        width = 4;
+        break;
+    case 27:
+        width = 8;
+        break;
+    default:
+        return CodecError::CborMalformed;
+    }
+    const auto value = detail::read_be(c, width);
     if (!value) {
-        return std::nullopt;
+        return value.error();
     }
     return Head{major, *value};
 }
 
 namespace detail {
 
-[[nodiscard]] inline std::optional<std::uint64_t> expect(SceCursor &c, std::uint8_t major) noexcept {
-    auto head = read_head(c);
-    if (!head || head->major != major) {
-        return std::nullopt;
+[[nodiscard]] inline Decoded<std::uint64_t> expect(SceCursor &c, std::uint8_t major) noexcept {
+    const auto head = read_head(c);
+    if (!head) {
+        return head.error();
+    }
+    if (head->major != major) {
+        return CodecError::CborMalformed;
     }
     return head->value;
 }
@@ -202,128 +217,159 @@ namespace detail {
 }  // namespace detail
 
 /// Read an unsigned integer.
-[[nodiscard]] inline std::optional<std::uint64_t> read_uint(SceCursor &c) noexcept {
+[[nodiscard]] inline Decoded<std::uint64_t> read_uint(SceCursor &c) noexcept {
     return detail::expect(c, kMajorUnsigned);
 }
 
-/// Read an unsigned integer an entry of `max` holds.
-[[nodiscard]] inline std::optional<std::uint64_t> read_uint_upto(SceCursor &c, std::uint64_t max) noexcept {
-    auto value = read_uint(c);
-    if (!value || *value > max) {
-        return std::nullopt;
+/// Read an unsigned integer an entry of `max` holds; past it, `CborOutOfRange`.
+[[nodiscard]] inline Decoded<std::uint64_t> read_uint_upto(SceCursor &c, std::uint64_t max) noexcept {
+    const auto value = read_uint(c);
+    if (!value) {
+        return value.error();
     }
-    return value;
+    if (*value > max) {
+        return CodecError::CborOutOfRange;
+    }
+    return *value;
 }
 
 /// Read `false` or `true`.
-[[nodiscard]] inline std::optional<bool> read_bool(SceCursor &c) noexcept {
-    auto head = read_head(c);
-    if (!head || head->major != kMajorSimple || (head->value != 20 && head->value != 21)) {
-        return std::nullopt;
+[[nodiscard]] inline Decoded<bool> read_bool(SceCursor &c) noexcept {
+    const auto head = read_head(c);
+    if (!head) {
+        return head.error();
+    }
+    if (head->major != kMajorSimple || (head->value != 20 && head->value != 21)) {
+        return CodecError::CborMalformed;
     }
     return head->value == 21;
 }
 
 /// Read a UTF-8 text string of at most `max_size` bytes (`std::nullopt`:
-/// no bound).
-[[nodiscard]] inline std::optional<std::string> read_text(SceCursor &c,
-                                                          std::optional<std::uint64_t> max_size) noexcept {
-    auto len = detail::expect(c, kMajorText);
-    if (!len || (max_size && *len > *max_size)) {
-        return std::nullopt;
+/// no bound). A longer one is `CborOutOfRange`, one that is not UTF-8
+/// `InvalidUtf8`.
+[[nodiscard]] inline Decoded<std::string> read_text(SceCursor &c, std::optional<std::uint64_t> max_size) noexcept {
+    const auto len = detail::expect(c, kMajorText);
+    if (!len) {
+        return len.error();
     }
-    const std::uint8_t *p = detail::read_payload(c, *len);
-    if (p == nullptr || !is_valid_utf8(p, static_cast<std::size_t>(*len))) {
-        return std::nullopt;
+    if (max_size && *len > *max_size) {
+        return CodecError::CborOutOfRange;
     }
-    return std::string(reinterpret_cast<const char *>(p), static_cast<std::size_t>(*len));
+    const auto p = detail::read_payload(c, *len);
+    if (!p) {
+        return p.error();
+    }
+    if (!is_valid_utf8(*p, static_cast<std::size_t>(*len))) {
+        return CodecError::InvalidUtf8;
+    }
+    return std::string(reinterpret_cast<const char *>(*p), static_cast<std::size_t>(*len));
 }
 
-/// Read a byte string of at most `max_size` bytes (`std::nullopt`: no bound).
-[[nodiscard]] inline std::optional<std::vector<std::uint8_t>>
-read_bytes(SceCursor &c, std::optional<std::uint64_t> max_size) noexcept {
-    auto len = detail::expect(c, kMajorBytes);
-    if (!len || (max_size && *len > *max_size)) {
-        return std::nullopt;
+/// Read a byte string of at most `max_size` bytes (`std::nullopt`: no
+/// bound); a longer one is `CborOutOfRange`.
+[[nodiscard]] inline Decoded<std::vector<std::uint8_t>> read_bytes(SceCursor &c,
+                                                                   std::optional<std::uint64_t> max_size) noexcept {
+    const auto len = detail::expect(c, kMajorBytes);
+    if (!len) {
+        return len.error();
     }
-    const std::uint8_t *p = detail::read_payload(c, *len);
-    if (p == nullptr) {
-        return std::nullopt;
+    if (max_size && *len > *max_size) {
+        return CodecError::CborOutOfRange;
     }
-    return std::vector<std::uint8_t>(p, p + static_cast<std::size_t>(*len));
+    const auto p = detail::read_payload(c, *len);
+    if (!p) {
+        return p.error();
+    }
+    return std::vector<std::uint8_t>(*p, *p + static_cast<std::size_t>(*len));
 }
 
-/// Read a byte string of exactly `length` bytes.
-[[nodiscard]] inline std::optional<std::vector<std::uint8_t>> read_bytes_exact(SceCursor &c,
-                                                                               std::uint64_t length) noexcept {
-    auto len = detail::expect(c, kMajorBytes);
-    if (!len || *len != length) {
-        return std::nullopt;
+/// Read a byte string of exactly `length` bytes; another length is
+/// `CborWrongLength`.
+[[nodiscard]] inline Decoded<std::vector<std::uint8_t>> read_bytes_exact(SceCursor &c, std::uint64_t length) noexcept {
+    const auto len = detail::expect(c, kMajorBytes);
+    if (!len) {
+        return len.error();
     }
-    const std::uint8_t *p = detail::read_payload(c, *len);
-    if (p == nullptr) {
-        return std::nullopt;
+    if (*len != length) {
+        return CodecError::CborWrongLength;
     }
-    return std::vector<std::uint8_t>(p, p + static_cast<std::size_t>(*len));
+    const auto p = detail::read_payload(c, *len);
+    if (!p) {
+        return p.error();
+    }
+    return std::vector<std::uint8_t>(*p, *p + static_cast<std::size_t>(*len));
 }
 
 /// Read the head of a definite-length array: how many items follow. An
 /// indefinite length is refused, as a map's is.
-[[nodiscard]] inline std::optional<std::uint64_t> read_array_len(SceCursor &c) noexcept {
+[[nodiscard]] inline Decoded<std::uint64_t> read_array_len(SceCursor &c) noexcept {
     return detail::expect(c, kMajorArray);
 }
 
 /// Read the head of a definite-length map: how many entries follow.
-[[nodiscard]] inline std::optional<std::uint64_t> read_map_len(SceCursor &c) noexcept {
+[[nodiscard]] inline Decoded<std::uint64_t> read_map_len(SceCursor &c) noexcept {
     return detail::expect(c, kMajorMap);
 }
 
 namespace detail {
 
-[[nodiscard]] inline bool skip_at(SceCursor &c, std::uint32_t depth) noexcept {
+[[nodiscard]] inline Decoded<Skipped> skip_at(SceCursor &c, std::uint32_t depth) noexcept {
     if (depth >= kMaxSkipDepth) {
-        return false;
+        return CodecError::CborTooDeep;
     }
-    auto head = read_head(c);
+    const auto head = read_head(c);
     if (!head) {
-        return false;
+        return head.error();
     }
     switch (head->major) {
     // Unsigned, negative, simple / float: the head is the whole item.
     case 0:
     case 1:
     case 7:
-        return true;
+        return Skipped{};
     case 2:
-    case 3:
-        return read_payload(c, head->value) != nullptr;
+    case 3: {
+        const auto payload = read_payload(c, head->value);
+        if (!payload) {
+            return payload.error();
+        }
+        return Skipped{};
+    }
     case 4:
         for (std::uint64_t i = 0; i < head->value; ++i) {
-            if (!skip_at(c, depth + 1)) {
-                return false;
+            const auto item = skip_at(c, depth + 1);
+            if (!item) {
+                return item.error();
             }
         }
-        return true;
+        return Skipped{};
     case 5:
         for (std::uint64_t i = 0; i < head->value; ++i) {
-            if (!skip_at(c, depth + 1) || !skip_at(c, depth + 1)) {
-                return false;
+            const auto key = skip_at(c, depth + 1);
+            if (!key) {
+                return key.error();
+            }
+            const auto value = skip_at(c, depth + 1);
+            if (!value) {
+                return value.error();
             }
         }
-        return true;
+        return Skipped{};
     // A tag: its one enclosed item follows.
     case 6:
         return skip_at(c, depth + 1);
     default:
-        return false;
+        return CodecError::CborMalformed;
     }
 }
 
 }  // namespace detail
 
 /// Skip one item — the value of a key the codec does not declare — and
-/// everything nested in it, refusing one nested deeper than `kMaxSkipDepth`.
-[[nodiscard]] inline bool skip(SceCursor &c) noexcept {
+/// everything nested in it, refusing one nested deeper than `kMaxSkipDepth`
+/// as `CborTooDeep`.
+[[nodiscard]] inline Decoded<Skipped> skip(SceCursor &c) noexcept {
     return detail::skip_at(c, 0);
 }
 

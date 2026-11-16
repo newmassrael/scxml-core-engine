@@ -29,23 +29,23 @@
 
 namespace SCE::Forge {
 
-/// Typed codec error. Used by decode (returned via `std::nullopt`
-/// sentinel + cursor side-flag) and encode (`std::optional<CodecError>`
-/// return: `std::nullopt` = success, value = error).
+/// Typed codec error. A decode answers it inside its `Decoded<T>`, the kind
+/// that refused the frame (docs/adr/0099, amendment of 2026-11-16); an encode
+/// answers `std::optional<CodecError>`, `std::nullopt` on success. The kinds a
+/// decode answers are one vocabulary across every runtime
+/// (`sce-build/src/forge/codec_failure.rs`).
 ///
 /// The variant primitive intentionally does NOT need a typed
 /// `UnknownVariantTag` — RFC §synth-5-B requires `<sce:default>` when arms
 /// don't exhaust the tag domain (build-time `codec/variant-arm-unreachable`
 /// otherwise), so the default arm catches every unmatched tag at runtime.
 /// A tag the document names whose arm this build leaves out is another fact,
-/// refused as `VariantArmNotBuilt` and recorded on the cursor
-/// (`SceCursor::last_refusal`, docs/adr/0072).
+/// refused as `VariantArmNotBuilt` (docs/adr/0072).
 ///
 /// The TLV chain primitive emits on cpp
 /// (it was originally MCU-only as a conservative scope choice; Zenoh
 /// extension envelopes need server-class peers too). A chain past its
-/// depth is refused as `TooManyElements` and recorded on the cursor,
-/// as a list past its count is.
+/// depth is refused as `TooManyElements`, as a list past its count is.
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
     /// A `vle_u<N>` field's continuation chain implies a value wider
@@ -65,10 +65,10 @@ enum class CodecError : std::uint8_t {
     /// bound — a text or byte string longer than `sce:max-size`, an enum
     /// whose number does not fit the wire (SCE_FORGE.md §4.6.1). Encode
     /// refuses it rather than writing it; decode refuses the same wire with
-    /// `std::nullopt`, the C++ decode convention.
+    /// it.
     CborOutOfRange = 4,
     /// An `sce:encoding="cbor"` codec's byte string that is not its entry's
-    /// exact `sce:length`, refused on encode as `CborOutOfRange` is.
+    /// exact `sce:length`, on decode or on encode.
     CborWrongLength = 5,
     /// Encode-side: a field gated by a `sce:present-if` the codec cannot
     /// derive (a chain-membership test, a flag input the caller gives, a
@@ -78,9 +78,7 @@ enum class CodecError : std::uint8_t {
     /// before writing the first byte, so the sink is untouched.
     PresentIfMismatch = 6,
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line,
-    /// a parameter or an `END:` the grammar does not admit. Decode refuses with
-    /// `std::nullopt`, the C++ decode convention; a `ContentLine::Reader` keeps
-    /// the rule in `error()`.
+    /// a parameter or an `END:` the grammar does not admit.
     LineMalformed = 7,
     /// A content-line component lacked a property or parameter of a bare type,
     /// one that is not `optional<T>`; on encode, a parameter was given without the
@@ -102,31 +100,25 @@ enum class CodecError : std::uint8_t {
     /// document declares under a build feature this build leaves out
     /// (`<sce:arm feature="<name>">`, whose `SCE_FEATURE_<NAME>` macro is 0).
     /// The arm's alternative is not in the variant, so the frame is refused
-    /// rather than read as another arm's body. Decode returns `std::nullopt`,
-    /// the C++ decode convention, and records this on the cursor, where
-    /// `SceCursor::last_refusal` tells it apart from running out of bytes.
-    /// Mirrors `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20` of C and the typed
+    /// rather than read as another arm's body. Mirrors `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT = 20` of C and the typed
     /// `CodecError::VariantArmNotBuilt` of Rust.
     VariantArmNotBuilt = 13,
     /// On decode, a byte string's or a text's length outside its bound: the
     /// declared `sce:max-size` intersected with what its length field can say
     /// after its `sce:length-arith` (docs/adr/0077 §1). Judged before the
     /// frame's own length, so such a frame is refused and never waited on.
-    /// Decode returns `std::nullopt` and records this on the cursor
-    /// (`SceCursor::last_refusal`). Mirrors
-    /// `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19` of C and the typed
+    /// Mirrors `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19` of C and the typed
     /// `CodecError::LengthOutOfRange` of Rust.
     LengthOutOfRange = 14,
     /// On decode, a list's count past its declared `max-count`, or an entry
     /// past it in a list read to the end of the frame, refused before that
-    /// entry is read (docs/adr/0077 §2). Recorded on the cursor as
-    /// `LengthOutOfRange` is. Mirrors `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21`
-    /// of C and the typed `CodecError::TooManyElements` of Rust.
+    /// entry is read (docs/adr/0077 §2). Mirrors
+    /// `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21` of C and the typed
+    /// `CodecError::TooManyElements` of Rust.
     TooManyElements = 15,
     /// On decode, a field of a closed enum (`sce:strict-variants`, the
     /// default) whose carrier holds a value no variant declares: not a value
-    /// of the type, so the frame is refused rather than waited on. Recorded
-    /// on the cursor as `LengthOutOfRange` is. Mirrors
+    /// of the type, so the frame is refused rather than waited on. Mirrors
     /// `SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6` of C and the typed
     /// `CodecError::UndeclaredEnumValue` of Rust.
     UndeclaredEnumValue = 16,
@@ -138,6 +130,102 @@ enum class CodecError : std::uint8_t {
     /// `CodecError::InconsistentSource` of Rust. Its value follows the last
     /// one given, as every enumerator's here does, so no value moves.
     InconsistentSource = 17,
+    /// On decode, the bytes of a `sce:type="string"` field are not well-formed
+    /// UTF-8 (RFC 3629). Mirrors `SCE_FORGE_CODEC_INVALID_UTF8` of C and the
+    /// typed `CodecError::InvalidUtf8` of Rust.
+    InvalidUtf8 = 18,
+    /// An `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that are
+    /// not the CBOR it expects: a head it cannot read (reserved additional
+    /// information, an indefinite length), a value of another major type than
+    /// the entry declares, a key that is not an unsigned integer, or a key
+    /// given twice.
+    CborMalformed = 19,
+    /// A CBOR codec's map lacked an entry of a bare type, one that is not
+    /// `optional<T>`.
+    CborRequiredKeyMissing = 20,
+    /// A CBOR codec skipped an unknown entry nested deeper than
+    /// `Cbor::kMaxSkipDepth`.
+    CborTooDeep = 21,
+    /// A value inside its field's bound and past the capacity a deployment gave
+    /// the container that stores it (docs/adr/0077 §7). A C++ codec holds a
+    /// list and bytes in containers that grow, so no decode of this runtime
+    /// refuses with it: it is declared so that every runtime holds one
+    /// vocabulary of the kinds a decode is refused with (docs/adr/0099,
+    /// amendment of 2026-11-16).
+    CapacityExceeded = 22,
+};
+
+/// What a decode answers (docs/adr/0099, amendment of 2026-11-16): the value
+/// it read, or the kind of rejection that refused the frame. A rejection is no
+/// value of `T` and no sentinel stands for it, so a caller tells a frame cut
+/// short (`CodecError::NeedMoreBytes`, resumed by appending bytes) from one no
+/// more bytes make whole by the kind it holds.
+///
+/// It is the C++17 spelling of `std::expected<T, CodecError>` (C++23, P0323),
+/// with that type's names for what it offers — `has_value`, `operator bool`,
+/// `operator*`, `operator->`, `error` — so a move to the standard type is a
+/// rename. It is built from either side implicitly, so a generated decode
+/// writes `return value;` and `return CodecError::NeedMoreBytes;` alike, and a
+/// nested refusal is passed on as `return inner.error();`. Reading the value of
+/// a refusal or the error of a value is a precondition violation, as it is of
+/// `std::expected`; this runtime builds without exceptions, so no accessor
+/// throws.
+template <typename T> class [[nodiscard]] Decoded {
+    static_assert(!std::is_same_v<T, CodecError>, "a decode answers a value, not a CodecError");
+
+public:
+    /// The value a decode read. Two overloads rather than one by value, so that
+    /// `return value;` of a local moves it (C++17 moves a returned local only
+    /// into a constructor that takes it by rvalue reference).
+    constexpr Decoded(const T &value) noexcept(
+        std::is_nothrow_copy_constructible_v<T>)  // NOLINT(google-explicit-constructor)
+        : state_(std::in_place_index<0>, value) {}
+
+    constexpr Decoded(T &&value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)  // NOLINT(google-explicit-constructor)
+        : state_(std::in_place_index<0>, std::move(value)) {}
+
+    /// The kind of rejection that refused the frame.
+    constexpr Decoded(CodecError error) noexcept  // NOLINT(google-explicit-constructor)
+        : state_(std::in_place_index<1>, error) {}
+
+    /// Whether the decode read a value.
+    [[nodiscard]] constexpr bool has_value() const noexcept {
+        return state_.index() == 0;
+    }
+
+    constexpr explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    /// The value; `has_value()` is the precondition.
+    [[nodiscard]] constexpr T &operator*() & noexcept {
+        return *std::get_if<0>(&state_);
+    }
+
+    [[nodiscard]] constexpr const T &operator*() const & noexcept {
+        return *std::get_if<0>(&state_);
+    }
+
+    [[nodiscard]] constexpr T &&operator*() && noexcept {
+        return std::move(*std::get_if<0>(&state_));
+    }
+
+    [[nodiscard]] constexpr T *operator->() noexcept {
+        return std::get_if<0>(&state_);
+    }
+
+    [[nodiscard]] constexpr const T *operator->() const noexcept {
+        return std::get_if<0>(&state_);
+    }
+
+    /// The kind of rejection; `!has_value()` is the precondition.
+    [[nodiscard]] constexpr CodecError error() const noexcept {
+        return *std::get_if<1>(&state_);
+    }
+
+private:
+    std::variant<T, CodecError> state_;
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -190,46 +278,19 @@ public:
     /// field's width. The wire of every width is the same ZInt64 and the
     /// type bounds the value, not the encoding: a narrow field accepts every
     /// encoding of a value it holds, the padded ones included, and refuses a
-    /// value past its width, never a longer encoding. Returns `std::nullopt`
-    /// on `NeedMoreBytes` and on `VleWidthOverflow`, which the
-    /// `last_vle_overflow()` flag tells apart — split from the
-    /// std::optional return to keep the hot decode path branch-light.
-    std::optional<std::uint64_t> read_vle_u16() noexcept {
+    /// value past its width, never a longer encoding. A buffer that ends
+    /// inside the chain is refused as `NeedMoreBytes`, a value past the width
+    /// as `VleWidthOverflow`.
+    Decoded<std::uint64_t> read_vle_u16() noexcept {
         return read_vle_inner(16);
     }
 
-    std::optional<std::uint64_t> read_vle_u32() noexcept {
+    Decoded<std::uint64_t> read_vle_u32() noexcept {
         return read_vle_inner(32);
     }
 
-    std::optional<std::uint64_t> read_vle_u64() noexcept {
+    Decoded<std::uint64_t> read_vle_u64() noexcept {
         return read_vle_inner(64);
-    }
-
-    [[nodiscard]] constexpr bool last_vle_overflow() const noexcept {
-        return vle_overflow_;
-    }
-
-    /// Record that a decode refused its frame for a reason other than
-    /// running out of bytes (`CodecError::VariantArmNotBuilt`,
-    /// `LengthOutOfRange`, `TooManyElements`). The decode
-    /// then returns `std::nullopt`; the cursor stands where the refusal was
-    /// found, inside the frame, so the frame is not resumed by appending
-    /// bytes. The record stays until the next refusal replaces it.
-    constexpr void refuse(CodecError error) noexcept {
-        refusal_ = error;
-        refused_ = true;
-    }
-
-    /// The reason the last refused decode over this cursor gave, or
-    /// `std::nullopt` when no decode over it refused a frame. A decode that
-    /// returned `std::nullopt` while this is empty ran out of bytes (or
-    /// overflowed a VLE, `last_vle_overflow`).
-    [[nodiscard]] constexpr std::optional<CodecError> last_refusal() const noexcept {
-        if (refused_) {
-            return refusal_;
-        }
-        return std::nullopt;
     }
 
 private:
@@ -265,47 +326,23 @@ private:
     }
 
     /// One ZInt whatever the width, then the value held to `max_bits`: past
-    /// `2^max_bits - 1` it is refused and `last_vle_overflow()` is set.
-    std::optional<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
-        vle_overflow_ = false;
+    /// `2^max_bits - 1` it is refused as `VleWidthOverflow`.
+    Decoded<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
         const std::optional<std::uint64_t> value = read_zint();
         if (!value.has_value()) {
-            return std::nullopt;
+            return CodecError::NeedMoreBytes;
         }
         if (max_bits < 64 && (*value >> max_bits) != 0) {
-            vle_overflow_ = true;
-            return std::nullopt;
+            return CodecError::VleWidthOverflow;
         }
-        return value;
+        return *value;
     }
 
     const std::uint8_t *data_;
     std::size_t len_;
     std::size_t pos_;
-    bool vle_overflow_ = false;
-    CodecError refusal_ = CodecError::NeedMoreBytes;
-    bool refused_ = false;
 };
 
-/// RFC §synth-5-B string typing (`sce:type="string"`): validate that `[p, p+n)` is a well-formed
-/// UTF-8 byte sequence. Returns `true` for valid UTF-8 (including the
-/// empty range), `false` for any malformed sequence (invalid lead
-/// byte, incomplete multi-byte sequence, overlong encoding, or
-/// surrogate). The decoder uses the standard Unicode tables (RFC 3629
-/// §4): 1-byte form 0x00..0x7F; 2-byte form 0xC2..0xDF + one continuation
-/// (0x80..0xBF); 3-byte form 0xE0..0xEF + two continuations with
-/// overlong / surrogate guards; 4-byte form 0xF0..0xF4 + three
-/// continuations bounded to U+10FFFF.
-///
-/// `inline` so codec headers can reuse the validator without forcing
-/// a separate translation unit on the cpp consumer (mirrors the
-/// header-only sce_forge_runtime contract). Used by codec decode
-/// bodies emitted from `sce:type="string"` fields — Cpp collapses
-/// invalid UTF-8 to `std::nullopt` (the existing truncation sentinel)
-/// rather than constructing a typed `CodecError::InvalidUtf8`, which
-/// would otherwise force every String-bearing codec's signature to
-/// surface the variant (Rust + Go + Python construct the variant
-/// because their decode return types already distinguish error cases).
 // ── Reading an element of a source ───────────────────────────────
 
 /// The priority tags a generated element reader dispatches on (docs/adr/0081,

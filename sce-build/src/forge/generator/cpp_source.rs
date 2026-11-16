@@ -2279,8 +2279,7 @@ impl<'p> GroupPart<'p> {
                     format!(
                         "{indent}const auto _al_{pair} = {view}::make(*_b_{first}, *_b_{second});\n\
                          {indent}if (!_al_{pair}) {{\n\
-                         {indent}    cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-                         {indent}    return std::nullopt;\n\
+                         {indent}    return ::SCE::Forge::CodecError::TooManyElements;\n\
                          {indent}}}\n",
                         pair = m.name,
                         view = m.view,
@@ -2306,14 +2305,12 @@ impl<'p> GroupPart<'p> {
                                     "{indent}std::vector<{entry}> _rest_{name}(_b_{name}->inner().begin(), _b_{name}->inner().end());\n\
                                      {indent}const auto _at_{name} = ::SCE::Forge::Detail::first_of_kind<{key}>(_rest_{name});\n\
                                      {indent}if (!_at_{name}) {{\n\
-                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
-                                     {indent}    return std::nullopt;\n\
+                                     {indent}    return ::SCE::Forge::CodecError::PresentIfMismatch;\n\
                                      {indent}}}\n\
                                      {indent}_rest_{name}.erase(_rest_{name}.begin() + static_cast<std::ptrdiff_t>(*_at_{name}));\n\
                                      {indent}const auto _ch_{name} = {view}::make(::SCE::Forge::Span<const {entry}>(_rest_{name}.data(), _rest_{name}.size()), *_at_{name});\n\
                                      {indent}if (!_ch_{name}) {{\n\
-                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-                                     {indent}    return std::nullopt;\n\
+                                     {indent}    return ::SCE::Forge::CodecError::TooManyElements;\n\
                                      {indent}}}\n",
                                     name = m.name,
                                     view = chain.view,
@@ -2326,8 +2323,7 @@ impl<'p> GroupPart<'p> {
                                      {indent}if (_b_{name}) {{\n\
                                      {indent}    _ch_{name} = {view}::make(_b_{name}->inner());\n\
                                      {indent}    if (!_ch_{name}) {{\n\
-                                     {indent}        cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
-                                     {indent}        return std::nullopt;\n\
+                                     {indent}        return ::SCE::Forge::CodecError::PresentIfMismatch;\n\
                                      {indent}    }}\n\
                                      {indent}}}\n",
                                     name = m.name,
@@ -2337,8 +2333,7 @@ impl<'p> GroupPart<'p> {
                                 format!(
                                     "{indent}const auto _ch_{name} = {view}::make(_b_{name}->inner());\n\
                                      {indent}if (!_ch_{name}) {{\n\
-                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
-                                     {indent}    return std::nullopt;\n\
+                                     {indent}    return ::SCE::Forge::CodecError::PresentIfMismatch;\n\
                                      {indent}}}\n",
                                     name = m.name,
                                     view = chain.view
@@ -4748,13 +4743,11 @@ pub(super) fn render(
             format!(
                 "{indent}const auto _l_{name} = {view}::list_type::make({list});\n\
                  {indent}if (!_l_{name}) {{\n\
-                 {indent}    cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-                 {indent}    return std::nullopt;\n\
+                 {indent}    return ::SCE::Forge::CodecError::TooManyElements;\n\
                  {indent}}}\n\
                  {indent}{into} = {view}::make({start}, *_l_{name});\n\
                  {indent}if (!_b_{name}) {{\n\
-                 {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
-                 {indent}    return std::nullopt;\n\
+                 {indent}    return ::SCE::Forge::CodecError::PresentIfMismatch;\n\
                  {indent}}}\n"
             )
         };
@@ -4780,8 +4773,7 @@ pub(super) fn render(
                  \x20       if ({name}) {{\n\
                  \x20           _b_{name} = {view}::make(*{name});\n\
                  \x20           if (!_b_{name}) {{\n\
-                 \x20               cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-                 \x20               return std::nullopt;\n\
+                 \x20               return ::SCE::Forge::CodecError::TooManyElements;\n\
                  \x20           }}\n\
                  \x20       }}\n"
             ));
@@ -4789,8 +4781,7 @@ pub(super) fn render(
             decoded.push_str(&format!(
                 "        const auto _b_{name} = {view}::make({name});\n\
                  \x20       if (!_b_{name}) {{\n\
-                 \x20           cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-                 \x20           return std::nullopt;\n\
+                 \x20           return ::SCE::Forge::CodecError::TooManyElements;\n\
                  \x20       }}\n"
             ));
         }
@@ -4805,8 +4796,7 @@ pub(super) fn render(
                  \x20       if ({name}) {{\n\
                  \x20           _b_{name} = {view}::make(*{name});\n\
                  \x20           if (!_b_{name}) {{\n\
-                 \x20               cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);\n\
-                 \x20               return std::nullopt;\n\
+                 \x20               return ::SCE::Forge::CodecError::LengthOutOfRange;\n\
                  \x20           }}\n\
                  \x20       }}\n"
             ));
@@ -4814,8 +4804,7 @@ pub(super) fn render(
             decoded.push_str(&format!(
                 "        const auto _b_{name} = {view}::make({name});\n\
                  \x20       if (!_b_{name}) {{\n\
-                 \x20           cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);\n\
-                 \x20           return std::nullopt;\n\
+                 \x20           return ::SCE::Forge::CodecError::LengthOutOfRange;\n\
                  \x20       }}\n"
             ));
         }

@@ -49647,16 +49647,22 @@ mod tests {
         );
     }
 
-    /// A C++ or Kotlin refusal is two statements, the record and the return,
-    /// so the guard braces them: unbraced, the return would run on every
-    /// frame.
+    /// A C++ or Kotlin chain past its depth answers the kind that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16), in one braced branch, and
+    /// records nothing on the cursor beside it.
     #[test]
-    fn a_chain_guard_of_two_statements_is_one_branch() {
+    fn a_chain_past_its_depth_answers_its_kind_in_one_branch() {
+        use crate::forge::codec_failure::CodecFailure;
         use crate::generator::Language;
 
         for lang in [Language::Cpp, Language::Kotlin] {
             let guard = tlv_chain_guard(lang, false, Some(4), "    ");
-            assert!(guard.contains("{ cursor.refuse("), "{lang:?}: {guard}");
+            let refusal = CodecFailure::TooManyElements.raise_stmt(lang);
+            assert!(
+                guard.contains(&format!("{{ {refusal} }}")),
+                "{lang:?}: {guard}"
+            );
+            assert!(!guard.contains("cursor.refuse("), "{lang:?}: {guard}");
             assert!(guard.trim_end().ends_with('}'), "{lang:?}: {guard}");
         }
     }

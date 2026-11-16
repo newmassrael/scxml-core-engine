@@ -108,8 +108,8 @@
 
         ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
         auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor);
-        CHECK(round_tripped.has_value(),
-              "{{ f.name }} case %d decode returned nullopt", i);
+        CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode refused (kind %d)", i,
+              round_tripped.has_value() ? 0 : static_cast<int>(round_tripped.error()));
         CHECK(!decode_only || cursor.remaining() == 0,
               "{{ f.name }} case %d: a decode-only frame is read whole", i);
         if (round_tripped.has_value()) {
@@ -178,7 +178,8 @@
         ::SCE::Forge::SceCursor cursor(expected.data(), expected.size());
         {# The flag inputs the parent hands the decode, in declaration order. #}
         const auto decoded = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor{% for v in s.inputs %}, {{ v }}{% endfor %});
-        CHECK(decoded.has_value(), "{{ f.name }} source {{ loop.index0 }}: decode refused: %s", "{{ s.note }}");
+        CHECK(decoded.has_value(), "{{ f.name }} source {{ loop.index0 }}: decode refused (kind %d): %s",
+              decoded.has_value() ? 0 : static_cast<int>(decoded.error()), "{{ s.note }}");
         if (decoded.has_value()) {
             CHECK(cursor.remaining() == 0,
                   "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread");
@@ -214,29 +215,15 @@
 {% endfor %}
 
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
-   shape. C++ returns one sentinel for every failure, so `r.symbol` is absent
-   here and the first assertion is that the decode refused. A refusal for a
-   reason the cursor records (a bound's, docs/adr/0077 §4) is checked there as
-   `r.cursor_record`, and a frame short of bytes is checked to record none. #}
+   shape. A C++ decode answers a `Decoded` holding the kind that refused the
+   frame (docs/adr/0099, amendment of 2026-11-16), and `r.symbol` is that
+   kind, so the vector asserts the kind and not only that the decode refused. #}
 {% for r in f.rejects %}
     {
         const std::vector<std::uint8_t> reject_bytes = { {{ r.encoded | join(", ") }} };
         ::SCE::Forge::SceCursor reject_cursor(reject_bytes.data(), reject_bytes.size());
         auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(reject_cursor);
-        CHECK(!refused.has_value(),
-              "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}");
-{% if r.cursor_record %}
-        CHECK(reject_cursor.last_refusal() == std::optional<::SCE::Forge::CodecError>({{ r.cursor_record }}),
+        CHECK(!refused.has_value() && refused.error() == {{ r.symbol }},
               "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}");
-{% elif r.cursor_records_nothing %}
-        CHECK(!reject_cursor.last_refusal().has_value(),
-              "{{ f.name }} reject {{ loop.index0 }} is a frame short of bytes, not a refusal for a reason: {{ r.why }}");
-{% endif %}
-{% if r.cursor_flag %}
-        {# A reason the cursor keeps in a flag of its own (a VLE's value past
-           its width, `last_vle_overflow()`). #}
-        CHECK(reject_cursor.{{ r.cursor_flag }},
-              "{{ f.name }} reject {{ loop.index0 }} is refused as {{ r.error }}: {{ r.why }}");
-{% endif %}
     }
 {% endfor %}

@@ -9,9 +9,9 @@
 //! `#if SCE_FEATURE_<NAME>`, which the header defines to 1 unless the build
 //! defined it. A build without the feature has no such arm, and its decode
 //! refuses the arm's tag (`CodecError::VariantArmNotBuilt`,
-//! `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT`, and in C++ `std::nullopt` with
-//! `CodecError::VariantArmNotBuilt` recorded on the cursor) rather than read
-//! the frame as the catch-all's. The C++ variant's alternatives move where one
+//! `SCE_FORGE_CODEC_VARIANT_ARM_NOT_BUILT`, and in C++ a `Decoded` holding
+//! `CodecError::VariantArmNotBuilt`) rather than read the frame as the
+//! catch-all's. The C++ variant's alternatives move where one
 //! is left out, so such a variant names them by type, and a parent's carrier
 //! bits count their index per build. Go, Kotlin and Python keep the arm in
 //! every build, which is the feature on.
@@ -668,23 +668,21 @@ fn every_cpp_item_of_a_gated_arm_is_inside_its_macro() {
 }
 
 /// In a C++ build without the feature, the decode's case for each gated arm's
-/// tag is the other branch of the arm's guard, and it records the refusal on
-/// the cursor before it returns, so a caller tells it from a frame short of
-/// bytes.
+/// tag is the other branch of the arm's guard, and it answers the refusal's
+/// kind, so a caller tells it from a frame short of bytes.
 #[test]
 fn a_cpp_build_without_the_feature_refuses_the_gated_arms_tag() {
     let code = generate(Language::Cpp, &ForgeCompileOptions::default());
     let lines: Vec<&str> = code.lines().collect();
-    let refusals: Vec<[&str; 4]> = lines
-        .windows(5)
+    let refusals: Vec<[&str; 3]> = lines
+        .windows(4)
         .filter(|w| w[0].trim() == "#else")
-        .map(|w| [w[1].trim(), w[2].trim(), w[3].trim(), w[4].trim()])
+        .map(|w| [w[1].trim(), w[2].trim(), w[3].trim()])
         .collect();
     let refusal = |case: &'static str| {
         [
             case,
-            "cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);",
-            "return std::nullopt;",
+            "return ::SCE::Forge::CodecError::VariantArmNotBuilt;",
             "#endif",
         ]
     };

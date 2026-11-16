@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "f589f58",
+  "embed_version": "610dffd",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 605,
+  "symbol_count": 607,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3500,85 +3500,85 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::expect",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::detail::expect(SceCursor &, std::uint8_t) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::detail::expect(SceCursor &, std::uint8_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::read_be",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::detail::read_be(SceCursor &, std::size_t) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::detail::read_be(SceCursor &, std::size_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::read_payload",
-      "signature": "const std::uint8_t * SCE::Forge::Cbor::detail::read_payload(SceCursor &, std::uint64_t) noexcept"
+      "signature": "Decoded<const std::uint8_t *> SCE::Forge::Cbor::detail::read_payload(SceCursor &, std::uint64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::skip_at",
-      "signature": "bool SCE::Forge::Cbor::detail::skip_at(SceCursor &, std::uint32_t) noexcept"
+      "signature": "Decoded<Skipped> SCE::Forge::Cbor::detail::skip_at(SceCursor &, std::uint32_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_array_len",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_array_len(SceCursor &) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::read_array_len(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_bool",
-      "signature": "std::optional<bool> SCE::Forge::Cbor::read_bool(SceCursor &) noexcept"
+      "signature": "Decoded<bool> SCE::Forge::Cbor::read_bool(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_bytes",
-      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes(SceCursor &, std::optional<std::uint64_t>) noexcept"
+      "signature": "Decoded<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes(SceCursor &, std::optional<std::uint64_t>) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_bytes_exact",
-      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes_exact(SceCursor &, std::uint64_t) noexcept"
+      "signature": "Decoded<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes_exact(SceCursor &, std::uint64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_head",
-      "signature": "std::optional<Head> SCE::Forge::Cbor::read_head(SceCursor &) noexcept"
+      "signature": "Decoded<Head> SCE::Forge::Cbor::read_head(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_map_len",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_map_len(SceCursor &) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::read_map_len(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_text",
-      "signature": "std::optional<std::string> SCE::Forge::Cbor::read_text(SceCursor &, std::optional<std::uint64_t>) noexcept"
+      "signature": "Decoded<std::string> SCE::Forge::Cbor::read_text(SceCursor &, std::optional<std::uint64_t>) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_uint",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_uint(SceCursor &) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::read_uint(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::read_uint_upto",
-      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_uint_upto(SceCursor &, std::uint64_t) noexcept"
+      "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::read_uint_upto(SceCursor &, std::uint64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::skip",
-      "signature": "bool SCE::Forge::Cbor::skip(SceCursor &) noexcept"
+      "signature": "Decoded<Skipped> SCE::Forge::Cbor::skip(SceCursor &) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3630,7 +3630,7 @@
         "field std::uint8_t major",
         "method Head &(Head &&) noexcept operator=",
         "method Head &(const Head &) noexcept operator=",
-        "method void () noexcept Head",
+        "method void () Head",
         "method void () noexcept ~Head",
         "method void (Head &&) noexcept Head",
         "method void (const Head &) noexcept Head"
@@ -3638,10 +3638,29 @@
       "name": "SCE::Forge::Cbor::Head"
     },
     {
+      "header": "sce/forge/cbor.h",
+      "kind": "struct",
+      "members": [
+        "method Skipped &(Skipped &&) noexcept operator=",
+        "method Skipped &(const Skipped &) noexcept operator=",
+        "method void () Skipped",
+        "method void () noexcept ~Skipped",
+        "method void (Skipped &&) noexcept Skipped",
+        "method void (const Skipped &) noexcept Skipped"
+      ],
+      "name": "SCE::Forge::Cbor::Skipped"
+    },
+    {
       "header": "sce/forge/codec.h",
       "kind": "class",
       "members": [],
       "name": "SCE::Forge::CountingSink"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Decoded<T>"
     },
     {
       "header": "sce/forge/codec.h",
@@ -3688,7 +3707,12 @@
         "LengthOutOfRange",
         "TooManyElements",
         "UndeclaredEnumValue",
-        "InconsistentSource"
+        "InconsistentSource",
+        "InvalidUtf8",
+        "CborMalformed",
+        "CborRequiredKeyMissing",
+        "CborTooDeep",
+        "CapacityExceeded"
       ]
     },
     {

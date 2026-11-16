@@ -18567,10 +18567,14 @@ const TAIL_SET: &[&str] = &["codec_declared_bounds_gated.scxml"];
 
 fn tail_python_program() -> String {
     r#"from tail_pkg.codec_declared_bounds_gated import CodecDeclaredBoundsGated
-from sce_forge_runtime.codec import SceCursor
+from sce_forge_runtime.codec import LengthOutOfRange, SceCursor
 
-past = CodecDeclaredBoundsGated.decode(SceCursor(bytes([0, 1, 2, 3])))
-assert past is None, past
+try:
+    past = CodecDeclaredBoundsGated.decode(SceCursor(bytes([0, 1, 2, 3])))
+except LengthOutOfRange:
+    pass
+else:
+    raise AssertionError(f"three bytes past a bound of two were accepted: {past}")
 at = CodecDeclaredBoundsGated.decode(SceCursor(bytes([0, 1, 2])))
 assert at is not None and bytes(at.rest) == bytes([1, 2]), at
 "#
@@ -18618,11 +18622,12 @@ using ::SCE::Forge::CodecError;
 int main() {
     const std::vector<std::uint8_t> past{0, 1, 2, 3};
     ::SCE::Forge::SceCursor past_cursor(past.data(), past.size());
-    if (Gated::decode(past_cursor).has_value()) {
+    const auto refused = Gated::decode(past_cursor);
+    if (refused.has_value()) {
         std::fprintf(stderr, "three bytes past a bound of two were accepted\n");
         return 1;
     }
-    if (past_cursor.last_refusal() != std::optional<CodecError>(CodecError::LengthOutOfRange)) {
+    if (refused.error() != CodecError::LengthOutOfRange) {
         std::fprintf(stderr, "a tail past its bound is refused as a length out of range\n");
         return 1;
     }
@@ -26368,7 +26373,7 @@ fn codec_enum_gated_compiles_on_every_backend() {
 /// The C++ program for both enum fixtures, which the C++ backend prints from
 /// their encode plan (docs/adr/0081 §6): the same frames and answers as the
 /// Rust and C11 runs above, a closed set's refusal told apart from running out
-/// of bytes on the cursor, and a value made by default holding the first
+/// of bytes by the kind its decode answers, and a value made by default holding the first
 /// variant each document declares rather than its carrier's zero.
 fn enum_cpp_program() -> String {
     r#"#include <cstdint>
@@ -26396,18 +26401,17 @@ void expect(bool ok, const char* what) {
 }
 
 template <class C>
-std::optional<C> decode(const Frame& frame) {
+::SCE::Forge::Decoded<C> decode(const Frame& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return C::decode(cursor);
 }
 
-// Whether the decode refuses `frame` as a closed set's undeclared value, on
-// the cursor, rather than as running out of bytes.
+// Whether the decode refuses `frame` as a closed set's undeclared value,
+// rather than as running out of bytes.
 template <class C>
 bool refuses_undeclared(const Frame& frame) {
-    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
-    return !C::decode(cursor) &&
-           cursor.last_refusal() == ::SCE::Forge::CodecError::UndeclaredEnumValue;
+    const auto decoded = decode<C>(frame);
+    return !decoded && decoded.error() == ::SCE::Forge::CodecError::UndeclaredEnumValue;
 }
 }  // namespace
 

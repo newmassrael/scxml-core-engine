@@ -208,7 +208,7 @@ void an_entry_is_stored_under_the_flag_its_element_says() {
 // form carries no tag, so the caller gives it on decode.
 ChoiceElement choice_from(const std::vector<std::uint8_t> &bytes, std::uint8_t tag) {
     ::SCE::Forge::SceCursor cursor(bytes.data(), bytes.size());
-    std::optional<ChoiceElement> element = ChoiceElement::decode(cursor, tag);
+    ::SCE::Forge::Decoded<ChoiceElement> element = ChoiceElement::decode(cursor, tag);
     CHECK(element.has_value(), "the arm bytes decode under the tag");
     return element.has_value() ? std::move(*element) : ChoiceElement{};
 }

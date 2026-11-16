@@ -3588,7 +3588,7 @@ fn cpp_generates_a_header_over_the_runtime_sized_from_its_element() {
             "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, const EventRecordType &element) noexcept {",
             "::SCE::Forge::SpanSink sink(bytes.data(), MAX_ENCODED_BYTES);",
             "[[nodiscard]] inline EventRingRead read(const EventRing &log, EventRingReader &reader) {",
-            "std::optional<EventRecordType> element = EventRecordType::decode(cursor);",
+            "::SCE::Forge::Decoded<EventRecordType> element = EventRecordType::decode(cursor);",
             "#endif  // SCE_FORGE_EVENT_RING_H",
         ],
     );
@@ -3612,7 +3612,7 @@ fn cpp_generates_a_header_over_the_runtime_sized_from_its_element() {
         .find("if (stored > MAX_ENCODED_BYTES) {")
         .expect("the stored length is checked against the bound");
     let refusal = code[length_check..]
-        .find("return EventRingMalformed{answer.seq};")
+        .find("return EventRingMalformed{answer.seq, ::SCE::Forge::CodecError::LengthOutOfRange};")
         .expect("a length above the bound is a malformed entry");
     let cut = code[length_check..]
         .find(
@@ -4015,7 +4015,7 @@ fn cpp_a_target_with_32_bit_atomics_is_generated_over_the_narrow_row() {
             "[[nodiscard]] inline EventRingRead read(const EventRing &log, EventRingReader &reader) {",
             "const std::uint32_t stored = entry[0];",
             "bytes[index] = static_cast<std::uint8_t>(entry[1 + index / 4] >> (8 * (index % 4)));",
-            "std::optional<EventRecordType> element = EventRecordType::decode(cursor);",
+            "::SCE::Forge::Decoded<EventRecordType> element = EventRecordType::decode(cursor);",
             "using EventRingRead = std::variant<EventRingItem, EventRingEmpty, EventRingLagged, EventRingMalformed>;",
         ],
     );

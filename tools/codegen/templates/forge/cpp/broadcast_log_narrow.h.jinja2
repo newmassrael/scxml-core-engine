@@ -227,10 +227,12 @@ struct {{ pascal }}Lagged {
 };
 
 /// The entry `seq` was copied whole and is not an element this log could have
-/// written: its stored length is above `MAX_ENCODED_BYTES`, or its bytes do not
-/// decode. The reader has moved past it.
+/// written: its stored length is above `MAX_ENCODED_BYTES` (`LengthOutOfRange`),
+/// or its bytes do not decode (the kind the element's decode refused them with).
+/// The reader has moved past it.
 struct {{ pascal }}Malformed {
     std::uint64_t seq;
+    ::SCE::Forge::CodecError error;
 };
 
 /// What a typed read found: the runtime's three answers, with the entry decoded,
@@ -341,7 +343,7 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
     }
     const std::uint32_t stored = entry[0];
     if (stored > MAX_ENCODED_BYTES) {
-        return {{ pascal }}Malformed{answer.seq};
+        return {{ pascal }}Malformed{answer.seq, ::SCE::Forge::CodecError::LengthOutOfRange};
     }
     const auto length = static_cast<std::size_t>(stored);
     std::array<std::uint8_t, WORDS * 4> bytes{};
@@ -363,9 +365,9 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
     const auto tag = static_cast<std::uint8_t>(entry[1 + {{ context.tag_word }}] & std::uint32_t{0xFF});
 {% endif %}
     ::SCE::Forge::SceCursor cursor(bytes.data(), length);
-    std::optional<{{ element_pascal }}Type> element = {{ element_pascal }}Type::decode(cursor{% for flag in context.flags %}, flag_input(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %});
+    ::SCE::Forge::Decoded<{{ element_pascal }}Type> element = {{ element_pascal }}Type::decode(cursor{% for flag in context.flags %}, flag_input(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %});
     if (!element) {
-        return {{ pascal }}Malformed{answer.seq};
+        return {{ pascal }}Malformed{answer.seq, element.error()};
     }
     return {{ pascal }}Item{answer.seq, std::move(*element){% if context.flags %}, flags{% endif %}};
 }

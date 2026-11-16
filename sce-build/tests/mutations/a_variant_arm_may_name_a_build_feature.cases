@@ -239,17 +239,19 @@ mutation_case "the C++ decode does not refuse a left-out arm's tag" <<'PY'
 edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
      r'''#else
             case {{ arm.value_literal }}:
-                cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::VariantArmNotBuilt;
 #endif''',
      r'''#endif''')
 PY
 
+# Saying why is answering the kind: a refusal answered as a frame short of
+# bytes is one a caller would wait on.
 mutation_case "the C++ decode refuses a left-out arm's tag without saying why" <<'PY'
 edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
-     r'''                cursor.refuse(::SCE::Forge::CodecError::VariantArmNotBuilt);
+     r'''                return ::SCE::Forge::CodecError::VariantArmNotBuilt;
 ''',
-     r'''''')
+     r'''                return ::SCE::Forge::CodecError::NeedMoreBytes;
+''')
 PY
 
 # ── The parser and the overlay ──

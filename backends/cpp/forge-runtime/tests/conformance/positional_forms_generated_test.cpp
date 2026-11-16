@@ -64,13 +64,14 @@ void a_stated_length_the_content_agrees_with_is_written() {
 }
 
 // A value the closed enum does not declare is refused on decode, and the
-// cursor records why.
+// decode answers why.
 void an_undeclared_enum_value_does_not_decode() {
     const std::vector<std::uint8_t> undeclared{0x01, 0x07, 0x05};
     SceCursor cursor(undeclared.data(), undeclared.size());
-    CHECK(!GroupEnum::decode(cursor).has_value(), "an undeclared enum value does not decode");
-    CHECK(cursor.last_refusal() == std::optional<CodecError>(CodecError::UndeclaredEnumValue),
-          "the cursor records the undeclared enum value");
+    const auto refused = GroupEnum::decode(cursor);
+    CHECK(!refused.has_value(), "an undeclared enum value does not decode");
+    CHECK(!refused.has_value() && refused.error() == CodecError::UndeclaredEnumValue,
+          "the decode answers the undeclared enum value");
 }
 
 }  // namespace

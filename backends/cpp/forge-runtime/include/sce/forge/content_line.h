@@ -11,10 +11,10 @@
 // are written once in SCE_FORGE.md §4.6.4 and implemented once per backend
 // runtime.
 //
-// Decode refusals are `std::nullopt` / `false`, the C++ decode convention
-// (sce/forge/codec.h). A reader and a property keep the rule that refused in
-// `error()`, which a generated decode does not carry out but a runtime test
-// reads. Encode refusals are a `CodecError`.
+// A read answers a `Decoded` (sce/forge/codec.h): what was read, or the
+// `CodecError` of the rule that refused it (docs/adr/0099, amendment of
+// 2026-11-16), each kind the one the Rust reader answers for the same bytes.
+// Encode refusals are a `CodecError`.
 
 #pragma once
 
@@ -221,8 +221,7 @@ struct Head {
 /// declares parameters, loop on `next_param` and read the ones the codec
 /// declares; then read the value. A parameter no one reads is skipped by the
 /// next call, and a property read by value alone skips them all. Every read
-/// answers `std::nullopt` for what the entry cannot hold, with the rule in
-/// `error()`.
+/// answers a `Decoded`, refused with the rule for what the entry cannot hold.
 class Property {
 public:
     Property(const std::uint8_t *raw, std::size_t from, std::size_t to, std::size_t name_end) noexcept
@@ -240,17 +239,17 @@ public:
     }
 
     /// Stand on the next parameter, skipping the value of one not read: `true`
-    /// when there is one, `false` when the value is next, `std::nullopt` when
-    /// the line does not admit it.
-    [[nodiscard]] std::optional<bool> next_param() noexcept {
+    /// when there is one, `false` when the value is next, refused as
+    /// `LineMalformed` when the line does not admit it.
+    [[nodiscard]] Decoded<bool> next_param() noexcept {
         switch (phase_) {
         case Phase::ParamValue:
-            if (!skip_param_value()) {
-                return std::nullopt;
+            if (const auto refused = skip_param_value()) {
+                return *refused;
             }
             break;
         case Phase::Done:
-            return refuse<bool>(CodecError::LineMalformed);
+            return CodecError::LineMalformed;
         case Phase::AtSeparator:
             break;
         }
@@ -259,7 +258,7 @@ public:
             return false;
         }
         if (next != ';') {
-            return refuse<bool>(CodecError::LineMalformed);
+            return CodecError::LineMalformed;
         }
         scan_.bump();
         scan_.skip_folds();
@@ -274,7 +273,7 @@ public:
         }
         const std::size_t end = scan_.pos();
         if (end == start || scan_.bump() != '=') {
-            return refuse<bool>(CodecError::LineMalformed);
+            return CodecError::LineMalformed;
         }
         param_from_ = start;
         param_to_ = end;
@@ -284,28 +283,26 @@ public:
 
     /// Read the value of the parameter `next_param` stands on, into at most
     /// `max_size` bytes. A second value is `LineBadValue`.
-    [[nodiscard]] std::optional<std::string> read_param_string(std::size_t max_size) {
+    [[nodiscard]] Decoded<std::string> read_param_string(std::size_t max_size) {
         if (phase_ != Phase::ParamValue) {
-            return refuse<std::string>(CodecError::LineMalformed);
+            return CodecError::LineMalformed;
         }
         std::string buf;
-        const int more = scan_param_value([&](int b) {
+        const auto more = scan_param_value([&](int b) -> std::optional<CodecError> {
             if (detail::is_control(b)) {
-                error_ = CodecError::LineBadValue;
-                return false;
+                return CodecError::LineBadValue;
             }
             if (buf.size() == max_size) {
-                error_ = CodecError::LineTooLong;
-                return false;
+                return CodecError::LineTooLong;
             }
             buf.push_back(static_cast<char>(b));
-            return true;
-        });
-        if (more < 0) {
             return std::nullopt;
+        });
+        if (!more) {
+            return more.error();
         }
-        if (more > 0) {
-            return refuse<std::string>(CodecError::LineBadValue);
+        if (*more) {
+            return CodecError::LineBadValue;
         }
         param_from_ = kNone;
         phase_ = Phase::AtSeparator;
@@ -315,9 +312,9 @@ public:
     /// Read the value as a `string` of at most `max_size` bytes. With `text`,
     /// `\\`, `\;`, `\,`, `\n` and `\N` are escapes; an unescaped `;` or `,` is
     /// itself.
-    [[nodiscard]] std::optional<std::string> read_string(std::size_t max_size, bool text) {
-        if (!begin_value()) {
-            return std::nullopt;
+    [[nodiscard]] Decoded<std::string> read_string(std::size_t max_size, bool text) {
+        if (const auto refused = begin_value()) {
+            return *refused;
         }
         std::string buf;
         for (;;) {
@@ -342,13 +339,13 @@ public:
                     byte = 0x0A;
                     break;
                 default:
-                    return refuse<std::string>(CodecError::LineBadEscape);
+                    return CodecError::LineBadEscape;
                 }
             } else if (detail::is_control(b)) {
-                return refuse<std::string>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             if (buf.size() == max_size) {
-                return refuse<std::string>(CodecError::LineTooLong);
+                return CodecError::LineTooLong;
             }
             buf.push_back(static_cast<char>(byte));
         }
@@ -362,10 +359,10 @@ public:
     /// separator cuts. The parts are judged left to right and the first failure is
     /// the line's: a part past `max_values` is `LineTooMany`, even one that is
     /// empty or too long; an empty part is `LineBadValue`.
-    [[nodiscard]] std::optional<std::vector<std::string>> read_strings(char separator, std::size_t max_values,
-                                                                       std::size_t max_size, bool text) {
-        if (!begin_value()) {
-            return std::nullopt;
+    [[nodiscard]] Decoded<std::vector<std::string>> read_strings(char separator, std::size_t max_values,
+                                                                 std::size_t max_size, bool text) {
+        if (const auto refused = begin_value()) {
+            return *refused;
         }
         std::vector<std::string> values;
         std::string buf;
@@ -373,11 +370,11 @@ public:
             const int b = scan_.bump();
             if (b < 0 || b == static_cast<unsigned char>(separator)) {
                 if (buf.empty()) {
-                    return refuse<std::vector<std::string>>(CodecError::LineBadValue);
+                    return CodecError::LineBadValue;
                 }
                 auto part = utf8(std::move(buf));
                 if (!part) {
-                    return std::nullopt;
+                    return part.error();
                 }
                 values.push_back(std::move(*part));
                 buf = std::string();
@@ -386,7 +383,7 @@ public:
                 }
                 // A separator opens another part, which may not pass the bound.
                 if (values.size() >= max_values) {
-                    return refuse<std::vector<std::string>>(CodecError::LineTooMany);
+                    return CodecError::LineTooMany;
                 }
                 continue;
             }
@@ -407,59 +404,59 @@ public:
                     byte = 0x0A;
                     break;
                 default:
-                    return refuse<std::vector<std::string>>(CodecError::LineBadEscape);
+                    return CodecError::LineBadEscape;
                 }
             } else if (detail::is_control(b)) {
-                return refuse<std::vector<std::string>>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             if (buf.size() == max_size) {
-                return refuse<std::vector<std::string>>(CodecError::LineTooLong);
+                return CodecError::LineTooLong;
             }
             buf.push_back(static_cast<char>(byte));
         }
     }
 
     /// Read the value as an unsigned integer of at most `max`.
-    [[nodiscard]] std::optional<std::uint64_t> read_uint(std::uint64_t max) noexcept {
+    [[nodiscard]] Decoded<std::uint64_t> read_uint(std::uint64_t max) noexcept {
         const auto d = read_decimal(false);
         if (!d) {
-            return std::nullopt;
+            return d.error();
         }
         if (d->second > max) {
-            return refuse<std::uint64_t>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
         return d->second;
     }
 
     /// Read the value as a signed integer within `min..=max`.
-    [[nodiscard]] std::optional<std::int64_t> read_int(std::int64_t min, std::int64_t max) noexcept {
+    [[nodiscard]] Decoded<std::int64_t> read_int(std::int64_t min, std::int64_t max) noexcept {
         const auto d = read_decimal(true);
         if (!d) {
-            return std::nullopt;
+            return d.error();
         }
         std::int64_t value;
         if (d->first) {
             if (d->second > (std::uint64_t{1} << 63)) {
-                return refuse<std::int64_t>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             // 2^63 negated is INT64_MIN; any other magnitude fits positive first.
             value = d->second == (std::uint64_t{1} << 63) ? INT64_MIN : -static_cast<std::int64_t>(d->second);
         } else {
             if (d->second > static_cast<std::uint64_t>(INT64_MAX)) {
-                return refuse<std::int64_t>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             value = static_cast<std::int64_t>(d->second);
         }
         if (value < min || value > max) {
-            return refuse<std::int64_t>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
         return value;
     }
 
     /// Read the value as `TRUE` or `FALSE`, in either case.
-    [[nodiscard]] std::optional<bool> read_bool() noexcept {
-        if (!begin_value()) {
-            return std::nullopt;
+    [[nodiscard]] Decoded<bool> read_bool() noexcept {
+        if (const auto refused = begin_value()) {
+            return *refused;
         }
         char word[5];
         std::size_t n = 0;
@@ -469,7 +466,7 @@ public:
                 break;
             }
             if (n == sizeof word) {
-                return refuse<bool>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             word[n++] = static_cast<char>(detail::lower(b));
         }
@@ -480,7 +477,7 @@ public:
         if (w == "false") {
             return false;
         }
-        return refuse<bool>(CodecError::LineBadValue);
+        return CodecError::LineBadValue;
     }
 
     /// Read the value as the text of a variant of an enum (docs/adr/0015): the
@@ -488,9 +485,9 @@ public:
     /// case-insensitively. A value no row names is `LineBadValue`, whatever its
     /// bytes are: it is no TEXT, so a backslash in it is not an escape, and nothing
     /// of it is kept past the longest text.
-    [[nodiscard]] std::optional<std::uint64_t> read_enum(const EnumTexts &table) {
-        if (!begin_value()) {
-            return std::nullopt;
+    [[nodiscard]] Decoded<std::uint64_t> read_enum(const EnumTexts &table) {
+        if (const auto refused = begin_value()) {
+            return *refused;
         }
         const std::size_t longest = detail::longest_text(table);
         std::string word;
@@ -505,45 +502,40 @@ public:
         }
         const auto carrier = detail::carrier_of(word, table);
         if (!carrier) {
-            return refuse<std::uint64_t>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
-        return carrier;
+        return *carrier;
     }
 
     /// Read the value of the parameter `next_param` stands on as the text of a
     /// variant of an enum (docs/adr/0015). The whole value is scanned before it is
     /// judged, so a line the grammar refuses is `LineMalformed` before it is
     /// `LineBadValue`; a second value is `LineBadValue`.
-    [[nodiscard]] std::optional<std::uint64_t> read_param_enum(const EnumTexts &table) {
+    [[nodiscard]] Decoded<std::uint64_t> read_param_enum(const EnumTexts &table) {
         if (phase_ != Phase::ParamValue) {
-            return refuse<std::uint64_t>(CodecError::LineMalformed);
+            return CodecError::LineMalformed;
         }
         const std::size_t longest = detail::longest_text(table);
         std::string word;
-        const int more = scan_param_value([&](int b) {
+        const auto more = scan_param_value([&](int b) -> std::optional<CodecError> {
             if (word.size() <= longest) {
                 word.push_back(static_cast<char>(b));
             }
-            return true;
-        });
-        if (more < 0) {
             return std::nullopt;
+        });
+        if (!more) {
+            return more.error();
         }
         param_from_ = kNone;
         phase_ = Phase::AtSeparator;
-        if (more > 0) {
-            return refuse<std::uint64_t>(CodecError::LineBadValue);
+        if (*more) {
+            return CodecError::LineBadValue;
         }
         const auto carrier = detail::carrier_of(word, table);
         if (!carrier) {
-            return refuse<std::uint64_t>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
-        return carrier;
-    }
-
-    /// Why the last read refused.
-    [[nodiscard]] std::optional<CodecError> error() const noexcept {
-        return error_;
+        return *carrier;
     }
 
 private:
@@ -559,29 +551,23 @@ private:
         Done,
     };
 
-    template <typename T> std::optional<T> refuse(CodecError e) noexcept {
-        error_ = e;
-        return std::nullopt;
-    }
-
     /// Scan one parameter value — a quoted string, or text up to `;`, `:`, `,`
-    /// or `"` — handing each byte of it to `emit` (a `false` return refuses,
-    /// with the rule `emit` set). Answers 1 when another value follows a `,`, 0
-    /// when none does, -1 when refused.
-    template <typename Emit> int scan_param_value(Emit emit) {
+    /// or `"` — handing each byte of it to `emit`, which answers the refusal of
+    /// a byte the value cannot hold or `std::nullopt`. Answers whether another
+    /// value follows a `,`, or the first refusal met.
+    template <typename Emit> Decoded<bool> scan_param_value(Emit emit) {
         if (scan_.peek() == '"') {
             scan_.bump();
             for (;;) {
                 const int b = scan_.bump();
                 if (b < 0) {
-                    error_ = CodecError::LineMalformed;
-                    return -1;
+                    return CodecError::LineMalformed;
                 }
                 if (b == '"') {
                     break;
                 }
-                if (!emit(b)) {
-                    return -1;
+                if (const auto refused = emit(b)) {
+                    return *refused;
                 }
             }
         } else {
@@ -591,55 +577,56 @@ private:
                     break;
                 }
                 if (b == '"') {
-                    error_ = CodecError::LineMalformed;
-                    return -1;
+                    return CodecError::LineMalformed;
                 }
                 scan_.bump();
-                if (!emit(b)) {
-                    return -1;
+                if (const auto refused = emit(b)) {
+                    return *refused;
                 }
             }
         }
         const int follow = scan_.peek();
         if (follow == ',') {
             scan_.bump();
-            return 1;
+            return true;
         }
         if (follow == ';' || follow == ':') {
-            return 0;
+            return false;
         }
-        error_ = CodecError::LineMalformed;
-        return -1;
+        return CodecError::LineMalformed;
     }
 
-    [[nodiscard]] bool skip_param_value() {
+    /// Skip the values of the parameter stood on: the refusal met, or
+    /// `std::nullopt`.
+    [[nodiscard]] std::optional<CodecError> skip_param_value() {
         for (;;) {
-            const int more = scan_param_value([](int) { return true; });
-            if (more < 0) {
-                return false;
+            const auto more = scan_param_value([](int) -> std::optional<CodecError> { return std::nullopt; });
+            if (!more) {
+                return more.error();
             }
-            if (more == 0) {
+            if (!*more) {
                 break;
             }
         }
         param_from_ = kNone;
         phase_ = Phase::AtSeparator;
-        return true;
+        return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::string> utf8(std::string buf) noexcept {
+    [[nodiscard]] Decoded<std::string> utf8(std::string buf) noexcept {
         if (!is_valid_utf8(reinterpret_cast<const std::uint8_t *>(buf.data()), buf.size())) {
-            return refuse<std::string>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
         return buf;
     }
 
     /// Stand at the value: skip the parameters still unread and step over `:`.
-    [[nodiscard]] bool begin_value() noexcept {
+    /// The refusal met, or `std::nullopt`.
+    [[nodiscard]] std::optional<CodecError> begin_value() noexcept {
         for (;;) {
             const auto more = next_param();
             if (!more) {
-                return false;
+                return more.error();
             }
             if (!*more) {
                 break;
@@ -647,20 +634,20 @@ private:
         }
         scan_.bump();
         phase_ = Phase::Done;
-        return true;
+        return std::nullopt;
     }
 
     /// The decimal the rest of the value is — an optional sign, digits — as
     /// (negative, magnitude). A `-` is read only when `allow_minus`, so an
     /// unsigned type refuses `-0` as well.
-    [[nodiscard]] std::optional<std::pair<bool, std::uint64_t>> read_decimal(bool allow_minus) noexcept {
-        if (!begin_value()) {
-            return std::nullopt;
+    [[nodiscard]] Decoded<std::pair<bool, std::uint64_t>> read_decimal(bool allow_minus) noexcept {
+        if (const auto refused = begin_value()) {
+            return *refused;
         }
         int next = scan_.bump();
         const bool negative = next == '-';
         if (negative && !allow_minus) {
-            return refuse<std::pair<bool, std::uint64_t>>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
         if (negative || next == '+') {
             next = scan_.bump();
@@ -669,18 +656,18 @@ private:
         int digits = 0;
         while (next >= 0) {
             if (next < '0' || next > '9') {
-                return refuse<std::pair<bool, std::uint64_t>>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             const auto d = static_cast<std::uint64_t>(next - '0');
             if (magnitude > (UINT64_MAX - d) / 10U) {
-                return refuse<std::pair<bool, std::uint64_t>>(CodecError::LineBadValue);
+                return CodecError::LineBadValue;
             }
             magnitude = magnitude * 10U + d;
             ++digits;
             next = scan_.bump();
         }
         if (digits == 0) {
-            return refuse<std::pair<bool, std::uint64_t>>(CodecError::LineBadValue);
+            return CodecError::LineBadValue;
         }
         return std::make_pair(negative, magnitude);
     }
@@ -692,16 +679,15 @@ private:
     std::size_t param_from_ = kNone;
     std::size_t param_to_ = 0;
     Phase phase_ = Phase::AtSeparator;
-    std::optional<CodecError> error_;
 };
 
 /// A reader over the properties of one component.
 class Reader {
 public:
-    /// Skip lines up to the first `BEGIN:<component>` and stand after it.
-    /// `std::nullopt` when the input ends before it (`NeedMoreBytes`).
-    [[nodiscard]] static std::optional<Reader> begin(const std::uint8_t *input, std::size_t size,
-                                                     std::string_view component) {
+    /// Skip lines up to the first `BEGIN:<component>` and stand after it,
+    /// refused as `NeedMoreBytes` when the input ends before it.
+    [[nodiscard]] static Decoded<Reader> begin(const std::uint8_t *input, std::size_t size,
+                                               std::string_view component) {
         Reader reader(input, size, component);
         while (const auto line = reader.next_raw_line()) {
             if (!line->terminated) {
@@ -713,37 +699,25 @@ public:
                 return reader;
             }
         }
-        return std::nullopt;
+        return CodecError::NeedMoreBytes;
     }
 
     /// How many bytes of the input the walk has passed — after
-    /// `END:<component>` once `next` has answered `std::nullopt` without
-    /// `failed()`.
+    /// `END:<component>` once `next` has answered no property.
     [[nodiscard]] std::size_t consumed() const noexcept {
         return pos_;
     }
 
-    /// Whether `next` answered `std::nullopt` because the reader refused, and
-    /// not because the component ended.
-    [[nodiscard]] bool failed() const noexcept {
-        return error_.has_value();
-    }
-
-    /// Why the reader refused.
-    [[nodiscard]] std::optional<CodecError> error() const noexcept {
-        return error_;
-    }
-
-    /// The next property line of the component, or `std::nullopt` after its
-    /// `END:<component>` — or, with `failed()` set, when the reader refused.
+    /// The next property line of the component, or no property after its
+    /// `END:<component>`; a line the grammar does not admit is refused.
     ///
     /// A nested component is skipped through its `END:` without reading its
     /// lines. An input that ends before `END:<component>` is `NeedMoreBytes`.
-    [[nodiscard]] std::optional<Property> next() {
+    [[nodiscard]] Decoded<std::optional<Property>> next() {
         for (;;) {
             const auto line = next_raw_line();
             if (!line) {
-                return refuse(CodecError::NeedMoreBytes);
+                return CodecError::NeedMoreBytes;
             }
             const auto head = detail::head_of(input_, line->from, line->to);
             if (depth_ > 0) {
@@ -760,14 +734,14 @@ public:
             // malformed anywhere else.
             const CodecError cut = line->terminated ? CodecError::LineMalformed : CodecError::NeedMoreBytes;
             if (!head) {
-                return refuse(cut);
+                return cut;
             }
             if (head->separator == ':') {
                 if (detail::unfolded_eq(input_, line->from, head->name_end, "END")) {
                     if (detail::unfolded_eq(input_, head->rest_start, line->to, component_)) {
-                        return std::nullopt;
+                        return std::optional<Property>();
                     }
-                    return refuse(cut);
+                    return cut;
                 }
                 if (line->terminated && detail::unfolded_eq(input_, line->from, head->name_end, "BEGIN")) {
                     depth_ = 1;
@@ -775,20 +749,15 @@ public:
                 }
             }
             if (!line->terminated) {
-                return refuse(CodecError::NeedMoreBytes);
+                return CodecError::NeedMoreBytes;
             }
-            return Property(input_, line->from, line->to, head->name_end);
+            return std::optional<Property>(Property(input_, line->from, line->to, head->name_end));
         }
     }
 
 private:
     Reader(const std::uint8_t *input, std::size_t size, std::string_view component)
         : input_(input), size_(size), component_(component) {}
-
-    std::optional<Property> refuse(CodecError e) noexcept {
-        error_ = e;
-        return std::nullopt;
-    }
 
     /// The next logical line from the walk's position, or `std::nullopt` at the
     /// end of the input. A line ends at a line break (CRLF or LF) that no space
@@ -816,7 +785,6 @@ private:
     std::size_t pos_ = 0;
     /// How many nested components the walk is inside (`VALARM` in `VEVENT`).
     int depth_ = 0;
-    std::optional<CodecError> error_;
 };
 
 /// A writer of the lines of one component into a sink.

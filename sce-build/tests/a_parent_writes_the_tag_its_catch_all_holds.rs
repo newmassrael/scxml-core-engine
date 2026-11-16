@@ -517,9 +517,9 @@ int fail(const char* what) {
 // the bytes must be the frame's. The value is printed from its plan
 // (docs/adr/0081 step 4), so it is made by its constructor and read by its
 // accessors.
-std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8_t stale, int& failed) {
+::SCE::Forge::Decoded<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8_t stale, int& failed) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
-    std::optional<Parent> decoded = Parent::decode(cursor);
+    ::SCE::Forge::Decoded<Parent> decoded = Parent::decode(cursor);
     if (!decoded.has_value()) {
         failed |= fail("the frame must decode");
         return decoded;
@@ -539,12 +539,12 @@ std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8
 
 int main() {
     int failed = 0;
-    const std::optional<Parent> held = rewrite({0x5d, 0x07}, 0x3d, failed);
+    const auto held = rewrite({0x5d, 0x07}, 0x3d, failed);
     const CatchAll* catch_all = held.has_value() ? std::get_if<CatchAll>(&held->key().body()) : nullptr;
     if (catch_all == nullptr || catch_all->tag != 2 || catch_all->body.payload() != 0x07) {
         failed |= fail("tag 2 must reach the catch-all, which keeps it");
     }
-    const std::optional<Parent> named = rewrite({0x3d, 0x12, 0x34}, 0x5d, failed);
+    const auto named = rewrite({0x3d, 0x12, 0x34}, 0x5d, failed);
     const Wide* wide = named.has_value() ? std::get_if<Wide>(&named->key().body()) : nullptr;
     if (wide == nullptr || wide->payload() != 0x1234) {
         failed |= fail("tag 1 must reach the two-byte arm");
@@ -674,7 +674,7 @@ fun fail(what: String) {
 // Decode `frame`, store `stale` as its header, and encode: the bytes must be
 // the frame's.
 fun rewrite(frame: ByteArray, stale: Int): CaParent? {
-    val value = CaParent.decode(SceCursor(frame))
+    val value = CaParent.decode(SceCursor(frame)).valueOrNull()
     if (value == null) {
         fail("the frame must decode")
         return null

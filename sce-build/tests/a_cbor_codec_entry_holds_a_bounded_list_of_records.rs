@@ -296,6 +296,29 @@ fn holds(lang: Language, code: &str, expected: &[&str], encode_at: &str, keys: [
     );
 }
 
+/// The encodes of a printed C++ map: its `Wire` struct and each record's
+/// write. The decodes beside them refuse a frame by the same kinds
+/// (docs/adr/0099, amendment of 2026-11-16), which say nothing of an encode.
+fn cpp_encodes(code: &str) -> String {
+    let mut encodes = String::new();
+    for open in ["struct Wire {", "encode_record_"] {
+        let mut rest = code;
+        while let Some(start) = rest.find(open) {
+            let body = &rest[start..];
+            // A record's write ends where the record's read begins, the
+            // `Wire` struct where it closes: whichever comes first.
+            let end = ["static ::SCE::Forge::Decoded", "\n};"]
+                .iter()
+                .filter_map(|stop| body.find(stop))
+                .min()
+                .unwrap_or(body.len());
+            encodes.push_str(&body[..end]);
+            rest = &body[end..];
+        }
+    }
+    encodes
+}
+
 #[test]
 fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
     // `cbor_causal_entry`'s `author` is a `string[16]`, which the schema's C++
@@ -321,8 +344,8 @@ fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
             "::SCE::Forge::Bounded<std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload>, 2> \
              seen_{};",
             // A read past the bound is refused before any record is read.
-            "if (!_len || *_len > 2) return std::nullopt;",
-            "if (!_len || *_len > 3) return std::nullopt;",
+            "if (*_len > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (*_len > 3) return ::SCE::Forge::CodecError::CborOutOfRange;",
             "auto _record = Records::decode_record_causal_entry(c);",
             // The text is read within its bound and held in the field's type.
             "auto text = cbor::read_text(c, 16);",
@@ -340,7 +363,7 @@ fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
             "cbor::write_text(w, \"author\")",
         ],
     );
-    assert!(!code.contains("CborOutOfRange"), "{code}");
+    assert!(!cpp_encodes(&code).contains("CborOutOfRange"), "{code}");
 }
 
 /// The repository's standard Mesh documents, whose envelope holds a causal
@@ -389,10 +412,10 @@ fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload(
             "std::optional<::SCE::Forge::Bounded<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>, 64>> causal_vector_{};",
             // A read past the bound is refused before any record is read, and
             // the records read are held to the bound by the view's `make`.
-            "if (!_len || *_len > 64) return std::nullopt;",
+            "if (*_len > 64) return ::SCE::Forge::CodecError::CborOutOfRange;",
             "auto _record = Records::decode_record_causal_entry(c);",
             made.as_str(),
-            "held_seq = cbor::read_uint(c);",
+            "held_seq = *read;",
             // The write is the array head and each record's map; the view
             // holds the count, so nothing is checked.
             "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;",
@@ -407,7 +430,7 @@ fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload(
     );
     // The template's struct, whose encode refuses a count past the bound, is
     // not printed beside it.
-    assert!(!code.contains("CborOutOfRange"), "{code}");
+    assert!(!cpp_encodes(&code).contains("CborOutOfRange"), "{code}");
 }
 
 #[test]

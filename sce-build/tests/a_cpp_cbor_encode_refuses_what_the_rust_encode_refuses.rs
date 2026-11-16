@@ -72,8 +72,22 @@ fn printed_cpp(stem: &str) -> String {
     generated(stem, Language::Cpp)
 }
 
-/// Each of `expected` is in `code`, and `code` refuses `refusals` times, each
-/// before the map head; its value answers its bytes as an optional.
+/// The encode of the printed map, its `Wire` struct: where an encode refuses.
+/// The decode beside it refuses frames with the same kinds (docs/adr/0099,
+/// amendment of 2026-11-16), which say nothing of the encode.
+fn wire_of<'c>(stem: &str, code: &'c str) -> &'c str {
+    let start = code
+        .find("struct Wire {")
+        .unwrap_or_else(|| panic!("{stem}: no encode:\n{code}"));
+    let wire = &code[start..];
+    let end = wire
+        .find("\n};")
+        .unwrap_or_else(|| panic!("{stem}: the encode does not close:\n{code}"));
+    &wire[..end]
+}
+
+/// Each of `expected` is in `code`, and its encode refuses `refusals` times,
+/// each before the map head; its value answers its bytes as an optional.
 fn refuses_before_the_first_byte(stem: &str, code: &str, expected: &[&str], refusals: usize) {
     for expected in expected {
         assert!(
@@ -81,11 +95,12 @@ fn refuses_before_the_first_byte(stem: &str, code: &str, expected: &[&str], refu
             "{stem}: missing `{expected}`:\n{code}"
         );
     }
-    assert_eq!(code.matches(REFUSED).count(), refusals, "{stem}:\n{code}");
-    let head = code
+    let wire = wire_of(stem, code);
+    assert_eq!(wire.matches(REFUSED).count(), refusals, "{stem}:\n{code}");
+    let head = wire
         .find(MAP_HEAD)
         .unwrap_or_else(|| panic!("{stem}: no map head:\n{code}"));
-    let last = code.rfind(REFUSED).expect("a refusal");
+    let last = wire.rfind(REFUSED).expect("a refusal");
     assert!(
         last < head,
         "{stem}: a refusal is checked after the map head is written:\n{code}"
@@ -147,8 +162,8 @@ fn a_list_of_fewer_records_than_its_lower_count_is_refused_on_cpp_as_on_rust() {
             "            const auto& v = _e_seen;\n            if (v.size() < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
             "        if (_e_context) {\n            const auto& v = *_e_context;\n            if (v.size() < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
             // The decode refuses a frame of fewer records before any is read.
-            "if (!_len || *_len > 2 || *_len < 1) return std::nullopt;",
-            "if (!_len || *_len > 3 || *_len < 1) return std::nullopt;",
+            "if (*_len > 2 || *_len < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (*_len > 3 || *_len < 1) return ::SCE::Forge::CodecError::CborOutOfRange;",
         ],
         2,
     );

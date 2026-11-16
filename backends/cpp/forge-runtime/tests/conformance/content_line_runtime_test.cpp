@@ -33,6 +33,7 @@ int failures = 0;
 
 namespace cl = ::SCE::Forge::ContentLine;
 using ::SCE::Forge::CodecError;
+using ::SCE::Forge::Decoded;
 using ::SCE::Forge::VectorSink;
 using Bytes = std::vector<std::uint8_t>;
 /// The values of one line, as a writer takes any range of texts.
@@ -40,6 +41,34 @@ using Texts = std::vector<std::string>;
 
 Bytes bytes_of(const std::string &s) {
     return Bytes(s.begin(), s.end());
+}
+
+/// What `read` holds, or `std::nullopt` for a refusal, whose kind `why` takes
+/// where it is given.
+template <typename T> std::optional<T> value_of(const Decoded<T> &read, std::optional<CodecError> *why = nullptr) {
+    if (read) {
+        return *read;
+    }
+    if (why != nullptr) {
+        *why = read.error();
+    }
+    return std::nullopt;
+}
+
+/// The next property line of `reader`, or `std::nullopt` after the component's
+/// end or at a refusal.
+std::optional<cl::Property> next_line(cl::Reader &reader) {
+    auto next = reader.next();
+    if (!next) {
+        return std::nullopt;
+    }
+    return *next;
+}
+
+/// Whether `reader` answers no property and no refusal: its component ended.
+bool ends(cl::Reader &reader) {
+    const auto next = reader.next();
+    return next.has_value() && !next->has_value();
 }
 
 /// The properties of a VEVENT read by name, as (name, value) pairs; or the rule
@@ -54,15 +83,17 @@ Outcome read_all(const std::string &text) {
     Outcome out;
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
     if (!reader) {
-        out.error = CodecError::NeedMoreBytes;
+        out.error = reader.error();
         return out;
     }
     for (;;) {
-        auto line = reader->next();
+        auto next = reader->next();
+        if (!next) {
+            out.error = next.error();
+            return out;
+        }
+        auto &line = *next;
         if (!line) {
-            if (reader->failed()) {
-                out.error = reader->error();
-            }
             return out;
         }
         const char *name = line->is("UID") ? "UID" : line->is("SUMMARY") ? "SUMMARY" : nullptr;
@@ -71,7 +102,7 @@ Outcome read_all(const std::string &text) {
         }
         auto value = line->read_string(32, std::string(name) == "SUMMARY");
         if (!value) {
-            out.error = line->error();
+            out.error = value.error();
             return out;
         }
         out.seen.emplace_back(name, *value);
@@ -94,8 +125,14 @@ void a_component_is_read_property_by_property_and_stops_after_its_end() {
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
     CHECK(reader.has_value(), "the component was not found");
     int seen = 0;
+    bool refused = false;
     while (reader) {
-        auto line = reader->next();
+        auto next = reader->next();
+        if (!next) {
+            refused = true;
+            break;
+        }
+        auto &line = *next;
         if (!line) {
             break;
         }
@@ -103,7 +140,7 @@ void a_component_is_read_property_by_property_and_stops_after_its_end() {
         ++seen;
     }
     CHECK(seen == 2, "two properties");
-    CHECK(reader && !reader->failed(), "the end was a refusal");
+    CHECK(reader && !refused, "the end was a refusal");
     CHECK(reader && std::string(text.begin() + static_cast<std::ptrdiff_t>(reader->consumed()), text.end()) ==
                         "END:VCALENDAR\r\n",
           "the walk did not stop after END:VEVENT");
@@ -162,7 +199,7 @@ void a_text_unescapes_and_a_bad_escape_is_refused() {
     CHECK(one("a\\").error == CodecError::LineBadEscape, "a backslash that ends the value");
     const Bytes in = bytes_of("BEGIN:VEVENT\r\nUID:a\\nb\r\nEND:VEVENT\r\n");
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto line = reader->next();
+    auto line = next_line(*reader);
     const auto value = line->read_string(8, false);
     CHECK(value && *value == "a\\nb", "without sce:value=\"text\" a backslash is a byte like another");
 }
@@ -196,7 +233,7 @@ void parameters_are_read_by_name_quoted_or_not_and_the_rest_are_skipped() {
         bytes_of("BEGIN:VEVENT\r\nDTSTART;X-A=1;TZID=\"Europe/Seoul:KST\";X-B=\"p,q\",r:20260101T000000\r\n"
                  "END:VEVENT\r\n");
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto line = reader->next();
+    auto line = next_line(*reader);
     CHECK(line && line->is("dtstart"), "the property");
     std::optional<std::string> tzid;
     for (;;) {
@@ -206,13 +243,13 @@ void parameters_are_read_by_name_quoted_or_not_and_the_rest_are_skipped() {
             break;
         }
         if (line->param_is("tzid")) {
-            tzid = line->read_param_string(32);
+            tzid = value_of(line->read_param_string(32));
         }
     }
     CHECK(tzid && *tzid == "Europe/Seoul:KST", "the quoted parameter");
     const auto value = line->read_string(32, false);
     CHECK(value && *value == "20260101T000000", "the value after the parameters");
-    CHECK(!reader->next() && !reader->failed(), "the component ends after it");
+    CHECK(ends(*reader), "the component ends after it");
 }
 
 void a_parameter_of_two_values_or_past_its_bound_is_refused_where_it_is_read() {
@@ -228,34 +265,35 @@ void a_parameter_of_two_values_or_past_its_bound_is_refused_where_it_is_read() {
     for (const auto &c : cases) {
         const Bytes in = bytes_of(std::string("BEGIN:VEVENT\r\nDTSTART;") + c.param + ":x\r\nEND:VEVENT\r\n");
         auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-        auto line = reader->next();
+        auto line = next_line(*reader);
         const auto more = line->next_param();
         CHECK(more && *more, "the parameter was not found");
-        CHECK(!line->read_param_string(8) && line->error() == c.want, c.param);
+        const auto read = line->read_param_string(8);
+        CHECK(!read && read.error() == c.want, c.param);
     }
 }
 
 /// Read the value `text` of a property `N`.
 cl::Property property_of(const Bytes &in) {
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    return *reader->next();
+    return *next_line(*reader);
 }
 
 void integers_and_booleans_hold_their_type_or_are_refused() {
     auto uint_of = [](const char *text, std::uint64_t max) {
         const Bytes in = bytes_of(std::string("BEGIN:VEVENT\r\nN:") + text + "\r\nEND:VEVENT\r\n");
         auto p = property_of(in);
-        return p.read_uint(max);
+        return value_of(p.read_uint(max));
     };
     auto int_of = [](const char *text, std::int64_t min, std::int64_t max) {
         const Bytes in = bytes_of(std::string("BEGIN:VEVENT\r\nN:") + text + "\r\nEND:VEVENT\r\n");
         auto p = property_of(in);
-        return p.read_int(min, max);
+        return value_of(p.read_int(min, max));
     };
     auto bool_of = [](const char *text) {
         const Bytes in = bytes_of(std::string("BEGIN:VEVENT\r\nN:") + text + "\r\nEND:VEVENT\r\n");
         auto p = property_of(in);
-        return p.read_bool();
+        return value_of(p.read_bool());
     };
     CHECK(uint_of("255", 255) == 255U, "255 in 255");
     CHECK(uint_of("+007", 255) == 7U, "a plus sign and leading zeros");
@@ -282,7 +320,8 @@ void a_value_is_read_once() {
     const Bytes in = bytes_of("BEGIN:VEVENT\r\nUID:a\r\nEND:VEVENT\r\n");
     auto p = property_of(in);
     CHECK(p.read_string(4, false).has_value(), "the first read");
-    CHECK(!p.read_string(4, false) && p.error() == CodecError::LineMalformed, "a second read");
+    const auto second = p.read_string(4, false);
+    CHECK(!second && second.error() == CodecError::LineMalformed, "a second read");
 }
 
 /// What a writer writes between `BEGIN:` and `END:`.
@@ -362,10 +401,10 @@ void a_cut_never_splits_a_character_or_an_escape() {
     CHECK(text.find("T:" + std::string(72, 'x') + "\r\n \\;\r\n") != std::string::npos, "an escape stays whole");
     const Bytes in = bytes_of(text);
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto s = reader->next();
+    auto s = next_line(*reader);
     const auto sv = s->read_string(80, false);
     CHECK(sv && *sv == x71 + "\xc3\xa9\xc3\xa9", "S reads back");
-    auto t = reader->next();
+    auto t = next_line(*reader);
     const auto tv = t->read_string(80, true);
     CHECK(tv && *tv == std::string(72, 'x') + ";", "T reads back");
 }
@@ -404,10 +443,10 @@ void what_is_written_is_read_back() {
         });
         const Bytes in = bytes_of(text);
         auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-        auto line = reader->next();
+        auto line = next_line(*reader);
         const auto back = line->read_string(256, true);
         CHECK(back && *back == value, "the value read back");
-        CHECK(!reader->next() && !reader->failed(), "the component ends");
+        CHECK(ends(*reader), "the component ends");
         CHECK(reader->consumed() == text.size(), "all of it was consumed");
     }
 }
@@ -424,12 +463,9 @@ ListOutcome list_of(const std::string &value, char separator, std::size_t max_va
     const std::string text_in = "BEGIN:VEVENT\r\nV:" + value + "\r\nEND:VEVENT\r\n";
     const Bytes in = bytes_of(text_in);
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto line = reader->next();
+    auto line = next_line(*reader);
     ListOutcome out;
-    out.values = line->read_strings(separator, max_values, max_size, text);
-    if (!out.values) {
-        out.error = line->error();
-    }
+    out.values = value_of(line->read_strings(separator, max_values, max_size, text), &out.error);
     return out;
 }
 
@@ -504,7 +540,7 @@ void a_text_list_is_read_back_as_written() {
         });
         const Bytes in = bytes_of(text);
         auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-        auto line = reader->next();
+        auto line = next_line(*reader);
         const auto back = line->read_strings(',', 4, 8, true);
         CHECK(back && *back == values, "the list read back");
     }
@@ -520,25 +556,17 @@ const cl::EnumTexts kStatus{kStatusRows, 4};
 std::optional<std::uint64_t> enum_value(const std::string &value, std::optional<CodecError> *why = nullptr) {
     const Bytes in = bytes_of("BEGIN:VEVENT\r\nS:" + value + "\r\nEND:VEVENT\r\n");
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto line = reader->next();
-    auto carrier = line->read_enum(kStatus);
-    if (why != nullptr) {
-        *why = line->error();
-    }
-    return carrier;
+    auto line = next_line(*reader);
+    return value_of(line->read_enum(kStatus), why);
 }
 
 std::optional<std::uint64_t> enum_param(const std::string &line_text, std::optional<CodecError> *why = nullptr) {
     const Bytes in = bytes_of("BEGIN:VEVENT\r\n" + line_text + "\r\nEND:VEVENT\r\n");
     auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
-    auto line = reader->next();
+    auto line = next_line(*reader);
     const auto more = line->next_param();
     CHECK(more && *more, "a parameter to read");
-    auto carrier = line->read_param_enum(kStatus);
-    if (why != nullptr) {
-        *why = line->error();
-    }
-    return carrier;
+    return value_of(line->read_param_enum(kStatus), why);
 }
 
 void a_text_is_matched_ascii_case_insensitively() {

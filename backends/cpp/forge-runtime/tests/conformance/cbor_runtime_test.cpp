@@ -28,9 +28,22 @@ int failures = 0;
     } while (0)
 
 namespace cbor = ::SCE::Forge::Cbor;
+using ::SCE::Forge::CodecError;
+using ::SCE::Forge::Decoded;
 using ::SCE::Forge::SceCursor;
 using ::SCE::Forge::VectorSink;
 using Bytes = std::vector<std::uint8_t>;
+
+/// Whether `read` holds `value`.
+template <typename T> bool holds(const Decoded<T> &read, const T &value) {
+    return read.has_value() && *read == value;
+}
+
+/// Whether `read` is refused as `kind`, the kind the Rust reader answers for
+/// the same bytes.
+template <typename T> bool refused_as(const Decoded<T> &read, CodecError kind) {
+    return !read.has_value() && read.error() == kind;
+}
 
 template <typename F> Bytes written(F write) {
     Bytes out;
@@ -69,65 +82,69 @@ void every_head_is_written_in_its_shortest_form() {
 void an_array_head_is_read_as_its_count_and_no_other_item_is() {
     const Bytes three{0x83};
     auto c = cursor_over(three);
-    CHECK(cbor::read_array_len(c) == std::optional<std::uint64_t>(3), "an array of three");
+    CHECK(holds(cbor::read_array_len(c), std::uint64_t{3}), "an array of three");
     const Bytes wide{0x98, 0x18};
     auto d = cursor_over(wide);
-    CHECK(cbor::read_array_len(d) == std::optional<std::uint64_t>(24), "an array of 24");
+    CHECK(holds(cbor::read_array_len(d), std::uint64_t{24}), "an array of 24");
     // An indefinite-length array, and a map where an array stands.
     const Bytes indefinite{0x9f};
     auto i = cursor_over(indefinite);
-    CHECK(!cbor::read_array_len(i).has_value(), "indefinite-length array");
+    CHECK(refused_as(cbor::read_array_len(i), CodecError::CborMalformed), "indefinite-length array");
     const Bytes map{0xa1};
     auto m = cursor_over(map);
-    CHECK(!cbor::read_array_len(m).has_value(), "a map is no array");
+    CHECK(refused_as(cbor::read_array_len(m), CodecError::CborMalformed), "a map is no array");
 }
 
 void a_head_is_read_in_any_valid_length() {
     // 1 written in its 2-byte form still reads as 1.
     const Bytes two{0x18, 0x01};
     auto c = cursor_over(two);
-    CHECK(cbor::read_uint(c) == std::optional<std::uint64_t>(1), "1 in a 2-byte head");
+    CHECK(holds(cbor::read_uint(c), std::uint64_t{1}), "1 in a 2-byte head");
     const Bytes nine{0x1b, 0, 0, 0, 1, 0, 0, 0, 0};
     auto d = cursor_over(nine);
-    CHECK(cbor::read_uint(d) == std::optional<std::uint64_t>(std::uint64_t{1} << 32), "2^32");
+    CHECK(holds(cbor::read_uint(d), std::uint64_t{1} << 32), "2^32");
 }
 
-void what_the_codec_cannot_read_is_refused() {
+void what_the_codec_cannot_read_is_refused_by_its_kind() {
     // Indefinite-length map, reserved additional information, another major
     // type, a width the entry cannot hold, a wrong exact length, a text past
-    // its bound, a text that is not UTF-8.
+    // its bound, a text that is not UTF-8, an item cut short.
     for (const Bytes &b : {Bytes{0xbf}, Bytes{0x1c}, Bytes{0x61, 'a'}}) {
         auto c = cursor_over(b);
-        CHECK(!cbor::read_uint(c).has_value(), "an item that is no unsigned integer");
+        CHECK(refused_as(cbor::read_uint(c), CodecError::CborMalformed), "an item that is no unsigned integer");
     }
     const Bytes indefinite{0xbf};
     auto m = cursor_over(indefinite);
-    CHECK(!cbor::read_map_len(m).has_value(), "indefinite-length map");
+    CHECK(refused_as(cbor::read_map_len(m), CodecError::CborMalformed), "indefinite-length map");
     const Bytes wide{0x19, 0x01, 0x00};
     auto u = cursor_over(wide);
-    CHECK(!cbor::read_uint_upto(u, 255).has_value(), "256 in a uint8");
+    CHECK(refused_as(cbor::read_uint_upto(u, 255), CodecError::CborOutOfRange), "256 in a uint8");
     const Bytes short_bytes{0x42, 1, 2};
     auto s = cursor_over(short_bytes);
-    CHECK(!cbor::read_bytes_exact(s, 16).has_value(), "two bytes where sixteen are declared");
+    CHECK(refused_as(cbor::read_bytes_exact(s, 16), CodecError::CborWrongLength),
+          "two bytes where sixteen are declared");
     const Bytes long_text{0x62, 'a', 'b'};
     auto t = cursor_over(long_text);
-    CHECK(!cbor::read_text(t, 1).has_value(), "a text past its bound");
+    CHECK(refused_as(cbor::read_text(t, 1), CodecError::CborOutOfRange), "a text past its bound");
     const Bytes not_utf8{0x61, 0xff};
     auto x = cursor_over(not_utf8);
-    CHECK(!cbor::read_text(x, std::nullopt).has_value(), "a text that is not UTF-8");
+    CHECK(refused_as(cbor::read_text(x, std::nullopt), CodecError::InvalidUtf8), "a text that is not UTF-8");
+    const Bytes cut{0x19, 0x01};
+    auto y = cursor_over(cut);
+    CHECK(refused_as(cbor::read_uint(y), CodecError::NeedMoreBytes), "a head cut short");
 }
 
 void an_unknown_value_is_skipped_whole_and_a_deep_one_refused() {
     // {1: [2, {3: h'00'}]} then 7: the skip lands on the 7.
     const Bytes nested{0xa1, 0x01, 0x82, 0x02, 0xa1, 0x03, 0x41, 0x00, 0x07};
     auto c = cursor_over(nested);
-    CHECK(cbor::skip(c), "a nested value is skipped");
-    CHECK(cbor::read_uint(c) == std::optional<std::uint64_t>(7), "the skip lands on the next item");
+    CHECK(cbor::skip(c).has_value(), "a nested value is skipped");
+    CHECK(holds(cbor::read_uint(c), std::uint64_t{7}), "the skip lands on the next item");
 
     Bytes deep(20, 0x81);
     deep.push_back(0x00);
     auto d = cursor_over(deep);
-    CHECK(!cbor::skip(d), "twenty nested arrays are past the skip depth");
+    CHECK(refused_as(cbor::skip(d), CodecError::CborTooDeep), "twenty nested arrays are past the skip depth");
 }
 
 }  // namespace
@@ -136,7 +153,7 @@ int main() {
     every_head_is_written_in_its_shortest_form();
     a_head_is_read_in_any_valid_length();
     an_array_head_is_read_as_its_count_and_no_other_item_is();
-    what_the_codec_cannot_read_is_refused();
+    what_the_codec_cannot_read_is_refused_by_its_kind();
     an_unknown_value_is_skipped_whole_and_a_deep_one_refused();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

@@ -470,9 +470,8 @@ void a_payload_past_its_bound_cannot_be_made() {
     std::vector<std::uint8_t> frame{0x01, 33};
     frame.insert(frame.end(), long_body.begin(), long_body.end());
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
-    CHECK(!Length::CodecLengthRef::decode(cursor).has_value() &&
-              cursor.last_refusal() ==
-                  std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::LengthOutOfRange),
+    const auto refused = Length::CodecLengthRef::decode(cursor);
+    CHECK(!refused.has_value() && refused.error() == ::SCE::Forge::CodecError::LengthOutOfRange,
           "a length past the bound is refused as LengthOutOfRange");
 }
 

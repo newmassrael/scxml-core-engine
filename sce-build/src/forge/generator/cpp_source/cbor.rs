@@ -224,53 +224,58 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
                 "        std::optional<{}> held_{};\n",
                 f.ty, f.name
             ));
+            // Each read answers its `Decoded`, whose refusal is the record's.
             let read = match f.kind {
                 RecordFieldKind::Bool => format!(
-                    "                held_{name} = cbor::read_bool(c);\n\
-                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    "                auto read = cbor::read_bool(c);\n\
+                     \x20               if (!read) return read.error();\n\
+                     \x20               held_{name} = *read;\n",
                     name = f.name
                 ),
                 RecordFieldKind::Uint { wide: true } => format!(
-                    "                held_{name} = cbor::read_uint(c);\n\
-                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    "                auto read = cbor::read_uint(c);\n\
+                     \x20               if (!read) return read.error();\n\
+                     \x20               held_{name} = *read;\n",
                     name = f.name
                 ),
                 RecordFieldKind::Uint { wide: false } => format!(
                     "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
-                     \x20               if (!raw) return std::nullopt;\n\
+                     \x20               if (!raw) return raw.error();\n\
                      \x20               held_{name} = static_cast<{ty}>(*raw);\n",
                     name = f.name,
                     ty = f.ty
                 ),
                 // Read within the bound and as UTF-8, which is what the
-                // field's type holds, so its `make` always makes it.
+                // field's type holds, so its `make` makes it; a text it did
+                // not would be past the bound.
                 RecordFieldKind::Text { max } => format!(
                     "                auto text = cbor::read_text(c, {max});\n\
-                     \x20               if (!text) return std::nullopt;\n\
+                     \x20               if (!text) return text.error();\n\
                      \x20               held_{name} = {ty}::make(std::move(*text));\n\
-                     \x20               if (!held_{name}) return std::nullopt;\n",
+                     \x20               if (!held_{name}) return ::SCE::Forge::CodecError::CborOutOfRange;\n",
                     name = f.name,
                     ty = f.ty
                 ),
                 // Read within the bound, as the Rust printer reads it, into
                 // the vector the field is.
                 RecordFieldKind::Bytes { max } => format!(
-                    "                held_{name} = cbor::read_bytes(c, {max});\n\
-                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    "                auto read = cbor::read_bytes(c, {max});\n\
+                     \x20               if (!read) return read.error();\n\
+                     \x20               held_{name} = std::move(*read);\n",
                     name = f.name
                 ),
             };
             reads.push_str(&format!(
                 "            {open}if (*key == {key:?}) {{\n\
                  \x20               // A key given twice is not one map entry.\n\
-                 \x20               if (held_{name}.has_value()) return std::nullopt;\n\
+                 \x20               if (held_{name}.has_value()) return ::SCE::Forge::CodecError::CborMalformed;\n\
                  {read}",
                 open = if index == 0 { "" } else { "} else " },
                 key = f.key,
                 name = f.name
             ));
             present.push_str(&format!(
-                "        if (!held_{}.has_value()) return std::nullopt;\n",
+                "        if (!held_{}.has_value()) return ::SCE::Forge::CodecError::CborRequiredKeyMissing;\n",
                 f.name
             ));
             made.push_str(&format!(
@@ -289,19 +294,19 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
              \x20       return std::nullopt;\n\
              \x20   }}\n\n\
              \x20   /// Read one record of `{schema}` from `c`: its keys in any order, a key the\n\
-             \x20   /// schema does not declare skipped whole; a key given twice or a field\n\
-             \x20   /// missing is `std::nullopt`.\n\
-             \x20   static std::optional<{payload}> {decode}(::SCE::Forge::SceCursor& c) {{\n\
+             \x20   /// schema does not declare skipped whole; a key given twice is\n\
+             \x20   /// `CborMalformed` and a field missing `CborRequiredKeyMissing`.\n\
+             \x20   static ::SCE::Forge::Decoded<{payload}> {decode}(::SCE::Forge::SceCursor& c) {{\n\
              \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
              \x20       const auto count = cbor::read_map_len(c);\n\
-             \x20       if (!count) return std::nullopt;\n\
+             \x20       if (!count) return count.error();\n\
              {held}\
              \x20       for (std::uint64_t i = 0; i < *count; ++i) {{\n\
              \x20           const auto key = cbor::read_text(c, std::nullopt);\n\
-             \x20           if (!key) return std::nullopt;\n\
+             \x20           if (!key) return key.error();\n\
              {reads}\
-             \x20           }} else if (!cbor::skip(c)) {{\n\
-             \x20               return std::nullopt;\n\
+             \x20           }} else if (const auto skipped = cbor::skip(c); !skipped) {{\n\
+             \x20               return skipped.error();\n\
              \x20           }}\n\
              \x20       }}\n\
              {present}\
@@ -583,22 +588,35 @@ fn refusal_checks(
 }
 
 /// The statements that read the value of `entry` into its local, which the
-/// caller has checked is still empty; a refusal returns `std::nullopt` from
-/// the decode, this backend's decode convention.
+/// caller has checked is still empty. A read answers its `Decoded`, whose
+/// refusal is the decode's (docs/adr/0099, amendment of 2026-11-16); a
+/// closed enum's carrier no variant declares is `UndeclaredEnumValue`, and a
+/// list's count past its bounds `CborOutOfRange`, as the Rust printer refuses
+/// them.
 fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> String {
     let e = entry.item.entry;
+    let name = &entry.name;
     let limit =
         |max: Option<u32>| max.map_or_else(|| "std::nullopt".to_string(), |m| m.to_string());
-    let read = match entry.item.value {
-        CborValue::Bool => "auto v = cbor::read_bool(c);".to_string(),
-        CborValue::Text => format!("auto v = cbor::read_text(c, {});", limit(e.max_size)),
-        CborValue::Bytes { exact: true } => format!(
-            "auto v = cbor::read_bytes_exact(c, {});",
+    // A read whose `Decoded` holds the value as the local holds it.
+    let whole = |read: String| {
+        format!(
+            "                auto v = {read};\n\
+             \x20               if (!v) return v.error();\n\
+             \x20               {name} = std::move(*v);\n"
+        )
+    };
+    match entry.item.value {
+        CborValue::Bool => whole("cbor::read_bool(c)".to_string()),
+        CborValue::Text => whole(format!("cbor::read_text(c, {})", limit(e.max_size))),
+        CborValue::Bytes { exact: true } => whole(format!(
+            "cbor::read_bytes_exact(c, {})",
             e.length.expect("an exact byte string states its length")
-        ),
+        )),
         CborValue::Bytes { exact: false } => {
-            format!("auto v = cbor::read_bytes(c, {});", limit(e.max_size))
+            whole(format!("cbor::read_bytes(c, {})", limit(e.max_size)))
         }
+        CborValue::Uint { wide: true } => whole("cbor::read_uint(c)".to_string()),
         CborValue::Enum { .. } => {
             let SceType::Enum(r) = leaf(e) else {
                 unreachable!("an enum entry is of an enum type")
@@ -610,22 +628,25 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
                 "{}(static_cast<{carrier}>(*raw))",
                 l.enum_from_underlying(&r.alias)
             );
-            let v = if l.enum_is_open(&r.alias) {
-                format!("std::optional<{}> v = {made};", entry.read)
+            let held = if l.enum_is_open(&r.alias) {
+                format!("{name} = {made};\n")
             } else {
-                format!("auto v = {made};")
+                format!(
+                    "auto v = {made};\n\
+                     \x20               if (!v) return ::SCE::Forge::CodecError::UndeclaredEnumValue;\n\
+                     \x20               {name} = std::move(*v);\n"
+                )
             };
             format!(
-                "const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()));\n\
-                 \x20               if (!raw) return std::nullopt;\n\
-                 \x20               {v}"
+                "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()));\n\
+                 \x20               if (!raw) return raw.error();\n\
+                 \x20               {held}"
             )
         }
-        CborValue::Uint { wide: true } => "auto v = cbor::read_uint(c);".to_string(),
         CborValue::Uint { wide: false } => format!(
-            "const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
-             \x20               if (!raw) return std::nullopt;\n\
-             \x20               std::optional<{ty}> v = static_cast<{ty}>(*raw);",
+            "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
+             \x20               if (!raw) return raw.error();\n\
+             \x20               {name} = static_cast<{ty}>(*raw);\n",
             ty = entry.read
         ),
         // A definite-length array within the list's count, refused before any
@@ -640,26 +661,22 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
                 String::new()
             };
             format!(
-                "const auto _len = cbor::read_array_len(c);\n\
-                 \x20               if (!_len || *_len > {max}{short}) return std::nullopt;\n\
+                "                const auto _len = cbor::read_array_len(c);\n\
+                 \x20               if (!_len) return _len.error();\n\
+                 \x20               if (*_len > {max}{short}) return ::SCE::Forge::CodecError::CborOutOfRange;\n\
                  \x20               std::optional<{read}> v{{std::in_place}};\n\
                  \x20               for (std::uint64_t _n = 0; _n < *_len; ++_n) {{\n\
                  \x20                   auto _record = Records::{decode}(c);\n\
-                 \x20                   if (!_record) return std::nullopt;\n\
+                 \x20                   if (!_record) return _record.error();\n\
                  \x20                   v->push_back(std::move(*_record));\n\
-                 \x20               }}",
+                 \x20               }}\n\
+                 \x20               {name} = std::move(*v);\n",
                 max = list.max,
                 read = entry.read,
                 decode = record_fns(entry).0
             )
         }
-    };
-    format!(
-        "                {read}\n\
-         \x20               if (!v) return std::nullopt;\n\
-         \x20               {name} = std::move(*v);\n",
-        name = entry.name
-    )
+    }
 }
 
 /// The text of the printed CBOR codec `plan` inside its namespace: the
@@ -891,7 +908,7 @@ fn value_class(
     decode.push_str(
         "        for (std::uint64_t i = 0; i < *count; ++i) {\n\
          \x20           const auto key = cbor::read_uint(c);\n\
-         \x20           if (!key) return std::nullopt;\n\
+         \x20           if (!key) return key.error();\n\
          \x20           switch (*key) {\n",
     );
     let mut by_key: Vec<&Entry<'_>> = entries.iter().collect();
@@ -900,7 +917,7 @@ fn value_class(
         decode.push_str(&format!(
             "            case {key}: {{\n\
              \x20               // A key given twice is not one map entry.\n\
-             \x20               if ({name}.has_value()) return std::nullopt;\n\
+             \x20               if ({name}.has_value()) return ::SCE::Forge::CodecError::CborMalformed;\n\
              {read}\
              \x20               break;\n\
              \x20           }}\n",
@@ -910,15 +927,17 @@ fn value_class(
         ));
     }
     decode.push_str(
-        "            default:\n\
-         \x20               if (!cbor::skip(c)) return std::nullopt;\n\
+        "            default: {\n\
+         \x20               const auto skipped = cbor::skip(c);\n\
+         \x20               if (!skipped) return skipped.error();\n\
          \x20               break;\n\
+         \x20           }\n\
          \x20           }\n\
          \x20       }\n",
     );
     for e in entries.iter().filter(|e| e.required()) {
         decode.push_str(&format!(
-            "        if (!{}.has_value()) return std::nullopt;\n",
+            "        if (!{}.has_value()) return ::SCE::Forge::CodecError::CborRequiredKeyMissing;\n",
             e.name
         ));
     }
@@ -935,7 +954,7 @@ fn value_class(
         if e.required() {
             decode.push_str(&format!(
                 "        const auto _b_{name} = {view}::make(*{name});\n\
-                 \x20       if (!_b_{name}) return std::nullopt;\n",
+                 \x20       if (!_b_{name}) return ::SCE::Forge::CodecError::CborOutOfRange;\n",
                 name = e.name,
                 view = e.view
             ));
@@ -945,7 +964,7 @@ fn value_class(
                 "        std::optional<{view}> _b_{name};\n\
                  \x20       if ({name}) {{\n\
                  \x20           _b_{name} = {view}::make(*{name});\n\
-                 \x20           if (!_b_{name}) return std::nullopt;\n\
+                 \x20           if (!_b_{name}) return ::SCE::Forge::CodecError::CborOutOfRange;\n\
                  \x20       }}\n",
                 name = e.name,
                 view = e.view
@@ -978,8 +997,9 @@ fn value_class(
     out.push_str(&format!(
         "\n\
          \x20   /// Decode one map from `cursor`. On success the cursor advances past it;\n\
-         \x20   /// `std::nullopt` on any refusal, with the cursor left where it was.\n\
-         \x20   static std::optional<{struct_name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
+         \x20   /// a refusal answers the `CodecError` that refused the map\n\
+         \x20   /// (docs/adr/0099, amendment of 2026-11-16), with the cursor left where it was.\n\
+         \x20   static ::SCE::Forge::Decoded<{struct_name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
          \x20       ::SCE::Forge::SceCursor c = cursor;\n\
          \x20       auto value = decode_at(c);\n\
          \x20       if (value) {{\n\
@@ -999,10 +1019,10 @@ fn value_class(
          {to_vec}\
          \x20   }}\n\n\
          private:\n\
-         \x20   static std::optional<{struct_name}> decode_at(::SCE::Forge::SceCursor& c) {{\n\
+         \x20   static ::SCE::Forge::Decoded<{struct_name}> decode_at(::SCE::Forge::SceCursor& c) {{\n\
          \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
          \x20       const auto count = cbor::read_map_len(c);\n\
-         \x20       if (!count) return std::nullopt;\n\
+         \x20       if (!count) return count.error();\n\
          {decode}\
          \x20       return {struct_name}{{\n\
          {}\

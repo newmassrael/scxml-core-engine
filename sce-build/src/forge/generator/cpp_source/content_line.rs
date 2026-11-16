@@ -160,6 +160,15 @@ fn bound(n: Option<u32>) -> String {
     bound_literal(Language::Cpp, n)
 }
 
+/// The refusals the decode answers by rule where no read refused first, each
+/// the kind every backend's decode answers for it (docs/adr/0099, amendment of
+/// 2026-11-16): a value of a closed enum no variant declares, a property of one
+/// line given twice or a list past its count, and a required line or parameter
+/// absent.
+const LINE_BAD_VALUE: &str = "::SCE::Forge::CodecError::LineBadValue";
+const LINE_TOO_MANY: &str = "::SCE::Forge::CodecError::LineTooMany";
+const LINE_REQUIRED_MISSING: &str = "::SCE::Forge::CodecError::LineRequiredMissing";
+
 /// The C++ printer of a content-line codec's plan.
 struct Printer<'a> {
     l: &'a LangCtx,
@@ -721,8 +730,8 @@ impl Printer<'_> {
     }
 
     /// The statements that read the value of one line of `p`, and the
-    /// expression of what was read; a refusal returns `std::nullopt` from the
-    /// decode, this backend's decode convention. The line grammar (unfolding,
+    /// expression of what was read; a refusal is answered from the decode as
+    /// its own `CodecError`. The line grammar (unfolding,
     /// TEXT escapes, quoting) is the runtime's (`SCE::Forge::ContentLine`).
     fn read_value(&self, p: &Property<'_>) -> (Vec<String>, String) {
         let e = p.entry;
@@ -739,33 +748,34 @@ impl Printer<'_> {
                         bound(*max_values),
                         bound(*max_size)
                     ),
-                    "if (!v) return std::nullopt;".to_string(),
+                    "if (!v) return v.error();".to_string(),
                 ],
                 "std::move(*v)".to_string(),
             ),
             LineValue::Text { text, max_size } => (
                 vec![
                     format!("auto v = line->read_string({}, {text});", bound(*max_size)),
-                    "if (!v) return std::nullopt;".to_string(),
+                    "if (!v) return v.error();".to_string(),
                 ],
                 "std::move(*v)".to_string(),
             ),
             LineValue::Bool => (
                 vec![
                     "const auto v = line->read_bool();".to_string(),
-                    "if (!v) return std::nullopt;".to_string(),
+                    "if (!v) return v.error();".to_string(),
                 ],
                 "*v".to_string(),
             ),
             // The text names a carrier and the enum's own conversion takes it to
             // a variant, so a closed and an open enum are read by one rule
             // (docs/adr/0015): a closed enum answers `std::nullopt` for a
-            // carrier it does not declare.
+            // carrier it does not declare, which the line refuses as a value it
+            // cannot hold.
             LineValue::Enum { alias } => {
                 let open = self.l.enum_is_open(alias);
                 let mut read = vec![
                     format!("const auto raw = line->read_enum(kTexts_{alias});"),
-                    "if (!raw) return std::nullopt;".to_string(),
+                    "if (!raw) return raw.error();".to_string(),
                     format!(
                         "const auto v = {}(static_cast<{}>(*raw));",
                         self.l.enum_from_underlying(alias),
@@ -773,7 +783,7 @@ impl Printer<'_> {
                     ),
                 ];
                 if !open {
-                    read.push("if (!v) return std::nullopt;".to_string());
+                    read.push(format!("if (!v) return {LINE_BAD_VALUE};"));
                 }
                 (read, if open { "v" } else { "*v" }.to_string())
             }
@@ -784,7 +794,7 @@ impl Printer<'_> {
                         format!(
                             "const auto raw = line->read_uint(static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));"
                         ),
-                        "if (!raw) return std::nullopt;".to_string(),
+                        "if (!raw) return raw.error();".to_string(),
                     ],
                     format!("static_cast<{ty}>(*raw)"),
                 )
@@ -796,7 +806,7 @@ impl Printer<'_> {
                         format!(
                             "const auto raw = line->read_int(static_cast<std::int64_t>(std::numeric_limits<{ty}>::min()), static_cast<std::int64_t>(std::numeric_limits<{ty}>::max()));"
                         ),
-                        "if (!raw) return std::nullopt;".to_string(),
+                        "if (!raw) return raw.error();".to_string(),
                     ],
                     format!("static_cast<{ty}>(*raw)"),
                 )
@@ -814,7 +824,7 @@ impl Printer<'_> {
         let mut out = vec![
             "for (;;) {".to_string(),
             "    const auto more = line->next_param();".to_string(),
-            "    if (!more) return std::nullopt;".to_string(),
+            "    if (!more) return more.error();".to_string(),
             "    if (!*more) break;".to_string(),
         ];
         for (i, param) in p.params.iter().enumerate() {
@@ -822,21 +832,21 @@ impl Printer<'_> {
             let name = param.entry.param.as_deref().unwrap_or_default();
             let otherwise = if i == 0 { "" } else { "else " };
             out.push(format!("    {otherwise}if (line->param_is(\"{name}\")) {{"));
-            out.push(format!("        if ({local}) return std::nullopt;"));
+            out.push(format!("        if ({local}) return {LINE_TOO_MANY};"));
             match &param.value {
                 ParamValue::Enum { alias } => {
                     let open = self.l.enum_is_open(alias);
                     out.push(format!(
                         "        const auto praw = line->read_param_enum(kTexts_{alias});"
                     ));
-                    out.push("        if (!praw) return std::nullopt;".to_string());
+                    out.push("        if (!praw) return praw.error();".to_string());
                     out.push(format!(
                         "        const auto pe = {}(static_cast<{}>(*praw));",
                         self.l.enum_from_underlying(alias),
                         self.carrier_type(alias)
                     ));
                     if !open {
-                        out.push("        if (!pe) return std::nullopt;".to_string());
+                        out.push(format!("        if (!pe) return {LINE_BAD_VALUE};"));
                     }
                     out.push(format!(
                         "        {local} = {};",
@@ -848,7 +858,7 @@ impl Printer<'_> {
                         "        auto pv = line->read_param_string({});",
                         bound(*max_size)
                     ));
-                    out.push("        if (!pv) return std::nullopt;".to_string());
+                    out.push("        if (!pv) return pv.error();".to_string());
                     out.push(format!("        {local} = std::move(*pv);"));
                 }
             }
@@ -871,7 +881,7 @@ impl Printer<'_> {
                 "auto reader = cl::Reader::begin(c.peek_slice(c.remaining()), c.remaining(), \"{}\");",
                 self.plan.lines.component
             ),
-            "if (!reader) return std::nullopt;".to_string(),
+            "if (!reader) return reader.error();".to_string(),
             format!("{name} out;"),
         ];
         // Whether a property of one line has been read, and each parameter of
@@ -893,11 +903,11 @@ impl Printer<'_> {
         }
         body.extend([
             "for (;;) {".to_string(),
-            "    auto line = reader->next();".to_string(),
-            "    if (!line) {".to_string(),
-            "        if (reader->failed()) return std::nullopt;".to_string(),
-            "        break;".to_string(),
-            "    }".to_string(),
+            "    auto next = reader->next();".to_string(),
+            "    if (!next) return next.error();".to_string(),
+            "    // No property after `END:<component>`: the component is read.".to_string(),
+            "    auto line = std::move(*next);".to_string(),
+            "    if (!line) break;".to_string(),
         ]);
         for (i, p) in self.plan.properties.iter().enumerate() {
             let e = p.entry;
@@ -915,7 +925,7 @@ impl Printer<'_> {
                 LineShape::Records { at_most, .. } => {
                     if let Some(max_count) = at_most {
                         each.push(format!(
-                            "if (out.{member}_.size() >= {max_count}) return std::nullopt;"
+                            "if (out.{member}_.size() >= {max_count}) return {LINE_TOO_MANY};"
                         ));
                     }
                     for param in &p.params {
@@ -931,7 +941,7 @@ impl Printer<'_> {
                     for param in &p.params {
                         let local = format!("_lp_{}", self.member(&param.entry.id));
                         if param.required {
-                            each.push(format!("if (!{local}) return std::nullopt;"));
+                            each.push(format!("if (!{local}) return {LINE_REQUIRED_MISSING};"));
                             args.push(format!("*{local}"));
                         } else {
                             args.push(local);
@@ -948,14 +958,14 @@ impl Printer<'_> {
                 LineShape::Repeated { at_most, .. } => {
                     if let Some(max_count) = at_most {
                         each.push(format!(
-                            "if (out.{member}_.size() >= {max_count}) return std::nullopt;"
+                            "if (out.{member}_.size() >= {max_count}) return {LINE_TOO_MANY};"
                         ));
                     }
                     each.extend(read);
                     each.push(format!("out.{member}_.push_back({value});"));
                 }
                 LineShape::One { .. } => {
-                    each.push(format!("if (_seen_{member}) return std::nullopt;"));
+                    each.push(format!("if (_seen_{member}) return {LINE_TOO_MANY};"));
                     each.extend(self.read_line_params(p, "_p_"));
                     each.extend(read);
                     each.push(format!("_seen_{member} = true;"));
@@ -971,10 +981,14 @@ impl Printer<'_> {
             match p.shape {
                 LineShape::Records { required: true, .. }
                 | LineShape::Repeated { required: true, .. } => {
-                    body.push(format!("if (out.{member}_.empty()) return std::nullopt;"));
+                    body.push(format!(
+                        "if (out.{member}_.empty()) return {LINE_REQUIRED_MISSING};"
+                    ));
                 }
                 LineShape::One { required: true, .. } => {
-                    body.push(format!("if (!_seen_{member}) return std::nullopt;"));
+                    body.push(format!(
+                        "if (!_seen_{member}) return {LINE_REQUIRED_MISSING};"
+                    ));
                 }
                 LineShape::Records { .. } | LineShape::Repeated { .. } | LineShape::One { .. } => {}
             }
@@ -982,7 +996,7 @@ impl Printer<'_> {
                 for param in &p.params {
                     let pname = self.member(&param.entry.id);
                     if param.required {
-                        body.push(format!("if (!_p_{pname}) return std::nullopt;"));
+                        body.push(format!("if (!_p_{pname}) return {LINE_REQUIRED_MISSING};"));
                         body.push(format!("out.{pname}_ = std::move(*_p_{pname});"));
                     } else {
                         body.push(format!("out.{pname}_ = std::move(_p_{pname});"));
@@ -991,10 +1005,13 @@ impl Printer<'_> {
             }
         }
         body.push("// Only a component that decoded whole moves the cursor.".to_string());
-        body.push("if (!c.advance(reader->consumed())) return std::nullopt;".to_string());
+        body.push(
+            "if (!c.advance(reader->consumed())) return ::SCE::Forge::CodecError::NeedMoreBytes;"
+                .to_string(),
+        );
         body.push("return out;".to_string());
         format!(
-            "    static std::optional<{name}> decode_at(::SCE::Forge::SceCursor& c) {{\n{}    }}\n\n",
+            "    static ::SCE::Forge::Decoded<{name}> decode_at(::SCE::Forge::SceCursor& c) {{\n{}    }}\n\n",
             indent(&body, 8)
         )
     }
@@ -1101,9 +1118,10 @@ impl Printer<'_> {
         let public = format!(
             "\n\
              \x20   /// Decode one component from `cursor`. On success the cursor advances past\n\
-             \x20   /// its `END:` line; `std::nullopt` on any refusal, with the cursor left\n\
-             \x20   /// where it was.\n\
-             \x20   static std::optional<{name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
+             \x20   /// its `END:` line; a refusal answers the `CodecError` of the rule that\n\
+             \x20   /// refused it (docs/adr/0099, amendment of 2026-11-16), with the cursor\n\
+             \x20   /// left where it was.\n\
+             \x20   static ::SCE::Forge::Decoded<{name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
              \x20       ::SCE::Forge::SceCursor c = cursor;\n\
              \x20       auto value = decode_at(c);\n\
              \x20       if (value) {{\n\
