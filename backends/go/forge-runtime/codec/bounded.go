@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // The bound a codec's byte string or text is held to, as a type
@@ -131,4 +133,51 @@ func (t Text[B]) Len() int {
 		return fewest[B]()
 	}
 	return len(t.held)
+}
+
+// A byte string or a text a gate may leave out (docs/adr/0058 §1) is the
+// optional type of its bounded value. A decode reads it as the optional type
+// of the slice or the string it cut, and a reader of the value reads it back
+// as one; these make the one of the other, so the bound is checked in
+// MakeBytes and MakeText alone.
+
+// MakeOptionalBytes is MakeBytes over a byte string that may be absent: absent
+// where o is, and the Bytes that holds it, or MakeBytes's error, where it is
+// there.
+func MakeOptionalBytes[B Bound](o optional.Of[[]byte]) (optional.Of[Bytes[B]], error) {
+	b, ok := o.Get()
+	if !ok {
+		return optional.None[Bytes[B]](), nil
+	}
+	held, err := MakeBytes[B](b)
+	if err != nil {
+		return optional.None[Bytes[B]](), err
+	}
+	return optional.Some(held), nil
+}
+
+// MakeOptionalText is MakeText over a text that may be absent: absent where o
+// is, and the Text that holds it, or MakeText's error, where it is there.
+func MakeOptionalText[B Bound](o optional.Of[string]) (optional.Of[Text[B]], error) {
+	s, ok := o.Get()
+	if !ok {
+		return optional.None[Text[B]](), nil
+	}
+	held, err := MakeText[B](s)
+	if err != nil {
+		return optional.None[Text[B]](), err
+	}
+	return optional.Some(held), nil
+}
+
+// OptionalBytes is the byte string a Bytes that may be absent holds, absent
+// where it is.
+func OptionalBytes[B Bound](o optional.Of[Bytes[B]]) optional.Of[[]byte] {
+	return optional.Convert(o, Bytes[B].Bytes)
+}
+
+// OptionalText is the text a Text that may be absent holds, absent where it
+// is.
+func OptionalText[B Bound](o optional.Of[Text[B]]) optional.Of[string] {
+	return optional.Convert(o, Text[B].String)
 }

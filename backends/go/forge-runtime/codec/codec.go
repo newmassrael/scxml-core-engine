@@ -53,6 +53,15 @@ var ErrBufferOverflow = errors.New("sce/codec: buffer overflow")
 // before writing the first byte, so the sink is untouched.
 var ErrPresentIfMismatch = errors.New("sce/codec: present-if mismatch")
 
+// ErrInconsistentSource is returned by the encode of a codec printed from its
+// plan when two things a value says of one number disagree: two byte strings
+// that share one length field and differ in length, or a length the value
+// states beside the content it measures that is not that content's length
+// (docs/adr/0065 §2). No frame says both, so the encode refuses before
+// writing the first byte and the sink is untouched. Mirrors the Rust
+// runtime's `CodecError::InconsistentSource`.
+var ErrInconsistentSource = errors.New("sce/codec: inconsistent source")
+
 // ErrUndeclaredEnumValue is returned by Decode when an enum-typed field
 // carried a value its declared set does not hold. sce:strict-variants=
 // "true" (the default) closes the set, so a carrier value outside it is

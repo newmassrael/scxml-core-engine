@@ -6,6 +6,8 @@ package codec
 import (
 	"bytes"
 	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // A Bytes or a Text is made only within its bound, and its zero value is one
@@ -87,5 +89,43 @@ func TestTheZeroTextPresentsTheFewestNULs(t *testing.T) {
 	var s Text[twoToFour]
 	if s.String() != "\x00\x00" || s.Len() != 2 {
 		t.Errorf("zero value holds %q (len %d)", s.String(), s.Len())
+	}
+}
+
+func TestAnAbsentByteStringOrTextIsMadeAbsent(t *testing.T) {
+	b, err := MakeOptionalBytes[twoToFour](optional.None[[]byte]())
+	if err != nil || b.IsPresent() {
+		t.Errorf("bytes: made %v, err = %v; want absent", b, err)
+	}
+	s, err := MakeOptionalText[twoToFour](optional.None[string]())
+	if err != nil || s.IsPresent() {
+		t.Errorf("text: made %v, err = %v; want absent", s, err)
+	}
+}
+
+func TestAPresentByteStringOrTextIsHeldToItsBound(t *testing.T) {
+	b, err := MakeOptionalBytes[twoToFour](optional.Some([]byte{1, 2, 3}))
+	if err != nil || !bytes.Equal(b.Proven().Bytes(), []byte{1, 2, 3}) {
+		t.Errorf("bytes: made %v, err = %v", b, err)
+	}
+	if _, err := MakeOptionalBytes[twoToFour](optional.Some([]byte{1})); err != ErrLengthOutOfRange {
+		t.Errorf("one byte: err = %v, want ErrLengthOutOfRange", err)
+	}
+	if _, err := MakeOptionalText[twoToFour](optional.Some("a\xffb")); err != ErrInvalidUTF8 {
+		t.Errorf("malformed text: err = %v, want ErrInvalidUTF8", err)
+	}
+}
+
+func TestAnOptionalBoundedValueIsReadAsWhatItHolds(t *testing.T) {
+	held, _ := MakeBytes[twoToFour]([]byte{7, 8})
+	if got := OptionalBytes(optional.Some(held)); !bytes.Equal(got.Proven(), []byte{7, 8}) {
+		t.Errorf("bytes: read %v", got)
+	}
+	if got := OptionalBytes(optional.None[Bytes[twoToFour]]()); got.IsPresent() {
+		t.Errorf("absent bytes: read %v", got)
+	}
+	text, _ := MakeText[twoToFour]("ab")
+	if got := OptionalText(optional.Some(text)); got.Proven() != "ab" {
+		t.Errorf("text: read %v", got)
 	}
 }
