@@ -75,8 +75,7 @@ impl EncodeFailure {
     /// whose encode of a source answers the runtime's typed error, or `None`
     /// where the backend has no name for this refusal: no harness of it can
     /// state the case, and a fold that meets one says so by name. Rust, C++,
-    /// Python, Swift, Kotlin and Go name every refusal, and C11 each its
-    /// runtime holds a status for.
+    /// Python, Swift, Kotlin, Go and C11 name every refusal.
     pub fn symbol(self, lang: Language) -> Option<&'static str> {
         match lang {
             Language::Rust => Some(match self {
@@ -130,14 +129,12 @@ impl EncodeFailure {
                 EncodeFailure::PresentIfMismatch => "codec.ErrPresentIfMismatch",
                 EncodeFailure::InconsistentSource => "codec.ErrInconsistentSource",
             }),
-            // The C runtime's status codes (`sce/forge/codec.h`). It has no
-            // status for an inconsistent source yet, so no C11 harness states
-            // that case until it does.
-            Language::C11 => match self {
-                EncodeFailure::LengthOutOfRange => Some("SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE"),
-                EncodeFailure::PresentIfMismatch => Some("SCE_FORGE_CODEC_PRESENT_IF_MISMATCH"),
-                EncodeFailure::InconsistentSource => None,
-            },
+            // The C runtime's status codes (`sce/forge/codec.h`).
+            Language::C11 => Some(match self {
+                EncodeFailure::LengthOutOfRange => "SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE",
+                EncodeFailure::PresentIfMismatch => "SCE_FORGE_CODEC_PRESENT_IF_MISMATCH",
+                EncodeFailure::InconsistentSource => "SCE_FORGE_CODEC_INCONSISTENT_SOURCE",
+            }),
         }
     }
 }
@@ -215,42 +212,41 @@ mod tests {
             );
             // The C runtime names a status after the variant in upper snake
             // case (`LengthOutOfRange`, `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`).
-            if let Some(symbol) = f.symbol(Language::C11) {
-                assert_eq!(
-                    symbol
-                        .strip_prefix("SCE_FORGE_CODEC_")
-                        .map(|s| s.replace('_', "")),
-                    Some(variant.to_ascii_uppercase()),
-                    "C11 {f:?}: `{symbol}` does not name `{variant}`"
-                );
-            }
+            let symbol = f.symbol(Language::C11).expect("C11 names every refusal");
+            assert_eq!(
+                symbol
+                    .strip_prefix("SCE_FORGE_CODEC_")
+                    .map(|s| s.replace('_', "")),
+                Some(variant.to_ascii_uppercase()),
+                "C11 {f:?}: `{symbol}` does not name `{variant}`"
+            );
         }
     }
 
-    /// Rust, C++, Python, Swift, Kotlin and Go name every refusal, the
+    /// Rust, C++, Python, Swift, Kotlin, Go and C11 name every refusal, the
     /// inconsistent source among them (`CodecError::InconsistentSource` of the
     /// Rust and C++ runtimes, the exception `InconsistentSource` of the Python
     /// one, the case `inconsistentSource` of the Swift one,
     /// `CodecError.InconsistentSource` of the Kotlin one, the sentinel
-    /// `codec.ErrInconsistentSource` of the Go one); the C runtime names the
-    /// two its status codes hold and not the inconsistent source.
+    /// `codec.ErrInconsistentSource` of the Go one,
+    /// `SCE_FORGE_CODEC_INCONSISTENT_SOURCE` of the C one): every backend's
+    /// harness states a refused case.
     ///
-    /// Turns red where `symbol` drops the C11 arm, or names an inconsistent
-    /// source the C runtime has no status for.
+    /// Turns red where `symbol` drops the C11 arm or a refusal of it.
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
-            assert!(f.symbol(Language::Rust).is_some(), "{f:?}");
-            assert!(f.symbol(Language::Cpp).is_some(), "{f:?}");
-            assert!(f.symbol(Language::Python).is_some(), "{f:?}");
-            assert!(f.symbol(Language::Swift).is_some(), "{f:?}");
-            assert!(f.symbol(Language::Kotlin).is_some(), "{f:?}");
-            assert!(f.symbol(Language::Go).is_some(), "{f:?}");
-            assert_eq!(
-                f.symbol(Language::C11).is_some(),
-                f != EncodeFailure::InconsistentSource,
-                "C11 {f:?}"
-            );
+            for lang in [
+                Language::Rust,
+                Language::Cpp,
+                Language::Python,
+                Language::Swift,
+                Language::Kotlin,
+                Language::Go,
+                Language::C11,
+            ] {
+                assert!(f.symbol(lang).is_some(), "{lang:?} {f:?}");
+            }
         }
     }
 }
