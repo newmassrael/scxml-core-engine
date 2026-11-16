@@ -675,14 +675,33 @@ struct {{ model.name }}Policy {
 {% endfor %}
     };
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
+    /// §scxml-6.4: give this machine the values `params` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives,
+    /// so that a variable declared after it whose initial value reads it reads
+    /// the handed value (docs/adr/0098). Called before it initializes.
     void acceptParams(const InvokeParams &params) {
+{# The variables are declared again in document order, each initial value
+   reading the members declared before it as the member initializers do: a
+   variable handed a value takes it, every other one its own initial value,
+   which can neither fail nor act (one that could fail is refused where it is
+   written), so declaring it a second time is not observable. A module
+   parameter keeps what its component filled. #}
 {% for field in static_fields %}
-{% if field.seeded %}
+{% if field.module_parameter %}
+{% elif field.seeded and field.saved_kind == 'optional' %}
+        if (params.{{ field.name }}) {
+            {{ field.name }} = params.{{ field.name }};
+        } else {
+            {{ field.name }} = {{ field.init }};
+        }
+{% elif field.seeded %}
         if (params.{{ field.name }}) {
             {{ field.name }} = *params.{{ field.name }};
+        } else {
+            {{ field.name }} = {{ field.init }};
         }
+{% else %}
+        {{ field.name }} = {{ field.init }};
 {% endif %}
 {% endfor %}
     }

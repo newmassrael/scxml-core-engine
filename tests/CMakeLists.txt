@@ -651,6 +651,14 @@ foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
     )
 endforeach()
+# docs/adr/0098: a static child declares its variables with the values its
+# invoke handed, in document order, so a variable declared after a handed one
+# reads the handed value. The document is driven on every channel that lowers
+# a static child, beside its Rust and Go drivers.
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml
+)
 
 # The algorithms those machines call. A machine includes the header its own
 # generation names and does not generate it, so each is generated beside the

@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include "a_static_child_declares_its_data_with_a_handed_value_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
@@ -130,6 +131,25 @@ TEST(AStaticChildSessionTest, AHybridInvokeOfADocumentWithNoErrorEventStartsItsC
     }
     EXPECT_EQ(machine.completed(), 0u);
     EXPECT_FALSE(machine.isInFinalState());
+}
+
+// §scxml-6.4 (docs/adr/0098): a value an invoke hands its static child is its variable's
+// initial value, in place of the one its `<data>` declares, so a variable declared after
+// it whose initial value reads it reads the handed value. `worker` is handed `start = 7`
+// and declares `copied = start` after it; it ends the moment `copied` is 7. A child that
+// wrote the handed value over `start` after declaring both holds `copied = 0`, never ends,
+// and leaves the parent in `working`. Fixture:
+// tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml.
+TEST(AStaticChildSessionTest, AVariableDeclaredAfterAHandedOneReadsTheHandedValue) {
+    using Machine =
+        G::a_static_child_declares_its_data_with_a_handed_value::a_static_child_declares_its_data_with_a_handed_value;
+    Machine machine;
+    EXPECT_EQ(machine.initialize(), std::nullopt);
+    for (int i = 0; i < 5; ++i) {
+        machine.tick();
+    }
+    EXPECT_TRUE(machine.isInFinalState())
+        << "the parent stands in " << Machine::PolicyType::getStateName(machine.getCurrentState());
 }
 
 }  // namespace
