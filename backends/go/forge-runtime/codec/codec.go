@@ -355,3 +355,23 @@ func (s *BoundedSink) Remaining() int {
 func (s *BoundedSink) Written() []byte {
 	return s.buf[s.startPos:s.pos]
 }
+
+// CountingSink keeps no byte and counts each one written. An encode run over
+// it says how many bytes the frame of a value is, which a length that counts
+// an embedded body is derived from, and whether the encode refuses the value,
+// before a byte reaches the sink the frame is written to (docs/adr/0058 §3).
+// Its zero value is a sink that has counted nothing; WriteBytes never fails.
+type CountingSink struct {
+	n int
+}
+
+// WriteBytes counts data and keeps none of it.
+func (s *CountingSink) WriteBytes(data []byte) error {
+	s.n += len(data)
+	return nil
+}
+
+// Position returns the bytes counted since the sink was made.
+func (s *CountingSink) Position() int {
+	return s.n
+}

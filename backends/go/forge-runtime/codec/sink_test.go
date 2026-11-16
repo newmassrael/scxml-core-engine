@@ -53,6 +53,22 @@ func TestBoundedSinkZeroByteAtBoundary(t *testing.T) {
 func TestSceSinkInterfaceSatisfaction(t *testing.T) {
 	var _ SceSink = (*BytesSink)(nil)
 	var _ SceSink = (*BoundedSink)(nil)
+	var _ SceSink = (*CountingSink)(nil)
+}
+
+func TestCountingSinkCountsEveryByteAndKeepsNone(t *testing.T) {
+	var s CountingSink
+	if s.Position() != 0 {
+		t.Fatalf("zero sink Position: want 0, got %d", s.Position())
+	}
+	for _, data := range [][]byte{{0x01, 0x02, 0x03}, nil, {0x04}} {
+		if err := s.WriteBytes(data); err != nil {
+			t.Fatalf("WriteBytes returned err: %v", err)
+		}
+	}
+	if s.Position() != 4 {
+		t.Fatalf("Position: want 4, got %d", s.Position())
+	}
 }
 
 func TestBytesSinkPositionIsDelta(t *testing.T) {
