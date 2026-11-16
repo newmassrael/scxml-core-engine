@@ -11,8 +11,13 @@
 // Rust's `Bounded::new` answers `None` and C++'s `make` an empty optional. A decode makes one by
 // `init(decoding:)`, which throws the `CodecError` a frame that says too much is refused with.
 //
-// Siblings: `Bytes` and `Text` (Rust, `backends/rust/forge-runtime`), `Bounded` (C++) and
-// `BoundedBytes`, `BoundedText` (Python, `sce_forge_runtime.bounded`).
+// A list or a chain of entries is held the same way (docs/adr/0065 §6 R2): `BoundedList` holds as
+// many entries as its count bound (`SceCountBound`) admits, so the encode over it refuses no count
+// and derives the count it writes from it. A chain closed by its entries' flag holds one entry or
+// more (§6 R7), which its bound's `least` states.
+//
+// Siblings: `Bytes`, `Text` and `Bounded` (Rust, `backends/rust/forge-runtime`), `Bounded` (C++)
+// and `BoundedBytes`, `BoundedText` (Python, `sce_forge_runtime.bounded`).
 
 /// How many bytes a byte string or a text of one field of a codec holds: a type the generated
 /// codec declares for the field, so the bound is part of the field's type.
@@ -101,3 +106,65 @@ public struct BoundedText<Bound: SceByteBound>: Equatable, Hashable, Sendable {
         frame += Array(text.utf8)
     }
 }
+
+/// How many entries a list or a chain of one field of a codec holds: a type the generated codec
+/// declares for the field, so the bound is part of the field's type. A count bound is no byte bound,
+/// so a bound declared for one kind of element is no bound of the other.
+public protocol SceCountBound {
+    /// The fewest entries: one for a chain closed by its entries' flag, none for another list.
+    static var least: Int { get }
+    /// The most entries, or `nil` where the protocol states none (docs/adr/0077 §7).
+    static var most: Int? { get }
+}
+
+extension SceCountBound {
+    /// Whether `count` entries are within the bound.
+    public static func holds(_ count: Int) -> Bool {
+        count >= least && (most.map { count <= $0 } ?? true)
+    }
+}
+
+/// A list of entries within the bound `Bound`, each a value `Element` its entry codec writes: the
+/// value a printed codec presents a list or a chain as, read in order as a collection.
+public struct BoundedList<Element, Bound: SceCountBound> {
+    /// The entries, in wire order.
+    public let entries: [Element]
+
+    /// The entries `entries`, or `nil` where they are more or fewer than the bound holds.
+    public init?(_ entries: [Element]) {
+        guard Bound.holds(entries.count) else { return nil }
+        self.entries = entries
+    }
+
+    /// The entries a decode read, which a frame that says more than the bound holds refuses with
+    /// `tooManyElements`. A decode reads no fewer than the least: a chain reads one entry before it
+    /// asks whether another follows.
+    public init(decoding entries: [Element]) throws(CodecError) {
+        guard Bound.holds(entries.count) else { throw CodecError.tooManyElements }
+        self.entries = entries
+    }
+
+    private init(within entries: [Element]) {
+        self.entries = entries
+    }
+
+    /// The fewest entries the bound holds, each `entry`: what a value that has read no frame holds.
+    public static func fewest(of entry: @autoclosure () -> Element) -> Self {
+        Self(within: (0..<Bound.least).map { _ in entry() })
+    }
+}
+
+extension BoundedList: RandomAccessCollection {
+    public var startIndex: Int { entries.startIndex }
+    public var endIndex: Int { entries.endIndex }
+
+    public subscript(position: Int) -> Element {
+        entries[position]
+    }
+}
+
+extension BoundedList: Equatable where Element: Equatable {}
+
+extension BoundedList: Hashable where Element: Hashable {}
+
+extension BoundedList: Sendable where Element: Sendable {}

@@ -51,3 +51,48 @@ private enum AtLeastOne: SceByteBound {
     #expect(BoundedBytes<TwoToFour>.fewest.bytes == [0, 0])
     #expect(BoundedText<TwoToFour>.fewest.byteCount == 2)
 }
+
+// A list of entries is held to its count bound the same way (docs/adr/0065 §6 R2), and a chain
+// closed by its entries' flag holds one entry or more (§6 R7).
+
+private enum UpToThree: SceCountBound {
+    static let least = 0
+    static let most: Int? = 3
+}
+
+private enum OneOrMore: SceCountBound {
+    static let least = 1
+    static let most: Int? = nil
+}
+
+@Test func aListIsMadeOnlyWithinItsCountBound() throws {
+    #expect(BoundedList<UInt16, UpToThree>([1, 2, 3, 4]) == nil, "more than the most")
+    #expect(BoundedList<UInt16, OneOrMore>([]) == nil, "fewer than the least")
+    let held = try #require(BoundedList<UInt16, UpToThree>([7, 8]))
+    #expect(held.entries == [7, 8])
+    #expect(held.count == 2)
+    #expect(Array(held) == [7, 8], "it reads as its entries in order")
+    #expect(held[1] == 8)
+    #expect(BoundedList<UInt16, UpToThree>([]) != nil, "an empty list is a value")
+    #expect(BoundedList<UInt16, OneOrMore>([UInt16](repeating: 1, count: 1000)) != nil, "no most")
+}
+
+@Test func aDecodeRefusesEntriesPastTheBoundAsTooManyElements() throws {
+    #expect(throws: CodecError.tooManyElements) {
+        try BoundedList<UInt16, UpToThree>(decoding: [1, 2, 3, 4])
+    }
+    #expect(try BoundedList<UInt16, UpToThree>(decoding: [1, 2, 3]).entries == [1, 2, 3])
+}
+
+@Test func twoListsOfTheSameEntriesAreEqual() throws {
+    let a = try #require(BoundedList<UInt16, UpToThree>([1, 2]))
+    let b = try #require(BoundedList<UInt16, UpToThree>([1, 2]))
+    let c = try #require(BoundedList<UInt16, UpToThree>([2, 1]))
+    #expect(a == b)
+    #expect(a != c, "the order of the entries is part of the value")
+}
+
+@Test func theFewestEntriesAreTheLeastTheBoundHolds() {
+    #expect(BoundedList<UInt16, UpToThree>.fewest(of: 9).entries == [])
+    #expect(BoundedList<UInt16, OneOrMore>.fewest(of: 9).entries == [9])
+}
