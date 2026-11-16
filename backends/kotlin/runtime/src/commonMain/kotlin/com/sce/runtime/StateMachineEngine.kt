@@ -3180,23 +3180,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val queued = awaitNextExternalEvent() ?: break
                 val goOn = underMacrostepLock(running) {
                     if (isInFinalState) {
+                        // The run ended after the wait took [queued]: it is never
+                        // looked at, and is counted as what the queue held then was.
+                        noteUnseenEvent(queued.event)
                         false
                     } else {
-                        // §scxml-6.4: the refusal the sync loop applies at its
-                        // dequeue, applied at this one.
-                        if (!refusesHostInvokeCompletion(queued)) {
-                            // docs/adr/0086, section 4.2: the door this mode's
-                            // dequeue passes through, as the sync loop's does.
-                            val taken = bindTypedPayload(queued)
-                            if (taken != null) {
-                                processMicrostep(taken.event, taken.metadata, inPlace = taken !== queued)
-                            } else {
-                                // Counted as a discarded external event, as the
-                                // sync loop counts it (docs/adr/0086, section 4.2).
-                                discardedExternalEventCount++
-                                lastDiscarded = queued.event
-                            }
-                        }
+                        // §scxml-6.4: the refusal of a stale ending, the door and
+                        // the preliminary acts are the synchronous loop's own step
+                        // ([processNextExternalEvent]), and the macrostep is
+                        // completed after it whatever it took, as that loop does.
+                        processNextExternalEvent(queued)
+                        finishMacrostep()
                         true
                     }
                 }
@@ -4501,9 +4495,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * dealt with it, and its handling is visible in the configuration the host
      * can already read. What this counts is only the silent case.
      *
-     * Answers in both drive modes: unlike the external queue, which
-     * [processMicrostep] and [processNextExternalEvent] each feed, the internal
-     * queue has a single drain that both modes run.
+     * Answers in both drive modes: the internal queue has a single drain that
+     * both modes run, as the external queue has a single step that takes an
+     * event off it ([processNextExternalEvent]).
      *
      * The C++ Interpreter has answered this all along, through
      * `getLastStateMachineError()` and the message it raises `error.execution`
@@ -5037,13 +5031,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // whatever the host put on the external queue ends with it.
                 // That is the clause: a machine that reached a top-level final
                 // state has exited the interpreter. Saying nothing about it is
-                // not the clause — see [unseenExternalEvents]. What was posted
+                // not the clause — see [unseenExternalEvents]. The queue was
+                // counted when the run ended ([flushPendingFinalState]), in this
+                // mode and in the coroutine mode alike, and what was posted
                 // before the run ended was applied when the final state closed
-                // the inbox ([closeInbox]), each event counted there once.
-                recordUnseenExternalEvents()
-                // The last boundary was published when the final state was
-                // reached (flushPendingFinalState), before the exit emptied
-                // the configuration.
+                // the inbox ([closeInbox]), each event counted there once. The
+                // last boundary was published at the same point, before the
+                // exit emptied the configuration.
                 break
             }
             // §scxml-D-mainEventLoop: the macrostep is complete — the point just
@@ -5062,7 +5056,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 break
             }
             taken++
-            processNextExternalEvent()
+            processNextExternalEvent(externalEventQueue.removeFirst())
         }
     }
 
@@ -5101,17 +5095,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * §scxml-D-mainEventLoop: take exactly one event off the external queue,
-     * run the preliminary `<finalize>` / autoforward step against it, then
-     * select transitions.
+     * §scxml-D-mainEventLoop: take [queued], the one event just removed from
+     * the external queue, run the preliminary `<finalize>` / autoforward step
+     * against it, then select transitions.
      *
      * §scxml-6.4.2 fixes where both preliminary acts happen: `<finalize>` runs
      * "right before it removes the event from the event queue for processing",
      * and an autoforward child is sent its copy "at the point at which it
      * removes it from the external event queue". Both are this dequeue.
+     *
+     * One body for both driving modes, which differ only in how the event comes
+     * off the queue: the synchronous loop ([runMainEventLoop]) removes it while
+     * the queue holds one, and the coroutine mode's loop ([start]) waits for
+     * one ([awaitNextExternalEvent]). Each completes the macrostep afterwards
+     * by the one body that completes every macrostep ([completeMacrostep]).
+     * The coroutine mode had a copy of this step of its own, which released
+     * the microstep ceiling after the door rather than before it, and ran no
+     * macrostep completion after a refused delivery, so one document ran
+     * differently in the two modes.
      */
-    private fun processNextExternalEvent() {
-        val queued = externalEventQueue.removeFirst()
+    private fun processNextExternalEvent(queued: QueuedEvent<E>) {
         // §scxml-6.4: a host-run invocation's `done.invoke` counts only when
         // [completeHostInvoke] confirmed the invocation was still running and
         // stamped its token. Without the stamp it may be a cancelled run's late
@@ -5130,7 +5133,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // refused would spend a whole budget re-walking it before it ever
         // looked at the event the host sent to get it out. The refused events
         // stay queued either way — this is where the budget that drains them
-        // comes back.
+        // comes back. Nor where a scheduled act is performed: an act is not an
+        // event taken off this queue, and starts no budget of its own, in
+        // either mode.
         macrostepTruncated = false
         macrostepMicrostepsTaken = 0
         // The door comes first (docs/adr/0086, section 4.2): a delivery whose
@@ -6173,60 +6178,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- Microstep Processing ---
 
     /**
-     * W3C SCXML Appendix D: Process a macrostep triggered by an external event.
-     *
-     * Algorithm:
-     * 1. Execute finalize for events from invoked children (§scxml-6.5)
-     * 2. Auto-forward event to child sessions (§scxml-6.4.1)
-     * 3. Process the external event
-     * 4. Drain eventless transitions and internal events until stable
-     * 5. Execute pending invokes at macrostep end (§scxml-6.4)
-     * 6. Clean up completed invoke sessions
-     *
-     * [inPlace] says [event] is the `error.execution` a door took in a refused
-     * delivery's place (docs/adr/0086, section 4.2): the engine's own error, so
-     * steps 1 and 2 do not run for it, and it is answered as one off the
-     * internal queue is ([answerInternal]).
-     */
-    private fun processMicrostep(event: E, metadata: EventMetadata, inPlace: Boolean = false) {
-        // This engine has two driving modes and this is the other one's
-        // external dequeue: the coroutine mode reads its events from a channel
-        // and never passes through [processNextExternalEvent], so the ceiling
-        // has to be released here too. Without it a machine that truncated one
-        // macrostep in coroutine mode would carry the spent budget into every
-        // event after it and do nothing, forever, while reporting itself as
-        // running.
-        macrostepTruncated = false
-        macrostepMicrostepsTaken = 0
-        if (inPlace) {
-            answerInternal(event)
-            finishMacrostep()
-            return
-        }
-        // §scxml-6.5: Execute finalize before event processing
-        executeFinalizeForChildEvent(event)
-        // §scxml-6.4: Auto-forward external events to child invoke sessions.
-        // Only external events (from the event channel) reach processMicrostep;
-        // internal events from <raise> are processed in drainEventlessAndInternal
-        // and must NOT be forwarded per spec.
-        autoForwardEvent(event, metadata)
-        // §scxml-3.1.2: the coroutine mode's external events arrive here rather
-        // than through [processNextExternalEvent], and a host driving that mode
-        // is owed the same answer — this engine has two entry points for one
-        // queue, so a count recorded at only one of them would be right for
-        // half its callers.
-        if (!takeEvent(event)) {
-            discardedExternalEventCount++
-            lastDiscarded = event
-        }
-        finishMacrostep()
-    }
-
-    /**
      * The rest of a coroutine-mode macrostep once whatever started it has run:
-     * an external event taken by [processMicrostep], or a scheduled act
+     * an external event taken by [processNextExternalEvent], or a scheduled act
      * performed by [awaitNextExternalEvent]. One body for both, because a
-     * macrostep an act starts is a macrostep like any other.
+     * macrostep an act starts is a macrostep like any other, and the same
+     * steps the synchronous loop runs after either ([runMainEventLoop]).
      */
     private fun finishMacrostep() {
         completeMacrostep()
@@ -6317,8 +6273,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     while (!isInFinalState && promoteNextDueSend()) {
                         // A plain send queued its event: it is the caller's to take.
                         if (externalEventQueue.isNotEmpty()) break
-                        macrostepTruncated = false
-                        macrostepMicrostepsTaken = 0
+                        // An act is not an event taken off the external queue, so
+                        // the microstep ceiling stays where it was, as it does when
+                        // [tick] performs one ([processNextExternalEvent]).
                         finishMacrostep()
                     }
                 } finally {
@@ -6422,6 +6379,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // by a transition whose domain is the <scxml> element, which
             // exited everything else, so this exits the final alone.
             exitInterpreter()
+
+            // The main event loop has ended with the run, so what its external
+            // queue still holds is never dequeued: counted here, where both
+            // driving modes end it, before [completion] tells anyone the run is
+            // over. The coroutine mode's loop used to leave it for [stop] to
+            // count, so a host reading the count of a run that had ended found
+            // none. An event that arrives from here on is counted at the door
+            // ([raiseExternal]).
+            recordUnseenExternalEvents()
 
             // §scxml-6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)

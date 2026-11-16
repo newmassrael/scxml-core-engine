@@ -140,11 +140,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processMicrostep",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "discardedExternalEventCount",
           "kind": "references"
         },
@@ -11210,11 +11205,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "resolveEventByName",
           "kind": "implements"
         },
@@ -12074,11 +12064,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processMicrostep",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_process_next_external_event",
           "kind": "implements"
@@ -12770,11 +12755,6 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "executeFinalizeForChildEvent",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processMicrostep",
           "kind": "references"
         },
         {
@@ -22699,6 +22679,30 @@
       "target_kind": "section",
       "target_id": "scxml-6.4.2",
       "reason": "ADR 0098: the pre-initialized variable set is removed; setVariableInternal cites 6.4.2 no more"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "The Kotlin coroutine mode's external step is folded into processNextExternalEvent; processMicrostep is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "The Kotlin coroutine mode's external step is folded into processNextExternalEvent; processMicrostep is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "The Kotlin coroutine mode's external step is folded into processNextExternalEvent; processMicrostep is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "The Kotlin coroutine mode's external step is folded into processNextExternalEvent; processMicrostep is removed"
     }
   ],
   "frames": {},

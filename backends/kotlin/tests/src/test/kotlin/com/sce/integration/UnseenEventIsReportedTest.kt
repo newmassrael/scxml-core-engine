@@ -26,7 +26,15 @@ package com.sce.integration
 
 import com.sce.integration.unseen_event_is_reported.UnseenEventIsReportedEvent
 import com.sce.integration.unseen_event_is_reported.UnseenEventIsReportedStateMachine
+import com.sce.runtime.InboxInput
 import com.sce.w3c.W3CTestBase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -148,6 +156,39 @@ class UnseenEventIsReportedTest {
                 "and nothing matched, the second says it never looked"
         )
         assertEquals(1, sm.unseenExternalEvents())
+    }
+
+    /// The coroutine mode ends its loop where the synchronous mode does, so an
+    /// event queued behind the one that ended the run is counted when the run
+    /// ends, not when the host later stops the engine.
+    @Test
+    fun anEventQueuedBehindTheOneThatEndsACoroutineModeRunIsCountedWhenTheRunEnds() {
+        val sm = UnseenEventIsReportedStateMachine(W3CTestBase.createEngine())
+        val supervisor = SupervisorJob()
+        val scope = CoroutineScope(supervisor + Dispatchers.Default)
+        try {
+            // Both are posted before the run, which keeps them for it: the loop's
+            // first drain queues both, in this order, and takes `finish` first.
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(UnseenEventIsReportedEvent.Finish)))
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(UnseenEventIsReportedEvent.Poke)))
+            sm.start(scope)
+            // The loop's coroutine ends once the run has; nothing here stops it.
+            runBlocking { withTimeout(10_000) { supervisor.children.toList().joinAll() } }
+
+            assertTrue(sm.isInFinalState, "`finish` should have taken the machine to its top-level final state")
+            assertEquals(
+                1,
+                sm.unseenExternalEvents(),
+                "`poke` was queued behind `finish` and never dequeued; the run has ended, so the " +
+                    "count is owed now, as the synchronous loop owes it, and not only after a stop"
+            )
+            assertEquals(UnseenEventIsReportedEvent.Poke, sm.lastUnseenEvent())
+            assertEquals(0L, sm.pokes(), "the event the run never looked at ran the document's transition")
+        } finally {
+            sm.stop()
+            scope.cancel()
+            sm.cleanup()
+        }
     }
 
     /// A count says an event went unlooked-at; a host debugging a supervisor
