@@ -347,17 +347,20 @@ impl<E, P: Default> EventWithMetadata<E, P> {
     /// * `_event.type` is `"platform"`. [`new`](Self::new) defaults the metadata
     ///   to [`EventType::External`], which is what every Rust raise site used to
     ///   pass — the one backend of six that did.
-    /// * `_event.data` carries `message`. The clause closes with "platforms MAY
-    ///   include additional information about the nature of the error in the
-    ///   'data' field", and a document that answers `error.execution` was being
-    ///   handed `undefined` instead of the name of what broke.
+    /// * `_event.data` is the record SCE_MESH.md section 10.7.1 pins for an
+    ///   `error.*` event (docs/adr/0106, #111): `errorName` (the event, read
+    ///   from the code by [`error_name`]), `reason` (the code, by the
+    ///   vocabulary's declared name) and `detail` (`detail`). The clause closes
+    ///   with "platforms MAY include additional information about the nature
+    ///   of the error in the 'data' field", and a document that answers
+    ///   `error.execution` reads the code without parsing a sentence.
     ///
-    /// `message` describes the failing construct and is a literal formed at
+    /// `detail` describes the failing construct and is a literal formed at
     /// generation time, not the underlying engine's error text: it must survive
     /// `--no-default-features`, where there is no allocator to build one and
-    /// [`set_event_data`](Self::set_event_data) stores nothing anyway. The
-    /// dynamic detail stays on the log line beside the call.
-    pub fn platform_error(event: E, message: &str) -> Self {
+    /// the record is not stored. The dynamic detail stays on the log line
+    /// beside the call.
+    pub fn platform_error(event: E, reason: crate::ErrorReason, detail: &str) -> Self {
         // §scxml-3.12.2: the processor signals its own failures as `error.*`,
         // and "platforms MAY include additional information about the nature of
         // the error in the 'data' field". Cited in the body rather than the doc
@@ -365,7 +368,14 @@ impl<E, P: Default> EventWithMetadata<E, P> {
         // symbol enclosing it, and a `///` line encloses nothing.
         let mut raised = Self::new(event);
         raised.metadata.event_type = EventType::Platform;
-        raised.set_event_data(message);
+        #[cfg(feature = "std")]
+        {
+            raised.metadata.data = crate::sce_string_from_str(&error_data(reason, detail));
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let _ = (reason, detail);
+        }
         raised
     }
 
@@ -389,6 +399,35 @@ impl<E, P: Default> EventWithMetadata<E, P> {
     }
 }
 
+/// The `errorName` of an `error.*` event raised for `reason` (SCE_MESH.md
+/// section 10.7.1): `"execution"` or `"communication"`, by the range the
+/// vocabulary gives the code (1 to 63, 64 to 127; docs/adr/0106 #111), so a
+/// code and the event it is raised as cannot disagree.
+pub const fn error_name(reason: crate::ErrorReason) -> &'static str {
+    if reason.to_underlying() < 64 {
+        "execution"
+    } else {
+        "communication"
+    }
+}
+
+/// The `_event.data` of an `error.*` event raised for `reason`, as JSON text:
+/// `{"errorName":…,"reason":…,"detail":…}` (SCE_MESH.md section 10.7.1), the
+/// code spelled by the vocabulary's declared name and `detail` escaped as every
+/// engine escapes a JSON string.
+#[cfg(feature = "std")]
+pub fn error_data(reason: crate::ErrorReason, detail: &str) -> String {
+    let mut data = String::with_capacity(detail.len() + 64);
+    data.push_str("{\"errorName\":\"");
+    data.push_str(error_name(reason));
+    data.push_str("\",\"reason\":\"");
+    data.push_str(reason.declared_name());
+    data.push_str("\",\"detail\":");
+    data.push_str(&crate::json::quote(detail));
+    data.push('}');
+    data
+}
+
 #[cfg(test)]
 #[cfg(feature = "std")]
 mod tests {
@@ -402,15 +441,19 @@ mod tests {
     /// guessing further down it.
     #[test]
     fn platform_error_carries_its_message_and_classification() {
-        let raised: EventWithMetadata<u8, ()> =
-            EventWithMetadata::platform_error(7, "<assign> to 'x' failed");
+        let raised: EventWithMetadata<u8, ()> = EventWithMetadata::platform_error(
+            7,
+            crate::ErrorReason::AssignmentFailed,
+            "<assign> to 'x' failed",
+        );
 
         assert_eq!(raised.event, 7);
         assert_eq!(
             raised.metadata.data.as_str(),
-            "<assign> to 'x' failed",
-            "the message is what a document answering error.execution reads out \
-             of `_event.data`; an empty string tells it only THAT something failed"
+            r#"{"errorName":"execution","reason":"assignmentFailed","detail":"<assign> to 'x' failed"}"#,
+            "a document answering error.execution reads the code out of \
+             `_event.data.reason` and the sentence out of `detail`; a bare \
+             sentence beginning with `<` was read as an XML document"
         );
         assert_eq!(
             raised.metadata.event_type,
@@ -418,6 +461,24 @@ mod tests {
             "an event the processor raised is `platform` per W3C SCXML 5.10.1; \
              `new()` defaults to External, which is what every Rust raise site \
              passed before this constructor existed"
+        );
+    }
+
+    /// docs/adr/0106 #111: a code of the communication half is raised as
+    /// `error.communication`, and the detail is escaped as JSON text.
+    #[test]
+    fn a_communication_code_names_its_event_and_its_detail_is_escaped() {
+        assert_eq!(
+            error_name(crate::ErrorReason::ExpressionFailed),
+            "execution"
+        );
+        assert_eq!(
+            error_name(crate::ErrorReason::TargetUnreachable),
+            "communication"
+        );
+        assert_eq!(
+            error_data(crate::ErrorReason::TargetUnreachable, "say \"hi\"\n"),
+            r#"{"errorName":"communication","reason":"targetUnreachable","detail":"say \"hi\"\n"}"#
         );
     }
 

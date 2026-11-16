@@ -99,7 +99,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke> namelist names a location that cannot be read"));
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke> namelist names a location that cannot be read"));
 {% endif %}
                         continue;  // W3C SCXML 6.4: the element is terminated; no child
                     }
@@ -156,7 +156,7 @@
 {% set param_source = param.expr or param.location %}
 {% if not param_source %}
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> names no location"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke> <param name='{{ param.name | escape_rust }}'> names no location"));
 {% endif %}
 {% else %}
                     match se.evaluate_expression(&sid, "{{ param_source | to_lua_expr | escape_rust }}") {
@@ -185,7 +185,7 @@
                             // `<donedata>` side.
                             ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> could not be read"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
                         }
                     }
@@ -230,7 +230,7 @@
                             // W3C SCXML 5.7.1: report the failure and leave the value out.
                             ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
 {% endif %}
                         }
                     }
@@ -250,7 +250,7 @@
                 if (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_value | rust_in_predicate }}) })().is_err() {
                     ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
 {% endif %}
                 }
 {% endif %}
@@ -426,7 +426,7 @@
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", {{ invoke_named }}, failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", {{ invoke_named }}, failure.stage)));
 {% endif %}
                     continue;
                 }
@@ -590,7 +590,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke srcexpr> could not be evaluated"));
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke srcexpr> could not be evaluated"));
 {% endif %}
                         continue;
                     }
@@ -611,7 +611,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke srcexpr='{{ invoke_info.srcexpr | escape_rust }}'> could not be evaluated"));
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_rust }}'> could not be evaluated"));
 {% endif %}
                         continue;
                     }
@@ -642,7 +642,7 @@
 {% if 'error.execution' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                            "<invoke contentexpr='{{ invoke_info.contentexpr | escape_rust }}'> could not be evaluated"));
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_rust }}'> could not be evaluated"));
 {% endif %}
                         continue;
                     }
@@ -661,7 +661,7 @@
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
-                        "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_rust }}'{% endif %}> evaluated to a document it did not declare"));
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound, "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_rust }}'{% endif %}> evaluated to a document it did not declare"));
 {% endif %}
                     continue;
                 }
@@ -691,7 +691,7 @@
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke type='{{ invoke_info.invoke_type | escape_rust }}'> names an external service this platform does not support"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::InvokeTypeUnsupported, "<invoke type='{{ invoke_info.invoke_type | escape_rust }}'> names an external service this platform does not support"));
                 continue;
             }
 {% endfor %}
@@ -726,7 +726,7 @@
                         se, &sid, "{{ invoke_info.idlocation | to_lua_location | escape_rust }}", "{{ invoke_info.invoke_id | escape_rust }}",
                     ) {
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
 {% endif %}
                         continue;
                     }
@@ -748,7 +748,7 @@
                     Ok(value) => host_invoke_src = value,
                     Err(_) => {
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke srcexpr> could not be evaluated"));
 {% endif %}
                         continue;
                     }
@@ -770,7 +770,7 @@
                     Ok(value) => host_invoke_content = value,
                     Err(_) => {
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> content expr could not be evaluated"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> content expr could not be evaluated"));
 {% endif %}
                         continue;
                     }
@@ -790,7 +790,7 @@
                         Ok(val) => host_invoke_{{ attr }} = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
                         Err(_) => {
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke {{ attr }}expr='{{ expr | escape_rust }}'> could not be evaluated"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke {{ attr }}expr='{{ expr | escape_rust }}'> could not be evaluated"));
 {% endif %}
                             continue;
                         }
@@ -824,7 +824,7 @@
                             }
                             _ => {
 {% if 'error.execution' in model.events %}
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names '{{ name }}', which could not be read"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke> namelist names '{{ name }}', which could not be read"));
 {% endif %}
                                 namelist_failed = true;
                             }
@@ -880,7 +880,7 @@
                     // document asked for a process to be run and none was,
                     // which is the same fact as an unsupported type — so the
                     // same event, rather than a silence that reads as started.
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> names an invoker the host declared but never registered"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"));
                 }
                 continue;
             }

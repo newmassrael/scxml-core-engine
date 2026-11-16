@@ -89,7 +89,7 @@ const BACKENDS: &[Backend] = &[
             "EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution'",
             "EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication'",
         ],
-        entry_point: "EventWithMetadata::platform_error(event, message)",
+        entry_point: "EventWithMetadata::platform_error(event, reason, detail)",
     },
     Backend {
         dir: "go",

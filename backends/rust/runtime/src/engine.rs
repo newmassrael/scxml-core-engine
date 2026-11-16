@@ -3591,6 +3591,7 @@ impl<P: StatePolicy> Engine<P> {
         if let Some(communication_error) = P::get_event_from_name("error.communication") {
             let mut err_meta = EventWithMetadata::platform_error(
                 communication_error,
+                crate::ErrorReason::TargetUnreachable,
                 "<send> named a target that was no longer there when its delay elapsed",
             );
             err_meta.metadata.send_id = send_id;
@@ -3665,6 +3666,7 @@ impl<P: StatePolicy> Engine<P> {
             if let Some(evt) = P::get_event_from_name("error.execution") {
                 let mut err = EventWithMetadata::platform_error(
                     evt,
+                    crate::ErrorReason::ProcessorUnregistered,
                     // The same sentence the immediate site emits. One wording
                     // for one fact: a consumer matching on the message must not
                     // have to know whether the send it wrote carried a delay.
@@ -3716,7 +3718,11 @@ impl<P: StatePolicy> Engine<P> {
     /// engine's own error, so no `<finalize>` or autoforward runs for it.
     #[cfg(feature = "std")]
     fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> Bound {
-        let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(error, refusal);
+        let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(
+            error,
+            crate::ErrorReason::PayloadRefused,
+            refusal,
+        );
         self.policy.populate_event_metadata(&replacement.metadata);
         self.policy.populate_event_payload(&replacement.payload);
         Bound::InPlace(P::event_id(error))
@@ -4085,7 +4091,11 @@ impl<P: StatePolicy> Engine<P> {
             "Engine::perform_http_send: {message} (this build has no `http-send` feature)"
         );
         if let Some(evt) = P::get_event_from_name("error.execution") {
-            let mut err = EventWithMetadata::platform_error(evt, &message);
+            let mut err = EventWithMetadata::platform_error(
+                evt,
+                crate::ErrorReason::SendTypeUnsupported,
+                &message,
+            );
             err.metadata.send_id = crate::sce_string_from_str(send_id);
             self.raise(err);
         }
@@ -4537,6 +4547,7 @@ impl<P: StatePolicy> Engine<P> {
                 if let Some(evt) = P::get_event_from_name("error.execution") {
                     self.raise(EventWithMetadata::platform_error(
                         evt,
+                        crate::ErrorReason::ParamUnfit,
                         &format!(
                             "<invoke type='{processor_type}' id='{invoke_id}'>: {}={written:?} is not a whole number of milliseconds",
                             crate::host_processor::HOST_INVOKE_DEADLINE_PARAM
@@ -4583,7 +4594,14 @@ impl<P: StatePolicy> Engine<P> {
             self.host_processors
                 .take_started(&processor_type, &invoke_id, token);
             if let Some(evt) = P::get_event_from_name("error.execution") {
-                self.raise(EventWithMetadata::platform_error(evt, refusal));
+                // The host's refusal is the event's data as the host wrote it:
+                // the host owns the shape of what it refuses with, as a peer
+                // owns the status of its reply (docs/adr/0106 #111), so it is
+                // not wrapped in a code of the engine's vocabulary.
+                let mut refused = EventWithMetadata::new(evt);
+                refused.metadata.event_type = crate::EventType::Platform;
+                refused.set_event_data(refusal);
+                self.raise(refused);
             }
             return true;
         }
@@ -4657,6 +4675,7 @@ impl<P: StatePolicy> Engine<P> {
                         if let Some(evt) = P::get_event_from_name("error.execution") {
                             self.raise(EventWithMetadata::platform_error(
                                 evt,
+                                crate::ErrorReason::ProcessorUnregistered,
                                 "<invoke> names an invoker the host declared but never registered",
                             ));
                         }

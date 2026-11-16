@@ -65,8 +65,8 @@ PY
 
 mutation_case "an unreadable namelist item no longer abandons the send" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     """            _send_arg_error = Some("<send> namelist names '{{ name | escape_rust }}', which is not declared");""",
-     """            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> namelist names '{{ name | escape_rust }}', which is not declared"));""")
+     """            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist names '{{ name | escape_rust }}', which is not declared"));""",
+     """            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist names '{{ name | escape_rust }}', which is not declared"));""")
 PY
 
 # ── The name crosses and the value does not ─────────────────────────

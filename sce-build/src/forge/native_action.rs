@@ -1890,7 +1890,8 @@ fn guard_payload(
             let otherwise = if raises_error {
                 format!(
                     "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(\
-                     {machine_name}Event::ErrorExecution, {msg:?}));"
+                     {machine_name}Event::ErrorExecution, \
+                     ::sce_rust_runtime::ErrorReason::PayloadRefused, {msg:?}));"
                 )
             } else {
                 String::new()

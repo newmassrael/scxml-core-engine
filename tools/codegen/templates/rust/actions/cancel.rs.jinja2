@@ -23,7 +23,7 @@
         Err(_) => {
             ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{}'", "{{ action.sendidexpr | escape_rust }}");
 {% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<cancel> sendidexpr failed to evaluate"));
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
             break 'action_block;
@@ -54,7 +54,7 @@
             // and (W3C SCXML 4.9) the error ends the block.
             ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{}'", "{{ action.sendidexpr | escape_rust }}");
 {% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<cancel> sendidexpr failed to evaluate"));
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
             break 'action_block;

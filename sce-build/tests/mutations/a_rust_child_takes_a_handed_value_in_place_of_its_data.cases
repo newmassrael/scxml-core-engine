@@ -112,9 +112,9 @@ PY
 mutation_case "a handed value the session refuses raises no error.execution" <<'PY'
 edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
      """{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""",
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""",
      """{% if false %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""")
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""")
 PY
 
 # ── A handed value the session refuses falls back to the own value ──

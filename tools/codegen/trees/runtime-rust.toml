@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the Rust engine runtime is built on, generated for
+# Rust into backends/rust/runtime/src/generated (ADR 0097): the reasons an
+# engine raises `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111). The runtime writes
+# each reason by the enum's declared-name accessor, so the document is the one
+# spelling of it. Named by its path under stdlib/engine, so it carries the
+# source hash of that directory.
+
+[tree]
+name = "runtime-rust"
+roots = ["backends/rust/runtime/src/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "rust", "--output-dir", "{out}"]
+place = "backends/rust/runtime/src/generated"
+keep = ["*.rs"]
+
+[[index]]
+directories = "backends/rust/runtime/src/generated"
+file = "{dir}.rs"
+header = """// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The standard engine documents (`sce:std/engine`), generated.
+//!
+//! GENERATED -- DO NOT EDIT (tools/codegen/trees/runtime-rust.toml).
+//! Each module is one document.
+
+"""
+entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
+
+[[format]]
+tool = "rustfmt"
+directories = ["backends/rust/runtime/src/generated"]

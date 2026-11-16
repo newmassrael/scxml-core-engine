@@ -20,7 +20,7 @@
                     let id_stored = !({{ invoke_info.native_idlocation | rust_in_predicate }});
                     if !id_stored {
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
 {% endif %}
                     }
 {% elif invoke_info.idlocation %}
@@ -35,7 +35,7 @@
                     };
                     if !id_stored {
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
 {% endif %}
                     }
 {% else %}

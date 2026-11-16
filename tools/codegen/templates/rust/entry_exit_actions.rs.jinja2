@@ -209,7 +209,7 @@
                         Err(_) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
 {% endif %}
                         }
                     }
@@ -226,7 +226,7 @@
                     // error.execution, and this pair is ignored.
                     ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location");
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> has an empty location"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<donedata> <param name='{{ param.name | escape_rust }}'> has an empty location"));
 {% endif %}
 {% else %}
                     match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
@@ -241,7 +241,7 @@
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
 {% endif %}
                         }
                     }
@@ -277,7 +277,7 @@
                         Err(_) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata content expr overflowed or failed");
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<donedata> <content expr> failed to evaluate"));
 {% endif %}
                             ::sce_rust_runtime::ScriptValue::String(String::new())
                         }
@@ -318,7 +318,7 @@
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata content expr eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<donedata> <content expr> failed to evaluate"));
 {% endif %}
                         }
                     }

@@ -59,7 +59,7 @@
                 // W3C SCXML 5.7.1: report the failure and omit the pair.
                 ::sce_rust_runtime::sce_log_error!("{{ label }} param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "{{ element }} <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
 {% endif %}
             }
         }
@@ -93,7 +93,7 @@
                     // W3C SCXML 5.7.1: report the failure and omit the pair.
                     ::sce_rust_runtime::sce_log_error!("{{ label }} param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "{{ element }} <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
 {% endif %}
                 }
             }
@@ -117,7 +117,7 @@
                     // failure as an expression that will not evaluate.
                     ::sce_rust_runtime::sce_log_error!("{{ label }} param '{{ param.name | escape_rust }}' location read failed: {}", e);
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> location could not be read"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "{{ element }} <param name='{{ param.name | escape_rust }}'> location could not be read"));
 {% endif %}
                 }
             }
@@ -126,7 +126,7 @@
         // W3C SCXML 5.7.1: `location=""` names no location — the same failure
         // as an expression that will not evaluate: report it and omit the pair.
 {% if 'error.execution' in model.events %}
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> names no location"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "{{ element }} <param name='{{ param.name | escape_rust }}'> names no location"));
 {% endif %}
 {% endif %}
 {% endfor %}
@@ -169,7 +169,7 @@
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_rust }}'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='{{ param.name | escape_rust }}'> cannot be its request field: it failed to evaluate"));
 {% endif %}
                     request_refused = true;
                 }
@@ -204,7 +204,7 @@
                 Err(why) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param '{{ param.name | escape_rust }}' refused: {}", why);
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, &format!("<invoke> <param name='{{ param.name | escape_rust }}'> cannot be its request field: {why}")));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ParamUnfit, &format!("<invoke> <param name='{{ param.name | escape_rust }}'> cannot be its request field: {why}")));
 {% endif %}
                     request_refused = true;
                 }

@@ -135,7 +135,7 @@
         // support — the act it asked for was performed by nobody. Same
         // event, so a wiring mistake cannot read as success.
         if __sce_served.is_none() && !engine.has_event_processor("{{ processor_type | escape_rust }}") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ processor_type }}'> names a processor the host declared but never registered");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='{{ processor_type }}'> names a processor the host declared but never registered");
             {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
             engine.raise(err_meta);
         }
@@ -182,7 +182,7 @@
     // every engine.
 {% if 'error.execution' in model.events %}
     {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> delay is not a CSS2 time");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::SendDelayInvalid, "<send> delay is not a CSS2 time");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
     }
@@ -251,10 +251,12 @@
     let __sce_arg_se = self.script_engine.clone();
     let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
 {% endif %}
-    let mut _send_arg_error: Option<&'static str> = None;
+    // The code and the sentence of the first argument that failed
+    // (docs/adr/0106 #111).
+    let mut _send_arg_error: Option<(::sce_rust_runtime::ErrorReason, &'static str)> = None;
 {% if action.native_idlocation %}
     if _send_id_refused {
-        _send_arg_error = Some("<send idlocation='{{ action.idlocation | escape_rust }}'> could not take the send id");
+        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send idlocation='{{ action.idlocation | escape_rust }}'> could not take the send id"));
     }
 {% endif %}
 {% if action.idlocation and not action.native_idlocation %}
@@ -266,7 +268,7 @@
     if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
         __sce_arg_se, &__sce_arg_sid, "{{ action.idlocation | to_lua_location | escape_rust }}", send_id,
     ) {
-        _send_arg_error = Some("<send idlocation='{{ action.idlocation | escape_rust }}'> could not take the send id");
+        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send idlocation='{{ action.idlocation | escape_rust }}'> could not take the send id"));
     }
 {% endif %}
 {% if action.native_event %}
@@ -286,7 +288,7 @@
         String::new()
     };
     if _send_arg_error.is_none() && _send_event_name.is_empty() {
-        _send_arg_error = Some("<send> eventexpr could not be evaluated to an event name");
+        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> eventexpr could not be evaluated to an event name"));
     }
 {% elif action.eventexpr %}
     // An event name that evaluates to nothing names no event: the same
@@ -303,7 +305,7 @@
         String::new()
     };
     if _send_arg_error.is_none() && _send_event_name.is_empty() {
-        _send_arg_error = Some("<send> eventexpr could not be evaluated to an event name");
+        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> eventexpr could not be evaluated to an event name"));
     }
 {% endif %}
 {% if action.native_target %}
@@ -320,7 +322,7 @@
         })() {
             Ok(route) => Some(route),
             Err(_) => {
-                _send_arg_error = Some("<send> targetexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> targetexpr could not be evaluated"));
                 None
             }
         }
@@ -340,7 +342,7 @@
             Ok(val) => Some(val),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("targetexpr eval failed: {}", e);
-                _send_arg_error = Some("<send> targetexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> targetexpr could not be evaluated"));
                 None
             }
         }
@@ -351,7 +353,7 @@
         // W3C SCXML 6.2: a target this processor cannot address is refused as
         // a static one is, before anything is delivered.
         if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
     }
 {% endif %}
@@ -364,12 +366,12 @@
                 if !sce_rust_runtime::helpers::send::is_supported_send_type(
                     &::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
                 ) {
-                    _send_arg_error = Some("<send> typeexpr names a processor this platform does not support");
+                    _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send> typeexpr names a processor this platform does not support"));
                 }
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("typeexpr eval failed: {}", e);
-                _send_arg_error = Some("<send> typeexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> typeexpr could not be evaluated"));
             }
         }
     }
@@ -385,18 +387,18 @@
             Ok({{ action.native_delay | rust_in_predicate }})
         })() {
             Ok(s) => sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
-                _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendDelayInvalid, "<send> delayexpr is not a CSS2 time"));
                 0
             }),
             Err(_) => {
-                _send_arg_error = Some("<send> delayexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> delayexpr could not be evaluated"));
                 0
             }
         }
 {% else %}
         let s: String = {{ action.native_delay | rust_in_predicate }};
         sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
-            _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendDelayInvalid, "<send> delayexpr is not a CSS2 time"));
             0
         })
 {% endif %}
@@ -412,13 +414,13 @@
             Ok(val) => {
                 let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                 sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
-                    _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+                    _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendDelayInvalid, "<send> delayexpr is not a CSS2 time"));
                     0
                 })
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("delayexpr eval failed: {}", e);
-                _send_arg_error = Some("<send> delayexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> delayexpr could not be evaluated"));
                 0
             }
         }
@@ -434,23 +436,23 @@
 {% for name in action.namelist | split %}
     if _send_arg_error.is_none() {
         if !__sce_arg_se.has_variable(&__sce_arg_sid, "{{ name | escape_rust }}") {
-            _send_arg_error = Some("<send> namelist names '{{ name | escape_rust }}', which is not declared");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist names '{{ name | escape_rust }}', which is not declared"));
         } else {
             match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "{{ name | escape_rust }}") {
                 Ok(val) => _send_namelist.push(("{{ name | escape_rust }}", val)),
                 Err(e) => {
                     ::sce_rust_runtime::sce_log_error!("send namelist '{{ name | escape_rust }}' eval failed: {}", e);
-                    _send_arg_error = Some("<send> namelist entry '{{ name | escape_rust }}' could not be read");
+                    _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist entry '{{ name | escape_rust }}' could not be read"));
                 }
             }
         }
     }
 {% endfor %}
 {% endif %}
-    if let Some(__sce_why) = _send_arg_error {
+    if let Some((__sce_reason, __sce_why)) = _send_arg_error {
         ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
 {% if 'error.execution' in model.events %}
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, __sce_why);
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, __sce_reason, __sce_why);
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
 {% endif %}
@@ -491,7 +493,7 @@
         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
         // error.communication.
 {% if 'error.communication' in model.events %}
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing{% if action.native_target %}, or to a route the send does not declare{% endif %}, so there is no target to reach");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing{% if action.native_target %}, or to a route the send does not declare{% endif %}, so there is no target to reach");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
 {% endif %}
@@ -527,7 +529,7 @@
     // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
     {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
     }
@@ -546,7 +548,7 @@
 {% if 'error.execution' in model.events %}
     {
         // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send target='{{ action.target }}'> is not a target this processor can address");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
     }
@@ -560,7 +562,7 @@
     // W3C SCXML C.2: BasicHTTP without target raises error.communication
 {% if 'error.communication' in model.events %}
     {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
     }
@@ -575,7 +577,7 @@
     // "{{ static_target | slice_from(2) }}", so the target reaches nobody:
     // error.communication, nothing delivered, the block ended.
     {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names no invocation of this session");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='{{ static_target | escape_rust }}'> names no invocation of this session");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
     }
@@ -593,7 +595,7 @@
     if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='{{ action.send_type }}'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
 {% if 'error.execution' in model.events %}
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
 {% endif %}
@@ -676,7 +678,7 @@
                 // lower count, so the event is refused whole: one error, nothing
                 // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
 {% if 'error.execution' in model.events %}
-                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> holds fewer elements than the {{ param.native_send_least }} its field's type declares, so the event is not sent");
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send> <param name='{{ param.name | escape_rust }}'> holds fewer elements than the {{ param.native_send_least }} its field's type declares, so the event is not sent");
                 err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
                 engine.raise(err_meta);
 {% endif %}
@@ -684,7 +686,7 @@
 {% else %}
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' overflowed or failed");
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
@@ -702,7 +704,7 @@
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
@@ -718,7 +720,7 @@
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
@@ -729,7 +731,7 @@
         // model — reported, and the pair left out.
         ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' names no location");
 {% if 'error.execution' in model.events %}
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='{{ param.name | escape_rust }}'> could not be read"));
 {% endif %}
         _param_failed = true;
 {% endif %}
@@ -814,7 +816,7 @@
         Err(_) => {
             ::sce_rust_runtime::sce_log_error!("send contentexpr overflowed or failed");
 {% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> contentexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> contentexpr failed to evaluate"));
 {% endif %}
             _param_failed = true;
             ::sce_rust_runtime::ScriptValue::String(String::new())
@@ -841,7 +843,7 @@
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send contentexpr eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> contentexpr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> contentexpr failed to evaluate"));
 {% endif %}
                 _param_failed = true;
                 ::sce_rust_runtime::helpers::event_data::script_value_to_json(&sce_rust_runtime::ScriptValue::String(String::new()))
@@ -908,7 +910,7 @@
         // W3C SCXML C.2: Validate dynamic target is HTTP URL
         if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
 {% if 'error.communication' in model.events %}
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
 {% endif %}
@@ -981,7 +983,7 @@
         );
         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
 {% if 'error.execution' in model.events %}
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send> targetexpr produced a value that is not a target");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
 {% endif %}
@@ -991,7 +993,7 @@
         }
         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
 {% if 'error.communication' in model.events %}
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send> targetexpr names a session this processor cannot reach");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
 {% endif %}
@@ -1012,6 +1014,7 @@
     // (W3C SCXML C.1 + 4.9).
     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
         {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }},
+        ::sce_rust_runtime::ErrorReason::TargetUnreachable,
         "<send target='#_parent'> has no parent session to reach"));
 {% if in_block %}
     let _ = event_data;
@@ -1038,7 +1041,8 @@
         // nothing delivered, and the block ends (4.9).
         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }},
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
 {% if in_block %}
         break 'action_block;
 {% endif %}
@@ -1086,7 +1090,7 @@
     } else {
         // W3C SCXML C.1: the invocation is not running, so the session the
         // target names is not there to reach.
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names an invocation that is not running");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='{{ static_target | escape_rust }}'> names an invocation that is not running");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
 {% if in_block %}
@@ -1100,7 +1104,7 @@
     // nothing delivered, the block ended (W3C SCXML 4.9).
 {% if static_target != '#_scxml_' %}
     if {% if no_std %}self.session_id != "{{ static_target | slice_from(8) | escape_rust }}"{% else %}self.session_id.as_deref() != Some("{{ static_target | slice_from(8) | escape_rust }}"){% endif %} {
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names a session this processor cannot reach");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='{{ static_target | escape_rust }}'> names a session this processor cannot reach");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);{% endif %}
         engine.raise(err_meta);
 {% if in_block %}

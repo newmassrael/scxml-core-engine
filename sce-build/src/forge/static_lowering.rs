@@ -2354,8 +2354,10 @@ pub trait StaticTarget {
     fn foreach_first(&self, _list: &str, _item: &str, _index: Option<&str>) -> Option<String> {
         None
     }
-    /// Raise `error.execution` with `message` (§scxml-3.12.2).
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String;
+    /// Raise `error.execution` with `message` (§scxml-3.12.2), for `reason`, a
+    /// name `sce:std/engine/error_reason.scxml` declares (docs/adr/0106 #111),
+    /// spelled for the backend by `enum_naming`.
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String;
     /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), as an
     /// expression that is `true` when it failed: it is run where its failure
     /// is received, a failure stops it before it writes anything, and
@@ -2601,6 +2603,11 @@ pub trait StaticTarget {
         false
     }
 }
+
+/// The `name` of `sce:std/engine/error_reason.scxml`, the vocabulary every
+/// engine raises `error.*` by (docs/adr/0106 #111): what `enum_naming` spells
+/// a code of it from.
+const ERROR_REASON_ENUM: &str = "error_reason";
 
 /// The name a Kotlin `let` binds the present value of an optional value to
 /// ([`StaticTarget::optional_map`], [`StaticTarget::wire_optional`]): a name no
@@ -3667,7 +3674,7 @@ impl StaticTarget for KotlinTarget {
             }
         })
     }
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "raisePlatformError({machine}Event.Error.Execution, \"{}\")",
             filters::escape_kotlin(message.to_string())
@@ -5228,10 +5235,16 @@ impl StaticTarget for RustTarget {
             ),
         })
     }
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String {
         format!(
-            "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({machine}Event::{}, \"{}\"));",
+            "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({machine}Event::{}, \
+             ::sce_rust_runtime::ErrorReason::{}, \"{}\"));",
             filters::to_event_variant("error.execution".to_string()),
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Rust,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::escape_rust(message.to_string())
         )
     }
@@ -10998,7 +11011,7 @@ impl StaticTarget for CppTarget {
             ),
         })
     }
-    fn raise_execution_error(&self, _machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, _machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, \"{}\"));",
             filters::escape_cpp(message.to_string())
@@ -12729,7 +12742,7 @@ impl StaticTarget for GoTarget<'_> {
             ),
         })
     }
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "engine.Raise(sce.NewPlatformError({machine}Event{}, \"{}\"))",
             filters::to_event_variant("error.execution".to_string()),
@@ -14139,7 +14152,7 @@ impl StaticTarget for PythonTarget {
     }
     // A call expression, so it is a statement where a block raises it and the
     // body of a `lambda` where a condition does.
-    fn raise_execution_error(&self, _machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, _machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "self._raise_error_execution(engine, {})",
             filters::py_string_literal(message.to_string())
@@ -16650,7 +16663,7 @@ impl StaticTarget for CTarget {
     // included, which the generator hands the walk for it.
     // docs/adr/0086, section 8.6 (b): the sentence reaches the machine through
     // the table of its reasons, which measures it for the slot.
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, {});",
             machine.to_uppercase(),
@@ -18824,7 +18837,7 @@ impl StaticTarget for SwiftTarget {
             ),
         })
     }
-    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
         format!(
             "engine.raise(EventWithMetadata.platformError({machine}Event.{}, message: \"{}\"))",
             filters::to_swift_variant("error.execution".to_string()),
@@ -19317,6 +19330,7 @@ pub(crate) fn receive_static_statement(
     let failed = if raises_error {
         target.raise_execution_error(
             machine,
+            "expressionFailed",
             &format!("{construct}: an integer operation overflowed or failed"),
         )
     } else {
@@ -19518,6 +19532,7 @@ fn execution_failure(rewrites: &Rewrites<'_>, construct: &str) -> String {
     if rewrites.raises_error {
         rewrites.target.raise_execution_error(
             rewrites.machine,
+            "expressionFailed",
             &format!("{construct}: an integer operation overflowed or failed"),
         )
     } else {
@@ -20534,6 +20549,7 @@ fn lower_action(
             let overflow = if rewrites.raises_error {
                 target.raise_execution_error(
                     rewrites.machine,
+                    "assignmentFailed",
                     &format!(
                         "<sce:append target='{list}'>: the list already holds its capacity of \
                          {capacity}"
