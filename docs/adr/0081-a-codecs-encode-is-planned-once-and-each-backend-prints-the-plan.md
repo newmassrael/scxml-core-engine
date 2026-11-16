@@ -2014,6 +2014,20 @@ old encode, the old encode and its templates are removed in the same landing.
    (`c11_source::Derived`, now handed to the repeat decodes too). A chain whose walk sets its entries' flag, hands
    an entry what the one before it was, holds a bare entry's place or is held to a law, a list whose entries are
    handed flag inputs, and a list in a group stay unlowered and name their form.
+
+   *The eighth C11 landing, 2026-11-16:* the one-bit flags a parent may set in place of the value's
+   (`EncodePlan::overridable`), and the chain that sets the flag its entries end on (`ListWrite::ends`,
+   `Derive::ChainContinuation`). C has no default argument, so the textbook spelling of a parameter most callers
+   leave unset is a second function: a codec with such flags declares `{codec}_overrides_t`, one
+   `sce_optional_bool_t` for each flag, and `{codec}_overrides_none()`, and is encoded by
+   `{codec}_encode_source_overriding(src, ctx, w, overrides)`, which folds each flag the overrides hold into its
+   carrier after every derived flag, as the C++ printer folds its `Overrides`; `{codec}_encode_source` is that encode
+   handed none, so every caller but a chain calls a codec as it calls any other. The overrides are passed by value,
+   a few bytes, and not by a pointer a caller could leave null. A chain closed by an entry flag sets it on each entry
+   but the last, from the entry's place among the count its list's maker found, and its maker refuses a chain of no
+   entry (R7) with `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`, which the runtime's declaration now names for a list below
+   its fewest. Lowering the overrides also prints the codecs of one-bit flags the value presents whole
+   (`codec_flags_basic`), which the fourth landing had left on the template by naming every overridable flag a form.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
