@@ -14190,9 +14190,15 @@ fn render_codec(
                 "c_emit_len_member".into(),
                 serde_json::Value::Bool(!sibling_owns_len),
             );
-            // A number a C11 encode printed from its plan derives: no member of
-            // the value, and a local of the decode.
-            obj.insert("c_derived".into(), c11_derived(&f.id).into());
+            // A number a C11 encode printed from its plan derives and the value
+            // never states: no member of the value, and a local of the decode.
+            obj.insert(
+                "c_derived".into(),
+                c11_printed
+                    .as_ref()
+                    .is_some_and(|(plan, _)| c11_source::derived_field(plan, &f.id))
+                    .into(),
+            );
             obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
             obj.insert(
                 "is_tlv_chain".into(),
@@ -15357,6 +15363,20 @@ fn render_codec(
                     }
                 }
             }
+            // docs/adr/0058 §1: a number a C11 value printed from its plan
+            // states while the content it measures is absent is held in the
+            // optional value of its type, present where the value states it;
+            // the decode sets it from the local it read the number into
+            // (`c11_source::C11Source::decoded`).
+            if c11_printed.as_ref().is_some_and(|(plan, _)| {
+                plan.presence(f) == crate::forge::encode_plan::Presence::Stated
+            }) {
+                obj.insert("c_gated_optional".into(), true.into());
+                obj.insert(
+                    type_key.into(),
+                    c11_number_optional(f).type_name.into(),
+                );
+            }
             // Physical-quantity accessor
             // pair. Only scalar fields (plain `<sce:field>` shape, not
             // Repeat/TLV/Embed) carrying `sce:quantity=…` populate the
@@ -15575,6 +15595,7 @@ fn render_codec(
             serde_json::json!({
                 "before_encode": printed.before_encode,
                 "encode_body": printed.encode_body,
+                "decoded": printed.decoded,
             }),
         );
     }
