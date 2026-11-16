@@ -1990,6 +1990,30 @@ old encode, the old encode and its templates are removed in the same landing.
    rather than derives (`gate_checks`) and inputs a held codec says (`input_checks`) stay unlowered and name their
    form; a gated body of a printed codec is lowered, and the codecs of the resources that hold one wait only on the
    lists they hold.
+
+   *The seventh C11 landing, 2026-11-16:* lists, and chains that end with their scope, of entries of codecs the C11
+   backend prints, handed no flag input and held to no law, always there or gated, and the count of one. The C
+   spelling of §2's begin and next pair is the runtime's `sce_forge_walk_t` (`sce/forge/codec.h`), a table in
+   read-only memory of `begin(ctx)` and `next(ctx, entry)`, each answering an entry as the context the entry codec's
+   source table is handed, or `NULL` past the last. The decision was the textbook iterator of C, an opaque position
+   its two functions move, over an index into the list (`at(ctx, i)`), which a linked list answers in time linear in
+   `i`, and over a callback the list calls for each entry, which turns the encode inside out and cannot stop it at a
+   refusal without a status threaded back through the consumer's loop. The entry is its own position, so a walk
+   needs no cursor type and an array, a linked list or any record of a consumer's own is walked where it is held.
+   The walk is one runtime type and not one per codec, as it names no codec's type. The refinement of R2 and R7 is
+   a list of a type of its own for each element, `{codec}_{element}_list_t`, `{ walk, ctx, entry, count }`, made by
+   `{codec}_{element}_list_make`, which walks the list once, counts it, and answers
+   `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS` as it meets an entry past the most, so a walk that never ends is refused
+   where the list has a most, and `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` below the fewest (one, for a chain closed by
+   an entry flag, R7). The count is derived from the count the maker found (`Measured::Entries`), as a byte
+   string's length is from its view's `len`, and the encode writes that many entries, walking from the first, each
+   by its codec's `{entry}_encode_source` over the entry's table; a walk is the same each time it is run, which the
+   runtime's declaration states. The value's struct keeps its array beside `{list}_len`; its reader presents it by
+   a walk of the array, `{codec}_value_{list}_begin` and `_next`, and `{codec}_check_value` holds the length to the
+   list's most and each entry to its codec's check. The decode reads a count the encode derives into its local
+   (`c11_source::Derived`, now handed to the repeat decodes too). A chain whose walk sets its entries' flag, hands
+   an entry what the one before it was, holds a bare entry's place or is held to a law, a list whose entries are
+   handed flag inputs, and a list in a group stay unlowered and name their form.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

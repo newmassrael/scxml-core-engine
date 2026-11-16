@@ -3033,3 +3033,26 @@ answers `Some(true)`).
   is a new name in the header; one of yours of that name now collides with it. Test the status `{codec}_encode`
   returns: a refusing codec's encode now answers more than the two statuses it answered.
 
+## A printed C11 codec walks a list where it is held, and derives its count (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it, against the C runtime's
+`sce/forge/codec.h` of the same landing, which declares `sce_forge_walk_t`. The printed set grows by the codecs that
+hold lists, and chains that end with their scope, of printed codecs handed no flag input and held to no law
+(`codec_repeat_basic`, `codec_repeat_present_if_basic`, `codec_tlv_chain_basic`, `codec_nested_parent`,
+`codec_origin_envelope` among the resources; `sce_build::c11_codec_printed_file` answers `Some(true)`).
+
+- A count of a list is no member of `{codec}_t` (`msg.num_frags` is gone): the encode counts the entries, and the
+  decode reads the count into a local and sets the array's `{list}_len`, as before. Set `{list}_len` alone; a value
+  that held a count other than its entries now writes the count of its entries.
+- `{codec}_encode` refuses, before the first byte, a list whose `{list}_len` is past the most its list holds
+  (`SCE_FORGE_CODEC_TOO_MANY_ELEMENTS`) and an entry its own codec refuses, by `{entry}_check_value` of each.
+- A source presents a list as `{codec}_{list}_list_t`, `{ walk, ctx, entry, count }`, made by
+  `{codec}_{list}_list_make(&list, walk, ctx, entry_table)`. The walk is a `static const sce_forge_walk_t` of yours,
+  a begin and next pair: `begin(ctx)` answers the first entry and `next(ctx, entry)` the one after, each as the
+  context `entry_table` reads an entry of the entry codec off, or `NULL` past the last. An array, a linked list or
+  any store of yours is encoded where it is held, with no copy; the maker walks it once, counts it and answers
+  `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS` past the list's most, so a walk that never ends is refused there. A gated list
+  is presented as `{codec}_{list}_list_optional_t`.
+- The header gains `{codec}_value_{list}_begin` and `{codec}_value_{list}_next`, the walk of the value's own array;
+  a name of yours that collides with one of them, or with `{codec}_{list}_list_make`, now collides with the header.
+
