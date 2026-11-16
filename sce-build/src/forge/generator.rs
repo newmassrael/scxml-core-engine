@@ -23,6 +23,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod c11_source;
 mod c11_test_tables;
 mod c11_test_template;
 mod cpp_source;
@@ -10982,6 +10983,22 @@ pub(crate) fn go_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> V
     )
 }
 
+/// Whether the C11 backend prints `m` from its encode plan (docs/adr/0081
+/// step 4, §6): its plan uses only the forms the C11 printer lowers. Such a
+/// value is a source of its codec through the table `{codec}_value_source`
+/// answers, and its encode is the encode over any source; any other codec
+/// keeps the template's encode whole.
+pub(crate) fn c11_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    c11_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+}
+
+/// Every form of `m`'s encode plan the C11 printer does not lower, as the
+/// clause that names it, in the order the printer meets them; empty where
+/// [`c11_codec_printed`].
+pub(crate) fn c11_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
+    c11_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+}
+
 /// The text the C++ backend prints the CBOR codec of `plan` as, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
@@ -13937,6 +13954,22 @@ fn render_codec(
     } else {
         None
     };
+    // docs/adr/0081 step 4: a C11 codec whose plan uses only the forms the C11
+    // printer lowers is printed from its plan: the table of a source, the
+    // value's table and the encode over any source stand before the value's
+    // encode, which is the encode over the value's table. Any other keeps the
+    // template's encode whole (§6), so no codec has two.
+    let c11_printed = if matches!(lang, crate::generator::Language::C11) {
+        let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+        match (c11_source::unlowered(&plan), plan) {
+            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => Some(
+                c11_source::render(&p, &l, &filters::to_snake_case(m.name.clone())),
+            ),
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
@@ -15455,6 +15488,12 @@ fn render_codec(
                 "catch_all_made": printed.catch_all_made,
                 "groups": printed.groups,
             }),
+        );
+    }
+    if let Some(printed) = &c11_printed {
+        ctx.insert(
+            "c11_source".into(),
+            serde_json::json!({ "before_encode": printed }),
         );
     }
     // The fields each form holds and the fields the wire reads: on Rust a group
