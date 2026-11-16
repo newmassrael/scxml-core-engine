@@ -3419,6 +3419,44 @@ pub fn go_codec_unlowered_file(
     )
 }
 
+/// Whether the C11 tree prints the codec at `path` from its encode plan
+/// (docs/adr/0081 step 4): its value is a source of it through the table
+/// `{codec}_value_source` answers, and its encode is the encode over any
+/// source, `{codec}_encode_source`. Read as the C11 tree reads it, its imports
+/// resolved. `None` for a document that is not a codec.
+pub fn c11_codec_printed_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::C11,
+        |model, imports, _| forge::generator::c11_codec_printed(&model, imports),
+    )
+}
+
+/// Every form of the codec at `path` that the C11 printer does not lower
+/// (docs/adr/0081 step 4), in the order the printer meets them; empty where it
+/// lowers every form and the codec is printed. A codec it does not print keeps
+/// the template's encode whole. Read as [`c11_codec_printed_file`] reads it.
+/// `None` for a document that is not a codec.
+pub fn c11_codec_unlowered_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<Vec<String>>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file_as(
+        path,
+        include_dirs,
+        options,
+        generator::Language::C11,
+        |model, imports, _| forge::generator::c11_codec_unlowered(&model, imports),
+    )
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.
