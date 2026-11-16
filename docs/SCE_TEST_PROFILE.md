@@ -2164,7 +2164,10 @@ one set of bytes.
    inside a composition, which the unit holds in a composite struct of its own the machine's is not, are
    made by such a function too, element by element (`ComposedSpelling::unit_made_by_parts`), so every
    message a unit holds is made whole; only a field of one entry that may be absent, of a number or a
-   text, is the machine's own optional and copied whole. Kotlin's runtime library of §12.2
+   text, is the machine's own optional and copied whole. The reader of every such part
+   (`sce-build/tests/fixtures/test_profile/received/`) is compiled under the strict flags and run with a
+   trace whose value it reads back (`test_a_received_message_is_made_in_the_machines_types.c` of
+   `backends/c/tests/integration/`). Kotlin's runtime library of §12.2
    (`com.sce.runtime.test`) is the Rust one ported type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
