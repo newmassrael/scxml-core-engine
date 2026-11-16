@@ -878,9 +878,11 @@ endforeach()
 # C++ holds, so its header's reader and writer of each form are compiled, beside the
 # records it takes (order_taken, job_status above, form_extras), the record and the
 # enums they hold, its listener's machine and its test case. The port type writes no
-# file. The Rust twin's configuration takes order_placed in order_taken's place; C++
-# reads and writes order_placed's union through orders_configuration below, whose
-# traces the corpus's orders_suite replays.
+# file. The Rust twin's configuration, forms_configuration, takes order_placed in
+# order_taken's place, and is generated after it, with its listener's machine and its
+# test case, so its header's reader and writer of every case of order_placed's union
+# are compiled; order_placed, the union, its tag's enum and its cases' records are
+# generated above.
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/imports/order_customer.scxml
@@ -900,6 +902,16 @@ sce_add_state_machine(
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/unionless_forms_listener.scxml
 )
 foreach(_TRACE_FORMS_DOCUMENT unionless_forms_configuration replays_every_unionless_form)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/${_TRACE_FORMS_DOCUMENT}.scxml
+    )
+endforeach()
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/forms_listener.scxml
+)
+foreach(_TRACE_FORMS_DOCUMENT forms_configuration replays_every_form)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/${_TRACE_FORMS_DOCUMENT}.scxml

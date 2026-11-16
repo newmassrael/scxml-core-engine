@@ -13,14 +13,16 @@
 // sce-build/tests/fixtures/test_profile/trace_forms/ (tests/CMakeLists.txt).
 //
 // The twin of backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs,
-// with the same values and the same refusals, but for the union the Rust
-// configuration's order_placed holds, which C++ does not lower: order_taken
-// holds every other form order_placed does, and a byte string in the union's
-// place. A value written by `canonical<Record>` and read back by
-// `read<Record>` is the value it was, through the canonical text; each
-// malformed spelling of a form is refused, naming where it stands; and a trace
-// of one record of each type replays to a log that holds each value as the
-// trace does.
+// with the same values and the same refusals. The Rust configuration's
+// order_placed, which holds a union of a case with a record, one with nothing
+// and one with a byte string, is read and written here by forms_configuration,
+// the Rust twin's, a value of each case; order_taken holds every other form
+// order_placed does, and a byte string in the union's place, read and written
+// by unionless_forms_configuration, whose trace replays below. A value written
+// by `canonical<Record>` and read back by `read<Record>` is the value it was,
+// through the canonical text; each malformed spelling of a form is refused,
+// naming where it stands; and a trace of one record of each type replays to a
+// log that holds each value as the trace does.
 
 #include <gtest/gtest.h>
 
@@ -29,8 +31,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "forms_configuration.h"
 #include "replays_every_unionless_form.h"
 #include "saved/SavedJson.h"
 #include "test/Suite.h"
@@ -49,8 +53,13 @@ using SCE::Test::TraceRefusal;
 using SCE::Test::Verdict;
 
 namespace Forms = SCE::Generated::UnionlessFormsConfiguration;
+namespace UnionForms = SCE::Generated::FormsConfiguration;
 
 using Order = SCE::Generated::OrderTaken::OrderTakenPayload;
+using Placed = SCE::Generated::OrderPlaced::OrderPlacedPayload;
+using Payment = SCE::Generated::OrderPayment::OrderPayment;
+using Card = SCE::Generated::CardPayment::CardPaymentPayload;
+using Voucher = SCE::Generated::VoucherPayment::VoucherPaymentPayload;
 using OrderLine = SCE::Generated::OrderLine::OrderLinePayload;
 using Customer = SCE::Generated::OrderCustomer::OrderCustomerPayload;
 using Color = SCE::Generated::PaintColor::PaintColor;
@@ -71,6 +80,9 @@ using Flags = decltype(Extras::flags);
 using Spare = decltype(Extras::spare)::value_type;
 using Grid = decltype(Extras::grid);
 using Row = Grid::value_type;
+using PlacedLines = decltype(Placed::lines);
+using PlacedNote = decltype(Placed::note)::value_type;
+using Last4 = decltype(Card::last4);
 
 /// The writer of a record's canonical form, and its reader.
 template <typename V> using Writer = JsonValue (*)(const V &);
@@ -113,6 +125,32 @@ Order order(std::vector<std::uint8_t> voucher) {
 /// The vouchers the order is paid with: three octets, and none.
 std::vector<std::vector<std::uint8_t>> vouchers() {
     return {{0x00, 0xab, 0xff}, {}};
+}
+
+/// An order placed and paid by `payment`, with the lines, the note, the
+/// priority and the customer of `order`.
+Placed placed(Payment payment) {
+    Placed made{};
+    made.order_id = std::numeric_limits<std::uint32_t>::max();
+    made.lines = held<PlacedLines>(std::vector<OrderLine>{
+        line("A-1", 2, Color::Green), line("\"q\" \xC3\xA9", std::numeric_limits<std::uint16_t>::max(), Color::Blue)});
+    made.note = PlacedNote::literal("ring twice");
+    made.priority = std::nullopt;
+    made.customer.full_name = FullName::literal("Ada");
+    made.customer.vip = true;
+    made.payment = std::move(payment);
+    return made;
+}
+
+/// The three cases of the payment, each built from the alternative of its
+/// case: one of a record, one of none, one of a byte string.
+std::vector<Payment> payments() {
+    Card card{};
+    card.last4 = Last4::literal("4242");
+    card.amount = 1;
+    Voucher voucher{};
+    voucher.voucher_code = {0x00, 0xab, 0xff};
+    return {Payment{Payment::Card{card}}, Payment{Payment::Cash{}}, Payment{Payment::Voucher{voucher}}};
 }
 
 std::vector<Status> statuses() {
@@ -170,6 +208,9 @@ TEST(ARecord, ReadsBackAValueOfEachFormFromItsCanonicalText) {
     for (const auto &voucher : vouchers()) {
         roundTrip<Order>(order(voucher), &Forms::canonicalOrderTaken, &Forms::readOrderTaken);
     }
+    for (const Payment &payment : payments()) {
+        roundTrip<Placed>(placed(payment), &UnionForms::canonicalOrderPlaced, &UnionForms::readOrderPlaced);
+    }
     for (const Status &status : statuses()) {
         roundTrip<Status>(status, &Forms::canonicalJobStatus, &Forms::readJobStatus);
     }
@@ -184,6 +225,25 @@ TEST(ARecord, ReadsBackAValueOfEachFormFromItsCanonicalText) {
     ASSERT_EQ(paid.lines.size(), 2u);
     EXPECT_EQ(paid.lines[1].sku.inner(), "\"q\" \xC3\xA9");
     EXPECT_FALSE(paid.priority.has_value());
+}
+
+/// docs/adr/0092, section 7: a value of each case of a union reads back in the
+/// case it was written in, holding the record it held.
+TEST(ARecord, ReadsBackEachCaseOfAUnionInItsCase) {
+    const auto readBack = [](const Payment &payment) {
+        return UnionForms::readOrderPlaced(UnionForms::canonicalOrderPlaced(placed(payment))).payment;
+    };
+    const std::vector<Payment> written = payments();
+    const Payment card = readBack(written[0]);
+    const auto *heldCard = std::get_if<Payment::Card>(&card.cases);
+    ASSERT_NE(heldCard, nullptr) << "the card reads back as the card";
+    EXPECT_EQ(heldCard->value.last4.inner(), "4242");
+    EXPECT_EQ(heldCard->value.amount, 1u);
+    EXPECT_TRUE(std::holds_alternative<Payment::Cash>(readBack(written[1]).cases)) << "cash reads back as cash";
+    const Payment voucher = readBack(written[2]);
+    const auto *heldVoucher = std::get_if<Payment::Voucher>(&voucher.cases);
+    ASSERT_NE(heldVoucher, nullptr) << "the voucher reads back as the voucher";
+    EXPECT_EQ(heldVoucher->value.voucher_code, (std::vector<std::uint8_t>{0x00, 0xab, 0xff}));
 }
 
 /// The reason `read` refuses the canonical text of `value` with `from`
@@ -223,6 +283,13 @@ TEST(ARecord, RefusesAMalformedSpellingOfEachFormByName) {
     const auto ofStatus = [&status](const std::string &from, const std::string &to) {
         return refused<Status>(status, &Forms::canonicalJobStatus, &Forms::readJobStatus, from, to);
     };
+    const std::vector<Payment> paidBy = payments();
+    const Placed byCard = placed(paidBy[0]);
+    const Placed byCash = placed(paidBy[1]);
+    const Placed byVoucher = placed(paidBy[2]);
+    const auto ofPlaced = [](const Placed &value, const std::string &from, const std::string &to) {
+        return refused<Placed>(value, &UnionForms::canonicalOrderPlaced, &UnionForms::readOrderPlaced, from, to);
+    };
     const std::string longName = "\"full_name\":\"" + std::string(25, 'x') + "\"";
     const std::vector<std::pair<std::string, std::string>> cases = {
         {ofOrder("\"order_id\":\"4294967295\"", "\"order_id\":\"007\""),
@@ -246,6 +313,15 @@ TEST(ARecord, RefusesAMalformedSpellingOfEachFormByName) {
          "order_taken.voucher_code: '00abff' is not octets in upper-case hex, two digits each"},
         {ofOrder("\"voucher_code\":\"00ABFF\"", "\"voucher_code\":\"0011223344\""),
          "order_taken.voucher_code: a byte string of 5 octets is past the 4 its type holds"},
+        {ofPlaced(byCard, "{\"card\":", "{\"cheque\":"), "order_placed.payment: 'cheque' names no case of its union"},
+        {ofPlaced(byCard, "\"last4\":\"4242\"}}", "\"last4\":\"4242\"},\"cash\":{}}"),
+         "order_placed.payment: a value of a union is an object of one member, and this one has 2"},
+        {ofPlaced(byCash, "{\"cash\":{}}", "{\"cash\":{\"x\":\"1\"}}"),
+         "order_placed.payment.cash: a case that holds no record is the empty object"},
+        {ofPlaced(byVoucher, "\"voucher_code\":\"00ABFF\"", "\"voucher_code\":\"00abff\""),
+         "order_placed.payment.voucher_code: '00abff' is not octets in upper-case hex, two digits each"},
+        {ofPlaced(byVoucher, "\"voucher_code\":\"00ABFF\"", "\"voucher_code\":\"0011223344\""),
+         "order_placed.payment.voucher_code: a byte string of 5 octets is past the 4 its type holds"},
         {ofStatus("\"tag\":\"255\"", "\"tag\":\"256\""), "job_status.tag: 256 is past the range of its type"},
         {ofStatus("\"codes\":[]", "\"codes\":[\"x\"]"),
          "job_status.codes[]: 'x' is not the text of an integer's decimal digits"},
@@ -269,30 +345,29 @@ TEST(ARecord, RefusesAMalformedSpellingOfEachFormByName) {
     }
 }
 
-/// docs/SCE_TTCN3_LANE.md §10.5: a trace of one record of each type the
-/// system port takes, two at the start and one later, replays to the
-/// listener, which takes one a round and passes; the log holds each value as
-/// the trace does.
-TEST(ARecord, ATraceOfEveryFormReplaysToTheValuesItHolds) {
-    const auto input = [](SCE::Test::Instant at, const std::string &type, JsonValue value) {
-        TraceInput made;
-        made.at = at;
-        made.port = "sut";
-        made.messageType = type;
-        made.value = std::move(value);
-        return made;
-    };
+/// The input of the trace that gives the system port `sut` the record `value`
+/// of the type `type` at `at`.
+TraceInput input(SCE::Test::Instant at, const std::string &type, JsonValue value) {
+    TraceInput made;
+    made.at = at;
+    made.port = "sut";
+    made.messageType = type;
+    made.value = std::move(value);
+    return made;
+}
+
+/// The trace of `inputs` for the test case `name` of forms_suite, `testCase`,
+/// replayed: the listener takes one a round and passes at the last input's
+/// instant, 250, and the log holds each value as the trace does.
+void replaysToTheValuesItHolds(const std::string &name, SCE::Test::TestCase testCase, std::vector<TraceInput> inputs) {
     Trace trace;
     trace.suite = "forms_suite";
-    trace.testCase = SCE::Generated::ReplaysEveryUnionlessForm::NAME;
-    trace.inputs.push_back(input(0, "order_taken", Forms::canonicalOrderTaken(order(vouchers()[0]))));
-    trace.inputs.push_back(input(0, "job_status", Forms::canonicalJobStatus(statuses()[0])));
-    trace.inputs.push_back(input(250, "form_extras", Forms::canonicalFormExtras(extras()[0])));
+    trace.testCase = name;
+    trace.inputs = std::move(inputs);
     const std::string text = trace.canonicalText();
     SCE::Test::Suite suite;
     suite.name = "forms_suite";
-    suite.executes.push_back(
-        SCE::Test::Execute{SCE::Generated::ReplaysEveryUnionlessForm::testCase(), std::nullopt, nullptr});
+    suite.executes.push_back(SCE::Test::Execute{std::move(testCase), std::nullopt, nullptr});
     const auto results =
         SCE::Test::runSuiteWithTraces(suite, {}, [&text](const std::string &) { return Trace::parse(text); });
     ASSERT_EQ(results.size(), 1u);
@@ -304,6 +379,31 @@ TEST(ARecord, ATraceOfEveryFormReplaysToTheValuesItHolds) {
                                      "\",\"value\":" + writeCanonical(given.value);
         EXPECT_NE(log.find(received), std::string::npos) << "`" << received << "` in " << log;
     }
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: a trace of one record of each type the
+/// system port takes, two at the start and one later, replays to the
+/// listener, which takes one a round and passes; the log holds each value as
+/// the trace does.
+TEST(ARecord, ATraceOfEveryFormReplaysToTheValuesItHolds) {
+    std::vector<TraceInput> inputs;
+    inputs.push_back(input(0, "order_taken", Forms::canonicalOrderTaken(order(vouchers()[0]))));
+    inputs.push_back(input(0, "job_status", Forms::canonicalJobStatus(statuses()[0])));
+    inputs.push_back(input(250, "form_extras", Forms::canonicalFormExtras(extras()[0])));
+    replaysToTheValuesItHolds(SCE::Generated::ReplaysEveryUnionlessForm::NAME,
+                              SCE::Generated::ReplaysEveryUnionlessForm::testCase(), std::move(inputs));
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: the Rust twin's trace, an order paid by card
+/// in order_taken's place, replays to the listener of the port that takes a
+/// union, and the log holds the union's case as the trace does.
+TEST(ARecord, ATraceOfEveryFormWithAUnionReplaysToTheValuesItHolds) {
+    std::vector<TraceInput> inputs;
+    inputs.push_back(input(0, "order_placed", UnionForms::canonicalOrderPlaced(placed(payments()[0]))));
+    inputs.push_back(input(0, "job_status", UnionForms::canonicalJobStatus(statuses()[0])));
+    inputs.push_back(input(250, "form_extras", UnionForms::canonicalFormExtras(extras()[0])));
+    replaysToTheValuesItHolds(SCE::Generated::ReplaysEveryForm::NAME, SCE::Generated::ReplaysEveryForm::testCase(),
+                              std::move(inputs));
 }
 
 }  // namespace
