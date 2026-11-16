@@ -619,11 +619,11 @@ impl ComposedSpelling for PythonComposed<'_> {
     // in place; every other such value (a number, a truth value, a text, a
     // byte string, an optional one of them) cannot be written into, and the
     // run hands the message to this component alone, so it is held as read.
-    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
-        match ty {
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
+        Some(match ty {
             ValueType::List { .. } => format!("list({})", held.text),
             _ => held.text.clone(),
-        }
+        })
     }
     // A `bytes` whatever its bound, which cannot be written into.
     fn unit_entry_bytes(&self, _max: u32, held: &Held) -> String {

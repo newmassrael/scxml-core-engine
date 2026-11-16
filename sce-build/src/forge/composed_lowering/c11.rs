@@ -817,6 +817,72 @@ impl ComposedSpelling for C11Composed<'_> {
     fn copy_whole(&self, held: &Held, _plain: bool) -> String {
         value_of(held)
     }
+
+    // A record's unit names its fields as the schema does
+    // ([`crate::forge::generator::event_schema_field_ident`]); the value read
+    // is the record a pointer or a place holds.
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            value_of(held),
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::C11
+            )
+        ))
+    }
+    // A unit holds a byte string that is one entry of its record in the buffer
+    // of its bound beside its length, and the machine in the buffer of the
+    // same bound, which is filled from the view of the unit's bytes.
+    fn unit_entry_bytes(&self, max: u32, held: &Held) -> String {
+        self.copy_bytes(max, held)
+    }
+    // A unit holds no byte string that may be absent (`StaticTarget::take_branch`,
+    // a record of entries, refuses one by name), so nor does this walk.
+    fn unit_optional_entry_bytes(
+        &self,
+        _max: u32,
+        _held: &Held,
+        _machine_ty: &str,
+    ) -> Option<String> {
+        None
+    }
+    // A number, a `bool`, a text and an optional one of them are held by the
+    // unit in the types the machine holds them in (the runtime's optional, the
+    // buffer of a text's bound) and copied by assignment; a byte string a
+    // composition holds is filled into the machine's buffer of its bound from
+    // the view of the unit's, and a list of numbers or `bool`s into the
+    // machine's list of its bound from the unit's elements, the unit's list
+    // being a struct of its own whose elements are `items`. Every other part,
+    // an optional list or a list of texts among them, has no conversion here,
+    // and the walk refuses it by name.
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
+        match ty {
+            ValueType::Scalar(_) | ValueType::Text { .. } => Some(value_of(held)),
+            ValueType::Optional { elem }
+                if matches!(**elem, ValueType::Scalar(_) | ValueType::Text { .. }) =>
+            {
+                Some(value_of(held))
+            }
+            ValueType::Bytes { max } => Some(self.copy_bytes(max.max, held)),
+            ValueType::List { elem, max } => match &**elem {
+                ValueType::Scalar(scalar) => {
+                    let list = self.list_type(&self.scalar_type(scalar), max.max);
+                    let value = value_of(held);
+                    Some(format!("{}_of({value}.items, {value}.len)", stem(&list)))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    // A C11 enum is held in the enum unit's own type by a machine and a unit
+    // alike, but a value of one inside a composition crosses through the
+    // copies of its constructors, which C11 spells for no mapped part, so the
+    // walk refuses such a message by name rather than half make it.
+    fn unit_enum(&self, _machine: &MachineEnum, _document: &str, _held: &Held) -> Option<String> {
+        None
+    }
     // The buffer of the larger bound, filled from the text, which fits it.
     fn copy_text(&self, max: u32, held: &Held) -> String {
         format!(
@@ -2126,6 +2192,96 @@ mod tests {
             c11().send_counted(&Held::place("sm->taking"), "ops", 1, "W;\n".to_string()),
             Some(
                 "if ((sm->taking).len < 1u) {\n    sce_forge_wire_refuse(sce_wire);\n} else {\nW;\n}\n"
+                    .to_string()
+            )
+        );
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, read through the pointer
+    /// the statement binds. A number, a text and an optional one of them are
+    /// assigned, a list of numbers is made into the machine's list of its
+    /// bound from the unit's `items`, and a byte string filled from the view of
+    /// the unit's.
+    #[test]
+    fn a_c11_message_is_made_from_its_units_value_where_its_parts_convert() {
+        let c11 = c11();
+        let made = |text: &str, read: &str| {
+            from_unit(
+                &ty(text),
+                None,
+                &held(),
+                &enums(),
+                &BTreeMap::new(),
+                &c11,
+                &Held::place(read),
+            )
+        };
+        assert_eq!(
+            c11.unit_field(&Held::reference("r"), "late"),
+            Some("(*r).late".to_string())
+        );
+        assert_eq!(made("uint32", "(*r).count"), Ok("((*r).count)".to_string()));
+        assert_eq!(
+            made("optional<string[32]>", "(*r).note"),
+            Ok("((*r).note)".to_string())
+        );
+        let list = made("list<uint8>[2]", "(*r).late").expect("a list of numbers converts");
+        assert!(
+            list.ends_with("_of(((*r).late).items, ((*r).late).len)"),
+            "{list}"
+        );
+        assert_eq!(
+            made("bytes[4]", "(*r).blob"),
+            Ok(
+                "sce_static_bytes_4_of((sce_forge_bytes_view_t){ ((*r).blob).data, \
+                ((*r).blob).len })"
+                    .to_string()
+            )
+        );
+    }
+
+    /// A part C11 has no conversion of, a list of texts, an optional list or a
+    /// value of an enum inside a composition, is refused by name, so no
+    /// message is half made.
+    #[test]
+    fn a_c11_message_with_a_part_it_does_not_convert_is_refused_by_name() {
+        let c11 = c11();
+        for text in [
+            "list<string[8]>[4]",
+            "optional<list<uint8>[2]>",
+            "list<list<uint8>[2]>[2]",
+        ] {
+            let refused = from_unit(
+                &ty(text),
+                None,
+                &held(),
+                &enums(),
+                &BTreeMap::new(),
+                &c11,
+                &Held::place("(*r).part"),
+            )
+            .expect_err("no conversion");
+            assert!(
+                refused.contains("has no machine's value made from its unit's on this backend"),
+                "{text}: {refused}"
+            );
+        }
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let held = held();
+        let batch = held.record(None, "Batch").expect("the record");
+        assert_eq!(
+            fields_from_unit(
+                batch,
+                &held,
+                &enums(),
+                &documents,
+                &c11,
+                &Held::reference("r")
+            ),
+            Err(
+                "`enum:Level` has no machine's value made from its unit's on this backend"
                     .to_string()
             )
         );

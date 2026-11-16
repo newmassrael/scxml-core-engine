@@ -537,9 +537,24 @@ pub trait ComposedSpelling {
     /// enum or union, which a record's unit and the machine hold in one type
     /// ([`fields_from_unit`]): [`Self::copy_whole`] of it, the default. A
     /// backend whose [`Self::copy_whole`] holds a narrower contract than every
-    /// such type (Go's copies only a list) spells each here.
-    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
-        self.copy_whole(held, plain(ty))
+    /// such type (Go's copies only a list) spells each here, and one whose
+    /// unit holds such a value in a type of its own (C11's composite structs)
+    /// converts it, `None` for a type it has no conversion of, which the walk
+    /// refuses by name.
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
+        Some(self.copy_whole(held, plain(ty)))
+    }
+    /// The machine's value of `held`, a byte string of at most `max` bytes that
+    /// may be absent, one entry of a record, whose present value
+    /// [`Self::unit_entry_bytes`] makes, held in `machine_ty` where it is
+    /// present: [`Self::copy_optional`] of it, the default. `None` for a
+    /// backend whose unit holds no such entry, which the walk refuses by name.
+    fn unit_optional_entry_bytes(&self, max: u32, held: &Held, machine_ty: &str) -> Option<String> {
+        Some(self.copy_optional(
+            held,
+            &self.unit_entry_bytes(max, &Held::reference(self.copy_binding())),
+            machine_ty,
+        ))
     }
     /// Whether [`Self::unit_enum`] and [`Self::unit_union`] name the type the
     /// enum's or the union's own unit declares, so the machine's unit imports
@@ -1730,7 +1745,9 @@ fn from_unit(
         | ValueType::Text { .. }
         | ValueType::Bytes { .. }
         | ValueType::Optional { .. }
-        | ValueType::List { .. } => Ok(spelling.unit_whole(held, ty)),
+        | ValueType::List { .. } => spelling
+            .unit_whole(held, ty)
+            .ok_or_else(|| unmade(&format!("`{ty}`"))),
     }
 }
 
@@ -1792,11 +1809,13 @@ fn field_from_unit(
     match ty {
         ValueType::Bytes { max } => Ok(spelling.unit_entry_bytes(max.max, held)),
         ValueType::Optional { elem } => match &**elem {
-            ValueType::Bytes { max } => Ok(spelling.copy_optional(
-                held,
-                &spelling.unit_entry_bytes(max.max, &Held::reference(spelling.copy_binding())),
-                &machine_type(elem, within, records, enums, spelling)?,
-            )),
+            ValueType::Bytes { max } => spelling
+                .unit_optional_entry_bytes(
+                    max.max,
+                    held,
+                    &machine_type(elem, within, records, enums, spelling)?,
+                )
+                .ok_or_else(|| unmade(&format!("`{ty}`"))),
             _ => from_unit(ty, within, records, enums, documents, spelling, held),
         },
         _ => from_unit(ty, within, records, enums, documents, spelling, held),

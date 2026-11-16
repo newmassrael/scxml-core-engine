@@ -4875,9 +4875,9 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
     # documents import the runtime's from `../runtime/`, so they are read under the
     # profile's fixture directory. orders_suite and nested_suite are not generated
     # here: their mapped record holds a union, which C11's test profile matches no
-    # value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its
-    # tester's receive branch reads a message whose record holds a list, of which
-    # the C11 machine makes no value (docs/SCE_TEST_PROFILE.md §12.6). The program
+    # value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is, its
+    # tester's receive branch reading a message whose record holds a list of
+    # numbers, which the C11 machine makes its value of. The program
     # makes the directory of its logs through `sce_directory_make`, so it is built
     # where the POSIX tier is, as the runner program is.
     set(_CS_FIXTURE_DIR "${_TP_FIXTURE_DIR}/boundary")
@@ -4892,6 +4892,17 @@ if("${_sce_c_runner_unmet}" STREQUAL "" AND NOT EMSCRIPTEN)
                          sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
         sce_c_integration_generation(_CS_${_CS_DOCUMENT} "${_CS_FIXTURE_DIR}/${_CS_DOCUMENT}.scxml"
             INPUT_ROOT "${_TP_FIXTURE_DIR}")
+        list(APPEND _CS_HEADERS ${_CS_${_CS_DOCUMENT}_HEADERS})
+        list(APPEND _CS_SOURCES ${_CS_${_CS_DOCUMENT}_SOURCES})
+    endforeach()
+    # job_suite: its records and templates are generated above for the template
+    # test; its components, its tables and the job's completion of the kind
+    # examples its port sends are generated here, as those templates are.
+    list(APPEND _CS_HEADERS ${_TP_HEADERS})
+    sce_c_integration_generation(_CS_job_completed "${CMAKE_SOURCE_DIR}/sce-build/kind-examples/event-schema.scxml")
+    list(APPEND _CS_HEADERS ${_CS_job_completed_HEADERS})
+    foreach(_CS_DOCUMENT job_tester helper tester_and_helper completes_in_time job_suite)
+        sce_c_integration_generation(_CS_${_CS_DOCUMENT} "${_TP_FIXTURE_DIR}/${_CS_DOCUMENT}.scxml")
         list(APPEND _CS_HEADERS ${_CS_${_CS_DOCUMENT}_HEADERS})
         list(APPEND _CS_SOURCES ${_CS_${_CS_DOCUMENT}_SOURCES})
     endforeach()

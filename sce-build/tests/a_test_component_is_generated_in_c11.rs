@@ -1121,3 +1121,33 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_c11() {
     assert!(detail.contains("`union:Payment`: "), "{detail}");
     assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
 }
+
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list of
+/// numbers, a text that may be absent, numbers that may be absent) copies it
+/// into the machine's payload channel member by member, read through the
+/// pointer the statement binds: a number, an optional one and an optional text
+/// assigned, the list made into the machine's list of its bound from the
+/// unit's `items`.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_c11() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let checked = at(
+        &code,
+        "const every_matcher_value_t *sce_test_received_ = (const every_matcher_value_t \
+         *)sce_test_message_value_as(&sce_test_message_, every_matcher_value_type(), \
+         sizeof(every_matcher_value_t)); if (sce_test_received_ == NULL) { return; }",
+    );
+    let first = at(
+        &code,
+        " sm->pending_payload.as.job_status.elapsed_ms = ((*sce_test_received_).elapsed_ms);",
+    );
+    for copy in [
+        " sm->pending_payload.as.job_status.note = ((*sce_test_received_).note);",
+        "_of(((*sce_test_received_).codes).items, ((*sce_test_received_).codes).len);",
+        " sm->pending_payload.as.job_status.count = ((*sce_test_received_).count);",
+    ] {
+        assert!(code.contains(copy), "{copy}:\n{code}");
+    }
+    assert!(checked < first, "{code}");
+}

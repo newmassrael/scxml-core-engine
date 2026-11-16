@@ -850,11 +850,11 @@ impl ComposedSpelling for GoComposed<'_> {
     // a text, a byte string, an optional one of them) is a Go value or one the
     // machine never writes into, and the run hands the message to this
     // component alone, so it is held as it is read.
-    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
-        match ty {
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> Option<String> {
+        Some(match ty {
             ValueType::List { .. } => self.copy_whole(held, false),
             _ => held.text.clone(),
-        }
+        })
     }
     // An enum's value is read by `DeclaredName()` and a union's by `Kind()` and
     // `Proven<Case>()`, so no unit's type is named, and Go refuses the import

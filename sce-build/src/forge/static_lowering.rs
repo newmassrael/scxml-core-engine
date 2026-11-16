@@ -14765,6 +14765,26 @@ pub struct CTarget {
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statements taking the receive branch
+    /// on `port` with `template`, which remove the head of the port, ending the
+    /// block where the run refuses the removal, bind a pointer to its value as
+    /// the template's unit holds it to [`C_TEST_RECEIVED`], ending the block
+    /// where the value is of another type, and then run `copies`, which copy
+    /// the message into the machine's payload channel.
+    fn received_record(port: &str, template: &TemplateRef, copies: &str) -> String {
+        let unit = c_test_template(&template.unit);
+        format!(
+            "sce_test_message_t {C_TEST_MESSAGE}; \
+             if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, &{C_TEST_MESSAGE})) \
+             {{ return; }} \
+             const {unit}_value_t *{C_TEST_RECEIVED} = (const {unit}_value_t *)\
+             sce_test_message_value_as(&{C_TEST_MESSAGE}, {unit}_value_type(), \
+             sizeof({unit}_value_t)); \
+             if ({C_TEST_RECEIVED} == NULL) {{ return; }}{copies}",
+            c_text(port)
+        )
+    }
+
     fn new(
         stem: &str,
         machine: &str,
@@ -17019,7 +17039,6 @@ impl StaticTarget for CTarget {
                 },
                 Some(ReceivedMessage::Entries(schema)),
             ) => {
-                let unit = c_test_template(&template.unit);
                 let accessor = self.payload_accessor(&template.event);
                 let mut copies = String::new();
                 for f in &schema.fields {
@@ -17057,20 +17076,28 @@ impl StaticTarget for CTarget {
                         _ => copies.push_str(&format!(" {accessor}.{id} = {read};")),
                     }
                 }
-                format!(
-                    "sce_test_message_t {C_TEST_MESSAGE}; \
-                     if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, &{C_TEST_MESSAGE})) \
-                     {{ return; }} \
-                     const {unit}_value_t *{C_TEST_RECEIVED} = (const {unit}_value_t *)\
-                     sce_test_message_value_as(&{C_TEST_MESSAGE}, {unit}_value_type(), \
-                     sizeof({unit}_value_t)); \
-                     if ({C_TEST_RECEIVED} == NULL) {{ return; }}{copies}",
-                    c_text(port)
-                )
+                Self::received_record(port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the channel's
+            // record made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from the record
+            // [`C_TEST_RECEIVED`] points to.
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => {
+                let accessor = self.payload_accessor(&template.event);
+                let copies: String = members
+                    .iter()
+                    .map(|(id, value)| format!(" {accessor}.{id} = {value};"))
+                    .collect();
+                Self::received_record(port, template, &copies)
+            }
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => format!(
                 "if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, NULL)) {{ return; }}",
@@ -17085,6 +17112,10 @@ impl StaticTarget for CTarget {
                 c_text(ptc)
             ),
         })
+    }
+    // The pointer `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(C_TEST_RECEIVED)
     }
     // A duration is whole microseconds (§3.3), the runtime's
     // `sce_test_duration_t`, a signed 64-bit count: one past it has no value

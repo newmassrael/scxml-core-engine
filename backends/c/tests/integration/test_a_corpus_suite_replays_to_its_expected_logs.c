@@ -15,9 +15,7 @@
 // backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs.
 // orders_suite and nested_suite are not replayed here: their mapped record holds
 // a union, which C11's test profile matches no value of
-// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is job_suite: its tester's
-// receive branch reads a message whose record holds a list, of which the C11
-// machine makes no value (docs/SCE_TEST_PROFILE.md §12.6).
+// (codegen_matrix::TEST_PROFILE_UNION_BACKENDS).
 
 #include <dirent.h>
 #include <stdbool.h>
@@ -32,6 +30,7 @@
 #include <sce/test/runner.h>
 
 #include "boundary_suite.h"
+#include "job_suite.h"
 
 // After the runtime's headers, one of which names a function-pointer parameter
 // `read`, which `-Wshadow` would read as hiding the `read` this declares.
@@ -208,25 +207,25 @@ static void every_log_is_its_expected_log(const char *suite, const char *expecte
           written.count, expected.count);
 }
 
-static boundary_suite_storage_t boundary_storage;
-static sce_test_runner_t boundary_runner;
+// The runner of every suite below, one at a time.
+static sce_test_runner_t runner;
 
-// docs/SCE_TTCN3_LANE.md §12.2: signed and 64-bit integers in a message, the
-// verdicts `fail` and `none`, the two ways to `error` a document leads a run to,
-// a test case that can never end and a dynamic error, and a branch taken before
-// the states it leaves log their exits (docs/SCE_TEST_PROFILE.md §4.4).
-static void the_boundary_suite_replays_to_its_expected_logs(void) {
-    static const char VERDICTS[] = "exchanges_signed_numbers pass\nanswers_another_job fail\nsets_no_verdict none\n"
-                                   "never_ends error\nsends_to_a_removed_ptc error\ntakes_before_its_exits pass\n";
+// Runs the runner of the suite `name`, whose tables `suite` are and whose
+// module parameters `parameter` reads, over every trace of its directory in
+// the world `world`, which selects every test case, and holds what it prints to
+// `verdicts`, every log it writes to its expected log, and the set of logs to
+// the set of expected logs.
+static void replays(const char *name, const sce_test_suite_t *suite, sce_test_parameter_reader_fn parameter,
+                    const char *world, const char *verdicts) {
     char traces[PATH_SIZE];
     char expected_dir[PATH_SIZE];
     char dir[PATH_SIZE];
     char logs[LOGS_SIZE];
-    runs_dir("boundary_suite", "traces", traces);
-    runs_dir("boundary_suite", "expected_logs", expected_dir);
-    scratch("boundary_suite", dir);
+    runs_dir(name, "traces", traces);
+    runs_dir(name, "expected_logs", expected_dir);
+    scratch(name, dir);
     (void)snprintf(logs, sizeof(logs), "%s/logs", dir);
-    const char *line[] = {"--trace-dir", traces, "--log-dir", logs, "--world", ""};
+    const char *line[] = {"--trace-dir", traces, "--log-dir", logs, "--world", world};
     FILE *out = tmpfile();
     FILE *err = tmpfile();
     CHECK(out != NULL && err != NULL, "the streams are made");
@@ -234,21 +233,43 @@ static void the_boundary_suite_replays_to_its_expected_logs(void) {
         return;
     }
     const int status =
-        sce_test_runner_run(&boundary_runner, boundary_suite_suite(&boundary_storage), boundary_suite_module_parameter,
-                            (int)(sizeof(line) / sizeof(line[0])), line, out, err);
+        sce_test_runner_run(&runner, suite, parameter, (int)(sizeof(line) / sizeof(line[0])), line, out, err);
     stream_text(out, run_out);
     stream_text(err, run_err);
     (void)fclose(out);
     (void)fclose(err);
-    CHECK(status == 0, "exit status %d: %s", status, run_err);
-    CHECK(strcmp(run_out, VERDICTS) == 0, "the standard output is %s", run_out);
-    every_log_is_its_expected_log("boundary_suite", expected_dir, logs);
+    CHECK(status == 0, "%s: exit status %d: %s", name, status, run_err);
+    CHECK(strcmp(run_out, verdicts) == 0, "%s: the standard output is %s", name, run_out);
+    every_log_is_its_expected_log(name, expected_dir, logs);
     (void)remove(logs);
     (void)remove(dir);
 }
 
+static boundary_suite_storage_t boundary_storage;
+static job_suite_storage_t job_storage;
+
+// docs/SCE_TTCN3_LANE.md §12.2: signed and 64-bit integers in a message, the
+// verdicts `fail` and `none`, the two ways to `error` a document leads a run to,
+// a test case that can never end and a dynamic error, and a branch taken before
+// the states it leaves log their exits (docs/SCE_TEST_PROFILE.md §4.4).
+static void the_boundary_suite_replays_to_its_expected_logs(void) {
+    replays("boundary_suite", boundary_suite_suite(&boundary_storage), boundary_suite_module_parameter, "",
+            "exchanges_signed_numbers pass\nanswers_another_job fail\nsets_no_verdict none\n"
+            "never_ends error\nsends_to_a_removed_ptc error\ntakes_before_its_exits pass\n");
+}
+
+// docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of `every_matcher`
+// accepts, at 1 ms, which the tester's branch reads as a composed message; the
+// helper is told and passes, and the tester settles for the duration its start
+// gives and passes at 501 ms.
+static void the_job_suite_replays_to_its_expected_logs(void) {
+    replays("job_suite", job_suite_suite(&job_storage), job_suite_module_parameter, "job-timeout,job-retry",
+            "completes_in_time pass\n");
+}
+
 int main(void) {
     the_boundary_suite_replays_to_its_expected_logs();
+    the_job_suite_replays_to_its_expected_logs();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
