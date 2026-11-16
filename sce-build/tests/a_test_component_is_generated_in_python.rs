@@ -963,3 +963,26 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_python() {
     assert!(detail.contains("`union:Payment`: "), "{detail}");
     assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
 }
+
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list, a
+/// text that may be absent, numbers that may be absent) binds it in the
+/// machine's payload class, each field made from the value the record's unit
+/// holds: the list taken into a list of its own, every other value, which
+/// cannot be written into, as it is read.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_python() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let checked = at(
+        &code,
+        "if not isinstance(_sce_message.value, sce_every_matcher.Value):",
+    );
+    let bound = at(
+        &code,
+        "JobTesterJobStatusPayload(elapsed_ms=_sce_message.value.elapsed_ms, \
+         note=_sce_message.value.note, codes=list(_sce_message.value.codes), \
+         tag=_sce_message.value.tag, retry=_sce_message.value.retry, \
+         count=_sce_message.value.count)",
+    );
+    assert!(checked < bound, "{code}");
+}

@@ -15,9 +15,7 @@ the same name in
 ``backends/rust/tests/tests/the_corpus_replays_to_its_expected_logs.rs``.
 orders_suite and nested_suite are not replayed here: their mapped record holds a
 union, which Python's test profile matches no value of
-(``codegen_matrix::TEST_PROFILE_UNION_BACKENDS``); nor is job_suite: its tester's
-receive branch reads a message whose record holds a list, of which the Python
-machine makes no value (docs/SCE_TEST_PROFILE.md §12.6).
+(``codegen_matrix::TEST_PROFILE_UNION_BACKENDS``).
 """
 
 from __future__ import annotations
@@ -34,7 +32,7 @@ sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
 # The suite's unit is imported as a module and read through it, as the runtime
 # suite's test reads its own.
-from integration.static_datamodel import boundary_suite  # noqa: E402 -- path inserted above
+from integration.static_datamodel import boundary_suite, job_suite  # noqa: E402 -- path inserted above
 from sce_runtime.testprofile import ParameterReader, Suite, run_runner  # noqa: E402
 
 #: The directory of the runs of the suites of the corpus but runtime_suite, a
@@ -96,5 +94,20 @@ def test_the_boundary_suite_replays_to_its_expected_logs(tmp_path: Path) -> None
             "sends_to_a_removed_ptc error",
             "takes_before_its_exits pass",
         ],
+        tmp_path / "logs",
+    )
+
+
+def test_the_job_suite_replays_to_its_expected_logs(tmp_path: Path) -> None:
+    """docs/SCE_TEST_PROFILE.md §11.8: a status every matcher of
+    ``every_matcher`` accepts, at 1 ms, which the tester's branch reads as a
+    composed message; the helper is told and passes, and the tester settles
+    for the duration its start gives and passes at 501 ms."""
+    replays(
+        "job_suite",
+        job_suite.suite(),
+        job_suite.module_parameter,
+        "job-timeout,job-retry",
+        ["completes_in_time pass"],
         tmp_path / "logs",
     )

@@ -227,10 +227,10 @@ TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
 # its record, templates and tables a module each, its components' machines alone as above,
 # beside the runtime's records, templates and asking_configuration, which it reuses. orders_suite
 # and nested_suite are not replayed on Python: their mapped record holds a union, which Python's
-# test profile matches no value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS); nor is
-# job_suite: its tester's receive branch reads a message whose record holds a list, which the
-# Python machine makes no value of (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the
-# same documents (scripts/regen_static_datamodel_rust.sh).
+# test profile matches no value of (codegen_matrix::TEST_PROFILE_UNION_BACKENDS). job_suite is
+# replayed: its records and templates TEST_PROFILE generates above, with the job's completion of
+# the kind examples its port sends, its components' machines alone and its tables a module each.
+# The Rust tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
 BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
 BOUNDARY_MODULES=(signed_reading signed_reading_sent signed_reading_within)
 BOUNDARY_MODULES+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
@@ -239,6 +239,9 @@ BOUNDARY_MODULES+=(exchanges_signed_numbers answers_another_job sets_no_verdict 
 BOUNDARY_MODULES+=(sends_to_a_removed_ptc takes_before_its_exits boundary_suite)
 BOUNDARY_COMPONENTS=(signed_tester no_verdict_setter stalled_listener request_listener ptc_remover)
 BOUNDARY_COMPONENTS+=(leaving_logger)
+JOB_SUITE_MODULES=(tester_and_helper completes_in_time job_suite)
+JOB_SUITE_COMPONENTS=(job_tester helper)
+JOB_COMPLETED="sce-build/kind-examples/event-schema.scxml"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -284,6 +287,13 @@ for document in "${BOUNDARY_MODULES[@]}"; do
 done
 for component in "${BOUNDARY_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$BOUNDARY_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
+done
+for document in "${JOB_SUITE_MODULES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l python -o "$TMP/boundary_$document/"
+done
+"$CODEGEN" generate "$JOB_COMPLETED" -l python -o "$TMP/boundary_job_completed/"
+for component in "${JOB_SUITE_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -353,7 +363,7 @@ for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
     done
 done
 
-for document in "${BOUNDARY_MODULES[@]}"; do
+for document in "${BOUNDARY_MODULES[@]}" "${JOB_SUITE_MODULES[@]}" job_completed; do
     for generated in "$TMP/boundary_$document"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
@@ -365,7 +375,7 @@ for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done
-for component in "${TEST_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" "${JOB_SUITE_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
 done

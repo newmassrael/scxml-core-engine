@@ -2397,7 +2397,12 @@ GATES: dict[str, dict] = {
                   # `test_a_corpus_suite_replays_to_its_expected_logs.py`
                   # replays and reads at run time.
                   "sce-build/tests/fixtures/test_profile/boundary/**",
-                  "sce-build/tests/fixtures/test_profile/runs/**"],
+                  "sce-build/tests/fixtures/test_profile/runs/**",
+                  # The documents of job_suite the same regeneration writes,
+                  # and the job's completion of the kind examples its port
+                  # sends.
+                  "sce-build/tests/fixtures/test_profile/*.scxml",
+                  "sce-build/kind-examples/event-schema.scxml"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",

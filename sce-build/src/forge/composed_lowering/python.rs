@@ -601,6 +601,86 @@ impl ComposedSpelling for PythonComposed<'_> {
         format!("[{elem} for sce_copied in {}]", held.text)
     }
 
+    // A record's unit names its fields as the schema does
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `bool`, a text, a byte string, and a list or an optional value
+    // of them, in the Python types the machine holds them in.
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Python
+            )
+        ))
+    }
+    // A list is taken into a list of its own, which the machine may append to
+    // in place; every other such value (a number, a truth value, a text, a
+    // byte string, an optional one of them) cannot be written into, and the
+    // run hands the message to this component alone, so it is held as read.
+    fn unit_whole(&self, held: &Held, ty: &ValueType) -> String {
+        match ty {
+            ValueType::List { .. } => format!("list({})", held.text),
+            _ => held.text.clone(),
+        }
+    }
+    // A `bytes` whatever its bound, which cannot be written into.
+    fn unit_entry_bytes(&self, _max: u32, held: &Held) -> String {
+        held.text.clone()
+    }
+    // An enum's value is read by its `declared_name()` and a union's by its
+    // `kind` and `value`, so no unit's class is named and none is imported.
+    fn unit_values_name_their_units(&self) -> bool {
+        false
+    }
+    // The machine's `IntEnum` read by the declared name the unit's value
+    // answers, as a saved value of its type is (`from_saved`), which refuses a
+    // name no variant declares, as a record of entries' enum crosses
+    // (`StaticTarget::take_branch`).
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        Some(format!(
+            "{}.from_saved(({}).declared_name(), {})",
+            machine.ty,
+            held.text,
+            crate::filters::py_string_literal(document.to_string())
+        ))
+    }
+    // A table of the cases by the declared name of the unit's tag, as a union
+    // crosses a call (`python_union_crossing`), each the builder of the
+    // machine's case of the same variant from the unit's case, whose record
+    // is its `value`.
+    fn unit_union(&self, held: &Held, _document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|arm| {
+                let built = if arm.holds_record {
+                    format!("(lambda sce_copied: {})(sce_case.value)", arm.value)
+                } else {
+                    arm.value.clone()
+                };
+                format!(
+                    "{}: lambda sce_case: {built}",
+                    crate::filters::py_string_literal(arm.variant.clone())
+                )
+            })
+            .collect();
+        Some(format!(
+            "(lambda sce_case: {{{}}}[sce_case.kind.declared_name()](sce_case))({})",
+            arms.join(", "),
+            held.text
+        ))
+    }
+    // The data class, each field given by its id as the declaration names it
+    // ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}={value}"))
+            .collect();
+        Some(format!("{ty}({})", members.join(", ")))
+    }
+
     // The record's saved form, a `dict` of its fields keyed by their ids in the
     // schema's order, each written and read as its type says
     // ([`python_saved_writer`], [`python_saved_reader`]): the names a record of
@@ -1578,5 +1658,76 @@ mod tests {
         ] {
             assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
         }
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, each field read by its id.
+    /// A list of records is built element by element into the machine's data
+    /// classes, an enum read by its declared name into the machine's
+    /// `IntEnum`, a list taken into a list of its own, and every other value,
+    /// which cannot be written into, held as it is read.
+    #[test]
+    fn a_python_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &PYTHON,
+            &Held::reference("_sce_message.value"),
+        )
+        .expect("every field is made");
+        assert_eq!(
+            fields,
+            vec![
+                (
+                    "items".to_string(),
+                    "[MItemRecord(id=sce_copied.id, level=MLevelEnum.from_saved(\
+                     (sce_copied.level).declared_name(), \"level\"), due=sce_copied.due, \
+                     blob=sce_copied.blob, tags=list(sce_copied.tags)) for sce_copied in \
+                     _sce_message.value.items]"
+                        .to_string()
+                ),
+                (
+                    "grid".to_string(),
+                    "list(_sce_message.value.grid)".to_string()
+                ),
+                (
+                    "late".to_string(),
+                    "list(_sce_message.value.late)".to_string()
+                ),
+            ]
+        );
+        assert!(!PYTHON.unit_values_name_their_units());
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a table of its cases by the
+    /// declared name of the unit's tag, each building the machine's case of the
+    /// same variant, from the unit's case's `value` where it holds a record.
+    #[test]
+    fn a_python_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &PYTHON,
+            &Held::place("_sce_message.value.shape"),
+        )
+        .expect("the union is made");
+        assert_eq!(
+            made,
+            "(lambda sce_case: {\"dot\": lambda sce_case: MShapeUnionDot(), \"circle\": lambda \
+             sce_case: (lambda sce_copied: MShapeUnionCircle(MRadiusRecord(radius=\
+             sce_copied.radius)))(sce_case.value), \"disc\": lambda sce_case: (lambda \
+             sce_copied: MShapeUnionDisc(MRadiusRecord(radius=sce_copied.radius)))\
+             (sce_case.value)}[sce_case.kind.declared_name()](sce_case))(_sce_message.value.shape)"
+        );
     }
 }

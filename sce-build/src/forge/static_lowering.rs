@@ -13069,6 +13069,34 @@ fn python_union_crossing(value: &str, crossing: Crossing, cases: &[CrossedCase])
 pub struct PythonTarget;
 
 impl PythonTarget {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statements taking the receive
+    /// branch on `port` with `template`, which remove the head of the port
+    /// into [`PYTHON_TEST_MESSAGE`], hold its value to the template's unit's
+    /// type, and hold the machine's payload class of `copies`, each a field of
+    /// it by its id with its value, in the member the content reads
+    /// `_event.data` through.
+    fn received_record(
+        &self,
+        machine: &str,
+        port: &str,
+        template: &TemplateRef,
+        copies: &[(String, String)],
+    ) -> String {
+        let record = self.record_value(
+            &crate::forge::generator::python_payload_class(machine, &template.event),
+            copies,
+        );
+        format!(
+            "{PYTHON_TEST_MESSAGE} = {PYTHON_TEST_CONTEXT}.receive({})\n\
+             if not isinstance({PYTHON_RECEIVED_VALUE}, {}):\n    \
+             raise RuntimeError(\"a receive branch takes the message its guard matched\")\n\
+             {} = {record}",
+            python_text(port),
+            python_test_template(&template.unit, "Value"),
+            self.payload_accessor(&template.event)
+        )
+    }
+
     /// `statement`, wrapped where a failing checked operation of it is
     /// received: the lines of a block that leaves its action block on a failure.
     fn guarded(statement: &str, failed: &str) -> String {
@@ -13157,6 +13185,12 @@ pub(crate) const PYTHON_TEST_RUNTIME: &str = "_sce_testprofile";
 /// Under a leading underscore, so no alias `sce_<document>` a template's unit
 /// is imported under is hidden by it in the method that names both.
 const PYTHON_TEST_MESSAGE: &str = "_sce_message";
+
+/// The value of the message the statement taking a receive branch of a test
+/// component's Python machine holds in [`PYTHON_TEST_MESSAGE`], as the record
+/// its unit declares holds it (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const PYTHON_RECEIVED_VALUE: &str = "_sce_message.value";
 
 /// `text` as a Python string literal.
 fn python_text(text: &str) -> String {
@@ -14204,7 +14238,7 @@ impl StaticTarget for PythonTarget {
                 },
                 Some(ReceivedMessage::Entries(schema)),
             ) => {
-                let value = format!("{PYTHON_TEST_MESSAGE}.value");
+                let value = PYTHON_RECEIVED_VALUE;
                 let copies = schema
                     .fields
                     .iter()
@@ -14237,23 +14271,26 @@ impl StaticTarget for PythonTarget {
                         Some((self.record_field(&f.id), held))
                     })
                     .collect::<Option<Vec<(String, String)>>>()?;
-                let record = self.record_value(
-                    &crate::forge::generator::python_payload_class(machine, &template.event),
-                    &copies,
-                );
-                format!(
-                    "{PYTHON_TEST_MESSAGE} = {PYTHON_TEST_CONTEXT}.receive({})\n\
-                     if not isinstance({value}, {}):\n    \
-                     raise RuntimeError(\"a receive branch takes the message its guard matched\")\n\
-                     {} = {record}",
-                    python_text(port),
-                    python_test_template(&template.unit, "Value"),
-                    self.payload_accessor(&template.event)
-                )
+                self.received_record(machine, port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the payload
+            // class made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from [`PYTHON_RECEIVED_VALUE`].
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => {
+                let copies: Vec<(String, String)> = members
+                    .iter()
+                    .map(|(id, value)| (self.record_field(id), value.clone()))
+                    .collect();
+                self.received_record(machine, port, template, &copies)
+            }
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             (SnapshotBranch::Receive { port, .. }, _) => {
                 format!("{PYTHON_TEST_CONTEXT}.receive({})", python_text(port))
@@ -14265,6 +14302,10 @@ impl StaticTarget for PythonTarget {
                 format!("{PYTHON_TEST_CONTEXT}.done_taken({})", python_text(ptc))
             }
         })
+    }
+    // The value `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(PYTHON_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `Duration`. A
     // Python `int` has no bound, and the duration is held to the 64-bit count
