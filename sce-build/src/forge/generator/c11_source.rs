@@ -32,33 +32,53 @@ pub(super) mod source_case;
 
 /// The first form of `plan` the C11 printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
-pub(super) fn unlowered(plan: &CodecPlan<'_>) -> Option<String> {
-    unlowered_forms(plan).into_iter().next()
+pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
+    unlowered_forms(plan, imports).into_iter().next()
 }
 
 /// Every form of `plan` the C11 printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
-/// byte strings and texts, always there or decided by a gate of a carrier's
-/// flags, whose every derived element is the length of one byte string or text
-/// in a field of its own that the length fits (zero where a gate leaves the
-/// bytes out) or in a flag of a carrier, its `sce:length-arith` never taking it
-/// below zero, or a flag set where the one element it gates is there, that
-/// takes no flag input and whose encode refuses nothing: its writes are the fixed bytes and
-/// the byte strings of a positional layout and, of a streamed one, whole fixed
-/// fields, variable-length integers and byte strings. A CBOR map and a
-/// content-line component keep their own templates' encodes.
-pub(super) fn unlowered_forms(plan: &CodecPlan<'_>) -> Vec<String> {
+/// byte strings, texts and bodies of codecs it prints that are handed no flag
+/// input, always there or decided by a gate of a carrier's flags, whose every
+/// derived element is the length of one byte string or text in a field of its
+/// own that the length fits (zero where a gate leaves the bytes out) or in a
+/// flag of a carrier, its `sce:length-arith` never taking it below zero, or a
+/// flag set where the one element it gates is there, that takes no flag input
+/// and whose encode refuses nothing: its writes are the fixed bytes and the
+/// byte strings of a positional layout and, of a streamed one, whole fixed
+/// fields, variable-length integers, byte strings and bodies. A CBOR map and a
+/// content-line component keep their own templates' encodes. `imports` are the
+/// codec's own, which say whether a codec it holds is printed
+/// ([`ImportContext::c11_printed`]).
+pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
-        CodecPlan::Positional(plan) => positional_forms(plan),
+        CodecPlan::Positional(plan) => positional_forms(plan, imports),
         CodecPlan::Cbor(_) => vec!["a CBOR map".to_string()],
         CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
     }
 }
 
+/// The C11 prefix of the symbols of the codec a body of `plan` holds as
+/// `alias`, where the C11 backend prints it from its plan: its header then
+/// declares `{prefix}_encode_source`, `{prefix}_value_source` and
+/// `{prefix}_source_ref_t`. The prefix is the one the template names the
+/// body's encode by (`resolve_variant_arm_encoder`).
+fn printed_body(imports: &[ImportContext], alias: &str) -> Option<String> {
+    imports
+        .iter()
+        .any(|import| import.alias == alias && import.c11_printed)
+        .then(|| body_prefix(alias))
+}
+
+/// The prefix [`printed_body`] answers, of the codec imported as `alias`.
+fn body_prefix(alias: &str) -> String {
+    filters::to_snake_case(alias.to_string())
+}
+
 /// [`unlowered_forms`] of a positional codec.
-fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
+fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
     if m.variant.is_some() {
@@ -83,7 +103,19 @@ fn positional_forms(plan: &EncodePlan<'_>) -> Vec<String> {
                     ));
                 }
             }
-            Value::Body { codec } => forms.push(format!("field '{id}': a body of `{codec}`")),
+            // Presented as the table and the context of its codec's source,
+            // and written by that codec's own encode over it, which a codec
+            // the C11 backend prints has, handed nothing.
+            Value::Body { codec } => {
+                if printed_body(imports, codec).is_none() {
+                    forms.push(format!(
+                        "field '{id}': a body of `{codec}`, which the C11 backend does not print"
+                    ));
+                }
+                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                    forms.push(format!("field '{id}': a body handed flag inputs"));
+                }
+            }
             Value::List { codec, .. } => {
                 forms.push(format!("field '{id}': a list of `{codec}`"));
             }
@@ -352,9 +384,9 @@ fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
         Value::Scalar(ty) => l.type_name(ty).into_owned(),
         Value::Bytes(_) | Value::Text(_) if gated => BoundedView::of(l, snake, element).optional(),
         Value::Bytes(_) | Value::Text(_) => BoundedView::of(l, snake, element).ty(),
-        Value::Body { .. } | Value::List { .. } => {
-            unreachable!("`unlowered` prints no body and no list")
-        }
+        Value::Body { codec } if gated => format!("{}_source_ref_optional_t", body_prefix(codec)),
+        Value::Body { codec } => format!("{}_source_ref_t", body_prefix(codec)),
+        Value::List { .. } => unreachable!("`unlowered` prints no list"),
     }
 }
 
@@ -502,12 +534,14 @@ pub(crate) fn derived_local(id: &str) -> String {
 /// The C11 text the printer gives a codec's header.
 pub(super) struct C11Source {
     /// After the value's struct and its decode, before the value's encode: the
-    /// view of each byte string and text, the table of a source, the value's
-    /// functions and table, and the encode over any source.
+    /// view of each byte string and text, the table of a source and the pair a
+    /// parent presents a body as, the value's functions and table, the encode
+    /// over any source, and the check of a value's arrays.
     pub(super) before_encode: String,
-    /// The body of the value's encode, `{snake}_encode`: the bounds of the
-    /// arrays the value holds its byte strings and texts in, which C cannot
-    /// hold in a type, then the encode over the value's table.
+    /// The body of the value's encode, `{snake}_encode`: the check of the
+    /// arrays the value and the bodies it holds keep their byte strings and
+    /// texts in, which C cannot hold in a type, then the encode over the
+    /// value's table.
     pub(super) encode_body: String,
 }
 
@@ -516,7 +550,7 @@ pub(super) struct C11Source {
 pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> C11Source {
     C11Source {
         before_encode: before_encode(plan, l, snake),
-        encode_body: encode_body(plan, l, snake),
+        encode_body: encode_body(snake),
     }
 }
 
@@ -558,6 +592,17 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         ));
     }
     out.push_str(&format!("}} {table};\n\n"));
+    // How a parent presents a body of this codec: the table of its source and
+    // the context the table is handed, two pointers, so a body is presented
+    // where it is held and with no copy; and the optional value of the pair,
+    // which a parent presents a body a gate decides as.
+    out.push_str(&format!(
+        "/* A source of {value}: the table of its elements and the context the\n \
+         * table is handed, as a codec that holds one presents it to its encode. */\n\
+         typedef struct {{\n    const {table} *table;\n    const void *ctx;\n}} {snake}_source_ref_t;\n\n\
+         /* A source of {value} that may be absent. */\n\
+         SCE_OPTIONAL_DECLARE_NAMED({snake}_source_ref_optional, {snake}_source_ref_t)\n\n"
+    ));
 
     // The value's functions, each reading its element off the value the
     // context points at: a number as the struct holds it, a byte string or a
@@ -596,6 +641,34 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                  view.len = self->{name}_len;\n    \
                  return view;\n"
             ),
+            // The body the struct holds, as a source of its codec by the table
+            // that presents a value of it.
+            Value::Body { codec } => {
+                let prefix = body_prefix(codec);
+                let (held, absent) = if gated {
+                    (
+                        format!("self->{name}.value"),
+                        format!(
+                            "    if (!self->{name}.present) {{\n        \
+                             return {prefix}_source_ref_optional_none();\n    }}\n"
+                        ),
+                    )
+                } else {
+                    (format!("self->{name}"), String::new())
+                };
+                let ret = if gated {
+                    format!("{prefix}_source_ref_optional_some(body)")
+                } else {
+                    "body".to_string()
+                };
+                format!(
+                    "    const {value} *self = (const {value} *)ctx;\n\
+                     {absent}    {prefix}_source_ref_t body;\n    \
+                     body.table = {prefix}_value_source();\n    \
+                     body.ctx = &{held};\n    \
+                     return {ret};\n"
+                )
+            }
             _ => format!("    return ((const {value} *)ctx)->{name};\n"),
         };
         out.push_str(&format!(
@@ -624,6 +697,8 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
          }}\n\n"
     ));
     out.push_str(&encode_source(plan, l, snake));
+    out.push('\n');
+    out.push_str(&check_value(plan, l, snake));
     out
 }
 
@@ -838,8 +913,22 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     // Its length, where the frame carries one, a field of its
                     // own the program writes before it.
                     BitSize::Tail | BitSize::LengthRef => body.push_str(&view_bytes(field)),
+                    // A body, by its codec's encode over the source the value
+                    // presents it as.
+                    BitSize::Embed => {
+                        let Some(Value::Body { codec }) =
+                            element_of(plan, &field.id).map(|e| &e.value)
+                        else {
+                            unreachable!("an embedded field is a body the value presents");
+                        };
+                        let held = read(field);
+                        body.push_str(&format!(
+                            "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, w));\n",
+                            body_prefix(codec)
+                        ));
+                    }
                     _ => unreachable!(
-                        "`unlowered` prints a fixed field, a VLE or a byte string only"
+                        "`unlowered` prints a fixed field, a VLE, a byte string or a body only"
                     ),
                 }
                 out.push_str(&match guard {
@@ -887,15 +976,40 @@ fn guarded(test: &str, body: &str) -> String {
     out
 }
 
-/// [`C11Source::encode_body`]. The value holds each byte string and text in an
-/// array beside its length, as C holds a value with no allocator, and C
-/// cannot keep that length within the bound of the element's view; a value
-/// whose length is outside it, or whose text no UTF-8 holds, is no value of
-/// the codec, and is refused before the first byte, as a decode would refuse
-/// its frame. Every other value is encoded over the value's table.
-fn encode_body(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
+/// [`C11Source::encode_body`]: the value checked by [`check_value`] before the
+/// first byte, then encoded over the value's table.
+fn encode_body(snake: &str) -> String {
+    format!(
+        "    /* The value within its bounds before the first byte (docs/adr/0081 §2). */\n    \
+         SCE_FORGE_TRY_WRITE({snake}_check_value(self));\n    \
+         return {snake}_encode_source({snake}_value_source(), self, w);\n"
+    )
+}
+
+/// `{snake}_check_value`, which answers whether a value of the codec's struct
+/// is a value of the codec. The value holds each byte string and text in an
+/// array beside its length, as C holds a value with no allocator, and C cannot
+/// keep that length within the bound of the element's view; a value whose
+/// length is outside it, or whose text no UTF-8 holds, is no value of the
+/// codec, and is refused before the first byte, as a decode would refuse its
+/// frame. A body it holds is checked by its own codec's check, as the value's
+/// table presents the body's arrays through that codec's views.
+fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     let mut out = String::new();
     for element in &plan.elements {
+        if let Value::Body { codec } = &element.value {
+            let name = l.codec_field_id(&element.field.id);
+            let check = format!("{}_check_value", body_prefix(codec));
+            out.push_str(&if element.presence == Presence::Gated {
+                format!(
+                    "    if (self->{name}.present) {{\n        \
+                     SCE_FORGE_TRY_WRITE({check}(&self->{name}.value));\n    }}\n"
+                )
+            } else {
+                format!("    SCE_FORGE_TRY_WRITE({check}(&self->{name}));\n")
+            });
+            continue;
+        }
         if !matches!(element.value, Value::Bytes(_) | Value::Text(_)) {
             continue;
         }
@@ -939,15 +1053,15 @@ fn encode_body(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             ));
         }
     }
-    if !out.is_empty() {
-        out.insert_str(
-            0,
-            "    /* Each array within the bound of the element's view, and each text\n     \
-             * UTF-8, before the first byte (docs/adr/0081 §2). */\n",
-        );
+    if out.is_empty() {
+        out.push_str("    (void)self;\n");
     }
-    out.push_str(&format!(
-        "    return {snake}_encode_source({snake}_value_source(), self, w);\n"
-    ));
-    out
+    format!(
+        "/* Whether `self` is a value of {snake}_t: SCE_FORGE_CODEC_OK, or the\n \
+         * refusal of an array past the bound of its element's view or of a text no\n \
+         * UTF-8 holds, in it or in a body it holds (docs/adr/0081 §2). */\n\
+         static inline sce_forge_codec_status_t {snake}_check_value(const {snake}_t *self) {{\n\
+         {out}    return SCE_FORGE_CODEC_OK;\n\
+         }}\n"
+    )
 }

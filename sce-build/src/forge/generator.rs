@@ -10972,14 +10972,21 @@ pub(crate) fn go_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> V
 /// answers, and its encode is the encode over any source; any other codec
 /// keeps the template's encode whole.
 pub(crate) fn c11_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
-    c11_source::unlowered(&crate::forge::encode_plan::CodecPlan::of(m, imports)).is_none()
+    c11_source::unlowered(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
+    .is_none()
 }
 
 /// Every form of `m`'s encode plan the C11 printer does not lower, as the
 /// clause that names it, in the order the printer meets them; empty where
 /// [`c11_codec_printed`].
 pub(crate) fn c11_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
-    c11_source::unlowered_forms(&crate::forge::encode_plan::CodecPlan::of(m, imports))
+    c11_source::unlowered_forms(
+        &crate::forge::encode_plan::CodecPlan::of(m, imports),
+        imports,
+    )
 }
 
 /// The fields of `m` a C11 value printed from its plan holds no member of: the
@@ -10987,7 +10994,7 @@ pub(crate) fn c11_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
 /// the template's encode, whose value holds every field.
 fn c11_derived_fields(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
     let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-    if c11_source::unlowered(&plan).is_some() {
+    if c11_source::unlowered(&plan, imports).is_some() {
         return Vec::new();
     }
     match plan {
@@ -13955,7 +13962,7 @@ fn render_codec(
     // decode are read off it.
     let c11_printed = if matches!(lang, crate::generator::Language::C11) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (c11_source::unlowered(&plan), plan) {
+        match (c11_source::unlowered(&plan, imports), plan) {
             (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
                 let printed = c11_source::render(&p, &l, &filters::to_snake_case(m.name.clone()));
                 Some((p, printed))
