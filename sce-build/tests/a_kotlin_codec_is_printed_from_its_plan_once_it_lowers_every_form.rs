@@ -579,6 +579,109 @@ fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     }
 }
 
+/// The documents `stem` imports, by stem, as its `<sce:import src=...>` names
+/// them.
+fn imports_of(stem: &str) -> Vec<String> {
+    let text = std::fs::read_to_string(resources().join(format!("{stem}.scxml")))
+        .unwrap_or_else(|e| panic!("{stem} reads: {e}"));
+    text.split("<sce:import")
+        .skip(1)
+        .filter_map(|declaration| {
+            let declaration = &declaration[..declaration.find('>')?];
+            let start = declaration.find("src=\"")? + "src=\"".len();
+            let src = &declaration[start..];
+            src[..src.find('"')?]
+                .strip_suffix(".scxml")
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+/// Every codec of the resources the Kotlin printer prints compiles under
+/// `-Werror`, with every document it imports and the forge runtime it names:
+/// what the printer writes is held by the compiler, not only by the text the
+/// tests above read. Skipped where no `kotlinc` is on the path.
+///
+/// Turns red where `kotlin_source` writes a statement kotlinc refuses or warns
+/// of: a smart cast it cannot make, a parameter or a local it leaves unread, a
+/// literal of the wrong type, a conversion it calls redundant.
+#[test]
+fn every_printed_kotlin_codec_compiles_under_werror() {
+    let Some(kotlinc) = sce_build::toolchain::require_any_or_skip(
+        &["kotlinc"],
+        "compile the codecs the Kotlin printer prints",
+    ) else {
+        return;
+    };
+    let options = ForgeCompileOptions::default();
+    // The printed codecs, and every document they import, transitively.
+    let mut wanted: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut queue: Vec<String> = Vec::new();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(resources())
+        .expect("the resources directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
+        .collect();
+    paths.sort();
+    for path in &paths {
+        if kotlin_codec_printed_file(path, &[], &options).ok() == Some(Some(true)) {
+            let stem = path
+                .file_stem()
+                .expect("a document has a stem")
+                .to_string_lossy()
+                .into_owned();
+            if wanted.insert(stem.clone()) {
+                queue.push(stem);
+            }
+        }
+    }
+    while let Some(stem) = queue.pop() {
+        for imported in imports_of(&stem) {
+            if wanted.insert(imported.clone()) {
+                queue.push(imported);
+            }
+        }
+    }
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for stem in &wanted {
+        let output = compile_forge_file(
+            &resources().join(format!("{stem}.scxml")),
+            Language::Kotlin,
+            &[],
+            &options,
+        )
+        .unwrap_or_else(|e| panic!("{stem} generates on Kotlin: {:?}", e.error));
+        for (file, text) in output.files {
+            // A test-vector sidecar needs the test library, which is not on
+            // this compile's path.
+            if !file.ends_with(".kt") || file.ends_with("TestVectors.kt") {
+                continue;
+            }
+            let path = dir.path().join(&file);
+            std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {file}: {e}"));
+            sources.push(path);
+        }
+    }
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime");
+    sources.push(runtime.join("Codec.kt"));
+    sources.push(runtime.join("Utf8.kt"));
+    let out = std::process::Command::new(&kotlinc)
+        .arg("-Werror")
+        .arg("-d")
+        .arg(dir.path().join("classes"))
+        .args(&sources)
+        .output()
+        .expect("kotlinc runs");
+    assert!(
+        out.status.success(),
+        "the printed Kotlin codecs ({}) do not compile under -Werror:\n{}",
+        wanted.iter().cloned().collect::<Vec<_>>().join(", "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// Every codec of the resources is printed exactly where the printer lowers
 /// each of its forms, and each printed one generates a file with its encode
 /// over a source. The printed codecs are shown with `--nocapture`.
