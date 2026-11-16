@@ -764,6 +764,79 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
 
+    // A record's unit names its fields as the schema does
+    // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
+    // number, a `Bool`, a text, a byte string, and a list or an optional value
+    // of them, in the Swift types the machine holds them in (`String`,
+    // `[UInt8]`, `[T]`, `T?`), each a value, so the walk holds each as it is
+    // read (`copy_whole`).
+    fn unit_field(&self, held: &Held, field: &str) -> Option<String> {
+        Some(format!(
+            "{}.{}",
+            held.text,
+            crate::forge::generator::event_schema_field_ident(
+                field,
+                crate::generator::Language::Swift
+            )
+        ))
+    }
+    // The machine's case of the same declared name as the unit's value
+    // answers, as a record of entries' enum crosses (`StaticTarget::take_branch`):
+    // the machine's enum declares every variant its unit's does, so a name it
+    // does not read is a defect that stops the program.
+    fn unit_enum(&self, machine: &MachineEnum, document: &str, held: &Held) -> Option<String> {
+        let ty = &machine.ty;
+        Some(format!(
+            "{{ (sceName: String) -> {ty} in guard let sceCrossed = {ty}(declaredName: sceName) \
+             else {{ preconditionFailure(\"the machine's enum of `{}` declares every variant its \
+             unit's does, \\(sceName) among them\") }}; return sceCrossed }}(({}).declaredName)",
+            crate::filters::escape_swift(document.to_string()),
+            held.text
+        ))
+    }
+    // A `switch` over every case of the unit's enum, as a union crosses a call
+    // (`swift_union_crossing`), a case that holds a record binding it, each arm
+    // the machine's case of the same variant; every case is an arm, so the
+    // `switch` is exhaustive. A closure called where the value stands.
+    fn unit_union(&self, held: &Held, document: &str, arms: &[UnitUnionArm]) -> Option<String> {
+        use crate::generator::Language;
+        let unit = crate::forge::generator::union_unit_type(document, Language::Swift);
+        let ty = self.union_type(document);
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|arm| {
+                let case = crate::forge::generator::algorithm_union_case(
+                    Language::Swift,
+                    &unit,
+                    &arm.variant,
+                    None,
+                );
+                if arm.holds_record {
+                    format!(
+                        "case {case}(let {SWIFT_COPY_BINDING}): return {}",
+                        arm.value
+                    )
+                } else {
+                    format!("case {case}: return {}", arm.value)
+                }
+            })
+            .collect();
+        Some(format!(
+            "{{ () -> {ty} in switch {} {{ {} }} }}()",
+            held.text,
+            arms.join("; ")
+        ))
+    }
+    // The struct's initializer, each field labelled by its id as the
+    // declaration names it ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}: {value}"))
+            .collect();
+        Some(format!("{ty}({})", members.join(", ")))
+    }
+
     // The record's saved form, an object of its fields keyed by their ids in the
     // schema's order, each written and read as its type says
     // ([`swift_saved_write`], [`swift_saved_read`]): what a variable that holds the
@@ -1732,5 +1805,68 @@ mod tests {
              SavedValues.list(sceSaved0, sceWhat0, capacity: 2) { sceSaved1, sceWhat1 in try \
              SavedValues.uint8(sceSaved1, sceWhat1) } }"
         );
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
+    /// made from the value its record's unit holds, each field read by its id.
+    /// A list of records is mapped element by element into the machine's
+    /// structs, an enum into the machine's case of the same declared name, and
+    /// every other value, one Swift value type in the unit and the machine,
+    /// held as it is read.
+    #[test]
+    fn a_swift_message_is_made_from_its_units_value_field_by_field() {
+        let held = held();
+        let documents: BTreeMap<String, String> =
+            [("Level".to_string(), "level".to_string())].into();
+        let batch = held.record(None, "Batch").expect("the record");
+        let fields = fields_from_unit(
+            batch,
+            &held,
+            &enums(),
+            &documents,
+            &SWIFT,
+            &Held::reference("sceValue"),
+        )
+        .expect("every field is made");
+        let ids: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["items", "grid", "late"]);
+        for needle in [
+            "(sceValue.items).map({ (sceCopied) -> MItemRecord in MItemRecord(id: sceCopied.id, \
+             level: { (sceName: String) -> MLevelEnum in guard let sceCrossed = \
+             MLevelEnum(declaredName: sceName) else {",
+            "return sceCrossed }((sceCopied.level).declaredName), due: sceCopied.due, blob: \
+             sceCopied.blob, tags: sceCopied.tags) })",
+        ] {
+            assert!(fields[0].1.contains(needle), "{needle} in {}", fields[0].1);
+        }
+        assert_eq!(fields[1].1, "sceValue.grid");
+        assert_eq!(fields[2].1, "sceValue.late");
+    }
+
+    /// docs/adr/0092, section 7: a union is made by a `switch` over every case
+    /// of the unit's enum, a case that holds a record binding it, each arm the
+    /// machine's case of the same variant.
+    #[test]
+    fn a_swift_union_is_made_from_its_units_value_case_by_case() {
+        let shapes = shapes();
+        let made = from_unit(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds(),
+            &BTreeMap::new(),
+            &SWIFT,
+            &Held::place("sceValue.shape"),
+        )
+        .expect("the union is made");
+        for needle in [
+            "{ () -> MShapeUnion in switch sceValue.shape { case Shape.dot: return MShapeUnion.",
+            "; case Shape.circle(let sceCopied): return MShapeUnion.",
+            "(MRadiusRecord(radius: sceCopied.radius))",
+            "; case Shape.disc(let sceCopied): return MShapeUnion.",
+            " } }()",
+        ] {
+            assert!(made.contains(needle), "{needle} in {made}");
+        }
     }
 }

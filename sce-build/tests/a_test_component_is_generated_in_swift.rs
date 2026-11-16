@@ -1018,3 +1018,24 @@ fn a_component_whose_template_reaches_a_union_is_generated_on_swift() {
     let code: String = files.into_iter().map(|(_, text)| text).collect();
     assert!(code.contains("OrderPlacedMatch.matches("), "{code}");
 }
+
+/// docs/SCE_TEST_PROFILE.md §12.3, §12.6: a receive branch whose content reads
+/// a message of a record that holds a composition (`job_status`: a list, a
+/// text that may be absent, numbers that may be absent) binds it in the
+/// machine's payload struct, each member made from the value the record's unit
+/// holds, each a Swift value of one type in the unit and the machine, so held
+/// as it is read.
+#[test]
+fn a_composed_message_its_content_reads_is_bound_in_the_machines_types_on_swift() {
+    let code = text_at(&profile_dir().join("job_tester.scxml"));
+    let checked = at(
+        &code,
+        "guard let sceValue = sceMessage.valueAs(EveryMatcher.Value.self) else { ",
+    );
+    let bound = at(
+        &code,
+        "JobTesterJobStatusPayload(elapsed_ms: sceValue.elapsed_ms, note: sceValue.note, codes: \
+         sceValue.codes, tag: sceValue.tag, retry: sceValue.retry, count: sceValue.count) }",
+    );
+    assert!(checked < bound, "{code}");
+}

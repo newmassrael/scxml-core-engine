@@ -17505,6 +17505,12 @@ pub struct SwiftTarget;
 /// for itself beside a variable's `v<Name>` property is.
 const SWIFT_TEST_CONTEXT: &str = "self.sceTestContext";
 
+/// The name the statement taking a receive branch of a test component's Swift
+/// machine binds the value of the message to, a value of the record its unit
+/// declares (docs/SCE_TEST_PROFILE.md §12.3,
+/// [`StaticTarget::received_binding`]).
+const SWIFT_RECEIVED_VALUE: &str = "sceValue";
+
 /// `text` as a Swift string literal.
 fn swift_text(text: &str) -> String {
     format!("\"{}\"", filters::escape_swift(text.to_string()))
@@ -17536,6 +17542,35 @@ fn swift_verdict(verdict: crate::test_component::Verdict) -> String {
 }
 
 impl SwiftTarget {
+    /// docs/SCE_TEST_PROFILE.md §12.3: the statement taking the receive branch
+    /// on `port` with `template`, which removes the head of the port, binds its
+    /// value as the template's unit holds it to [`SWIFT_RECEIVED_VALUE`], and
+    /// holds the machine's payload struct of `copies`, each a member of it by
+    /// its label with its value, in the member the content reads `_event.data`
+    /// through. One `do` block, so its constants stand beside none of the
+    /// content's.
+    fn received_record(
+        &self,
+        machine: &str,
+        port: &str,
+        template: &TemplateRef,
+        copies: &[(String, String)],
+    ) -> String {
+        let record = self.record_value(
+            &crate::forge::generator::swift_payload_struct(machine, &template.event),
+            copies,
+        );
+        let value = swift_test_template(&template.unit, "Value");
+        format!(
+            "do {{ let sceMessage = {SWIFT_TEST_CONTEXT}.receive({}); \
+             guard let {SWIFT_RECEIVED_VALUE} = sceMessage.valueAs({value}.self) else {{ \
+             preconditionFailure(\"a receive branch takes the message its guard \
+             matched\") }}; {} = {record} }}",
+            swift_text(port),
+            self.payload_accessor(&template.event)
+        )
+    }
+
     /// `parts` as the statements of one block, the empty ones left out — what runs
     /// on a failure may be nothing, when the document declares no `error.execution`
     /// to raise.
@@ -18869,7 +18904,7 @@ impl StaticTarget for SwiftTarget {
                     .iter()
                     .map(|f| {
                         let read = format!(
-                            "sceValue.{}",
+                            "{SWIFT_RECEIVED_VALUE}.{}",
                             crate::forge::generator::event_schema_field_ident(
                                 &f.id,
                                 Language::Swift
@@ -18900,23 +18935,27 @@ impl StaticTarget for SwiftTarget {
                         Some((self.record_field(&f.id), held))
                     })
                     .collect::<Option<Vec<(String, String)>>>()?;
-                let record = self.record_value(
-                    &crate::forge::generator::swift_payload_struct(machine, &template.event),
-                    &copies,
-                );
-                let value = swift_test_template(&template.unit, "Value");
-                format!(
-                    "do {{ let sceMessage = {SWIFT_TEST_CONTEXT}.receive({}); \
-                     guard let sceValue = sceMessage.valueAs({value}.self) else {{ \
-                     preconditionFailure(\"a receive branch takes the message its guard \
-                     matched\") }}; {} = {record} }}",
-                    swift_text(port),
-                    self.payload_accessor(&template.event)
-                )
+                self.received_record(machine, port, template, &copies)
             }
-            // A composed message: this target makes no machine's value of
-            // one ([`StaticTarget::received_binding`]), so the branch is
-            // refused.
+            // A record that holds a composition: each member of the payload
+            // struct made from the unit's value by the walk of its type
+            // ([`ReceivedMessage::Composed`]), from the value bound to
+            // [`SWIFT_RECEIVED_VALUE`].
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(ReceivedMessage::Composed(members)),
+            ) => {
+                let copies: Vec<(String, String)> = members
+                    .iter()
+                    .map(|(id, value)| (self.record_field(id), value.clone()))
+                    .collect();
+                self.received_record(machine, port, template, &copies)
+            }
+            // A message read by a branch that takes it with no template is
+            // refused where the document is read; none reaches here.
             (_, Some(ReceivedMessage::Composed(_))) => return None,
             // The message is removed and not read: a receive any branch, or one
             // whose content does not read it.
@@ -18930,6 +18969,10 @@ impl StaticTarget for SwiftTarget {
                 format!("{SWIFT_TEST_CONTEXT}.doneTaken({})", swift_text(ptc))
             }
         })
+    }
+    // The value `take_branch` binds the message's value to.
+    fn received_binding(&self) -> Option<&'static str> {
+        Some(SWIFT_RECEIVED_VALUE)
     }
     // A duration is whole microseconds (§3.3), the runtime's `TestDuration`, an
     // `Int64`: one past it has no value there. A verdict with no reason is set

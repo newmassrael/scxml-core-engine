@@ -365,9 +365,9 @@ TRACE_FORMS_TABLES=(closed_enum_forms_configuration replays_every_closed_enum_fo
 # its record and templates and its tables a unit each as above, its components' machines alone as
 # above, beside the runtime's records, templates and asking_configuration, which it reuses; and
 # orders_suite and nested_suite, whose records, union and templates TEST_PROFILE_IMPORTS generates
-# above. job_suite is not replayed on Swift: its tester's receive branch reads a message whose
-# record holds a list, which the Swift machine makes no value of (docs/SCE_TEST_PROFILE.md §12.6).
-# The Rust tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
+# above; and job_suite, whose records and templates TEST_PROFILE generates above, with the job's
+# completion of the kind examples its port sends. The Rust tree generates the same documents
+# (scripts/regen_static_datamodel_rust.sh).
 BOUNDARY_DIR="$TEST_PROFILE_DIR/boundary"
 BOUNDARY_UNITS=(signed_reading signed_reading_sent signed_reading_within)
 BOUNDARY_UNITS+=(signed_configuration unset_configuration stalled_configuration removing_configuration)
@@ -380,6 +380,9 @@ TTCN3_EXPORT_DIR="sce-build/tests/fixtures/ttcn3_export"
 TTCN3_EXPORT_UNITS=(orders_configuration orders_case orders_suite)
 TTCN3_EXPORT_UNITS+=(nested_configuration nested_case nested_suite)
 TTCN3_EXPORT_COMPONENTS=(orders_tester nested_tester)
+JOB_SUITE_UNITS=(tester_and_helper completes_in_time job_suite)
+JOB_SUITE_COMPONENTS=(job_tester helper)
+JOB_COMPLETED="sce-build/kind-examples/event-schema.scxml"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -454,6 +457,13 @@ for document in "${TTCN3_EXPORT_UNITS[@]}"; do
 done
 for component in "${TTCN3_EXPORT_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TTCN3_EXPORT_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
+done
+for document in "${JOB_SUITE_UNITS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l swift -o "$TMP/corpus_$document/"
+done
+"$CODEGEN" generate "$JOB_COMPLETED" -l swift -o "$TMP/corpus_job_completed/"
+for component in "${JOB_SUITE_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -619,7 +629,7 @@ for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
     done
 done
 # The documents of the corpus's suites: a unit each, of a name no unit above may take.
-for document in "${BOUNDARY_UNITS[@]}" "${TTCN3_EXPORT_UNITS[@]}"; do
+for document in "${BOUNDARY_UNITS[@]}" "${TTCN3_EXPORT_UNITS[@]}" "${JOB_SUITE_UNITS[@]}" job_completed; do
     for generated in "$TMP/corpus_$document"/*.swift; do
         unit="$(basename "$generated" .swift)"
         if [ -n "${UNIT_FROM[$unit]:-}" ]; then
@@ -635,7 +645,7 @@ done
 # the same name would be one file holding whichever was copied last, the defect two units of one
 # name are above.
 for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}" "${BOUNDARY_COMPONENTS[@]}" \
-    "${TTCN3_EXPORT_COMPONENTS[@]}"; do
+    "${TTCN3_EXPORT_COMPONENTS[@]}" "${JOB_SUITE_COMPONENTS[@]}"; do
     for generated in "$TMP/component_$component"/*_sm.swift; do
         if [ -e "$GENERATED_DIR/$(basename "$generated")" ]; then
             echo "error: a machine and the test component $component are both written as $(basename "$generated"); one of them needs another name" >&2
