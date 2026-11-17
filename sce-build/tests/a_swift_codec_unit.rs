@@ -271,6 +271,9 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_repeat_flag_carrier.scxml",
         "tests/forge/resources/codec_zenoh_value_zbuf.scxml",
         "tests/forge/resources/codec_zenoh_value_entry.scxml",
+        "tests/forge/resources/codec_repeat_flag_group.scxml",
+        "tests/forge/resources/codec_chain_prev_carrier.scxml",
+        "tests/forge/resources/codec_chain_flag_forward.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -285,8 +288,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         );
     }
     for (template, why) in [(
-        "tests/forge/resources/codec_repeat_flag_group.scxml",
-        "a list a gate group holds",
+        "tests/forge/resources/codec_chain_has_tagged.scxml",
+        "a gate on the entries of a chain",
     )] {
         let code = swift_of(template).expect("a codec is written");
         assert!(
@@ -806,15 +809,86 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
         carrier.contains("wide: UInt8(truncatingIfNeeded: (head >> 0) & 0x1)"),
         "a decode hands the bit of the carrier it has read: {carrier}"
     );
-    // The entries say `wide` by the arm of their gate group (docs/adr/0065 §6 R4b), so the printed
-    // encode hands it to none of them and holds each to the bit of the carrier the value holds.
+    // The entries say `wide` by the arm of their gate group (docs/adr/0065 §6 R4b), and the list
+    // hands every one of them `head.W`, so the list is held to the uniform law of `wide` (§6 R8):
+    // its type holds every entry to the start it holds, the printed encode hands the entries
+    // nothing, and `W` is derived from the start.
+    for (expected, why) in [
+        (
+            "    public enum EntriesWideSaid<Entry: CodecChainFlagEntrySource>: SceSaid {\n        public static func says(_ entry: Entry) -> Bool? {\n            CodecChainFlagEntry.inputWide(entry) != 0\n        }\n    }\n",
+            "what an entry says of `wide` is read through its codec's reader",
+        ),
+        (
+            "    public typealias EntriesLaw<Entry: CodecChainFlagEntrySource> = SceUniform<EntriesWideSaid<Entry>>\n",
+            "the law is the uniform automaton over it",
+        ),
+        (
+            "    var entries: Lawful<BoundedList<Entries_Entry, CodecRepeatFlagCarrier.EntriesBound>, CodecRepeatFlagCarrier.EntriesLaw<Entries_Entry>> { get }\n",
+            "the protocol presents the list held to its law",
+        ),
+        (
+            "head_folded = (head_folded & ~0x1) | ((UInt8(truncatingIfNeeded: (source.entries.start ? 1 : 0)) & 0x1) << 0)",
+            "the bound flag is the list's start",
+        ),
+        (
+            "let entries = try Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>, CodecRepeatFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(decoding: try BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>(decoding: entries_items), start: ((head >> 0) & 1) != 0)",
+            "a decode holds the entries it read to the law from the bit the frame gave",
+        ),
+        (
+            " = .init(defaultOf: .fewest(of: CodecChainFlagEntry()))\n",
+            "a value that has read no frame holds the fewest entries from the start they say",
+        ),
+    ] {
+        assert!(carrier.contains(expected), "{why}: {expected} in {carrier}");
+    }
     assert!(
-        carrier.contains("    let handed: Bool = ((source.head >> 0) & 1) != 0\n")
-            && carrier.contains(
-                "if ((CodecChainFlagEntry.inputWide(entry) != 0) != handed) { throw CodecError.presentIfMismatch }"
-            ),
-        "an encode holds each entry to the bit of the carrier the value holds: {carrier}"
+        !carrier.contains("let handed: Bool"),
+        "a list held to its law is held where it is made, not by the encode: {carrier}"
     );
+}
+
+#[test]
+fn a_list_held_to_a_flag_another_declaration_derives_is_checked_entry_by_entry() {
+    // `head.W` is the presence of `extra`, so the flag is derived from it and not from the list's
+    // entries, which say `wide`: the list has no law of its own, and the encode holds each entry
+    // to the bit the carrier is written with (docs/adr/0065 §6 R4a, a check at the list).
+    let code = swift_of_beside(
+        "codec_list_checked",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_list_checked">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+    </sce:flags>
+    <sce:field id="extra" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="head.W"/>
+    <sce:field id="count" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="3"
+                count="count" max-count="4"/>
+  </datamodel>
+</scxml>"#,
+        &["codec_chain_flag_entry.scxml"],
+    )
+    .expect("a list held to a derived flag is written");
+    for (expected, why) in [
+        (
+            "    var entries: BoundedList<Entries_Entry, CodecListChecked.EntriesBound> { get }\n",
+            "the list is no list held to a law",
+        ),
+        (
+            "        do {\n            for entry in source.entries {\n                let handed: Bool = ((head_folded >> 0) & 1) != 0\n",
+            "each entry is held to the bit the carrier is written with",
+        ),
+        (
+            "if ((CodecChainFlagEntry.inputWide(entry) != 0) != handed) { throw CodecError.presentIfMismatch }",
+            "an entry that says otherwise has no frame",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
 }
 
 #[test]
@@ -1370,6 +1444,65 @@ fn a_gate_group_that_holds_a_list_and_a_stated_length_derives_the_length_on_one_
 }
 
 #[test]
+fn a_list_held_to_its_law_in_the_arm_of_a_group_derives_the_flag_from_its_start_there() {
+    // docs/adr/0065 §6 R4b, R8: `head.L` decides `level` and the list on its set side and `note`
+    // on its clear side; the list's entries say `wide`, which the list hands them from `head.W`, so
+    // the arm holds the list held to its law, and `W` is its start where the arm holds it and the
+    // value's own where it does not.
+    let code = swift_of("tests/forge/resources/codec_repeat_flag_group.scxml")
+        .expect("a group that holds a list held to its law is written");
+    for (expected, why) in [
+        (
+            "    case l(level: UInt8, entries: Lawful<BoundedList<Entries_Entry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<Entries_Entry>>)\n",
+            "the arm holds the list held to its law, over the group's source of the entries",
+        ),
+        (
+            "var entries_member: Lawful<BoundedList<Source.Entries_Entry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<Source.Entries_Entry>>? = nil",
+            "the encode keeps the list as the source presents it",
+        ),
+        (
+            "if entries_member != nil { head_folded = (head_folded & ~0x1) | ((UInt8(truncatingIfNeeded: (entries_member.map { $0.start ? 1 : 0 } ?? 0)) & 0x1) << 0) }",
+            "the flag is the start where the arm holds the list, else the value's own",
+        ),
+        (
+            "let count_derived: UInt8 = entries_member != nil ? UInt8((entries_member?.count ?? 0)) : 0",
+            "the count is the entries the arm holds",
+        ),
+        (
+            "head_l_group = .l(level: level!, entries: entries!)",
+            "a decode makes the arm of the list it held to its law",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn an_input_a_list_held_to_its_law_says_is_read_off_its_start() {
+    // docs/adr/0065 §6 R8: the codec hands its own `wide` on to every entry of its gated chain,
+    // whose entries say it, so the value says `wide` by the chain's start, and nothing where the
+    // chain is absent (§6 R4e); the decode holds the chain from the input it is handed.
+    let code = swift_of("tests/forge/resources/codec_chain_flag_forward.scxml")
+        .expect("a chain that says its holder's input is written");
+    for (expected, why) in [
+        (
+            "public static func inputWide<Source: CodecChainFlagForwardSource>(_ source: Source) -> UInt8? {\n        source.entries.map { $0.start ? 1 : 0 }\n    }",
+            "the input is the start of the chain, none while the chain is absent",
+        ),
+        (
+            "(decoding: entries_items), start: (wide & 0x01) != 0)",
+            "a decode holds the chain from the input it is handed",
+        ),
+        (
+            "public static func encodeSource<Source: CodecChainFlagForwardSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {",
+            "the encode is not handed the input the value says",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
 fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_ungated_one() {
     let tail = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
@@ -1443,18 +1576,37 @@ fn a_chain_hands_its_entries_an_input_read_off_the_entry_before() {
         code.contains("_prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0"),
         "it is rewritten from the entry just handled: {code}"
     );
-    // Each entry says `after_marker` by the arm of its gate group (docs/adr/0065 §6 R4b), so the
-    // printed encode hands it to none of them and holds each to the entry before, walked as the
-    // decode walks it, the first entry after none.
+    // Each entry says `after_marker` by the arm of its gate group (docs/adr/0065 §6 R4b), and
+    // `tagged` by its one field gated on it, so the chain is held to two laws run together
+    // (§6 R8): `tagged` the start the value gives, which `head.T` is derived from, and
+    // `after_marker` whether the entry before is of the kind 4, the first after none.
+    for (expected, why) in [
+        (
+            "    public enum EntriesAfterMarkerKind<Entry: CodecChainPrevEntrySource>: SceKind {\n        public static func matches(_ entry: Entry) -> Bool {\n            ((chainIdentifier(entry.header) >> 0) & 0xF) == 0x4\n        }\n    }\n",
+            "the kind is read off the entry's identifier as the chain reads it",
+        ),
+        (
+            "    public typealias EntriesLaw<Entry: CodecChainPrevEntrySource> = SceLaws<SceUniform<EntriesTaggedSaid<Entry>>, SceAfterKey<EntriesAfterMarkerSaid<Entry>, EntriesAfterMarkerKind<Entry>>>\n",
+            "the two laws run together in the order of the inputs",
+        ),
+        (
+            "head_folded = (head_folded & ~0x1) | ((UInt8(truncatingIfNeeded: (source.entries.start.first ? 1 : 0)) & 0x1) << 0)",
+            "the bound flag is the start of the first law",
+        ),
+        (
+            "(decoding: entries_items), start: SceStarts(((head >> 0) & 1) != 0, SceFixedStart()))",
+            "a decode holds the chain from the bit the frame gave and the fixed start",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
     let encode = code
         .split("public static func encodeSource")
         .nth(1)
         .expect("the codec's encode is printed");
     assert!(
-        encode.contains("    var entries_before: UInt64? = nil\n")
-            && encode.contains("let handed: Bool = entries_before == 0x4\n")
-            && encode.contains("CodecChainPrevEntry.inputAfterMarker(entry) != 0) != handed"),
-        "an encode holds each entry to the entry before it: {code}"
+        !encode.contains("entries_before") && !encode.contains("after_marker:"),
+        "the encode hands the entries nothing and checks none of them: {code}"
     );
 }
 

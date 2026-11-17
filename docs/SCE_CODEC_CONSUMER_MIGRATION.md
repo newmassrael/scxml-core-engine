@@ -2263,4 +2263,12 @@ Landing: the commit that adds this section, and each later one that names a form
   `CodecZenohValueZbuf(after_shm: .notAfterShm(value: BoundedBytes([1, 2, 3])!))`, and from
   `CodecZenohInterest(header: h, id: 1, body: b, extensions: nil)` to
   `CodecZenohInterest(header: h, id: 1, header_current_or_future: .current(body: b), extensions: nil)`.
+- A list whose entries say the inputs it hands them (ADR 0065 §6 R8) is printed, held in the runtime's
+  `Lawful<BoundedList<..>, {Codec}.{Field}Law<..>>`, which reads as the list and holds the start the value gives
+  it (`start`: a `Bool` for a flag the list hands every entry, `SceFixedStart()` for an input a chain supplies
+  from the entry before, `SceStarts(a, b)` for both). The flag bound to the input is derived from the start, and
+  no longer a bit the value sets. A call site moves from
+  `CodecRepeatFlagCarrier(head: 0x01, count: 1, entries: [e])` to
+  `CodecRepeatFlagCarrier(head: 0, entries: Lawful(start: true, list: BoundedList([e])!)!)`, whose door answers
+  `nil` where an entry says other than the start.
 

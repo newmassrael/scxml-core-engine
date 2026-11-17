@@ -1355,30 +1355,35 @@ pub(super) fn render(
     };
     // A printed value holds each list and chain in the bounded list type its plan gives it, of the
     // entry codec's own value (docs/adr/0065 §6 R2, R7), an element or a member of a gate group,
-    // which a decode makes through the door that refuses what the bound does not hold.
-    let listed_of = |f: &CodecField, entry: &str| {
+    // and held to its law where its entries say the inputs it hands them (R8), which a decode makes
+    // of the entries it read in `items` through the doors that refuse what the bound and the law
+    // do not hold.
+    let listed_of = |f: &CodecField, entry: &str, items: &str| {
         if prints {
-            source::listed_field_type(&struct_name, &plan, f, entry)
+            source::listed_field_type(&struct_name, &plan, f, entry, items)
         } else {
             None
         }
     };
-    // The type, the default and the door of a list or a chain of entries `element`: the bounded
-    // list a printed value holds, which holds the fewest entries its bound admits until a frame is
-    // read, or an array.
-    let list_parts = |f: &CodecField, element: &str, gated: bool| {
-        let listed = listed_of(f, element);
+    // The type, the default and what a decode makes of the entries `items` it read, of a list or a
+    // chain of entries `element`, and whether its type holds it to its bound: the list a printed
+    // value holds, which holds the fewest entries its bound admits until a frame is read, or an
+    // array.
+    let list_parts = |f: &CodecField, element: &str, items: &str, gated: bool| {
+        let listed = listed_of(f, element, items);
         let optional = if gated { "?" } else { "" };
         let swift_type = match &listed {
-            Some(ty) => format!("{ty}{optional}"),
+            Some(listed) => format!("{}{optional}", listed.ty),
             None => format!("[{element}]{optional}"),
         };
         let default = match (&listed, gated) {
             (_, true) => "nil".to_string(),
-            (Some(_), false) => format!(".fewest(of: {element}())"),
+            (Some(listed), false) => listed.default.clone(),
             (None, false) => "[]".to_string(),
         };
-        (swift_type, default, listed)
+        let bounded = listed.is_some();
+        let made = listed.map_or_else(|| items.to_string(), |listed| listed.made);
+        (swift_type, default, made, bounded)
     };
     let fields: Vec<serde_json::Value> = m
         .fields
@@ -1480,7 +1485,9 @@ pub(super) fn render(
                         serde_json::Value::String(flag_property(flag_name))
                     }
                 };
-                let (swift_type, default, wrap) = list_parts(f, &element, present.is_some());
+                let items = format!("{}_items", f.id);
+                let (swift_type, default, made, bounded) =
+                    list_parts(f, &element, &items, present.is_some());
                 return serde_json::json!({
                     "id": f.id,
                     "swift_type": swift_type,
@@ -1491,7 +1498,7 @@ pub(super) fn render(
                     "present": present,
                     "chain": {
                         "element": element,
-                        "items": format!("{}_items", f.id),
+                        "items": items,
                         "more": format!("{}_more", f.id),
                         "max_depth": max_depth,
                         "accessor": accessor,
@@ -1500,7 +1507,8 @@ pub(super) fn render(
                         "decls": binds.decls(Language::Swift, &at(0)),
                         "updates": binds.update_lines(f, "entry", Language::Swift, &at(4)),
                         "has_decode": has_decode,
-                        "wrap": wrap,
+                        "made": made,
+                        "wrap": bounded,
                     },
                 });
             }
@@ -1516,7 +1524,8 @@ pub(super) fn render(
                     thread(f.repeat_body_alias.as_deref().unwrap_or_default());
                 let pad = if present.is_some() { 4 } else { 0 };
                 let at = |extra: usize| " ".repeat(8 + pad + extra);
-                let (swift_type, default, wrap) = list_parts(f, &element, present.is_some());
+                let (swift_type, default, made, wrap) =
+                    list_parts(f, &element, &items, present.is_some());
                 let list = match count_ref {
                     CountRef::LengthField(name) => {
                         // A count that is on the wire only on a condition is an optional; it is
@@ -1532,6 +1541,7 @@ pub(super) fn render(
                             "items": items,
                             "count": count,
                             "guard": repeat_count_guard(f, &m.fields, &count, Language::Swift, &at(0)),
+                            "made": made,
                             "wrap": wrap,
                         })
                     }
@@ -1548,6 +1558,7 @@ pub(super) fn render(
                             Language::Swift,
                             &at(4),
                         ),
+                        "made": made,
                         "wrap": wrap,
                     }),
                 };
@@ -1798,7 +1809,8 @@ pub(super) fn render(
         .iter()
         .map(|arm| resolve_repeat_body_type(&m.name, arm.codec, imports, Language::Swift))
         .collect::<Result<Vec<_>, _>>()?;
-    let printed = prints.then(|| source::context(&l, &plan, &carriers, &element_types, &arm_types));
+    let printed =
+        prints.then(|| source::context(&l, &plan, &carriers, &element_types, &arm_types, imports));
     ctx.insert("printed".into(), printed.into());
     l.render(env, "codec", ctx)
 }

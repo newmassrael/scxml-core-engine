@@ -218,6 +218,21 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
         public static let most: Int? = {{ b.most }}
     }
 {% endfor %}
+{% for w in printed.laws %}
+{% for r in w.readers %}
+
+    /// For the law of `{{ w.field }}` (docs/adr/0065 §6 R8): {{ r.what }}, read off any source of its codec.
+    public enum {{ r.name }}<Entry: {{ w.protocol }}>: {{ r.protocol }} {
+        public static func {{ r.function }}(_ entry: Entry) -> {{ r.returns }} {
+            {{ r.body }}
+        }
+    }
+{% endfor %}
+
+    /// The law the entries of `{{ w.field }}` say the inputs it hands them by (docs/adr/0065 §6 R8),
+    /// over any source of their codec: its type holds every entry to it where a value of it is made.
+    public typealias {{ w.name }}<Entry: {{ w.protocol }}> = {{ w.law }}
+{% endfor %}
 {% for b in printed.bodies %}
 
     /// The value presents `{{ b.field }}` as a value of its own codec.
@@ -443,7 +458,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        {{ bind }}{{ f.id }} = {% if f.chain.wrap %}try {{ f.chain.wrap }}(decoding: {{ f.chain.items }}){% else %}{{ f.chain.items }}{% endif %}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.made }}
 {% elif f.chain %}
 {{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {% if f.chain.max_depth is none %}
@@ -463,7 +478,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
 {% endif %}
-{{ pad }}        {{ bind }}{{ f.id }} = {% if f.chain.wrap %}try {{ f.chain.wrap }}(decoding: {{ f.chain.items }}){% else %}{{ f.chain.items }}{% endif %}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.chain.made }}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
@@ -476,13 +491,13 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
 {{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        {{ bind }}{{ f.id }} = {% if f.list.wrap %}try {{ f.list.wrap }}(decoding: {{ f.list.items }}){% else %}{{ f.list.items }}{% endif %}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.made }}
 {% elif f.list %}
 {{ pad }}        var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        while reader.remaining > 0 {
 {{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
-{{ pad }}        {{ bind }}{{ f.id }} = {% if f.list.wrap %}try {{ f.list.wrap }}(decoding: {{ f.list.items }}){% else %}{{ f.list.items }}{% endif %}
+{{ pad }}        {{ bind }}{{ f.id }} = {{ f.list.made }}
 {% else %}
 {{ pad }}        {{ bind }}{{ f.id }} = {{ f.read }}
 {% endif %}

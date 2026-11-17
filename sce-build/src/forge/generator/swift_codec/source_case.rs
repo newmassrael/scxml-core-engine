@@ -12,8 +12,9 @@
 //! lower, as a case of a shape no printer spells is refused by name.
 
 use super::super::rust_source::{
-    case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value, source_members,
-    variant_choice, ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value, law_start_bits,
+    lawful_parts, source_members, variant_choice, ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL,
+    VARIANT_MEMBER,
 };
 use super::source::{presented_order, Presented};
 use super::*;
@@ -134,10 +135,10 @@ pub(crate) fn source_case(
 /// its initializer, each element in declaration order: a byte string or a text through its bound's
 /// one door, bound first in `bindings`, which the harness requires to answer; a body by the
 /// initializer of its own codec's value; a list of entries each made so, through its count bound's
-/// door; a number as a literal; a gate group, where its first member stands, as [`group_literal`]
-/// makes it; the variant's arm as [`variant_literal`] makes it, last. An element a gate leaves out
-/// is `nil`. A shape the Swift printer does not print (a list held to its law) is refused by name,
-/// and so is a source that states an element the value does not present or leaves out one it does.
+/// door and its law's where it has one; a number as a literal; a gate group, where its first member
+/// stands, as [`group_literal`] makes it; the variant's arm as [`variant_literal`] makes it, last.
+/// An element a gate leaves out is `nil`. A source that states an element the value does not
+/// present or leaves out one it does is refused by name.
 fn value_literal(
     plan: &EncodePlan<'_>,
     type_name: &str,
@@ -316,7 +317,9 @@ fn variant_literal(
 /// gate group, its entries of the codec imported as `codec`, that `json` states as an array of its
 /// entries: each made by its own codec's initializer, and the list through its count bound's one
 /// door (docs/adr/0065 §6 R2), bound first in `bindings`, which the harness requires to answer. A
-/// list held to its law, which a source states with its start, is refused by name.
+/// list held to its law (`law`, §6 R8), which a source states as `{"start": .., "entries": ..}`
+/// (`rust_source::lawful_parts`), is held to it from the start the source gives, through the law's
+/// one door, bound after the list.
 fn list_literal(
     type_name: &str,
     id: &str,
@@ -326,13 +329,12 @@ fn list_literal(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    if !law.is_none() {
-        return Err(
-            "a list held to the law of the inputs its entries say, which the Swift printer does \
-             not print"
-                .to_string(),
-        );
-    }
+    let (start, json) = if law.is_none() {
+        (None, json)
+    } else {
+        let (start, entries) = lawful_parts(json)?;
+        (Some(law_start_literal(law, start)?), entries)
+    };
     let stated = json
         .as_array()
         .ok_or_else(|| "a list is an array of its entries".to_string())?;
@@ -349,14 +351,35 @@ fn list_literal(
     let entry_type = held.read(codec, &mut |plan, _, _| {
         Ok(filters::to_pascal_case(plan.model.name.clone()))
     })?;
-    let list = super::source::list_type(type_name, id, &entry_type);
+    // The entries within the count bound, which a law, where there is one, holds in turn.
+    let list = super::source::list_type(type_name, id, &entry_type, &Law::default());
     // Numbered, as a byte string's door is bound.
     let local = format!("bound{}", bindings.len());
     bindings.push(format!(
         "let {local} = try #require({list}([{}]))",
         entries.join(", ")
     ));
-    Ok(local)
+    let Some(start) = start else {
+        return Ok(local);
+    };
+    let lawful = super::source::list_type(type_name, id, &entry_type, law);
+    let held_to_law = format!("bound{}", bindings.len());
+    bindings.push(format!(
+        "let {held_to_law} = try #require({lawful}(start: {start}, list: {local}))"
+    ));
+    Ok(held_to_law)
+}
+
+/// The start of a list's law a source states, `{input: 0|1}` (docs/adr/0065 §6 R8,
+/// `rust_source::law_start_bits`), as the start the list holds: a `Bool` for an input the value
+/// gives, `SceFixedStart()` for one the entry before decides, several nested as the first and the
+/// rest (`SceStarts`), in the law's order.
+fn law_start_literal(law: &Law, json: &serde_json::Value) -> Result<String, String> {
+    let parts: Vec<String> = law_start_bits(law, json)?
+        .into_iter()
+        .map(|bit| bit.map_or_else(|| "SceFixedStart()".to_string(), |b| b.to_string()))
+        .collect();
+    Ok(super::source::nested_starts(&parts))
 }
 
 /// The Swift array literal of the bytes a source states, an array of numbers each a byte.

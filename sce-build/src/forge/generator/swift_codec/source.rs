@@ -64,12 +64,12 @@
 //! R4e), and one the parent hands an arm that says it is held to it before the first byte.
 
 use super::*;
-use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource};
+use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Derived, Element, EncodePlan,
-    EntryId, Guard, HandedFrom, InputCheck, ListWrite, Measured, Narrow, Number, NumberInto,
-    Offset, Presence, PresenceFlag, Value, Write,
+    Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, Derived, Element,
+    EncodePlan, EntryId, Guard, HandedFrom, InputCheck, Law, ListWrite, Measured, Narrow, Number,
+    NumberInto, Offset, Presence, PresenceFlag, Value, Write,
 };
 
 /// The Swift struct of each codec a codec holds as a body, by the id of the field that holds it.
@@ -186,12 +186,12 @@ pub(super) fn group_of(plan: &EncodePlan<'_>, id: &str) -> Option<usize> {
 
 /// The first gate group of `plan` the Swift printer does not print, described for a reader: one of
 /// a chain's memberships (docs/adr/0065 §6 R6), one whose arm holds two lists of one count (R5),
-/// and one that holds a value of a type no number is, a body or the entries of a codec the Swift
-/// printer does not print, or a list held to its law (R8). A group the printer prints holds
-/// numbers, byte strings, texts, bodies and lists, and the lengths and counts the value states on
-/// the side where what they measure is absent, decided by flags of the codec's carriers and by
-/// flag inputs (R4b, R4c). `imports` says which codec each import is and whether the Swift printer
-/// prints it.
+/// and one that holds a value of a type no number is, or a body or the entries of a codec the
+/// Swift printer does not print. A group the printer prints holds numbers, byte strings, texts,
+/// bodies and lists, each list held to its law where its entries say inputs it hands them (R8),
+/// and the lengths and counts the value states on the side where what they measure is absent,
+/// decided by flags of the codec's carriers and by flag inputs (R4b, R4c). `imports` says which
+/// codec each import is and whether the Swift printer prints it.
 fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<String> {
     for group in plan.groups() {
         let label = super::super::rust_source::gates_label(group);
@@ -218,11 +218,10 @@ fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<S
                         "an embedded body of `{codec}`, which the Swift printer does not print,"
                     )),
                 },
-                Value::List { codec, law, .. } => match import_of(imports, codec) {
-                    Some(import) if import.swift_printed && law.is_none() => None,
-                    Some(import) if import.swift_printed => {
-                        Some("a list held to the law of the inputs its entries say".to_string())
-                    }
+                // A list held to its law in the arm that holds it (docs/adr/0065 §6 R8) is held
+                // so there as an element is.
+                Value::List { codec, .. } => match import_of(imports, codec) {
+                    Some(import) if import.swift_printed => None,
                     _ => Some(format!(
                         "a list of `{codec}`, which the Swift printer does not print,"
                     )),
@@ -331,29 +330,61 @@ fn member_type(l: &LangCtx, plan: &EncodePlan<'_>, field: &CodecField, of: &str)
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     match plan.value(field) {
         Value::Body { .. } => format!("{of}{}", body_source_type(&field.id)),
-        Value::List { .. } => list_type(
+        Value::List { law, .. } => list_type(
             &struct_name,
             &field.id,
             &format!("{of}{}", entry_source_type(&field.id)),
+            &law,
         ),
         value => bounded_value_type(&struct_name, &field.id, &value)
             .unwrap_or_else(|| l.type_name(&field.sce_type).into_owned()),
     }
 }
 
-/// The bounded list a printed value of the codec named `struct_name` holds the field `field` of
-/// `plan` in, an element or a member of a gate group, each entry an `entry` (docs/adr/0065 §6
-/// R2); `None` for a field that holds no list, or that the value does not present.
+/// A list a printed value holds, as the template writes it.
+pub(super) struct Listed {
+    /// Its type.
+    pub(super) ty: String,
+    /// The expression a decode makes it by of the array of entries it read.
+    pub(super) made: String,
+    /// Its value before a frame is read.
+    pub(super) default: String,
+}
+
+/// The list a printed value of the codec named `struct_name` holds the field `field` of `plan` in,
+/// an element or a member of a gate group, each entry an `entry` (docs/adr/0065 §6 R2, R8): its
+/// type, the expression a decode makes it by of the array `items` it read, through the door of
+/// its bound and, where its entries say inputs it hands them, of its law, from the start the frame
+/// gave, and its value before a frame is read; `None` for a field that holds no list, or that the
+/// value does not present.
 pub(super) fn listed_field_type(
     struct_name: &str,
     plan: &EncodePlan<'_>,
     field: &CodecField,
     entry: &str,
-) -> Option<String> {
-    match presented_value(plan, field)? {
-        Value::List { .. } => Some(list_type(struct_name, &field.id, entry)),
-        _ => None,
-    }
+    items: &str,
+) -> Option<Listed> {
+    let Value::List { law, .. } = presented_value(plan, field)? else {
+        return None;
+    };
+    let ty = list_type(struct_name, &field.id, entry, &law);
+    let bounded = format!(
+        "try {}(decoding: {items})",
+        bounded_list_type(struct_name, &field.id, entry)
+    );
+    let made = if law.is_none() {
+        bounded
+    } else {
+        format!(
+            "try {ty}(decoding: {bounded}, start: {})",
+            law_start_read(plan, field)
+        )
+    };
+    Some(Listed {
+        ty,
+        made,
+        default: list_default(entry, &law),
+    })
 }
 
 /// The bounded type a printed value of the codec named `struct_name` holds the field `field` of
@@ -611,7 +642,8 @@ fn group_context(
     decode.push("}".to_string());
     // A frame of zeros holds the arm whose gates are all clear, each member at its start: an enum's
     // first value, a carrier's flags' declared values, no bytes, a body's own value of a frame of
-    // zeros, the fewest entries a list's bound admits.
+    // zeros, the fewest entries a list's bound admits, from the start they say where a law holds
+    // them (docs/adr/0065 §6 R8).
     let child = |f: &CodecField| {
         held.get(&f.id)
             .expect("a body or a list a group holds holds a codec of the module")
@@ -620,7 +652,7 @@ fn group_context(
     let start = |f: &CodecField| match (&plan.value(f), &f.sce_type) {
         (Value::Bytes(_) | Value::Text(_), _) => ".fewest".to_string(),
         (Value::Body { .. }, _) => format!("{}()", child(f)),
-        (Value::List { .. }, _) => format!(".fewest(of: {}())", child(f)),
+        (Value::List { law, .. }, _) => list_default(&child(f), law),
         (_, SceType::Enum(r)) => l.enum_default_expr(&r.alias),
         _ => match flag_default_carrier_value(f) {
             0 => "0".to_string(),
@@ -712,13 +744,10 @@ pub(crate) fn unlowered_positional(
                 )),
             },
             // A list's entries are written by their own codec's printed encode, so the Swift
-            // printer prints the codec they are first. A list held to its law (docs/adr/0065 §6
-            // R8) waits for the form that walks it through its law.
-            Value::List { codec, law, .. } => match import_of(imports, codec) {
-                Some(import) if import.swift_printed && law.is_none() => None,
-                Some(import) if import.swift_printed => {
-                    Some("a list held to the law of the inputs its entries say".to_string())
-                }
+            // printer prints the codec they are first; a list whose entries say the inputs it
+            // hands them is held to its law (docs/adr/0065 §6 R8).
+            Value::List { codec, .. } => match import_of(imports, codec) {
+                Some(import) if import.swift_printed => None,
                 _ => Some(format!(
                     "a list of `{codec}`, which the Swift printer does not print"
                 )),
@@ -814,8 +843,10 @@ pub(crate) fn unlowered_positional(
     }
     // An input the value says is read off the field gated on it alone, off the arm the gate group
     // it decides holds, off the body always there that it hands it on to and that says it in every
-    // value, or off the arm of the variant the value holds; one a list says waits for the form that
-    // holds it. One some arms say only is said in some values only, and no encode reads it
+    // value, off the arm of the variant the value holds, or off the start of the list it hands it
+    // on to, held to its law (docs/adr/0065 §6 R8), where the value presents that list as an
+    // element of its own; one a list a gate group holds says waits for the form that reads it off
+    // the arm. One some arms say only is said in some values only, and no encode reads it
     // (docs/adr/0065 §6 R4e): only a parent asks for it.
     if let Some(said) = plan
         .said
@@ -825,8 +856,9 @@ pub(crate) fn unlowered_positional(
             | InputSource::Group
             | InputSource::Forward { partly: false, .. }
             | InputSource::EveryArm { .. } => false,
+            InputSource::List { list, .. } => group_of(plan, list).is_some(),
             InputSource::SomeArms { .. } => said.read || handed_on(plan, &said.input.name),
-            _ => true,
+            InputSource::Forward { partly: true, .. } => true,
         })
     {
         return Some(format!(
@@ -892,13 +924,14 @@ pub(crate) fn unlowered_positional(
         }
         // A list or a chain where the value holds it, each entry written in turn by its codec's
         // printed encode, handed what the entry before supplies and, on a chain that ends on its
-        // entries' flag, the flag set on every entry but the last. A walk through a law or of
-        // slots waits for the group that holds it.
+        // entries' flag, the flag set on every entry but the last. A list held to its law is
+        // walked as any list: its type holds every entry to the law where it is made
+        // (docs/adr/0065 §6 R8). A walk of slots waits for the group that holds it.
         Write::Streamed {
             list: Some(walk),
             guard: Guard::Always | Guard::Present,
             ..
-        } if !walk.lawful && walk.slots.is_none() => None,
+        } if walk.slots.is_none() => None,
         // The bytes or text after a frame laid out by byte, never gated (a gate makes a frame one
         // written in turn).
         Write::Tail { .. } => None,
@@ -912,7 +945,8 @@ pub(crate) fn unlowered_positional(
 
 /// The number `element` is, where `by` derives it as one the printer writes: a number of the byte
 /// strings and texts it measures, of the entries of the lists it counts, of the inputs the bodies
-/// it measures say, or of the bytes the bodies it measures encode to, into a field of its own
+/// it measures say, of the start of the lists held to a law it is bound to (docs/adr/0065 §6 R8),
+/// or of the bytes the bodies it measures encode to, into a field of its own
 /// (zero where a gate leaves every one of them out, beside which the field is gated too, or what
 /// the arm of the gate group that holds the field states there, docs/adr/0065 §6 R4b) or, but for
 /// an encoded length, into a flag of a carrier.
@@ -928,6 +962,7 @@ fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<
                 | Measured::Entries { .. }
                 | Measured::Says { .. }
                 | Measured::ArmSays { .. }
+                | Measured::Start { .. }
                 | Measured::Encoded { .. }
         )
     });
@@ -1089,10 +1124,24 @@ fn said_input(plan: &EncodePlan<'_>, held: &HeldTypes, input: &str, source: &str
             let held = format!("{source}.{}", group_name(group));
             format!("{} ? 1 : 0", gate_value(group, at, &held))
         }
-        InputSource::Forward { partly: true, .. }
-        | InputSource::SomeArms { .. }
-        | InputSource::List { .. } => {
-            unreachable!("`unlowered` refuses an input a list says, or one some arms say that the encode reads")
+        // The start of the list held to its law that the codec hands the input on to
+        // (docs/adr/0065 §6 R8); a list a gate leaves out says nothing, which the encode reads as
+        // clear and [`said_lines`] answers as `nil`.
+        InputSource::List {
+            list,
+            input: entry_input,
+            partly,
+            ..
+        } => {
+            let path = law_start_path(plan, field_named(plan, list), entry_input);
+            if *partly {
+                format!("({source}.{list}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)")
+            } else {
+                format!("{source}.{list}.start{path} ? 1 : 0")
+            }
+        }
+        InputSource::Forward { partly: true, .. } | InputSource::SomeArms { .. } => {
+            unreachable!("`unlowered` refuses an input some arms say that the encode reads")
         }
     }
 }
@@ -1110,6 +1159,16 @@ fn said_lines(
     let (bound, every) = match &plan.roles.inputs[input] {
         InputSource::EveryArm { arms } => (arms, true),
         InputSource::SomeArms { arms } => (arms, false),
+        // A list a gate leaves out says nothing of the input (docs/adr/0065 §6 R4e).
+        InputSource::List {
+            list,
+            input: entry_input,
+            partly: true,
+            ..
+        } => {
+            let path = law_start_path(plan, field_named(plan, list), entry_input);
+            return vec![format!("{SOURCE}.{list}.map {{ $0.start{path} ? 1 : 0 }}")];
+        }
         _ => return vec![said_input(plan, held, input, SOURCE)],
     };
     let mut lines = vec![format!("switch {SOURCE}.{} {{", super::VARIANT_FIELD)];
@@ -1182,9 +1241,200 @@ fn entry_source_type(field: &str) -> String {
 }
 
 /// The Swift type a printed codec named `struct_name` holds the list or chain `id` as, each entry
-/// an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2, R7).
-pub(super) fn list_type(struct_name: &str, id: &str, entry: &str) -> String {
+/// an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2, R7), and, where
+/// its entries say inputs it hands them (`law`), held to the law its own type declares (R8).
+pub(super) fn list_type(struct_name: &str, id: &str, entry: &str, law: &Law) -> String {
+    let list = bounded_list_type(struct_name, id, entry);
+    if law.is_none() {
+        list
+    } else {
+        format!("Lawful<{list}, {struct_name}.{}<{entry}>>", law_name(id))
+    }
+}
+
+/// The value of a list of entries each a value of the codec whose struct is `entry` that has read
+/// no frame, written where its type is known: the fewest entries its bound admits, each a value of
+/// a frame of zeros, and, where its entries say inputs it hands them (`law`), held to its law from
+/// the start the first of them says (docs/adr/0065 §6 R8).
+fn list_default(entry: &str, law: &Law) -> String {
+    let fewest = format!(".fewest(of: {entry}())");
+    if law.is_none() {
+        fewest
+    } else {
+        format!(".init(defaultOf: {fewest})")
+    }
+}
+
+/// The bounded list a printed codec named `struct_name` holds the entries of the list or chain
+/// `id` in, each an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2,
+/// R7), whether or not a law holds them too.
+fn bounded_list_type(struct_name: &str, id: &str, entry: &str) -> String {
     format!("BoundedList<{entry}, {struct_name}.{}>", bound_name(id))
+}
+
+/// The law a printed codec declares for the list `id` (docs/adr/0065 §6 R8), generic over the
+/// source of its entries: the field's name in upper camel case and `Law`, beside its `Bound`.
+fn law_name(id: &str) -> String {
+    format!("{}Law", filters::to_pascal_case(id.to_string()))
+}
+
+/// The reader a printed codec declares of what each entry of the list `id` says of the input
+/// `input` (`SceSaid`), or, with `Kind`, of whether an entry is of the kind a law over that input
+/// asks after (`SceKind`).
+fn law_reader_name(id: &str, input: &str, what: &str) -> String {
+    format!(
+        "{}{}{what}",
+        filters::to_pascal_case(id.to_string()),
+        filters::to_pascal_case(input.to_string())
+    )
+}
+
+/// Where the start of the input at `at` among the `count` inputs of a list's law is held in the
+/// start the list holds (docs/adr/0065 §6 R8): the start itself for a law of one input; else, the
+/// laws nested as the first and the rest (`SceLaws`), `.second` once for each input before it and
+/// `.first` where it is not the last.
+fn start_path(count: usize, at: usize) -> String {
+    if count == 1 {
+        return String::new();
+    }
+    let mut path = ".second".repeat(at);
+    if at + 1 < count {
+        path.push_str(".first");
+    }
+    path
+}
+
+/// Where the start of the input `input` of the law of the list `list` of `plan` is held in the
+/// start the list holds ([`start_path`]): a `Bool`, read as `.start` and this path.
+fn law_start_path(plan: &EncodePlan<'_>, list: &CodecField, input: &str) -> String {
+    let laws = super::super::rust_source::list_laws(&plan.roles, &list.id);
+    let at = laws
+        .iter()
+        .position(|law| law.binder.input == input)
+        .expect("the list holds the input by its law");
+    start_path(laws.len(), at)
+}
+
+/// The start a decode holds the entries of the list `field` of `plan` it read to (docs/adr/0065
+/// §6 R8), from what the frame gave each input of the list's law, in the law's order: the bit of
+/// a carrier the decode read, the input the decode is handed, and nothing for an input the entry
+/// before decides, whose start is fixed; several nested as the first and the rest.
+fn law_start_read(plan: &EncodePlan<'_>, field: &CodecField) -> String {
+    let starts: Vec<String> = super::super::rust_source::list_laws(&plan.roles, &field.id)
+        .into_iter()
+        .map(|law| match &law.against {
+            InputValue::Carrier { carrier, flag } => {
+                let bit = field_named(plan, carrier)
+                    .flags
+                    .iter()
+                    .find(|f| f.name == *flag)
+                    .map(|f| f.bit)
+                    .expect("a law's flag is a flag of the codec's carrier");
+                format!("(({} >> {bit}) & 1) != 0", super::decoded(carrier))
+            }
+            InputValue::Input { name } => format!("({name} & 0x01) != 0"),
+            InputValue::PreviousEntry { .. } => "SceFixedStart()".to_string(),
+        })
+        .collect();
+    nested_starts(&starts)
+}
+
+/// The starts `starts` of a list's law, in its order, as the start the list holds: one alone, or
+/// the first and the rest (`SceStarts`).
+pub(super) fn nested_starts(starts: &[String]) -> String {
+    match starts {
+        [] => unreachable!("a list's law holds an automaton for each input"),
+        [one] => one.clone(),
+        [first, rest @ ..] => format!("SceStarts({first}, {})", nested_starts(rest)),
+    }
+}
+
+/// What the template declares for each list of `plan` its entries' law holds (docs/adr/0065 §6
+/// R8): for each input, a reader of what an entry says of it through the entry codec's reader of
+/// the input (`SceSaid`), and for an input a chain supplies from the entry before, a reader of
+/// whether an entry is of the kind that sets it (`SceKind`); and the law, each input's automaton
+/// run together, generic over the source of the entries. `held` is the Swift struct of each list's
+/// entries by its field; `imports` says which entry codec says an input in some of its values only.
+fn law_context(
+    plan: &EncodePlan<'_>,
+    held: &HeldTypes,
+    imports: &[ImportContext],
+) -> Vec<serde_json::Value> {
+    plan.model
+        .fields
+        .iter()
+        .filter_map(|field| {
+            let Some(Value::List { codec, law, .. }) = presented_value(plan, field) else {
+                return None;
+            };
+            if law.is_none() {
+                return None;
+            }
+            let child = held
+                .get(&field.id)
+                .expect("a list held to its law holds a codec of the module");
+            let mut readers = Vec::new();
+            let mut automata = Vec::new();
+            for input in &law.inputs {
+                let said = law_reader_name(&field.id, &input.input, "Said");
+                let reader = format!("{child}.{}(entry)", said_reader(&input.input));
+                // An entry that says the input in some of its values only says nothing in the
+                // others (docs/adr/0065 §6 R4e), which follows any state of the law (R8b).
+                let says = if says_partly(imports, codec, &input.input) {
+                    format!("{reader}.map {{ $0 != 0 }}")
+                } else {
+                    format!("{reader} != 0")
+                };
+                readers.push(serde_json::json!({
+                    "name": said,
+                    "protocol": "SceSaid",
+                    "function": "says",
+                    "returns": "Bool?",
+                    "body": says,
+                    "what": format!("what each entry says of `{}`", input.input),
+                }));
+                automata.push(match input.automaton {
+                    Automaton::Uniform => format!("SceUniform<{said}<Entry>>"),
+                    Automaton::AfterKey { id } => {
+                        let kind = law_reader_name(&field.id, &input.input, "Kind");
+                        readers.push(serde_json::json!({
+                            "name": kind,
+                            "protocol": "SceKind",
+                            "function": "matches",
+                            "returns": "Bool",
+                            "body": format!(
+                                "{} == 0x{id:X}",
+                                entry_identifier(plan, &field.id, "entry")
+                            ),
+                            "what": format!(
+                                "whether an entry is of the kind 0x{id:X}, after which the next \
+                                 says `{}` set",
+                                input.input
+                            ),
+                        }));
+                        format!("SceAfterKey<{said}<Entry>, {kind}<Entry>>")
+                    }
+                });
+            }
+            Some(serde_json::json!({
+                "name": law_name(&field.id),
+                "field": field.id,
+                "protocol": format!("{child}Source"),
+                "readers": readers,
+                "law": nested_laws(&automata),
+            }))
+        })
+        .collect()
+}
+
+/// The automata `automata` of a list's law, in its order, run together: one alone, or the first
+/// and the rest (`SceLaws`).
+fn nested_laws(automata: &[String]) -> String {
+    match automata {
+        [] => unreachable!("a list's law holds an automaton for each input"),
+        [one] => one.clone(),
+        [first, rest @ ..] => format!("SceLaws<{first}, {}>", nested_laws(rest)),
+    }
 }
 
 /// The Swift type the protocol of `plan` presents `element` as: its number, its bounded byte string
@@ -1194,10 +1444,11 @@ fn presented_type(l: &LangCtx, plan: &EncodePlan<'_>, element: &Element<'_>) -> 
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     let ty = match &element.value {
         Value::Body { .. } => body_source_type(&element.field.id),
-        Value::List { .. } => list_type(
+        Value::List { law, .. } => list_type(
             &struct_name,
             &element.field.id,
             &entry_source_type(&element.field.id),
+            law,
         ),
         _ => bounded_type(&struct_name, element)
             .unwrap_or_else(|| l.type_name(&element.field.sce_type).into_owned()),
@@ -1368,13 +1619,14 @@ fn field_number(
 /// a parent sets folded in, each body encoded into bytes of its own, the checks the value is held
 /// to, and the writes of the plan's program, one after another, into a frame written in one write.
 /// `held` is the Swift struct of each body by its field, and `arm_types` that of each arm of the
-/// variant, in the plan's order.
+/// variant, in the plan's order; `imports` says what each codec the value holds says.
 pub(super) fn context(
     l: &LangCtx,
     plan: &EncodePlan<'_>,
     carriers: &std::collections::HashMap<String, Carrier>,
     held: &HeldTypes,
     arm_types: &[String],
+    imports: &[ImportContext],
 ) -> serde_json::Value {
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     let arms = arm_texts(plan, arm_types);
@@ -1639,9 +1891,30 @@ pub(super) fn context(
                         gated: measure.gated,
                     }
                 }
-                _ => unreachable!(
-                    "`printed_number` holds bytes, entries, inputs and encoded lengths alone"
-                ),
+                // The start of the list held to its law that the flag is bound to (docs/adr/0065
+                // §6 R8), an element or a member of a gate group; where a gate leaves the list out,
+                // or the value holds an arm that does not hold it, there is none, and a flag keeps
+                // the bits the value presents.
+                Measured::Start { list, input } => {
+                    let content = presented_read(plan, &list.id);
+                    let path = law_start_path(plan, list, input);
+                    if measure.gated {
+                        MeasureText {
+                            size: format!("({content}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)"),
+                            present: Some(format!("{content} != nil")),
+                            gated: true,
+                        }
+                    } else {
+                        MeasureText {
+                            size: format!("({content}.start{path} ? 1 : 0)"),
+                            present: None,
+                            gated: false,
+                        }
+                    }
+                }
+                Measured::Encoded { .. } => {
+                    unreachable!("an encoded length is counted once the bodies are encoded")
+                }
             })
             .collect();
         let local = derived_local(&derived.element);
@@ -2247,6 +2520,9 @@ pub(super) fn context(
         "given": plan.given.iter().map(|input| input.name.clone()).collect::<Vec<_>>(),
         "refuses": !plan.totality.is_total(),
         "bounds": bounds,
+        // The law each list whose entries say the inputs it hands them is held to (docs/adr/0065
+        // §6 R8), a type of the codec's own beside its count bound.
+        "laws": law_context(plan, held, imports),
         "body": body,
         "overrides": overrides,
         "arms": arms_json,

@@ -1424,6 +1424,26 @@ old encode, the old encode and its templates are removed in the same landing.
    element's off the source; a stated number is the measure where the arm holds what it measures, else what the
    arm states, zero where it states nothing, as every printer reads it. Considered and refused: a concrete
    group whose arm holds the body codec's own value, which would make a host copy each body into it.
+   *Lists held to a law, 2026-11-17:* a list whose entries say the inputs it hands them (docs/adr/0065 §6 R8),
+   alone or in the arm of a group, is printed. The Swift runtime gains `Law.swift`: `SceLaw`, an automaton over
+   the entries of a list; `SceUniform` and `SceAfterKey`, the two automata, over `SceSaid` (what an entry says of
+   an input, `nil` for nothing, which follows any state) and `SceKind` (whether an entry is of a kind);
+   `SceLaws` and `SceStarts`, two laws run together, nested for more; and `Lawful<List, Law>`, a list with the
+   start the value gives, whose failable initializer is the one door, whose `init(decoding:start:)` throws
+   `presentIfMismatch`, and which reads as its list, as the Rust and C++ `Lawful` are. Two decisions are
+   recorded here. First, what an entry says and what kind it is are the entry codec's, which the runtime cannot
+   name, so the printed codec declares, for each such list, a `SceSaid` for each input through the entry codec's
+   `input{Name}(_:)` and a `SceKind` through the chain's identifier of an entry, each generic over the source of
+   the entries, and the law as a generic typealias over them (`{Field}Law<Entry>`); the automata stay the
+   runtime's, written once. Second, a value that has read no frame holds the fewest entries from the start the
+   first of them says (`init(defaultOf:)`), which traps where they break the law: the door stays checked, as no
+   unchecked one is public. The encode walks the list as any list, its type having held every entry to the law;
+   a flag bound to the input is derived from the list's start (`Measured::Start`), and an input of the codec's
+   own that it hands the list is said by the start (`InputSource::List`), `nil` where a gate leaves the list
+   out. The decode holds the entries it read to the law from what the frame gave. The fixtures the earlier
+   entries took for checks at a list are held to a law (`codec_repeat_flag_carrier`, `codec_chain_prev_carrier`),
+   and their tests now hold the law; a list a flag of another declaration derives keeps the check, which a test
+   holds on a document of its own. An input a list in a group's arm says stays refused by name.
 
 ## Consequences
 
