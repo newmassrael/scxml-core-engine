@@ -28,13 +28,25 @@ use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Against, Automaton, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId,
     Guard, HandedFrom, InputCheck, Law, Measure, Measured, Narrow, Number, NumberInto, Offset,
-    Presence, PresenceFlag, Value, Write,
+    Presence, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) mod cbor;
 pub(super) mod content_line;
 pub(super) mod source_case;
+
+/// Why a VLE the printer writes is of a width the runtime's writer takes: the
+/// parser makes a VLE only of `uint16`, `uint32` or `uint64` ("vle requires
+/// sce:type in {uint16, uint32, uint64}").
+const EVERY_VLE_WRITTEN: &str =
+    "the parser makes a VLE only of uint16, uint32 or uint64, which the runtime writes";
+
+/// Why a flag the presence of several fields decides is one of fields held
+/// together: two or more fields gated on one flag alone are the sides of one
+/// group of it (`codec_roles::gate_groups`), as the C++ printer holds it.
+const PRESENCE_TOGETHER: &str = "two or more fields gated on one flag alone are the sides of one \
+     group of it, so they are there together (codec_roles::gate_groups)";
 
 /// The first form of `plan` the Python printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
@@ -167,9 +179,10 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             // does (R4b); a flag folds it into its carrier, as a presence flag
             // is folded.
             (_, Derive::Number(_)) => {}
-            (ElementId::Flag { .. }, Derive::Presence(presence)) => {
-                forms.extend(presence_form(&derived.element, presence));
-            }
+            // A presence flag, set exactly where the field it gates is there,
+            // or the first of fields one group holds together
+            // ([`PRESENCE_TOGETHER`]).
+            (ElementId::Flag { .. }, Derive::Presence(_)) => {}
             // A flag of a disjunction, what the arm the value holds gives it
             // (docs/adr/0065 §6 R4c).
             (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
@@ -251,15 +264,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                             ));
                         }
                     }
-                    BitSize::Vle {
-                        width_bits: 16 | 32 | 64,
-                    }
-                    | BitSize::Tail
-                    | BitSize::LengthRef => {}
-                    BitSize::Vle { width_bits } => forms.push(format!(
-                        "field '{}': a variable-length integer of {width_bits} bits",
-                        field.id
-                    )),
+                    // A VLE is of a width the runtime writes
+                    // ([`EVERY_VLE_WRITTEN`]).
+                    BitSize::Vle { .. } | BitSize::Tail | BitSize::LengthRef => {}
                     // A body or a list, which the elements above name.
                     BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {}
                 }
@@ -344,13 +351,6 @@ fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<
         }
     }
     forms
-}
-
-/// What of the presence flag `element` the printer does not print: it prints
-/// a flag the presence of one field decides, or of fields one group holds.
-fn presence_form(element: &ElementId, presence: &PresenceFlag<'_>) -> Option<String> {
-    (presence.of.len() != 1 && !presence.together)
-        .then(|| format!("element '{element}': a flag the presence of several fields decides"))
 }
 
 /// The fields of `plan` whose value the encode derives as a number.
@@ -2212,6 +2212,9 @@ fn encode_source(
                 }
             }
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
+                if presence.of.len() > 1 && !presence.together {
+                    unreachable!("`{}`: {}", derived.element, PRESENCE_TOGETHER);
+                }
                 let (gated, when_clear) =
                     presence.of.first().expect("a presence flag gates a field");
                 let def = plan
@@ -2544,12 +2547,17 @@ fn encode_source(
                     }
                     // The runtime's writer, as the template's encode calls it,
                     // at the body's indentation of a function of the module.
-                    BitSize::Vle { width_bits } => {
+                    BitSize::Vle {
+                        width_bits: width_bits @ (16 | 32 | 64),
+                    } => {
                         let value = l.codec_carrier_expr(&field.sce_type, &read(field));
                         format!(
                             "    {}\n",
                             vle_encode_block(&value, *width_bits, l.lang).trim()
                         )
+                    }
+                    BitSize::Vle { .. } => {
+                        unreachable!("`{}`: {}", field.id, EVERY_VLE_WRITTEN)
                     }
                     BitSize::Tail | BitSize::LengthRef => {
                         format!("    w.write_bytes({})\n", wire_bytes(field, &read(field)))

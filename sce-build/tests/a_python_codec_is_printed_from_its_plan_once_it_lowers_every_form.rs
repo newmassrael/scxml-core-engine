@@ -1089,6 +1089,35 @@ fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     holds_none("measure", &text, &["def encode_source(", "(Protocol):"]);
 }
 
+/// A VLE of eight bits never reaches the printer: the parser refuses it, so
+/// the printer writes every VLE it is handed by the runtime's writer of its
+/// width and names no VLE form.
+///
+/// Turns red where the parser admits a `uint8` VLE, which the printer's
+/// `EVERY_VLE_WRITTEN` invariant then no longer holds.
+#[test]
+fn a_vle_of_eight_bits_is_refused_before_the_printer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("narrow.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="narrow">
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="n" sce:type="uint8" sce:byte="1" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the narrow codec");
+    let refused = python_codec_unlowered_file(&path, &[], &ForgeCompileOptions::default())
+        .expect_err("the parser refuses a uint8 VLE");
+    assert!(
+        format!("{refused:?}").contains("vle requires sce:type"),
+        "{refused:?}"
+    );
+}
+
 /// Every codec of the resources is printed exactly where the printer lowers
 /// each of its forms, and each printed one generates a module with its encode
 /// over a source. The printed codecs are shown with `--nocapture`.

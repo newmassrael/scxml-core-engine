@@ -1194,6 +1194,19 @@ old encode, the old encode and its templates are removed in the same landing.
    parameter given without its property), into a buffer first where a line can refuse the value, so a refusal
    leaves the caller's sink untouched, as the positional encode stages a frame (§1). The template's encode is
    gone: every content-line plan is printed.
+
+   *Amendment of 2026-11-17: what the Python printer refuses, and why.* Of the forms the Python printer named
+   unlowered beside the C++ printer's, two are invariants of the analysis and no form: a VLE of eight bits, which
+   the parser refuses ("vle requires sce:type in {uint16, uint32, uint64}"), and a flag the presence of several
+   fields decides that are not held together, which `codec_roles::gate_groups` makes the sides of one group. The
+   printer asserts both where it writes them, as the C++ printer does. Two stay refused by name. Two named arms
+   whose codecs are one Python class cannot be told apart by the arm's class, which is how a printed value says
+   its arm (the twelfth landing). A streamed field of part of its bytes, which no codec of the repository has,
+   waits until a byte case (§5) holds its write against its decode. A field of a float or a bool has no wire form
+   any printer writes: the page states none, the C++ and Swift printers refuse it by name, and the templates'
+   encodes shift or cast its value as if it were an integer, never its bits, so lifting it is a decision of
+   the page (its bits, its byte order, a bool's values) taken for every printer together with its byte cases (§5),
+   and not a Python landing.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
