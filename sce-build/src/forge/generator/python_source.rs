@@ -17,10 +17,10 @@
 //! does refuse, it raises before the first byte, as the runtime's exception
 //! class of the refusal's name.
 //!
-//! The printer reads the model only through the plan and lowers its forms one
-//! landing at a time (§6): [`unlowered`] names the first form a codec's plan
-//! uses that it does not print, and such a codec keeps the template's encode
-//! whole, so no codec has two encodes.
+//! The printer reads the model only through the plan (§6): [`unlowered`] names
+//! the first form a codec's plan uses that it does not print, and the Python
+//! backend refuses such a codec by that form, as the C++ backend refuses one.
+//! There is no other Python encode.
 
 use super::*;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
@@ -91,6 +91,22 @@ fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i I
         .find(|import| import.alias == alias && import.python_printed)
 }
 
+/// Why the codec `plan` holds as `alias` is one the Python backend refuses,
+/// the clause its own refusal names it by, or `None` where it prints it: a
+/// codec that holds a refused codec is refused for it, at the field or the arm
+/// that holds it, as the C++ backend refuses one.
+fn refused_import(imports: &[ImportContext], alias: &str) -> Option<String> {
+    match imports.iter().find(|import| import.alias == alias) {
+        Some(import) if import.python_printed => None,
+        Some(import) => {
+            Some(import.python_unlowered.clone().unwrap_or_else(|| {
+                "it was not read as the Python backend generates it".to_string()
+            }))
+        }
+        None => Some("it is not imported".to_string()),
+    }
+}
+
 /// [`unlowered_forms`] of a positional codec.
 fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
@@ -103,8 +119,10 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     let mut classes: BTreeMap<(String, String), &str> = BTreeMap::new();
     for arm in &plan.arms {
         let Some(import) = printed_import(imports, arm.codec) else {
+            let why = refused_import(imports, arm.codec)
+                .expect("an import the Python backend does not print is one it refuses");
             forms.push(format!(
-                "the arm `{}` is a codec the Python backend does not print",
+                "the arm `{}` is a codec the Python backend refuses ({why})",
                 arm.codec
             ));
             continue;
@@ -296,9 +314,9 @@ fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<St
         // the Python backend prints has, handed each input it takes and does
         // not say from a carrier or an input of this codec's.
         Value::Body { codec } => {
-            if printed_import(imports, codec).is_none() {
+            if let Some(why) = refused_import(imports, codec) {
                 forms.push(format!(
-                    "field '{id}': a body of `{codec}`, which the Python backend does not print"
+                    "field '{id}': a body of `{codec}`, a codec the Python backend refuses ({why})"
                 ));
             }
         }
@@ -307,9 +325,9 @@ fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<St
         // as a body is; its law reads each entry through that codec's own
         // `input_<name>`.
         Value::List { codec, .. } => {
-            if printed_import(imports, codec).is_none() {
+            if let Some(why) = refused_import(imports, codec) {
                 forms.push(format!(
-                    "field '{id}': a list of `{codec}`, which the Python backend does not print"
+                    "field '{id}': a list of `{codec}`, a codec the Python backend refuses ({why})"
                 ));
             }
         }

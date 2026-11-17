@@ -2,15 +2,18 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! Which codecs the Python backend prints from their encode plan
-//! (docs/adr/0081 step 4, §6), and what a printed one is.
+//! (docs/adr/0081 step 4, §6), what a printed one is, and which it refuses by
+//! name.
 //!
-//! The Python printer lowers the plan's forms one landing at a time. A codec
-//! whose every form it lowers is printed: its module names a `Protocol` of the
-//! elements a source presents, an encode over any source that derives every
-//! other element of the frame (docs/adr/0058 §1), and a value that holds no
-//! element the encode derives and holds each byte string in the class of its
-//! bound. Every other codec keeps the template's encode whole, and the printer
-//! names the first form it does not lower.
+//! A codec whose every form the Python printer lowers is printed: its module
+//! names a `Protocol` of the elements a source presents, an encode over any
+//! source that derives every other element of the frame (docs/adr/0058 §1),
+//! and a value that holds no element the encode derives and holds each byte
+//! string in the class of its bound. The Python backend has no other encode:
+//! every other codec is refused by the first form the printer does not lower
+//! (`generate/unsupported-feature`), and so is every codec and every document
+//! that holds it. This pins the codecs of the resources it prints and each
+//! codec of the repository it refuses, with the clause it refuses it by.
 
 use std::path::{Path, PathBuf};
 
@@ -1058,35 +1061,136 @@ fn a_content_line_component_is_printed_from_its_plan() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole and names its form: a field of a `float32`.
+/// A codec `name` whose `<datamodel>` holds `fields`, as a document.
+fn codec_document(name: &str, imports: &str, fields: &str) -> String {
+    format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}">
+  {imports}
+  <datamodel>
+    {fields}
+  </datamodel>
+</scxml>"#
+    )
+}
+
+/// A codec of a tag and a reading in a `float32`, a number no printer writes
+/// the wire of yet.
+fn measure_document() -> String {
+    codec_document(
+        "measure",
+        "",
+        r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="reading" sce:type="float32" sce:byte="1" sce:bit-size="32"/>"#,
+    )
+}
+
+/// What the Python backend refuses `measure` by.
+const MEASURE_REFUSED_BY: &str = "field 'reading': a `float32` field";
+
+/// The refusal a generation answers, spelled as its diagnostic prints; a
+/// generation that writes its output instead fails the test with `why`.
+fn refusal_of<T, E: std::fmt::Debug>(generated: Result<T, E>, why: &str) -> String {
+    match generated {
+        Ok(_) => panic!("{why}"),
+        Err(refusal) => format!("{refusal:?}"),
+    }
+}
+
+/// Holds that the Python backend refuses the document at `path` by `clause`:
+/// its generation answers `generate/unsupported-feature` naming it, and writes
+/// nothing.
+fn assert_refused_by(path: &Path, clause: &str) {
+    let refusal = refusal_of(
+        compile_forge_file(path, Language::Python, &[], &ForgeCompileOptions::default()),
+        "a document the Python backend refuses is not written",
+    );
+    assert!(
+        refusal.contains("UnsupportedFeature") && refusal.contains(clause),
+        "{} is refused by `{clause}`: {refusal}",
+        path.display()
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower is refused
+/// by that form, and nothing is written for it: there is no other Python
+/// encode.
 ///
-/// Turns red where `python_source::value_forms` stops naming a float field.
+/// Turns red where `python_source::value_forms` stops naming a float field,
+/// or where `render_codec` stops asking `refuse_python_unlowered`.
 #[test]
-fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
+fn a_codec_of_a_form_the_printer_does_not_lower_is_refused_by_it() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("measure.scxml");
-    std::fs::write(
-        &path,
-        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="measure">
-  <datamodel>
-    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:field id="reading" sce:type="float32" sce:byte="1" sce:bit-size="32"/>
-  </datamodel>
-</scxml>"#,
-    )
-    .expect("write the measure codec");
+    std::fs::write(&path, measure_document()).expect("write the measure codec");
     let forms = python_codec_unlowered_file(&path, &[], &ForgeCompileOptions::default())
         .expect("the document reads")
         .expect("the document is a codec");
-    assert_eq!(
-        forms,
-        vec!["field 'reading': a `float32` field".to_string()],
-        "measure: the printer names the float field"
+    assert_eq!(forms, vec![MEASURE_REFUSED_BY.to_string()]);
+    assert_refused_by(&path, &format!("codec 'measure': {MEASURE_REFUSED_BY}"));
+}
+
+/// A codec that embeds a codec the Python backend refuses is refused for it,
+/// by the field that holds it and the clause the held codec is refused by.
+///
+/// Turns red where `python_source::refused_import` stops carrying the held
+/// codec's clause, or `lib.rs` stops reading `python_unlowered` of an import.
+#[test]
+fn a_codec_holding_a_codec_python_refuses_is_refused_by_the_field_that_holds_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("measure.scxml"), measure_document())
+        .expect("write the measure codec");
+    let holder = dir.path().join("holder.scxml");
+    std::fs::write(
+        &holder,
+        codec_document(
+            "holder",
+            r#"<sce:import src="measure.scxml" kind="codec" as="measure"/>"#,
+            r#"<sce:field id="kind" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="inner" type="measure" sce:byte="1"/>"#,
+        ),
+    )
+    .expect("write the holding codec");
+    assert_refused_by(
+        &holder,
+        &format!(
+            "codec 'holder': field 'inner': a body of `measure`, a codec the Python backend \
+             refuses ({MEASURE_REFUSED_BY})"
+        ),
     );
-    let text = module_of(&path).expect("measure generates on Python");
-    holds_none("measure", &text, &["def encode_source(", "(Protocol):"]);
+}
+
+/// A document of another kind that imports a codec the Python backend refuses
+/// is refused for it, since the module it names is not written.
+///
+/// Turns red where `generate_python_with_imports` stops reading
+/// `python_unlowered` of its imports.
+#[test]
+fn a_document_that_imports_a_codec_python_refuses_is_refused_for_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("measure.scxml"), measure_document())
+        .expect("write the measure codec");
+    let validator = dir.path().join("measure_validator.scxml");
+    std::fs::write(
+        &validator,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="measure.scxml" kind="codec" as="frame"/>
+  <datamodel>
+    <data id="tag" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="255"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="frame.tag === tag"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the validator");
+    assert_refused_by(
+        &validator,
+        &format!(
+            "the codec `frame` it imports is one the Python backend refuses ({MEASURE_REFUSED_BY})"
+        ),
+    );
 }
 
 /// A VLE of eight bits never reaches the printer: the parser refuses it, so
@@ -1118,16 +1222,236 @@ fn a_vle_of_eight_bits_is_refused_before_the_printer() {
     );
 }
 
-/// Every codec of the resources is printed exactly where the printer lowers
-/// each of its forms, and each printed one generates a module with its encode
-/// over a source. The printed codecs are shown with `--nocapture`.
+/// The codecs of `tests/forge/resources` the Python backend prints, by
+/// document stem, in order: every one of them.
+const PRINTED: &[&str] = &[
+    "broadcast_log_conformance_event",
+    "broadcast_log_conformance_record",
+    "codec_cbor_map",
+    "codec_chain_depth_entry",
+    "codec_chain_depth_gated",
+    "codec_chain_depth_plain",
+    "codec_chain_flag_carrier",
+    "codec_chain_flag_entry",
+    "codec_chain_flag_forward",
+    "codec_chain_handed",
+    "codec_chain_handed_entry",
+    "codec_chain_has_envelope",
+    "codec_chain_has_input",
+    "codec_chain_has_marker",
+    "codec_chain_has_marker_slice",
+    "codec_chain_has_slice",
+    "codec_chain_has_tagged",
+    "codec_chain_has_tagged_entry",
+    "codec_chain_prev_carrier",
+    "codec_chain_prev_entry",
+    "codec_chain_prev_gated",
+    "codec_chain_prev_tail",
+    "codec_chain_prev_tail_gated",
+    "codec_content_line_enums",
+    "codec_content_line_event",
+    "codec_content_line_open",
+    "codec_content_line_records",
+    "codec_content_line_required_lists",
+    "codec_declared_bounds",
+    "codec_declared_bounds_gated",
+    "codec_declared_bounds_to_end",
+    "codec_default_marker_arm_a",
+    "codec_default_marker_arm_b",
+    "codec_dma_aligned_basic",
+    "codec_embed_basic",
+    "codec_embed_variant_dispatch",
+    "codec_encoded_length_checked",
+    "codec_enum_fields",
+    "codec_enum_gated",
+    "codec_every_arm_says",
+    "codec_every_arm_says_far",
+    "codec_every_arm_says_near",
+    "codec_every_arm_says_parent",
+    "codec_ext_attachment",
+    "codec_ext_encoding_info",
+    "codec_ext_timestamp",
+    "codec_fixed_after_lengthref",
+    "codec_flags_basic",
+    "codec_group_enum",
+    "codec_init_cookie_body",
+    "codec_init_syn_body",
+    "codec_init_syn_envelope",
+    "codec_length_ref",
+    "codec_length_ref_dotted_basic",
+    "codec_length_ref_uint16_be",
+    "codec_length_ref_uint16_le",
+    "codec_length_ref_uint32_le",
+    "codec_length_shared",
+    "codec_length_stated",
+    "codec_little_endian",
+    "codec_nested_body",
+    "codec_nested_parent",
+    "codec_optional_field_attributes",
+    "codec_origin_choice",
+    "codec_origin_envelope",
+    "codec_origin_leaf",
+    "codec_origin_scalar",
+    "codec_peek_arm_a",
+    "codec_peek_arm_b",
+    "codec_present_if_basic",
+    "codec_present_if_checked",
+    "codec_present_if_disjunction",
+    "codec_present_if_length_from",
+    "codec_present_if_length_ref",
+    "codec_present_if_negation",
+    "codec_present_if_string",
+    "codec_present_if_tail",
+    "codec_present_if_vle",
+    "codec_qos_byte",
+    "codec_quantity_temperature",
+    "codec_repeat_basic",
+    "codec_repeat_elem",
+    "codec_repeat_flag_carrier",
+    "codec_repeat_flag_gated",
+    "codec_repeat_flag_group",
+    "codec_repeat_present_if_basic",
+    "codec_repeat_unconditional_count",
+    "codec_scout_zid_body",
+    "codec_simple_frame",
+    "codec_some_arms_say",
+    "codec_some_arms_say_forward",
+    "codec_some_arms_say_parent",
+    "codec_some_arms_say_plain",
+    "codec_source_leaf",
+    "codec_source_parent_tag",
+    "codec_subbyte",
+    "codec_tail",
+    "codec_tlv_chain_basic",
+    "codec_tlv_chain_present_if_basic",
+    "codec_tlv_entry",
+    "codec_transport_envelope",
+    "codec_until_eof_basic",
+    "codec_variant_default_marker",
+    "codec_variant_dispatch",
+    "codec_variant_peek_basic",
+    "codec_variant_session_close",
+    "codec_variant_session_open",
+    "codec_vle_zint_u16",
+    "codec_vle_zint_u32",
+    "codec_vle_zint_u64",
+    "codec_zenoh_close",
+    "codec_zenoh_decl_ext_keyexpr",
+    "codec_zenoh_decl_ext_keyexpr_inner",
+    "codec_zenoh_decl_final",
+    "codec_zenoh_decl_kexpr",
+    "codec_zenoh_decl_queryable",
+    "codec_zenoh_decl_subscriber",
+    "codec_zenoh_decl_token",
+    "codec_zenoh_declaration",
+    "codec_zenoh_declare",
+    "codec_zenoh_del",
+    "codec_zenoh_encoding",
+    "codec_zenoh_err",
+    "codec_zenoh_ext_entry",
+    "codec_zenoh_ext_envelope",
+    "codec_zenoh_ext_unit",
+    "codec_zenoh_ext_zbuf",
+    "codec_zenoh_ext_zint",
+    "codec_zenoh_fragment",
+    "codec_zenoh_frame",
+    "codec_zenoh_hello",
+    "codec_zenoh_init_body",
+    "codec_zenoh_interest",
+    "codec_zenoh_interest_body",
+    "codec_zenoh_join",
+    "codec_zenoh_keep_alive",
+    "codec_zenoh_locator",
+    "codec_zenoh_msg_del",
+    "codec_zenoh_msg_put",
+    "codec_zenoh_network_envelope",
+    "codec_zenoh_oam",
+    "codec_zenoh_open_body",
+    "codec_zenoh_push",
+    "codec_zenoh_push_body",
+    "codec_zenoh_put",
+    "codec_zenoh_query",
+    "codec_zenoh_query_value",
+    "codec_zenoh_reply",
+    "codec_zenoh_request",
+    "codec_zenoh_response",
+    "codec_zenoh_response_final",
+    "codec_zenoh_scout",
+    "codec_zenoh_source_info",
+    "codec_zenoh_source_info_ext",
+    "codec_zenoh_timestamp",
+    "codec_zenoh_timestamp_ext",
+    "codec_zenoh_undecl_kexpr",
+    "codec_zenoh_undecl_queryable",
+    "codec_zenoh_undecl_subscriber",
+    "codec_zenoh_undecl_token",
+    "codec_zenoh_value_entry",
+    "codec_zenoh_value_slice",
+    "codec_zenoh_value_zbuf",
+    "codec_zenoh_wireexpr",
+    "keyexpr_entry",
+    "queue_conformance_event",
+    "subscription_entry",
+];
+
+/// The codecs of `tests/forge/resources` the Python backend refuses, by
+/// document stem, each with the clause it is refused by, in order. None: every
+/// codec of the resources is printed.
+const REFUSED: &[(&str, &str)] = &[];
+
+/// The codecs of the repository outside the resources that the Python backend
+/// refuses, by path from `sce-build`, each with the clause it is refused by, in
+/// order. None: every one of them is printed.
+const REFUSED_ELSEWHERE: &[(&str, &str)] = &[];
+
+/// The directories of the repository that hold codec documents beside the
+/// resources: the Rust conformance fixtures, the conformance contexts, the
+/// standard library, the test fixtures and the kind examples.
+const OTHER_CODEC_ROOTS: &[&str] = &[
+    "../backends/rust/forge-conformance/fixtures",
+    "../tests/forge/conformance",
+    "../stdlib",
+    "tests/fixtures",
+    "kind-examples",
+];
+
+/// Every document under `dir` that declares itself a codec, by path, in order.
+fn codec_documents_under(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.expect("an entry").path();
+        if path.is_dir() {
+            codec_documents_under(&path, out);
+        } else if path.extension().is_some_and(|ext| ext == "scxml")
+            && std::fs::read_to_string(&path).is_ok_and(|text| text.contains("sce:kind=\"codec\""))
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// `pairs` as owned pairs, to compare with what a census found.
+fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(what, why)| (what.to_string(), why.to_string()))
+        .collect()
+}
+
+/// The Python backend prints exactly the codecs of the resources whose every
+/// form it lowers, [`PRINTED`], each generating a module with its encode over
+/// a source, and refuses each other one by the first form it does not lower,
+/// [`REFUSED`]. The census of what each refused codec is refused by is shown
+/// with `--nocapture`.
 ///
 /// Turns red where `python_codec_printed` and `python_codec_unlowered` come
-/// apart, where `render_codec` prints a codec the printer does not lower or
-/// leaves one it lowers on the template's encode, or where the printer panics
-/// or the template fails on a codec it lowers.
+/// apart, where `render_codec` writes a codec the printer does not lower or
+/// refuses one it lowers, or where the printer panics or the template fails on
+/// a codec it lowers.
 #[test]
-fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
+fn the_python_backend_prints_each_codec_of_the_resources_or_refuses_it_by_name() {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(resources())
         .expect("the resources directory")
         .map(|entry| entry.expect("an entry").path())
@@ -1135,6 +1459,7 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         .collect();
     paths.sort();
     let mut printed: Vec<String> = Vec::new();
+    let mut refused: Vec<(String, String)> = Vec::new();
     for path in &paths {
         let stem = path
             .file_stem()
@@ -1152,50 +1477,89 @@ fn the_python_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
             Some(Some(forms.is_empty())),
             "{stem}: printed exactly where no form is unlowered"
         );
-        match module_of(path) {
-            Ok(text) => assert_eq!(
-                text.contains("\ndef encode_source(src: "),
-                forms.is_empty(),
-                "{stem}: the module prints its encode over a source exactly where the \
-                 printer lowers every form ({forms:?})"
-            ),
-            // A codec of MCU-only features is generated on no host backend,
-            // Python among them, whatever its forms; one the printer prints
-            // generates otherwise.
-            Err(refusal) => assert!(
-                !forms.is_empty() || refusal.contains("CodegenMcuClassKindOnNonMcuLanguage"),
-                "{stem}: a codec the printer prints generates on Python: {refusal}"
-            ),
+        match forms.first() {
+            None => {
+                match module_of(path) {
+                    Ok(text) => assert!(
+                        text.contains("\ndef encode_source(src: "),
+                        "{stem}: a printed module holds its encode over a source"
+                    ),
+                    // A codec of MCU-only features is generated on no host
+                    // backend, Python among them, whatever its forms.
+                    Err(refusal) => assert!(
+                        refusal.contains("CodegenMcuClassKindOnNonMcuLanguage"),
+                        "{stem}: a codec the printer prints generates on Python: {refusal}"
+                    ),
+                }
+                printed.push(stem);
+            }
+            Some(form) => {
+                assert_refused_by(path, form);
+                refused.push((stem, form.clone()));
+            }
         }
-        if forms.is_empty() {
-            printed.push(stem);
+    }
+    eprintln!("{} codec(s) refused on Python:", refused.len());
+    for (stem, form) in &refused {
+        eprintln!("  {stem}: {form}");
+    }
+    assert_eq!(
+        printed, PRINTED,
+        "the Python backend prints these codecs of the resources from their plan \
+         (docs/adr/0081 step 4)"
+    );
+    assert_eq!(
+        refused,
+        owned(REFUSED),
+        "the Python backend refuses these codecs of the resources by name; a change that \
+         refuses one, or prints one it refused, names it in REFUSED (docs/adr/0081 step 4)"
+    );
+}
+
+/// The Python backend prints every codec of the repository outside the
+/// resources but [`REFUSED_ELSEWHERE`], which it refuses by name.
+///
+/// Turns red where a codec of the standard library, the conformance contexts,
+/// the Rust conformance fixtures, the test fixtures or the kind examples uses a
+/// form the Python printer does not lower.
+#[test]
+fn the_python_backend_prints_every_codec_of_the_repository_or_refuses_it_by_name() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths = Vec::new();
+    for root in OTHER_CODEC_ROOTS {
+        codec_documents_under(&manifest.join(root), &mut paths);
+    }
+    paths.sort();
+    let mut refused: Vec<(String, String)> = Vec::new();
+    for path in &paths {
+        let shown = path
+            .strip_prefix(manifest)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        // Every document here is one the repository reads, so a document that
+        // cannot be read is a defect of its own and not a codec refused.
+        let unlowered = python_codec_unlowered_file(path, &[], &ForgeCompileOptions::default())
+            .unwrap_or_else(|e| panic!("{shown}: {e:?}"))
+            .expect("a document that declares itself a codec is one");
+        if let Some(form) = unlowered.first() {
+            assert_refused_by(path, form);
+            refused.push((shown, form.clone()));
         }
     }
-    eprintln!("{} codec(s) printed on Python:", printed.len());
-    for stem in &printed {
-        eprintln!("  {stem}");
+    eprintln!(
+        "{} codec document(s) read; {} refused on Python:",
+        paths.len(),
+        refused.len()
+    );
+    for (shown, form) in &refused {
+        eprintln!("  {shown}: {form}");
     }
-    for name in [
-        "codec_length_ref",
-        "codec_scout_zid_body",
-        "codec_simple_frame",
-        "codec_present_if_checked",
-        "codec_length_shared",
-        "codec_encoded_length_checked",
-        "codec_length_stated",
-        "codec_length_ref_dotted_basic",
-        "codec_chain_handed_entry",
-        "codec_zenoh_undecl_token",
-        "codec_repeat_unconditional_count",
-        "codec_variant_default_marker",
-        "codec_repeat_flag_carrier",
-        "codec_chain_prev_carrier",
-        "codec_chain_has_envelope",
-        "codec_chain_has_marker",
-    ] {
-        assert!(
-            printed.iter().any(|stem| stem == name),
-            "{name} is printed on Python"
-        );
-    }
+    assert_eq!(
+        refused,
+        owned(REFUSED_ELSEWHERE),
+        "the Python backend refuses these codecs of the repository by name; a change that \
+         refuses one, or prints one it refused, names it in REFUSED_ELSEWHERE \
+         (docs/adr/0081 step 4)"
+    );
 }

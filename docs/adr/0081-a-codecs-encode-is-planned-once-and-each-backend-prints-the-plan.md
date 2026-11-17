@@ -1207,6 +1207,20 @@ old encode, the old encode and its templates are removed in the same landing.
    encodes shift or cast its value as if it were an integer, never its bits, so lifting it is a decision of
    the page (its bits, its byte order, a bool's values) taken for every printer together with its byte cases (§5),
    and not a Python landing.
+
+   *The eighteenth Python landing, 2026-11-17:* the Python backend prints every codec from its plan or refuses it
+   by name, and the template's encode is removed (§6), as the fortieth C++ landing removed C++'s. No codec of the
+   repository uses a form the printer lacks, so the landing moves none. What is left is refused as
+   `generate/unsupported-feature` with the clause `python_source::unlowered` names (`codec 'x': field 'f': ...`):
+   a float or a bool, two named arms of one class, a streamed field of part of its bytes, and a body, a list or an
+   arm of a codec the Python backend refuses, by that codec's own clause, which the import carries
+   (`ImportContext::python_unlowered`, read as the codec is generated, its own imports resolved); a document of
+   another kind that imports a refused codec is refused for it. `render_codec` asks no Python codec for the
+   template's per-field encode blocks, its encode expressions or its prologue, and the template's encode of a
+   value, its variant class of a `kind` and a member for each arm, and its `tag()` over that class are gone. The
+   census pins the printed codecs of the resources (`PRINTED`) and each refused codec of the resources and of the
+   rest of the repository with its clause (`REFUSED`, `REFUSED_ELSEWHERE`, both empty), and holds the refusal of a
+   float, of a codec that embeds one, and of a validator that imports one.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

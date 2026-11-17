@@ -51,66 +51,16 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InconsistentS
 {% endif %}
 
 from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields or has_tlv_chain_fields or python_source.factory else "" }}
-from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}{{ ", Protocol" if python_source else "" }}{{ ", Union" if python_source.union else "" }}
+from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fields else "" }}, Protocol{{ ", Union" if python_source.union else "" }}
 
 
-{# docs/adr/0081 step 4: a codec printed from its plan holds its variant as the
-   `Union` of a class for each arm, which the printer names in `before`. #}
-{% if has_variant and not python_source.variant %}
-{% set ns = namespace(default_arm=none) %}
-{% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
-@dataclass
-class {{ struct_name }}Variant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-{% if ns.default_arm %}
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "{{ ns.default_arm.variant_name }}"
-{% else %}
-    # Default to the first declared arm (or "Default" when arms is empty)
-    # so a freshly-constructed envelope round-trips through encode without
-    # needing the caller to populate the body explicitly.
-{% if variant.arms %}
-    kind: str = "{{ variant.arms[0].variant_name }}"
-{% else %}
-    kind: str = "{{ variant.default_arm.variant_name }}"
-{% endif %}
-{% endif %}
-{# docs/adr/0072: an arm that names a build feature (`arm.feature`) is kept in
-   every build here. Python has no compile-time switch over one member of a
-   class, so an arm always present is the feature on, which is its default
-   meaning. #}
-{% for arm in variant.arms %}
-{% if ns.default_arm and arm.is_default %}
-    {{ arm.c_union_field }}: Optional[{{ arm.body_type }}] = field(default_factory={{ arm.body_type }})
-{% else %}
-    {{ arm.c_union_field }}: Optional[{{ arm.body_type }}] = None
-{% endif %}
-{% endfor %}
-{% if variant.default_arm %}
-    {{ variant.default_arm.c_union_field }}: Optional[{{ variant.default_arm.body_type }}] = None
-    default_tag: int = 0
-{% endif %}
-
-
-{% endif %}
-{# docs/adr/0081 step 4: a codec printed from its plan names the class of each
-   byte string's bound, the Protocol a source of it satisfies and the encode
+{# docs/adr/0081 step 4: every codec is printed from its plan. The printer
+   names the class of each element's bound or width, the Protocol a source of
+   it satisfies, the classes of a group's or a variant's arms, and the encode
    over any source, before the value's class. #}
-{% if python_source %}
 {{ python_source.before }}
 
 
-{% endif %}
 @dataclass
 class {{ struct_name }}:
 {% if has_no_fields %}
@@ -137,8 +87,6 @@ class {{ struct_name }}:
 {% endfor %}
 {% if python_source.variant %}
     body: {{ struct_name }}Variant = {{ python_source.variant.default }}
-{% elif has_variant %}
-    body: {{ struct_name }}Variant = field(default_factory={{ struct_name }}Variant)
 {% endif %}
 {% endif %}
 {% if python_source.hold %}
@@ -207,35 +155,17 @@ class {{ struct_name }}:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-{# A printed codec's value holds the arm itself, the decoded body of a named
-   arm or its `{Codec}Default` of the tag it read and the body. #}
-{% if not python_source.variant %}
-        body = {{ struct_name }}Variant()
-{% endif %}
+{# The value holds the arm itself, the decoded body of a named arm or its
+   `{Codec}Default` of the tag it read and the body. #}
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
-{% if not python_source.variant %}
-            body.kind = "{{ arm.variant_name }}"
-{% endif %}
             _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
-{% if python_source.variant %}
             body = _arm
-{% else %}
-            body.{{ arm.c_union_field }} = _arm
-{% endif %}
 {% endfor %}
         else:
 {% if variant.default_arm %}
-{% if not python_source.variant %}
-            body.kind = "{{ variant.default_arm.variant_name }}"
-            body.default_tag = {{ variant.tag_store_expr }}
-{% endif %}
             _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
-{% if python_source.variant %}
             body = {{ python_source.variant.default_arm }}(tag={{ variant.tag_store_expr }}, body=_arm)
-{% else %}
-            body.{{ variant.default_arm.c_union_field }} = _arm
-{% endif %}
 {% else %}
             # codec/variant-arm-unreachable proves every tag names an arm, so
             # no frame reaches here.
@@ -379,27 +309,10 @@ class {{ struct_name }}:
 {% endif %}
 {% if has_variant and has_caller_tag %}
     def tag(self) -> int:
-{% if python_source.variant %}
         """The tag of the arm this value holds: the one the arm declares, or
         the one the default arm keeps. It is the ``tag`` the decode of a value
         of this arm takes. The module's :func:`tag` says it of any source."""
         return tag(self)
-{% else %}
-        """The tag of the arm this value holds: the one the arm declares,
-        or, for the catch-all arm, the unknown tag it holds in
-        ``default_tag``. It is the ``tag`` the decode of a value of this arm
-        takes, and the literals are the ones that decode compares against.
-        Raises :class:`ValueError` when ``body.kind`` names no arm."""
-{% for arm in variant.arms %}
-        if self.body.kind == "{{ arm.variant_name }}":
-            return {{ arm.tag_literal }}
-{% endfor %}
-{% if variant.default_arm %}
-        if self.body.kind == "{{ variant.default_arm.variant_name }}":
-            return self.body.default_tag
-{% endif %}
-        raise ValueError(f"no variant arm is named {self.body.kind!r}")
-{% endif %}
 
 {% endif %}
     def encode(self, w: SceSink{{ encode_params_after_first_arg }}) -> None:
@@ -411,93 +324,10 @@ class {{ struct_name }}:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with.{% endif %}"""
-{% if python_source %}
-{# A printed codec's encode is handed the flag inputs its value does not say
-   (docs/adr/0065 §6 R4a), and reads the others off the value; the decode is
-   handed every one. #}
+{# The encode is the module's, over any source: it is handed the flag inputs
+   the value does not say (docs/adr/0065 §6 R4a) and reads the others off the
+   value; the decode is handed every one. #}
         encode_source(self, w{{ encode_args_with_comma }})
-{% else %}
-{% if has_parent_flags %}
-        # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.
-        _ = parent_flags
-{% endif %}
-{% if has_parent_tag_derivation %}
-        # RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
-        # parent-tag variant's active arm before the carrier byte is
-        # emitted. Each `_derived_<carrier>` value is OR'd into the
-        # carrier's encode site.
-{{ parent_tag_derivation_block }}
-{% endif %}
-{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
-{% if has_no_fields %}
-        # RFC §synth-5-B empty body — zero-byte payload.
-        _ = w
-        return
-{% elif has_variant %}
-{% if variant.has_streaming_prefix %}
-        # RFC §synth-5-B peek-byte / streaming-prefix:
-        # streaming prefix encode.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% else %}
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})
-{% endfor %}
-{% endif %}
-        # Append the active arm body's encoded bytes via the same sink.
-{% for arm in variant.arms %}
-        {{ "if" if loop.first else "elif" }} self.body.kind == "{{ arm.variant_name }}":
-            self.body.{{ arm.c_union_field }}.encode(w{{ arm.body_encode_args_with_leading_comma }})
-{% endfor %}
-{% if variant.default_arm %}
-        elif self.body.kind == "{{ variant.default_arm.variant_name }}":
-            self.body.{{ variant.default_arm.c_union_field }}.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})
-{% endif %}
-{% elif needs_streaming %}
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% elif has_variable_fields %}
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})
-{% endfor %}
-{% for field in fields %}
-{% if field.is_variable %}
-        w.write_bytes(self.{{ field.id }})
-{% endif %}
-{% endfor %}
-{% else %}
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})
-{% endfor %}
-{% endif %}
-{% endif %}
 
     def encode_to_bytes(self{{ encode_params_after_first_arg }}) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

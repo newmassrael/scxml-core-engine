@@ -2137,3 +2137,15 @@ is printed.
 - A refused value leaves the sink untouched: the component is written into a buffer first. Before, the lines before
   the refused one had reached the sink. The refusal now carries the entry's id as its message.
 
+## Every Python codec is printed from its plan, or refused by name (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. No codec of the repository
+moves: each was printed already.
+
+- A codec whose plan uses a form the Python printer does not lower is no longer generated with the template's
+  encode: `generate` refuses it as `generate/unsupported-feature`, naming the form (a `float32`, `float64` or
+  `bool` field, two arms whose codecs are one Python class, a streamed field of part of its bytes), and so is a
+  codec or a document that imports it. Such a codec is held in an integer, or its arms in codecs of their own.
+- A value with a variant holds the arm itself in `body`, as every printed codec has since ADR 0081's twelfth
+  Python landing: read the arm by `isinstance(value.body, ArmCodec)`, not by `value.body.kind`.
+

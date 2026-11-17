@@ -136,12 +136,12 @@ class TestDefaultRoundTrip(unittest.TestCase):
             0,
             f"decode must consume every emitted byte; {cursor.remaining()} byte(s) leftover",
         )
-        # Arm B's @dataclass field on the Variant is named after the
-        # imported codec's package: codec_default_marker_arm_b.
+        # The value holds the arm itself (docs/adr/0081 step 4): a value of
+        # arm B's own codec's class, which says which arm it is.
         self.assertEqual(
-            decoded.body.kind,
+            type(decoded.body).__name__,
             "CodecDefaultMarkerArmB",
-            f"round-trip must land in arm B (the marked-default); got kind={decoded.body.kind!r}",
+            f"round-trip must land in arm B (the marked-default); got {type(decoded.body).__name__}",
         )
 
         re_encoded = decoded.encode_to_bytes()

@@ -469,9 +469,20 @@ pub struct ImportContext {
     /// Python backend prints the imported codec from its plan, so its module
     /// holds `encode_source` and the `{Codec}Source` it reads, which a printed
     /// parent writes a body of it through. `false` on every other backend, for
-    /// non-codec imports, and for a codec that keeps the template's encode.
+    /// non-codec imports, and for a codec the Python backend refuses
+    /// ([`Self::python_unlowered`]).
     #[serde(skip)]
     pub python_printed: bool,
+
+    /// For a codec import, when the generation is for Python: what of the
+    /// codec the Python printer does not lower
+    /// (`forge::generator::python_codec_unlowered`, the first form), read as
+    /// the codec is generated, its own imports resolved. `None` for a codec
+    /// the Python backend prints, on every other backend, and for non-codec
+    /// imports. The document that imports it is refused for it, as the module
+    /// its member names is not written.
+    #[serde(skip)]
+    pub python_unlowered: Option<String>,
 
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
@@ -1546,6 +1557,7 @@ fn resolve_single_import(
         cpp_printed: None,
         cpp_unlowered: None,
         python_printed: false,
+        python_unlowered: None,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -10661,11 +10673,28 @@ fn refuse_cpp_unlowered(
     }
 }
 
+/// Refuses the codec `m`, whose plan is `plan`, by the first form of it the
+/// Python printer does not lower (docs/adr/0081 step 4, §6): the Python
+/// backend writes every codec from its plan, and a codec it cannot print is
+/// not written another way. Asked of every encoding before the codec is
+/// rendered. The refusal is spelled as the C++ backend's is
+/// ([`cpp_codec_refusal`]): `codec '<name>': <form>`.
+fn refuse_python_unlowered(
+    m: &CodecModel,
+    plan: &crate::forge::encode_plan::CodecPlan<'_>,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    match python_source::unlowered(plan, imports) {
+        Some(form) => Err(GenerateError::unsupported(format!("codec '{}': {form}", m.name)).into()),
+        None => Ok(()),
+    }
+}
+
 /// Whether the Python backend prints `m` from its encode plan (docs/adr/0081
 /// step 4, §6): its plan uses only the forms the Python printer lowers. Such a
 /// value is a source of its codec, holds no element the encode derives, and
-/// holds each byte string in the class of its bound; any other codec keeps the
-/// template's encode whole.
+/// holds each byte string in the class of its bound; every other codec is
+/// refused ([`refuse_python_unlowered`]).
 pub(crate) fn python_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
     python_source::unlowered(
         &crate::forge::encode_plan::CodecPlan::of(m, imports),
@@ -13359,10 +13388,18 @@ fn render_codec(
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
-        // docs/adr/0081 step 4: a C++ map is printed from its plan, or refused
-        // by the form the printer does not lower, as a positional codec is.
+        // docs/adr/0081 step 4: a C++ or a Python map is printed from its
+        // plan, or refused by the form the printer does not lower, as a
+        // positional codec is.
         if matches!(lang, crate::generator::Language::Cpp) {
             refuse_cpp_unlowered(
+                m,
+                &crate::forge::encode_plan::CodecPlan::of(m, imports),
+                imports,
+            )?;
+        }
+        if matches!(lang, crate::generator::Language::Python) {
+            refuse_python_unlowered(
                 m,
                 &crate::forge::encode_plan::CodecPlan::of(m, imports),
                 imports,
@@ -13405,6 +13442,13 @@ fn render_codec(
     if m.encoding == CodecEncoding::ContentLine {
         if matches!(lang, crate::generator::Language::Cpp) {
             refuse_cpp_unlowered(
+                m,
+                &crate::forge::encode_plan::CodecPlan::of(m, imports),
+                imports,
+            )?;
+        }
+        if matches!(lang, crate::generator::Language::Python) {
+            refuse_python_unlowered(
                 m,
                 &crate::forge::encode_plan::CodecPlan::of(m, imports),
                 imports,
@@ -13547,25 +13591,19 @@ fn render_codec(
     } else {
         (None, false)
     };
-    // docs/adr/0081 step 4: a Python codec whose plan uses only the forms the
-    // Python printer lowers is printed from its plan, its value a source of it
-    // and its encode over any source; any other keeps the template's encode
-    // whole (§6), so no codec has two. The plan is kept beside the text, as the
-    // fields of the value are read off it.
+    // docs/adr/0081 step 4: a Python codec is printed from its plan, its value
+    // a source of it and its encode over any source, or refused by the first
+    // form of the plan the Python printer does not lower (§6). The plan is
+    // kept beside the text, as the fields of the value are read off it.
     let python_printed = if matches!(lang, crate::generator::Language::Python) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (python_source::unlowered(&plan, imports), plan) {
-            (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-                let printed = python_source::render(
-                    &p,
-                    &l,
-                    imports,
-                    &filters::to_pascal_case(m.name.clone()),
-                );
-                Some((p, printed))
-            }
-            _ => None,
-        }
+        refuse_python_unlowered(m, &plan, imports)?;
+        let crate::forge::encode_plan::CodecPlan::Positional(p) = plan else {
+            unreachable!("a CBOR or a content-line codec is rendered by its own module above");
+        };
+        let printed =
+            python_source::render(&p, &l, imports, &filters::to_pascal_case(m.name.clone()));
+        Some((p, printed))
     } else {
         None
     };
@@ -13597,12 +13635,15 @@ fn render_codec(
     // closure) deletes the gate entirely.
 
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
-    // A Rust codec's `encode` is its source's (ADR 0058), and a C++ codec's is
-    // printed from its plan (docs/adr/0081 step 4): the statements the other
-    // backends write for each field, one by one, are not written for either.
+    // A Rust codec's `encode` is its source's (ADR 0058), and a C++ or a
+    // Python codec's is printed from its plan (docs/adr/0081 step 4): the
+    // statements the other backends write for each field, one by one, are not
+    // written for any of them.
     let field_encode_blocks = !matches!(
         lang,
-        crate::generator::Language::Rust | crate::generator::Language::Cpp
+        crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Python
     );
     // ADR 0049: a Rust codec is also rendered as `{Codec}View` when asked to.
     let emit_views = views && matches!(lang, crate::generator::Language::Rust);
@@ -32632,6 +32673,25 @@ pub fn generate_python_with_imports(
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Python)?;
+    // docs/adr/0081 step 4: a document that imports a codec the Python
+    // backend refuses is refused for it, since the module its member names is
+    // not written. A codec names such a codec in its own refusal, at the field
+    // or the arm that holds it (`python_source::unlowered`).
+    if !matches!(doc, ForgeDocument::Codec(_)) {
+        if let Some((alias, why)) = imports.iter().find_map(|import| {
+            import
+                .python_unlowered
+                .as_deref()
+                .map(|why| (import.alias.as_str(), why))
+        }) {
+            return Err(GenerateError::unsupported(format!(
+                "{} '{}': the codec `{alias}` it imports is one the Python backend refuses ({why})",
+                doc.kind(),
+                doc.name()
+            ))
+            .into());
+        }
+    }
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
     load_forge_templates(
@@ -48699,6 +48759,7 @@ mod tests {
             cpp_printed: None,
             cpp_unlowered: None,
             python_printed: false,
+            python_unlowered: None,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49628,6 +49689,7 @@ mod tests {
                 cpp_printed: None,
                 cpp_unlowered: None,
                 python_printed: false,
+                python_unlowered: None,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49700,6 +49762,7 @@ mod tests {
                 cpp_printed: None,
                 cpp_unlowered: None,
                 python_printed: false,
+                python_unlowered: None,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

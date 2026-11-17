@@ -3273,8 +3273,9 @@ pub fn python_codec_printed_file(
 
 /// Every form of the codec at `path` that the Python printer does not lower
 /// (docs/adr/0081 step 4), in the order the printer meets them; empty where it
-/// lowers every form and the codec is printed. A codec it does not print keeps
-/// the template's encode whole. Read as [`python_codec_printed_file`] reads it.
+/// lowers every form and the codec is printed. The Python backend refuses a
+/// codec it does not print by the first of them, as the C++ backend refuses
+/// one. Read as [`python_codec_printed_file`] reads it.
 /// `None` for a document that is not a codec.
 pub fn python_codec_unlowered_file(
     path: &Path,
@@ -7437,12 +7438,14 @@ fn validate_and_enrich_imports(
                     ctx.cpp_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
                 }
                 // docs/adr/0081 step 4: whether the Python backend prints the
-                // import from its plan, so a printed parent writes a body of
-                // it through its module's `encode_source`. Read as the import
-                // is generated, its own imports resolved.
+                // import from its plan, so a parent writes a body of it
+                // through its module's `encode_source`, or refuses it, and for
+                // what, so the parent is refused for it too. Read as the
+                // import is generated, its own imports resolved.
                 if matches!(language, generator::Language::Python) {
-                    ctx.python_printed =
-                        python_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                    let unlowered = python_codec_unlowered_file(&source.path, &[], options)?;
+                    ctx.python_printed = unlowered.as_ref().is_some_and(Vec::is_empty);
+                    ctx.python_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
                 }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.
