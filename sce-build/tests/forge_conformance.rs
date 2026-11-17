@@ -18115,7 +18115,7 @@ void expect(bool ok, const char* name, const char* what) {{
     }}
 }}
 
-std::optional<Marker> decode(const Frame& f) {{
+::SCE::Forge::Decoded<Marker> decode(const Frame& f) {{
     ::SCE::Forge::SceCursor cursor(f.bytes.data(), f.bytes.size());
     return Marker::decode(cursor);
 }}
@@ -19446,22 +19446,22 @@ bool entry_is(const Entry& e, std::uint8_t header, std::optional<std::uint8_t> s
     return false;
 }
 
-std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Carrier::decode(cursor);
 }
 
-std::optional<Forward> forward(const std::vector<std::uint8_t>& frame, std::uint8_t wide) {
+::SCE::Forge::Decoded<Forward> forward(const std::vector<std::uint8_t>& frame, std::uint8_t wide) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Forward::decode(cursor, wide);
 }
 
-std::optional<Repeat> repeat(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Repeat> repeat(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Repeat::decode(cursor);
 }
 
-std::optional<Gated> gated(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Gated> gated(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Gated::decode(cursor);
 }
@@ -20415,22 +20415,22 @@ bool entry_is(const Entry& e, std::uint8_t header, Bytes s, Wide l, Bytes tag) {
     return false;
 }
 
-std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Carrier::decode(cursor);
 }
 
-std::optional<Gated> gated(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Gated> gated(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Gated::decode(cursor);
 }
 
-std::optional<Tail> tail(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<Tail> tail(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return Tail::decode(cursor);
 }
 
-std::optional<TailGated> tail_gated(const std::vector<std::uint8_t>& frame) {
+::SCE::Forge::Decoded<TailGated> tail_gated(const std::vector<std::uint8_t>& frame) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     return TailGated::decode(cursor);
 }

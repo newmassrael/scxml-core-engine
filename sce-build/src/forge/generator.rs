@@ -25459,12 +25459,13 @@ fn chain_has_decl_lines(
 }
 
 /// The indentation the template gives a statement that follows a decoded
-/// chain, per backend.
+/// chain, per backend. Python's streaming decode is the method's body itself:
+/// a refused read raises its kind, so no `try:` wraps it.
 fn chain_decode_indent(lang: crate::generator::Language) -> &'static str {
     use crate::generator::Language;
     match lang {
-        Language::Rust | Language::Cpp => "        ",
-        Language::Kotlin | Language::Python => "            ",
+        Language::Rust | Language::Cpp | Language::Python => "        ",
+        Language::Kotlin => "            ",
         Language::Go => "\t",
         Language::C11 => "    ",
         Language::Swift => no_swift_emitter("chain_decode_indent"),
