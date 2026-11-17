@@ -11,8 +11,8 @@
 // Fixture: integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use std::time::Duration;
 

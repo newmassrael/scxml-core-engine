@@ -7,8 +7,8 @@
 // Fixture: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::a_child_may_send_many_events_in_one_tick::{
     AChildMaySendManyEventsInOneTickEvent as Event,

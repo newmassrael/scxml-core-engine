@@ -14,8 +14,8 @@
 // Fixture: integration_resources/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_other.scxml
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

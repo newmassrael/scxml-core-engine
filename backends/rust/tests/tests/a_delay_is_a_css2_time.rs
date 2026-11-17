@@ -6,8 +6,8 @@
 // Fixture: integration_resources/a_delay_is_a_css2_time/a_delay_is_a_css2_time.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_runtime::SceClock;
 use sce_rust_tests::integration::a_delay_is_a_css2_time::{

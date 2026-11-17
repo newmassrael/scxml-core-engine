@@ -16,8 +16,8 @@
 // Fixture: integration_resources/nested_lifecycle/nested_lifecycle.scxml
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::nested_lifecycle::{
     nested_lifecycle_transition_function as tf, NestedLifecyclePolicy,
