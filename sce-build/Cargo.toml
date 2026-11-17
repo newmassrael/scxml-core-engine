@@ -1290,6 +1290,14 @@ name = "a_payload_holds_an_enum_field"
 path = "tests/a_payload_holds_an_enum_field.rs"
 required-features = ["cli"]
 
+# An enum field beside a list, a record or a union is a value of its enum, of a payload,
+# a record variable and a loop's item alike. It runs `sce-codegen`, so it carries the
+# `cli` gate.
+[[test]]
+name = "an_enum_field_beside_a_composed_field_is_a_value_of_its_enum"
+path = "tests/an_enum_field_beside_a_composed_field_is_a_value_of_its_enum.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_payload_is_a_record_of_its_schema"
 path = "tests/a_payload_is_a_record_of_its_schema.rs"
