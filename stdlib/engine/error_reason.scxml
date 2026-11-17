@@ -40,7 +40,12 @@
   - `reservedParamConflict`: a `<param>` shadows a `_mesh_*` reserved name;
   - `sessionTransportUnavailable`: a remote `<invoke type="scxml">` names a
     declared machine to which the deployment attaches no transport;
-  - `payloadRefused`: an event's data is not a value of its declared payload.
+  - `payloadRefused`: an event's data is not a value of its declared payload;
+  - `capacityExceeded`: a store a machine built without an allocator bounds
+    cannot hold what it was handed, so that is refused whole and never cut: an
+    event's data past its slot of `_event.data`, a text past the scratch, a
+    `<send delay>` or an `<invoke>` deadline past the scheduled queue, a host's
+    replies past the room the build reserved for them.
 
   A host that declines to start an `<invoke>` raises `error.execution` with
   the data it refused with, in its own shape: the host owns that record, as a
@@ -73,6 +78,7 @@
       <sce:variant name="reservedParamConflict" value="15"/>
       <sce:variant name="sessionTransportUnavailable" value="16"/>
       <sce:variant name="payloadRefused" value="17"/>
+      <sce:variant name="capacityExceeded" value="18"/>
       <sce:variant name="targetUnreachable" value="64"/>
       <sce:variant name="httpTargetInvalid" value="65"/>
       <sce:variant name="transportUnavailable" value="66"/>
