@@ -8791,7 +8791,7 @@ pub fn lower(
         records: record_vars,
         schemas: records.clone(),
         event_aliases,
-        enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &records),
+        enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &model.imported_records),
         payload_enum_paths: Default::default(),
         payload_fields: Default::default(),
         loop_records: Default::default(),
@@ -9580,7 +9580,7 @@ pub fn lower(
             let payload = schema
                 .map(|schema| schema.name.as_str())
                 .or_else(|| composed_payloads.get(&trigger).map(String::as_str));
-            rewrites.open_payload(schema);
+            rewrites.open_payload(schema, model.imported_event_schemas.get(&trigger));
             let paths = scope.paths(payload);
             let mut ctx = lowering_ctx(&scope, target, machine, &paths, &enums, &map_units);
             // A payload of the schema of a record a map is keyed by is looked up
@@ -9686,7 +9686,7 @@ pub fn lower(
                 lower_snapshot_branch(transition, &branch, schema, &ctx, &renames, &rewrites)?;
             }
         }
-        rewrites.open_payload(None);
+        rewrites.open_payload(None, None);
     }
     for script in &mut model.global_scripts {
         let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &map_units);
@@ -12124,13 +12124,21 @@ impl Rewrites<'_> {
     /// Opens the walk of a transition whose event's payload `schema` is
     /// declared (`None` for a walk that has none in scope): the enum fields it
     /// holds are values of the enums the schema names, and the payload taken
-    /// whole is a record of its fields.
-    fn open_payload(&self, schema: Option<&EntrySchema>) {
-        *self.payload_enum_paths.borrow_mut() = schema
-            .map(|schema| {
+    /// whole is a record of its fields. `whole` is the schema the event
+    /// declares whatever its fields hold, which the enum fields are read from
+    /// as the judge reads them ([`crate::forge::static_datamodel::enum_fields`]);
+    /// `schema` is its view of one entry per field, absent for a schema that
+    /// holds a composed field.
+    fn open_payload(
+        &self,
+        schema: Option<&EntrySchema>,
+        whole: Option<&crate::forge::model::EventSchemaModel>,
+    ) {
+        *self.payload_enum_paths.borrow_mut() = whole
+            .map(|whole| {
                 crate::forge::static_datamodel::enum_fields(
                     crate::forge::event_schema_check::EVENT_DATA_PATH,
-                    schema,
+                    whole,
                 )
             })
             .unwrap_or_default();

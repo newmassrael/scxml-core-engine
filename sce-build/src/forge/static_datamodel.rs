@@ -210,7 +210,7 @@ pub fn check(
         schemas: &records,
         loop_records: Default::default(),
         loop_names: Default::default(),
-        enum_vars: enum_variables(&scope, &records),
+        enum_vars: enum_variables(&scope, &model.imported_records),
         loop_enum_paths: Default::default(),
         payload_enum_paths: Default::default(),
         payload_schema: Default::default(),
@@ -355,7 +355,7 @@ pub fn check(
             // An enum field of the payload is a value of the enum the schema
             // names, as a record's field is, and the payload taken whole is a
             // record of its schema.
-            judge.open_payload(schema, whole.is_some());
+            judge.open_payload(schema, whole);
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
@@ -398,7 +398,7 @@ pub fn check(
             };
             judge.actions(&proving(&ctx, &guarded), &transition.actions, &state.id)?;
         }
-        judge.open_payload(None, false);
+        judge.open_payload(None, None);
         for invoke in &state.invokes {
             judge.invoke(&plain, invoke, &state.id)?;
         }
@@ -760,9 +760,14 @@ fn absent_handed_to_a_present_start(
 /// and each enum field of a record variable, by its `<id>.<field>` path —
 /// what [`crate::forge::static_enum`] asks to tell an enum value from a number
 /// that happens to share its inferred type.
+///
+/// `records` are the imported records whole
+/// ([`crate::model::SCXMLModel::imported_records`]), a record that holds a
+/// list, a record or a union included: an enum field of one is a value of its
+/// enum whatever its sibling fields hold ([`enum_field_aliases`]).
 pub(crate) fn enum_variables(
     scope: &StaticScope,
-    records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
+    records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut held = std::collections::BTreeMap::new();
     for var in &scope.variables {
@@ -826,24 +831,39 @@ pub(crate) fn enum_variables(
 /// an optional enum field the path of its present value (`status.value`), since
 /// a value of it may be absent and its present value is the value of the enum
 /// (docs/adr/0055, [`crate::forge::static_enum::present_value_path`]).
+///
+/// `schema` is read whole, each field by its own type: an enum field is the
+/// same value of its enum beside a field that holds a list, a record or a
+/// union (docs/adr/0086, section 1) as beside fields of one entry each, so a
+/// schema that holds a composition keeps its enum fields. The one place both
+/// a record variable's fields ([`enum_variables`]) and the payload's
+/// ([`Judge::open_payload`], and the lowering's) are answered from, with the
+/// alias the statechart names each field's enum by
+/// ([`crate::forge::event_schema_check::name_schema_enums`]).
 fn enum_field_aliases(
-    schema: &crate::forge::model::EntrySchema,
+    schema: &crate::forge::model::EventSchemaModel,
 ) -> impl Iterator<Item = (String, &str)> {
-    use crate::forge::model::{EntryType, SceType};
+    use crate::forge::value_type::ValueType;
+    /// The alias of the enum `ty` is, where it is one.
+    fn enum_alias(ty: &crate::forge::value_type::ValueType) -> Option<&str> {
+        match ty {
+            crate::forge::value_type::ValueType::Scalar(crate::forge::model::SceType::Enum(
+                reference,
+            )) => Some(reference.alias.as_str()),
+            _ => None,
+        }
+    }
     schema
         .fields
         .iter()
         .filter_map(|field| match &field.sce_type {
-            EntryType::Scalar(SceType::Enum(reference)) => {
-                Some((field.id.clone(), reference.alias.as_str()))
-            }
-            EntryType::Optional {
-                elem: SceType::Enum(reference),
-            } => Some((
-                crate::forge::static_enum::present_value_path(&field.id),
-                reference.alias.as_str(),
-            )),
-            EntryType::Scalar(_) | EntryType::Optional { .. } => None,
+            ValueType::Optional { elem } => enum_alias(elem).map(|alias| {
+                (
+                    crate::forge::static_enum::present_value_path(&field.id),
+                    alias,
+                )
+            }),
+            ty => enum_alias(ty).map(|alias| (field.id.clone(), alias)),
         })
 }
 
@@ -851,7 +871,7 @@ fn enum_field_aliases(
 /// its `<holder>.<field>` path and the alias of the enum it holds.
 pub(crate) fn enum_fields(
     holder: &str,
-    schema: &crate::forge::model::EntrySchema,
+    schema: &crate::forge::model::EventSchemaModel,
 ) -> Vec<(String, String)> {
     enum_field_aliases(schema)
         .map(|(field, alias)| (format!("{holder}.{field}"), alias.to_string()))
@@ -1631,15 +1651,20 @@ impl<'a> Judge<'a> {
     /// whole is a record of. Each field names its enum as this document holds
     /// the enum document the schema imports (docs/adr/0054), so a value of it is
     /// compared and assigned with a value of that same document's enum alone.
-    /// `declared` is whether the event declares a schema at all, `schema`
-    /// being its view of one entry per field, absent for a schema that holds a
-    /// composed field.
-    fn open_payload(&self, schema: Option<&crate::forge::model::EntrySchema>, declared: bool) {
-        *self.payload_enum_paths.borrow_mut() = schema
-            .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
+    /// `whole` is the schema the event declares, if it declares one, whatever
+    /// its fields hold, which the enum fields are read from
+    /// ([`enum_field_aliases`]); `schema` is its view of one entry per field,
+    /// absent for a schema that holds a composed field.
+    fn open_payload(
+        &self,
+        schema: Option<&crate::forge::model::EntrySchema>,
+        whole: Option<&crate::forge::model::EventSchemaModel>,
+    ) {
+        *self.payload_enum_paths.borrow_mut() = whole
+            .map(|whole| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, whole))
             .unwrap_or_default();
         *self.payload_schema.borrow_mut() = schema.cloned();
-        self.payload_declared.set(declared);
+        self.payload_declared.set(whole.is_some());
     }
 
     /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant
@@ -6130,14 +6155,16 @@ impl<'a> Judge<'a> {
         // the body ends it: a turn follows the end of the one before
         // (docs/adr/0055, section 3).
         inner.proven = narrowing::loop_entry(&ctx.proven, &action.actions);
+        // The item's and the key's enum fields are read from their records
+        // whole, as a record variable's are ([`enum_field_aliases`]).
         let mut enum_paths = record_item
             .as_deref()
-            .and_then(|alias| self.schemas.get(alias))
+            .and_then(|alias| self.lift_schemas.get(alias))
             .map(|schema| enum_fields(item, schema))
             .unwrap_or_default();
         if let Some(schema) = record_key
             .as_deref()
-            .and_then(|alias| self.schemas.get(alias))
+            .and_then(|alias| self.lift_schemas.get(alias))
         {
             enum_paths.extend(enum_fields(key, schema));
         }

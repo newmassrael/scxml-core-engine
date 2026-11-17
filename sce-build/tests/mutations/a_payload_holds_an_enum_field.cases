@@ -38,8 +38,8 @@ PY
 # entered as enum paths.
 mutation_case "a transition's payload enum fields are never entered" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "        *self.payload_enum_paths.borrow_mut() = schema\n            .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))\n            .unwrap_or_default();\n",
-     "        let _ = schema;\n")
+     "        *self.payload_enum_paths.borrow_mut() = whole\n            .map(|whole| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, whole))\n            .unwrap_or_default();\n",
+     "        let _ = whole;\n")
 PY
 
 # The enum a payload field holds is not declared: the machine has no type to hold
