@@ -3116,3 +3116,21 @@ resources), each of whose other forms the printer already lowered.
   takes `const {log}_given_flags_t *given` with the others; where it says all of them, it takes no flags. The read
   result still returns every flag.
 
+## A printed C11 codec derives the tag of the arm its value holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the codecs
+that hold a variant of arms the printer prints, whatever holds its tag (`codec_variant_dispatch`, `codec_origin_choice`,
+`codec_variant_peek_basic`, `codec_source_leaf` among the resources), and by the parents that dispatch on the tag of
+a body they embed (`codec_source_parent_tag`).
+
+- The field a variant's tag is read from (`<sce:variant tag="msg_id">`) is no member of a printed codec's struct: the
+  encode writes the tag of the arm `body.kind` names, the one the document gives a known arm and `body.default_tag`
+  for the catch-all. Delete each assignment to the field and set the arm instead. A tag held in a flag of a carrier
+  (`tag="header.mid"`) stays a member of the carrier, and the encode writes the arm's tag over the bits the value
+  holds there, as a parent writes the tag of a body's arm into the flag that dispatches it.
+- `{codec}_source_t` of a codec with a variant ends with `body`, a function answering `{codec}_body_ref_t`: the arm's
+  kind, the catch-all's tag, and the arm's body as `{arm}_source_ref_t` in the union's member of the arm, named as
+  the struct's own union names it. A table of a consumer's own presents its arm this way.
+- `{codec}_input_<name>` of an input the arms say answers what the arm the source holds says, a
+  `sce_optional_uint8_t` where some arm does not read it.
+
