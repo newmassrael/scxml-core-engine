@@ -120,6 +120,18 @@ step_runtime_swift() {
     "$CODEGEN" materialize runtime-swift --into "$REPO_ROOT" --replace
 }
 
+# ── runtime-c: the C11 runtime's engine tree ────────────────────────────
+#
+# A declared tree (tools/codegen/trees/runtime-c.toml), the same as the four
+# above, written under the runtime's public include directory, which every
+# consumer of a generated machine names already (ADR 0097, amendment of
+# 2026-11-17, "The C11 engine's tree").
+step_runtime_c() {
+    require_codegen
+    stage "C11 runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-c --into "$REPO_ROOT" --replace
+}
+
 # ── rust-tests: the committed trees of backends/rust/tests ──────────────
 #
 # The W3C and integration trees are declared (ADR 0097): every document, flag

@@ -140,10 +140,10 @@ sce_generated_tree_clear() {
 # files (`regen-reproduces`), needs it written before anything compiles.
 #
 # The other runtimes' engine trees (`runtime-kotlin`, `runtime-go`,
-# `runtime-python`, `runtime-swift`) follow it. Nothing the generator is built
-# from is among them, so each is set aside and settled like any other tree; they
-# are steps of their own because each runtime is a library of its own, which no
-# other step writes into.
+# `runtime-python`, `runtime-swift`, `runtime-c`) follow it. Nothing the
+# generator is built from is among them, so each is set aside and settled like
+# any other tree; they are steps of their own because each runtime is a library
+# of its own, which no other step writes into.
 sce_regen_steps() {
     printf '%s\n' \
         runtime-rust \
@@ -151,6 +151,7 @@ sce_regen_steps() {
         runtime-go \
         runtime-python \
         runtime-swift \
+        runtime-c \
         rust-tests \
         kotlin-tests \
         kotlin-method-size \
@@ -221,6 +222,9 @@ sce_generated_trees() {
             ;;
         runtime-swift)
             printf '%s\n' backends/swift/runtime/Sources/SceRuntime/Generated
+            ;;
+        runtime-c)
+            printf '%s\n' backends/c/runtime/include/sce/generated
             ;;
         rust-tests)
             printf '%s\n' \

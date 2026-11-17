@@ -338,7 +338,7 @@ when a compiler or interpreter reads it as **source** of a target. Applied:
 
 | Leaves | Why |
 |---|---|
-| Every tree of the steps `rust-tests`, `kotlin-tests`, `kotlin-method-size`, `go-integration`, `swift-tests`, `go-round-trip`, `mesh-rust`, `mesh-cpp`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `specs`, `runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, and the tree `runtime-cpp` of the step `embed-manifest` (and `go-w3c`, `python-w3c`, `python-integration`, gitignored already) | Read by a compiler as source. |
+| Every tree of the steps `rust-tests`, `kotlin-tests`, `kotlin-method-size`, `go-integration`, `swift-tests`, `go-round-trip`, `mesh-rust`, `mesh-cpp`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `specs`, `runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, `runtime-c`, and the tree `runtime-cpp` of the step `embed-manifest` (and `go-w3c`, `python-w3c`, `python-integration`, gitignored already) | Read by a compiler as source. |
 | The sourcemaps, payload schema instances, transition tables and stubs inside those trees | Outputs of the same actions. Their schemas stay committed (row above). |
 
 A file that is both, an oracle and compiled, is committed as the oracle; the compiled copy comes from the action. A
@@ -372,8 +372,8 @@ landing is judged by the lanes it touches running the same tests with the same c
    commit pin with the generator (ADR 0078 section 1). *Rollback*: the pipeline publishes nothing a consumer already
    takes.
 7. **The Mesh libraries** (`mesh-rust`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `mesh-cpp`), **and the engine
-   runtimes' trees** (`runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, `runtime-cpp`; amendments of
-   2026-11-17),
+   runtimes' trees** (`runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, `runtime-cpp`, `runtime-c`;
+   amendments of 2026-11-17),
    each by its language's hook of section 4. The Rust crate by
    `build.rs`, Kotlin by its Gradle task, Swift by its plugin, the C++ envelope by `sce_codegen_generation` in
    `sce/CMakeLists.txt`. The consumer-guide gate reads the rendered diff. *Rollback*: revert; consumers on a release
@@ -666,6 +666,41 @@ only a C++17 compiler, has to carry it.
 
 **What it costs.** The embed manifest's action now builds the generator, and a regeneration of the tree is a change
 of the public header surface, reviewed in the manifest's diff like any other.
+
+## Amendment (2026-11-17): the C11 engine's tree
+
+Decided under the owner's standing rule (the most long-term correct structure, without asking).
+
+**What was wrong.** ADR 0106 (#111) moves the C11 engine to the same vocabulary, so `sce:std/engine/error_reason.scxml`
+is generated for C as the other runtimes have it. A generated C11 machine includes the runtime's headers from one
+directory, `backends/c/runtime/include`, which every consumer names (the CMake target `sce_c_runtime`, a build that
+compiles a machine by hand, each test that compiles one), and the machine's raise helper names the enum's type, so the
+tree has to be reachable from that directory.
+
+**Decision.**
+
+1. The tree `runtime-c` (`tools/codegen/trees/runtime-c.toml`) is written into
+   `backends/c/runtime/include/sce/generated`, included as `sce/generated/error_reason.h` by the hand-written
+   `sce/error_data.h`, which every machine header includes. A second include directory was weighed and refused: every
+   consumer of a machine would have to name it, and one that did not would fail to compile a machine it compiled
+   before. The prefix `sce/generated/` keeps it apart from the C++ engines' `generated/error_reason.h`, which a C++
+   program that also compiles a C11 machine has on its include path.
+2. It is a step of its own, `runtime-c`, after `runtime-swift` in `sce_regen_steps`, one `sce-codegen materialize
+   runtime-c --replace`, and the action `[actions.regen-runtime-c]`, whose output is the tree and whose inputs are the
+   generator's block. `sce_generated_trees runtime-c` names it, so it is set aside and settled as the other runtimes'
+   trees are.
+3. `[actions.regen-forge-goldens]` read `backends/c/**`, which would read that output and put the action in the chain
+   of `regen-runtime-c`. It names the C backend's hand-written parts instead: the runtime's headers by `sce/*.h` and
+   `sce/test/**`, its other directories, the forge runtime, the host features and the tests, as the other runtimes'
+   readers name theirs. A new directory of `backends/c` is outside those inputs until it is named there. The goldens'
+   C drivers read the tree through a machine's header; its bytes are a function of what the action reads already, as
+   the Rust runtime's tree is for every action that builds the generator.
+4. It stays committed, as the other runtimes' trees do, until landing 7 moves it into the C build;
+   `b9_drift_detection::verify_passes_on_real_committed_runtime_engine_trees` holds its `source-hash`.
+
+**What it costs.** One more step and action, a generator run over one document. The runtime's public include
+directory now holds a generated directory beside the hand-written headers, and a reader of it has to name the
+hand-written ones.
 
 ## References
 

@@ -628,7 +628,7 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #     document, and belonged to no step. They were split by language, each run by its language's step;
 #     the Rust, Go and Kotlin halves are now generations of those languages' integration manifests.
 #   Every other step owns one tree alone: each runtime's engine documents (Rust, Kotlin, Go, Python,
-#   Swift), the Kotlin method-size module, the forge round-trip Go tree, each Mesh tree, the specs
+#   Swift, C11), the Kotlin method-size module, the forge round-trip Go tree, each Mesh tree, the specs
 #   machines, the forge goldens and the embed manifest.
 #
 # WHAT LOOKS LIKE A READ-AFTER-WRITE AND IS NOT ONE:
@@ -655,6 +655,12 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #     this reason, and leave that directory out: naming it would put every step in that action's chain.
 #     The tree is the generator's bootstrap, committed (ADR 0097, amendment of 2026-11-17); a traced
 #     run reports the read, and that read is the bootstrap, not an input left out.
+#   - The forge goldens compile C11 drivers against the C runtime's public headers, beside which
+#     regen-runtime-c writes sce/generated. Their inputs name the hand-written headers (`sce/*.h`,
+#     `sce/test/**`) and the runtime's other directories one by one, and leave that directory out:
+#     its bytes are a function of what the action reads already (the standard library, sce-build,
+#     the templates), as the Rust runtime's generated directory is for every action that builds
+#     the generator.
 #   - The generator compiles in a hand-written file of the Python runtime (sce_runtime/policy.py),
 #     whose package also holds sce_runtime/generated, which regen-runtime-python writes. So the
 #     inputs name the runtime's hand-written parts (its pyproject, the package's own modules and its
@@ -985,6 +991,70 @@ inputs = [
     "scripts/regen_all_committed_trees.sh",
 ]
 outputs = ["backends/swift/runtime/Sources/SceRuntime/Generated/**"]
+
+# The C11 runtime's engine tree (tools/codegen/trees/runtime-c.toml), written under the runtime's
+# public include directory. The only other action that reads the C runtime, regen-forge-goldens,
+# names its hand-written headers (`sce/*.h`, `sce/test/**`) rather than `backends/c/**`, so that it
+# reads none of this output (ADR 0097, amendment of 2026-11-17, "The C11 engine's tree").
+[actions.regen-runtime-c]
+run = 'scripts/regen_all_committed_trees.sh runtime-c'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-ttcn3-validator/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/*.h",
+    "sce/include/actions/**",
+    "sce/include/backends/**",
+    "sce/include/common/**",
+    "sce/include/core/**",
+    "sce/include/dispatchers/**",
+    "sce/include/events/**",
+    "sce/include/factory/**",
+    "sce/include/host/**",
+    "sce/include/mesh/**",
+    "sce/include/model/**",
+    "sce/include/parsing/**",
+    "sce/include/runtime/**",
+    "sce/include/saved/**",
+    "sce/include/scripting/**",
+    "sce/include/static/**",
+    "sce/include/test/**",
+    "sce/include/wrappers/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/src/**",
+    "backends/python/runtime/pyproject.toml",
+    "backends/python/runtime/sce_runtime/*.py",
+    "backends/python/runtime/sce_runtime/scripting/**",
+    "backends/python/runtime/sce_runtime/testprofile/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+]
+outputs = ["backends/c/runtime/include/sce/generated/**"]
 
 [actions.regen-rust-tests]
 run = 'scripts/regen_all_committed_trees.sh rust-tests'
@@ -1979,7 +2049,15 @@ inputs = [
     "scripts/lib/**",
     "scripts/regen_all_committed_trees.sh",
     "tests/forge/conformance/**",
-    "backends/c/**",
+    "backends/c/forge-runtime/**",
+    "backends/c/host-features/**",
+    "backends/c/runtime/CMakeLists.txt",
+    "backends/c/runtime/base/**",
+    "backends/c/runtime/include/sce/*.h",
+    "backends/c/runtime/include/sce/test/**",
+    "backends/c/runtime/posix/**",
+    "backends/c/runtime/scripting/**",
+    "backends/c/tests/**",
     "backends/cpp/forge-runtime/**",
     "backends/go/forge-runtime/go.mod",
     "backends/go/forge-runtime/*/*.go",

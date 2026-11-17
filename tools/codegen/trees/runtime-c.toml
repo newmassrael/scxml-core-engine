@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the C11 engine is built on, generated for C into
+# backends/c/runtime/include/sce/generated (ADR 0097): the reasons a machine
+# raises `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), the type
+# `ErrorReason_t`, included as `sce/generated/error_reason.h` by
+# sce/error_data.h. Every generated machine and the runtime write each reason
+# by the enum's members and its declared-name accessor, so the document is the
+# one spelling of it. Named by its path under stdlib/engine, so it carries the
+# source hash of that directory.
+#
+# The directory sits under the runtime's public include directory, which every
+# consumer of a generated machine already names, beside the hand-written
+# headers of sce/ that no other action may read it with: every action that
+# reads the C runtime names those headers by `sce/*.h` and `sce/test/**`,
+# never `sce/**` (ADR 0097, amendment of 2026-11-17, "The C11 engine's tree").
+
+[tree]
+name = "runtime-c"
+roots = ["backends/c/runtime/include/sce/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "c", "--output-dir", "{out}"]
+place = "backends/c/runtime/include/sce/generated"
+keep = ["*.h"]
