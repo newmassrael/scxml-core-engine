@@ -13853,10 +13853,11 @@ fn forge_go_codec_init_syn_body() {
 }
 
 /// RFC §synth-5-B parent-flags Go closure: variant parent threading carrier value.
-/// The envelope's `switch { case s.Body.X != nil ... }` arms call
-/// `s.Body.X.Encode(s.Header)` and the companion
-/// `Decode<Body>(cursor, Header)` passes the just-decoded PascalCase
-/// local. Mirrors the Rust + Cpp + Kotlin goldens.
+/// The envelope, printed from its plan (docs/adr/0081 step 4), switches on
+/// the arm type it holds and writes it by the arm codec's `EncodeSource`,
+/// handed the S bit of the header as the encode writes it; the companion
+/// `Decode<Body>(cursor, header)` passes the just-decoded local. Mirrors the
+/// Rust + Cpp + Kotlin goldens.
 #[test]
 fn forge_go_codec_init_syn_envelope() {
     assert_standalone_forge_go("codec_init_syn_envelope", "codec_init_syn_envelope.go");
@@ -16456,11 +16457,10 @@ fn forge_parent_tag_dispatcher_self_gen_c11() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Parent-tag dispatcher self-gen Gap 7 — Go consumer's parent_tag_switch_block
-/// uses field-presence Body.<Arm> != nil dispatch, NOT `.(type)` type-
-/// switch (invalid for the variant struct rep) and NOT bare arm body
-/// type names (which would lack package qualifier when arm bodies live
-/// in separate packages).
+/// Parent-tag dispatcher self-gen Gap 7 — the Go consumer, printed from its
+/// plan, dispatches on the arm type the printed dispatcher holds, each named
+/// by the dispatcher's package, and NOT by a bare arm type name (which would
+/// lack its package qualifier when arm bodies live in separate packages).
 #[test]
 fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -16534,21 +16534,26 @@ fn forge_parent_tag_consumer_field_presence_dispatch_go() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
 
+    // The dispatcher and its parent are printed from their plans
+    // (docs/adr/0081 step 4): the dispatcher presents its arm as an
+    // interface, so the parent switches on the arm type it holds, each named
+    // by the dispatcher's package (Gap 7: never a bare arm type).
     assert!(
-        parent_go.contains("case s.Key.Body.B5nuGoLocal != nil:"),
-        "Go consumer must use field-presence dispatch on Body.<Arm>; got:\n{parent_go}"
+        parent_go.contains("\tswitch src.Key().Body().(type) {\n"),
+        "Go consumer must switch on the arm type the embedded body holds; got:\n{parent_go}"
     );
     assert!(
-        parent_go.contains("case s.Key.Body.B5nuGoNonlocal != nil:"),
-        "Go consumer must dispatch on Nonlocal arm field-presence; got:\n{parent_go}"
+        parent_go
+            .contains("\tcase b5nu_go_disp.B5nuGoDispVariantB5nuGoLocal:\n\t\t_pHeaderM |= 0x1\n"),
+        "Go consumer must dispatch on the Local arm by its qualified type; got:\n{parent_go}"
     );
     assert!(
-        !parent_go.contains("s.Key.Body.(type)"),
-        "Go consumer must NOT use `.(type)` type-switch on the variant struct (Gap 7);\n{parent_go}"
+        parent_go.contains("\tcase b5nu_go_disp.B5nuGoDispVariantB5nuGoNonlocal:\n"),
+        "Go consumer must dispatch on the Nonlocal arm by its qualified type; got:\n{parent_go}"
     );
     assert!(
-        !parent_go.contains("case *B5nuGoLocal:"),
-        "Go consumer must NOT use bare `case *<Arm>:` (Gap 7);\n{parent_go}"
+        !parent_go.contains("Body.B5nuGoLocal") && !parent_go.contains("case B5nuGoDisp"),
+        "Go consumer must name no arm field and no unqualified arm type (Gap 7);\n{parent_go}"
     );
     compile_codec_set_go(
         &dir,

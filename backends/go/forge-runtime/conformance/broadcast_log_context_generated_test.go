@@ -51,21 +51,15 @@ func blogctxEvent(sensorID uint8, value optional.Of[uint16]) blogflaggedevent.Br
 // blogctxSmall is the choice as its one-byte arm.
 func blogctxSmall(payload uint8) blogchoice.BroadcastLogConformanceChoice {
 	arm := blogchoicesmall.MakeBroadcastLogConformanceChoiceSmall(payload)
-	return blogchoice.BroadcastLogConformanceChoice{
-		Body: blogchoice.BroadcastLogConformanceChoiceVariant{
-			BroadcastLogConformanceChoiceSmall: &arm,
-		},
-	}
+	return blogchoice.MakeBroadcastLogConformanceChoice(
+		blogchoice.MakeBroadcastLogConformanceChoiceVariantBroadcastLogConformanceChoiceSmall(&arm))
 }
 
 // blogctxLarge is the choice as its two-byte arm.
 func blogctxLarge(payload uint16) blogchoice.BroadcastLogConformanceChoice {
 	arm := blogchoicelarge.MakeBroadcastLogConformanceChoiceLarge(payload)
-	return blogchoice.BroadcastLogConformanceChoice{
-		Body: blogchoice.BroadcastLogConformanceChoiceVariant{
-			BroadcastLogConformanceChoiceLarge: &arm,
-		},
-	}
+	return blogchoice.MakeBroadcastLogConformanceChoice(
+		blogchoice.MakeBroadcastLogConformanceChoiceVariantBroadcastLogConformanceChoiceLarge(&arm))
 }
 
 // blogctxPublisher takes the publisher of a log that was just built.
@@ -316,17 +310,18 @@ func TestBroadcastLogContextAReaderGetsBackTheTagAnEntryWasPublishedUnder(t *tes
 		if item.Element.Tag() != want.tag {
 			t.Fatalf("entry %d came back under tag %d, want %d", seq, item.Element.Tag(), want.tag)
 		}
-		arms := item.Element.Body
-		if want.isSmall {
-			if arms.BroadcastLogConformanceChoiceSmall == nil || arms.BroadcastLogConformanceChoiceLarge != nil ||
-				arms.BroadcastLogConformanceChoiceSmall.Payload() != want.small {
-				t.Fatalf("entry %d is %+v, want the small arm holding %d", seq, arms, want.small)
+		// The element holds one arm, read back as its type.
+		switch arm := item.Element.Body().(type) {
+		case blogchoice.BroadcastLogConformanceChoiceVariantBroadcastLogConformanceChoiceSmall:
+			if !want.isSmall || arm.Body().Payload() != want.small {
+				t.Fatalf("entry %d is the small arm holding %d, want %+v", seq, arm.Body().Payload(), want)
 			}
-		} else {
-			if arms.BroadcastLogConformanceChoiceLarge == nil || arms.BroadcastLogConformanceChoiceSmall != nil ||
-				arms.BroadcastLogConformanceChoiceLarge.Payload() != want.large {
-				t.Fatalf("entry %d is %+v, want the large arm holding %d", seq, arms, want.large)
+		case blogchoice.BroadcastLogConformanceChoiceVariantBroadcastLogConformanceChoiceLarge:
+			if want.isSmall || arm.Body().Payload() != want.large {
+				t.Fatalf("entry %d is the large arm holding %d, want %+v", seq, arm.Body().Payload(), want)
 			}
+		default:
+			t.Fatalf("entry %d holds no arm of the choice: %+v", seq, arm)
 		}
 	}
 	if answer, item, err := blogchosen.Read(log, &reader); err != nil || answer.Kind != broadcastlog.ReadEmpty || item != nil {

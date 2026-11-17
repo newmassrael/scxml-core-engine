@@ -197,23 +197,48 @@ fn the_python_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
 
 // ── Go ──────────────────────────────────────────────────────────────────
 
-/// The Go method switches on which arm's pointer is set, as the encode does,
-/// and returns the tag the catch-all's wrapper holds.
+/// The Go codec, printed from its plan (docs/adr/0081 step 4), switches on the
+/// arm type its value holds, as the encode does, and returns the tag the
+/// catch-all holds.
+///
+/// Turns red where `go_source::caller_tag` stops naming an arm by its type,
+/// or reads the catch-all's tag other than through its `Tag().Value()`.
 #[test]
 fn the_go_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
     let text = code("tg_open", Language::Go);
     let method = [
         "func (s *TgOpen) Tag() byte {",
-        "\tswitch {",
-        "\tcase s.Body.TgSmall != nil:",
-        "\t\treturn 1",
-        "\tcase s.Body.TgLarge != nil:",
-        "\t\treturn 2",
-        "\tcase s.Body.Default != nil:",
-        "\t\treturn s.Body.Default.Tag",
+        "\tswitch _b := s.Body().(type) {",
+        "\tcase TgOpenVariantTgSmall:",
+        "\t\treturn 0x1",
+        "\tcase TgOpenVariantTgLarge:",
+        "\t\treturn 0x2",
+        "\tcase TgOpenVariantDefault:",
+        "\t\treturn byte(_b.Tag().Value())",
         "\t}",
         "\tpanic(\"TgOpen: the value holds no variant arm\")",
         "}",
+    ]
+    .join("\n");
+    assert_holds(&text, &method, "the Go codec does not return its tag");
+}
+
+/// Without a catch-all the type switch binds nothing, which Go refuses to
+/// compile where no case reads the binding.
+///
+/// Turns red where `go_source::caller_tag` binds the arm for a variant that
+/// has no catch-all.
+#[test]
+fn the_go_codec_without_a_catch_all_binds_nothing() {
+    let text = code("tg_closed", Language::Go);
+    let method = [
+        "func (s *TgClosed) Tag() byte {",
+        "\tswitch s.Body().(type) {",
+        "\tcase TgClosedVariantTgSmall:",
+        "\t\treturn 0x1",
+        "\tcase TgClosedVariantTgLarge:",
+        "\t\treturn 0x2",
+        "\t}",
     ]
     .join("\n");
     assert_holds(&text, &method, "the Go codec does not return its tag");

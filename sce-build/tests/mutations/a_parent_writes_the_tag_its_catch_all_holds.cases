@@ -28,6 +28,7 @@ mutation_tests -p sce-build --test a_parent_writes_the_tag_its_catch_all_holds
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets sce-build/src/forge/generator/cpp_source.rs
 mutation_targets sce-build/src/forge/generator/python_source.rs
+mutation_targets sce-build/src/forge/generator/go_source.rs
 mutation_oracles sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs
 
 mutation_case "the derivation forgets the embedded variant's catch-all" <<'PY'
@@ -98,14 +99,13 @@ edit("sce-build/src/forge/generator/python_source.rs",
             "    if isinstance(_v, {}):\n        return {}\n",''')
 PY
 
+# The Go parent is printed from its plan (docs/adr/0081 step 4).
 mutation_case "a Go parent has no case for a catch-all body" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''    if d.catch_all {
-        switch_block.push_str(&format!(
-            "\tcase {embed}.Body.Default != nil:''',
-     r'''    if d.catch_all && d.bit == u32::MAX {
-        switch_block.push_str(&format!(
-            "\tcase {embed}.Body.Default != nil:''')
+edit("sce-build/src/forge/generator/go_source.rs",
+     r'''        if term.catch_all {
+            cases.push_str(&format!(''',
+     r'''        if term.catch_all && term.mask == u64::MAX {
+            cases.push_str(&format!(''')
 PY
 
 mutation_case "a Kotlin parent's when names no catch-all" <<'PY'
@@ -148,10 +148,11 @@ edit("sce-build/src/forge/generator/python_source.rs",
      r'''                    "{c} = {c} | (({local} & 0x{width_mask:X}) << {bit})  # 0x{mask:X}\n"''')
 PY
 
+# The Go parent is printed from its plan, and writes its carrier there.
 mutation_case "a Go carrier write keeps the stored flag" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''            format!("({stored} & 0x{keep:02X}) | {local}")''',
-     r'''            format!("{stored} | {local}")''')
+edit("sce-build/src/forge/generator/go_source.rs",
+     r'''        "{local} = ({local} &^ 0x{mask:X}) | ({ty}({bits} & 0x{width_mask:X}) << {})\n",''',
+     r'''        "{local} = {local} | ({ty}({bits} & 0x{width_mask:X}) << {}) // 0x{mask:X}\n",''')
 PY
 
 mutation_case "a Kotlin carrier write keeps the stored flag" <<'PY'

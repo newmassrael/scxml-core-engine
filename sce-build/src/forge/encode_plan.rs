@@ -380,6 +380,10 @@ pub struct Arm<'m> {
     pub tag: Option<u64>,
     /// The build feature the arm is compiled under (docs/adr/0072).
     pub feature: Option<&'m str>,
+    /// Whether a value made by default holds this arm: the arm marked
+    /// `default="true"`, else the first arm the variant names, else the
+    /// default arm. Exactly one arm of a variant is it.
+    pub by_default: bool,
 }
 
 /// The bits of the carrier `carrier` that the arms of embedded variants fill,
@@ -1440,18 +1444,23 @@ fn list_write(roles: &CodecRoles, field: &CodecField, imports: &[ImportContext])
 }
 
 /// The arms of the variant of `model`: those it names, in order, then the
-/// default.
+/// default. A value made by default holds the arm marked `default="true"`,
+/// else the first arm named, else the default arm.
 fn arms(model: &CodecModel) -> Vec<Arm<'_>> {
     let Some(variant) = &model.variant else {
         return Vec::new();
     };
+    let marked = variant.arms.iter().position(|arm| arm.is_default);
+    let chosen = marked.or((!variant.arms.is_empty()).then_some(0));
     let mut arms: Vec<Arm<'_>> = variant
         .arms
         .iter()
-        .map(|arm| Arm {
+        .enumerate()
+        .map(|(at, arm)| Arm {
             codec: &arm.body_alias,
             tag: Some(arm.value),
             feature: arm.feature.as_deref(),
+            by_default: chosen == Some(at),
         })
         .collect();
     if let Some(default) = &variant.default_arm {
@@ -1459,6 +1468,7 @@ fn arms(model: &CodecModel) -> Vec<Arm<'_>> {
             codec: &default.body_alias,
             tag: None,
             feature: None,
+            by_default: chosen.is_none(),
         });
     }
     arms

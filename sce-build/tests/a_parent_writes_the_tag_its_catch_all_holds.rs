@@ -278,20 +278,24 @@ fn the_python_parent_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// The Go parent's switch on which arm's field is set has a case for the
-/// catch-all's, which adds the tag it holds.
+/// The Go parent, printed from its plan (docs/adr/0081 step 4), switches on
+/// the arm type the embedded body holds: each arm fills `K` with its own tag,
+/// and the catch-all with the tag it holds.
+///
+/// Turns red where `go_source::parent_tag_bits` leaves out the catch-all's
+/// case, or reads its tag other than through `Tag().Value()`.
 #[test]
 fn the_go_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Go);
     let switch = [
-        "\tvar _derivedHeader byte = 0",
-        "\tswitch {",
-        "\tcase s.Key.Body.CaLocal != nil:",
-        "\t\t_derivedHeader |= 0x00",
-        "\tcase s.Key.Body.CaWide != nil:",
-        "\t\t_derivedHeader |= 0x20",
-        "\tcase s.Key.Body.Default != nil:",
-        "\t\t_derivedHeader |= byte((s.Key.Body.Default.Tag & 0x3) << 5)",
+        "\tvar _pHeaderK uint64",
+        "\tswitch _b := src.Key().Body().(type) {",
+        "\tcase ca_child.CaChildVariantCaLocal:",
+        "\t\t_pHeaderK |= 0x0",
+        "\tcase ca_child.CaChildVariantCaWide:",
+        "\t\t_pHeaderK |= 0x1",
+        "\tcase ca_child.CaChildVariantDefault:",
+        "\t\t_pHeaderK |= uint64(_b.Tag().Value()) & 0x3",
         "\t}",
     ]
     .join("\n");
@@ -366,14 +370,16 @@ fn the_python_parent_writes_k_from_the_body_alone() {
     );
 }
 
-/// The Go parent clears K in the stored header before it adds the derived
-/// bits.
+/// The Go parent clears K in the header the source presents before it folds
+/// in the derived bits.
+///
+/// Turns red where `go_source::fold_bits` keeps the presented K bits.
 #[test]
 fn the_go_parent_writes_k_from_the_body_alone() {
     let code = parent_code(false, Language::Go);
     assert_holds(
         &code,
-        "w.WriteBytes([]byte{ (s.Header & 0x9F) | _derivedHeader })",
+        "\t_cHeader := src.Header()\n\t_cHeader = (_cHeader &^ 0x60) | (uint8(_pHeaderK & 0x3) << 5)\n",
         "the Go parent writes the stored K bits with the derived ones",
     );
 }
@@ -637,6 +643,7 @@ import (
 
 	"github.com/newmassrael/sce-forge-runtime/codec"
 
+	"example.com/sce-catch-all/ca_child"
 	"example.com/sce-catch-all/ca_parent"
 )
 
@@ -647,8 +654,8 @@ func fail(what string) {
 	failed = true
 }
 
-// rewrite decodes frame, stores stale as its header, and encodes: the bytes
-// must be the frame's.
+// rewrite decodes frame, makes it again with stale as its header, and
+// encodes: the bytes must be the frame's.
 func rewrite(frame []byte, stale byte) *ca_parent.CaParent {
 	cursor := codec.NewSceCursor(frame)
 	value, err := ca_parent.DecodeCaParent(&cursor)
@@ -656,9 +663,9 @@ func rewrite(frame []byte, stale byte) *ca_parent.CaParent {
 		fail("the frame must decode")
 		return nil
 	}
-	value.Header = stale
+	restated := ca_parent.MakeCaParent(stale, value.Key())
 	var out []byte
-	if err := value.Encode(codec.NewBytesSink(&out)); err != nil {
+	if err := restated.Encode(codec.NewBytesSink(&out)); err != nil {
 		fail("the decoded value must encode")
 	} else if !bytes.Equal(out, frame) {
 		fail("the encode must write K from the body")
@@ -668,11 +675,15 @@ func rewrite(frame []byte, stale byte) *ca_parent.CaParent {
 
 func main() {
 	held := rewrite([]byte{0x5d, 0x07}, 0x3d)
-	if held == nil || held.Key.Body.Default == nil || held.Key.Body.Default.Tag != 2 || held.Key.Body.Default.Body.Payload != 0x07 {
+	if held == nil {
+		fail("tag 2 must reach the catch-all, which keeps it")
+	} else if arm, ok := held.Key().Body().(ca_child.CaChildVariantDefault); !ok || arm.Tag().Value() != 2 || arm.Body().Payload() != 0x07 {
 		fail("tag 2 must reach the catch-all, which keeps it")
 	}
 	named := rewrite([]byte{0x3d, 0x12, 0x34}, 0x5d)
-	if named == nil || named.Key.Body.CaWide == nil || named.Key.Body.CaWide.Payload != 0x1234 {
+	if named == nil {
+		fail("tag 1 must reach the two-byte arm")
+	} else if arm, ok := named.Key().Body().(ca_child.CaChildVariantCaWide); !ok || arm.Body().Payload() != 0x1234 {
 		fail("tag 1 must reach the two-byte arm")
 	}
 	if failed {

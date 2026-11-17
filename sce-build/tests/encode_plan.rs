@@ -406,6 +406,43 @@ fn an_encoded_length_of_a_gated_body_is_stated_on_the_side_without_the_body() {
     });
 }
 
+/// A value made by default holds the arm marked `default="true"`, and exactly
+/// one arm of each variant of the resources is it.
+///
+/// Turns red where `encode_plan::arms` stops reading `is_default`, or where
+/// the first arm or the catch-all is chosen beside the marked one.
+#[test]
+fn a_value_made_by_default_holds_the_marked_arm() {
+    with_plan("codec_origin_choice", |plan| {
+        let chosen: Vec<(bool, Option<u64>)> = plan
+            .arms
+            .iter()
+            .map(|arm| (arm.by_default, arm.tag))
+            .collect();
+        assert_eq!(
+            chosen,
+            [(false, Some(1)), (true, Some(2)), (false, None)],
+            "the arm marked default, and neither the first nor the catch-all"
+        );
+    });
+    for path in resource_documents() {
+        let held = encode_plan_file(
+            &path,
+            &[],
+            &ForgeCompileOptions::default(),
+            |plan| match plan {
+                CodecPlan::Positional(plan) if !plan.arms.is_empty() => {
+                    Some(plan.arms.iter().filter(|arm| arm.by_default).count())
+                }
+                _ => None,
+            },
+        );
+        if let Ok(Some(Some(count))) = held {
+            assert_eq!(count, 1, "{}: one arm is the default", path.display());
+        }
+    }
+}
+
 /// A flag bound to an input that some arms of the variant say is what the arm
 /// the value holds says, where it holds one of them (docs/adr/0065 §6 R4a), and
 /// the tag the arms are chosen by is the held arm's.

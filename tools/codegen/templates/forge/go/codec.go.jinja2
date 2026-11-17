@@ -54,7 +54,9 @@ import (
 {% endif %}
 )
 
-{% if has_variant %}
+{# docs/adr/0081 §2: a codec printed from its plan declares its variant as an
+   interface the arm types satisfy, in `go_source.before`. #}
+{% if has_variant and not go_source %}
 {% if variant.default_arm %}
 // {{ struct_name }}{{ variant.default_arm.variant_name }} bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
@@ -98,7 +100,9 @@ type {{ struct_name }} struct {
 {% for field in fields if not field.derived %}
 	{{ field.member }} {{ field.go_type }}
 {% endfor %}
-{% if has_variant %}
+{% if has_variant and go_source %}
+	body {{ struct_name }}Variant
+{% elif has_variant %}
 	Body {{ struct_name }}Variant
 {% endif %}
 }
@@ -126,7 +130,9 @@ func New{{ struct_name }}() *{{ struct_name }} {
 		{{ field.member }}: {{ field.go_flag_default_literal }},
 {% endif %}
 {% endfor %}
-{% if has_variant and ns.default_arm %}
+{# A value printed from its plan that holds no arm presents the one a value
+   made by default holds (`Body()`). #}
+{% if has_variant and ns.default_arm and not go_source %}
 		Body: {{ struct_name }}Variant{
 {% if ns.default_arm.go_inner_emits_ctor %}
 			{{ ns.default_arm.variant_name }}: {{ ns.default_arm.go_body_constructor }}(),
@@ -185,10 +191,20 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	}
 {% endif %}
 {% endif %}
+{% if go_source and go_source.decoded %}
+{{ go_source.decoded }}
+{% endif %}
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
+{# docs/adr/0081 §2: a value printed from its plan holds one arm type of
+   its variant, made of the address of the arm's value (`go_source.arm_made`,
+   `go_source.catch_all_made`). #}
+{% if go_source %}
+	var body {{ struct_name }}Variant
+{% else %}
 	body := {{ struct_name }}Variant{}
+{% endif %}
 	switch {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 	case {{ arm.value_literal }}:
@@ -196,7 +212,11 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 		if err != nil {
 			return nil, err
 		}
+{% if go_source %}
+		body = {{ go_source.arm_made[arm.variant_name] }}
+{% else %}
 		body.{{ arm.variant_name }} = _arm
+{% endif %}
 {% endfor %}
 	default:
 {% if variant.default_arm %}
@@ -204,20 +224,29 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 		if err != nil {
 			return nil, err
 		}
+{% if go_source %}
+		_tag := {{ variant.tag_store_expr }}
+		body = {{ go_source.catch_all_made }}
+{% else %}
 		body.{{ variant.default_arm.variant_name }} = &{{ struct_name }}{{ variant.default_arm.variant_name }}{
 			Tag: {{ variant.tag_store_expr }},
 			Body: *_arm,
 		}
+{% endif %}
 {% else %}
 		// codec/variant-arm-unreachable rejected this case at parse time.
 		return nil, codec.ErrNeedMoreBytes
 {% endif %}
 	}
 	return &{{ struct_name }}{
-{% for field in fields %}
-		{{ field.member }}: {{ field.id }},
+{% for field in fields if not field.derived %}
+		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
+{% if go_source %}
+		body: body,
+{% else %}
 		Body: body,
+{% endif %}
 	}, nil
 {% elif needs_streaming %}
 	// Streaming cursor decode (SSOT selection: `needs_streaming`).
@@ -363,7 +392,8 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if has_variant and has_caller_tag %}
+{# A value printed from its plan answers its tag in `go_source.after`. #}
+{% if has_variant and has_caller_tag and not go_source %}
 // Tag returns the tag of the arm this value holds: the one the arm declares,
 // or, for the catch-all arm, the unknown tag it holds. It is the `tag` that
 // Decode{{ struct_name }} takes for a value of this arm, and the literals are

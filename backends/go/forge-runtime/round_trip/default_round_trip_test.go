@@ -23,10 +23,10 @@ import (
 )
 
 func TestDefaultRoundTripLandsInDeclaredDefaultArm(t *testing.T) {
-	// Go has no Default trait — round-trip safety requires using
-	// `NewCodecVariantDefaultMarker()` (RFC variant-default-uniformity), not the bare zero-value `&CodecVariantDefaultMarker{}`
-	// (which would leave every Variant arm pointer nil and produce an
-	// empty encode).
+	// Go has no Default trait: `NewCodecVariantDefaultMarker()` (RFC
+	// variant-default-uniformity) is the value made by default, and a value
+	// that holds no arm presents the marked default arm, made by its codec's
+	// constructor, so the zero value writes the same frame (checked below).
 	original := codec_variant_default_marker.NewCodecVariantDefaultMarker()
 	wire := original.EncodeToBytes()
 
@@ -57,25 +57,30 @@ func TestDefaultRoundTripLandsInDeclaredDefaultArm(t *testing.T) {
 		)
 	}
 
-	// The Variant uses pointer-tagged union (exactly one of the arm
-	// fields is non-nil). arm B is the marked default → CodecDefaultMarkerArmB
-	// pointer must be non-nil; the other two arm pointers must be nil.
-	if decoded.Body.CodecDefaultMarkerArmB == nil {
-		switch {
-		case decoded.Body.CodecDefaultMarkerArmA != nil:
-			t.Fatalf(
-				"round-trip dropped into arm A (the legacy first-declared arm) — " +
-					"β-go outer ctor change didn't take effect",
-			)
-		case decoded.Body.Default != nil:
-			t.Fatalf(
-				"round-trip dropped into the catch-all <sce:default> arm "+
-					"(tag=0x%02X) — inner Default zero-filled the header byte",
-				decoded.Body.Default.Tag,
-			)
-		default:
-			t.Fatalf("round-trip dropped into no arm at all — decode is broken")
-		}
+	// The value holds one arm type of its variant (docs/adr/0081 step 4).
+	// Arm B is the marked default, so the decode must hold arm B.
+	switch arm := decoded.Body().(type) {
+	case codec_variant_default_marker.CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmB:
+	case codec_variant_default_marker.CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmA:
+		t.Fatalf(
+			"round-trip dropped into arm A (the legacy first-declared arm) — " +
+				"β-go outer ctor change didn't take effect",
+		)
+	case codec_variant_default_marker.CodecVariantDefaultMarkerVariantDefault:
+		t.Fatalf(
+			"round-trip dropped into the catch-all <sce:default> arm "+
+				"(tag=0x%02X) — inner Default zero-filled the header byte",
+			arm.Tag().Value(),
+		)
+	default:
+		t.Fatalf("round-trip dropped into no arm at all — decode is broken")
+	}
+
+	// The zero value presents the arm a value made by default holds, so it
+	// writes the same frame.
+	var zero codec_variant_default_marker.CodecVariantDefaultMarker
+	if !bytes.Equal(wire, zero.EncodeToBytes()) {
+		t.Fatalf("the zero value must write the frame of a value made by default; got %v", zero.EncodeToBytes())
 	}
 
 	reEncoded := decoded.EncodeToBytes()

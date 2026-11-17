@@ -15380,6 +15380,8 @@ fn render_codec(
                 "before": printed.before,
                 "after": printed.after,
                 "decoded": printed.decoded,
+                "arm_made": printed.arm_made,
+                "catch_all_made": printed.catch_all_made,
             }),
         );
     }
@@ -26889,23 +26891,19 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
 /// An optional embed (`optional.Of[T]`) is dispatched where it is present;
 /// an absent one makes no contribution.
 ///
-/// Go's variant body is a struct with one `*<ArmBodyType>` field per
-/// arm — exactly one is non-nil at a time. Dispatch is by field
+/// The template's Go variant body is a struct with one `*<ArmBodyType>`
+/// field per arm — exactly one is non-nil at a time. Dispatch is by field
 /// presence, NOT by `.(type)` type-switch (which compiles only against
 /// an interface). The arm-field-name happens to match the body alias's
-/// PascalCase, mirroring the existing Go variant encode template's
-/// `switch { case s.Body.<Arm> != nil: }` shape — so no arm body type
-/// name is spelled at the dispatch site, sidestepping the
-/// cross-package qualification problem entirely.
+/// PascalCase, mirroring the template's variant encode
+/// `switch { case s.Body.<Arm> != nil: }` shape. A body the Go backend
+/// prints from its plan presents its arm as an interface, so the dispatch
+/// is a type switch over it, each arm type named by the body's package.
 fn parent_tag_switch_block_go(
     d: &ParentTagDerivation,
     local: &str,
     imports: &[ImportContext],
 ) -> String {
-    // imp lookup ensures the embed alias resolves (parity with the
-    // expression-form backends); the dispatcher's struct name isn't
-    // spelled here — only field access through the variant body.
-    let _ = parent_tag_embed_pascal(d, imports);
     let pascal = filters::to_pascal_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
     // A gated embed is read once, where it is present, into a local the arms
@@ -26916,6 +26914,56 @@ fn parent_tag_switch_block_go(
     } else {
         format!("s.{pascal}")
     };
+    // docs/adr/0081 §2: a body the Go backend prints from its plan holds one
+    // arm type of its variant, which its `Body()` presents; the switch is on
+    // the type it holds, each named by its package.
+    let import = parent_tag_embed_import(d, imports);
+    let switch_block = if import.go_printed.is_some() {
+        let mut cases = String::new();
+        for arm in &d.arms {
+            let shifted = ((arm.value & mask) << d.bit) & 0xFF;
+            cases.push_str(&format!(
+                "\tcase {}.{}:\n\t\t{local} |= 0x{shifted:02X}\n",
+                import.namespace,
+                go_source::arm_type(&import.type_name, Some(arm.body_alias.as_str()))
+            ));
+        }
+        if d.catch_all {
+            cases.push_str(&format!(
+                "\tcase {}.{}:\n\t\t{local} |= byte((_b.Tag().Value() & 0x{mask:X}) << {})\n",
+                import.namespace,
+                go_source::arm_type(&import.type_name, None),
+                d.bit
+            ));
+        }
+        let subject = if d.catch_all {
+            format!("_b := {embed}.Body().(type)")
+        } else {
+            format!("{embed}.Body().(type)")
+        };
+        format!("\tswitch {subject} {{\n{cases}\t}}\n")
+    } else {
+        parent_tag_field_switch_go(d, local, &embed, mask)
+    };
+    if gated {
+        format!(
+            "\tif s.{pascal}.IsPresent() {{\n\t_embed := s.{pascal}.Proven()\n{switch_block}\t}}\n"
+        )
+    } else {
+        switch_block
+    }
+}
+
+/// The switch of [`parent_tag_switch_block_go`] over a body the Go backend
+/// keeps on the template's encode: on which arm's field `embed` holds, as
+/// the template's variant struct holds each arm in a pointer field of its
+/// own.
+fn parent_tag_field_switch_go(
+    d: &ParentTagDerivation,
+    local: &str,
+    embed: &str,
+    mask: u64,
+) -> String {
     let mut switch_block = String::from("\tswitch {\n");
     for arm in &d.arms {
         let arm_variant = filters::to_pascal_case(arm.body_alias.clone());
@@ -26932,13 +26980,7 @@ fn parent_tag_switch_block_go(
         ));
     }
     switch_block.push_str("\t}\n");
-    if gated {
-        format!(
-            "\tif s.{pascal}.IsPresent() {{\n\t_embed := s.{pascal}.Proven()\n{switch_block}\t}}\n"
-        )
-    } else {
-        switch_block
-    }
+    switch_block
 }
 
 /// Single-embed switch for C11. Mirrors the Go shape with the tagged-

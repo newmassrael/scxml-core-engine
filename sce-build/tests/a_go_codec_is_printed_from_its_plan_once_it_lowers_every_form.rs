@@ -899,18 +899,268 @@ fn the_length_of_a_body_handed_a_derived_flag_is_counted_after_the_fold() {
     holds_none(name, &text, &["byte((src.Flags() >> 0)"]);
 }
 
+/// A variant whose tag a field of its own holds is presented as the arm the
+/// value holds, a value of an interface only the arm types of its package
+/// satisfy; the encode derives the tag from the arm, the catch-all's from
+/// the tag it holds, and writes the arm by its codec's `EncodeSource`. The
+/// catch-all holds its tag as a type made only of a tag no arm names
+/// (docs/adr/0065 §6 R3), and the value answers the tag the frame carries by
+/// a method of its own.
+///
+/// Turns red where `positional_forms` names a variant of printed arms again,
+/// where `encode_source` reads the tag off the source or reads the arm twice,
+/// where `variant_declarations` stops declaring the sealed interface or an
+/// arm's constructor, where `unknown_tag_declaration` admits a tag an arm
+/// names, where `render` presents no arm when the value holds none, or where
+/// the template's decode builds the arm other than by `go_source.arm_made`.
+#[test]
+fn a_variant_is_presented_as_the_arm_the_value_holds_and_its_tag_derived() {
+    assert!(unlowered("codec_variant_dispatch").is_empty());
+    let text = resource_go("codec_variant_dispatch");
+    holds(
+        "codec_variant_dispatch",
+        &text,
+        &[
+            "type CodecVariantDispatchUnknownTag struct {\n\ttag uint8\n\tset bool\n}\n",
+            "func MakeCodecVariantDispatchUnknownTag(tag uint8) (CodecVariantDispatchUnknownTag, bool) {\n\
+             \tif tag >= 0x1 && tag <= 0x2 {\n\
+             \t\treturn CodecVariantDispatchUnknownTag{}, false\n\
+             \t}\n\
+             \treturn CodecVariantDispatchUnknownTag{tag: tag, set: true}, true\n\
+             }\n",
+            "func (t CodecVariantDispatchUnknownTag) Value() uint8 {\n\
+             \tif !t.set {\n\
+             \t\treturn 0x0\n\
+             \t}\n\
+             \treturn t.tag\n\
+             }\n",
+            "type CodecVariantDispatchVariant interface {\n\tisCodecVariantDispatchVariant()\n}\n",
+            "type CodecVariantDispatchVariantCodecVariantSessionOpen struct {\n\
+             \tbody codec_variant_session_open.CodecVariantSessionOpenSource\n\
+             }\n",
+            "func MakeCodecVariantDispatchVariantCodecVariantSessionOpen(body \
+             codec_variant_session_open.CodecVariantSessionOpenSource) \
+             CodecVariantDispatchVariantCodecVariantSessionOpen {\n",
+            "func (a CodecVariantDispatchVariantCodecVariantSessionOpen) Body() \
+             codec_variant_session_open.CodecVariantSessionOpenSource {\n\
+             \tif a.body == nil {\n\
+             \t\treturn &codec_variant_session_open.CodecVariantSessionOpen{}\n\
+             \t}\n\
+             \treturn a.body\n\
+             }\n",
+            "func (CodecVariantDispatchVariantCodecVariantSessionOpen) isCodecVariantDispatchVariant() {}\n",
+            "type CodecVariantDispatchVariantDefault struct {\n\
+             \ttag  CodecVariantDispatchUnknownTag\n\
+             \tbody codec_variant_session_close.CodecVariantSessionCloseSource\n\
+             }\n",
+            "func (a CodecVariantDispatchVariantDefault) Tag() CodecVariantDispatchUnknownTag {\n",
+            "type CodecVariantDispatchSource interface {\n\tBody() CodecVariantDispatchVariant\n}",
+            "type CodecVariantDispatch struct {\n\tbody CodecVariantDispatchVariant\n}",
+            "func MakeCodecVariantDispatch(body CodecVariantDispatchVariant) CodecVariantDispatch {\n",
+            "func (s *CodecVariantDispatch) Body() CodecVariantDispatchVariant {\n\
+             \tif s.body == nil {\n\
+             \t\treturn CodecVariantDispatchVariantCodecVariantSessionClose{}\n\
+             \t}\n\
+             \treturn s.body\n\
+             }\n",
+            "\t_rBody := src.Body()\n\
+             \tvar _tBody uint64\n\
+             \tswitch _b := _rBody.(type) {\n\
+             \tcase CodecVariantDispatchVariantCodecVariantSessionOpen:\n\
+             \t\t_tBody = 0x1\n\
+             \tcase CodecVariantDispatchVariantCodecVariantSessionClose:\n\
+             \t\t_tBody = 0x2\n\
+             \tcase CodecVariantDispatchVariantDefault:\n\
+             \t\t_tBody = uint64(_b.Tag().Value())\n\
+             \t}\n\
+             \t_dMsgId := uint8(_tBody)\n",
+            "\tswitch _b := _rBody.(type) {\n\
+             \tcase CodecVariantDispatchVariantCodecVariantSessionOpen:\n\
+             \t\tif err := codec_variant_session_open.EncodeSource(_b.Body(), w); err != nil {\n\
+             \t\t\treturn err\n\
+             \t\t}\n",
+            "\tdefault:\n\
+             \t\tpanic(\"CodecVariantDispatch: the source presents no arm of its variant\")\n\
+             \t}\n",
+            "func (s *CodecVariantDispatch) WireMsgId() uint8 {\n\
+             \tvar _tBody uint64\n\
+             \tswitch _b := s.Body().(type) {\n",
+            "\t\tbody = MakeCodecVariantDispatchVariantCodecVariantSessionOpen(_arm)\n",
+            "\t\tbody = MakeCodecVariantDispatchVariantDefault(\
+             CodecVariantDispatchUnknownTag{tag: _tag, set: true}, _arm)\n",
+            "\t\tbody: body,\n",
+        ],
+    );
+    // The value holds no tag, and no arm in a field of its own.
+    holds_none(
+        "codec_variant_dispatch",
+        &text,
+        &[
+            "\tmsgId uint8\n",
+            "src.MsgId()",
+            "Body CodecVariantDispatchVariant",
+            "\tBody: body,",
+        ],
+    );
+}
+
+/// A variant whose caller hands the decode its tag is printed as any variant,
+/// and a parent that holds the tag in a flag of its carrier derives the flag
+/// from the arm the embedded body holds, each arm type named by the body's
+/// package, and folds it into its carrier in place of the bits the value
+/// presents.
+///
+/// Turns red where `positional_forms` names a parent tag again, where
+/// `parent_tag_bits` switches on anything but the arm type the body holds,
+/// or where `fold_bits` keeps the presented bits.
+#[test]
+fn a_parent_derives_the_flag_the_arm_of_its_body_fills() {
+    assert!(unlowered("codec_source_leaf").is_empty());
+    assert!(unlowered("codec_source_parent_tag").is_empty());
+    let text = resource_go("codec_source_parent_tag");
+    holds(
+        "codec_source_parent_tag",
+        &text,
+        &[
+            "\tvar _pHdrKind uint64\n\
+             \tswitch src.Body().Body().(type) {\n\
+             \tcase codec_source_leaf.CodecSourceLeafVariantCodecVariantSessionOpen:\n\
+             \t\t_pHdrKind |= 0x0\n\
+             \tcase codec_source_leaf.CodecSourceLeafVariantCodecVariantSessionClose:\n\
+             \t\t_pHdrKind |= 0x1\n\
+             \t}\n",
+            "\t_cHdr := src.Hdr()\n\t_cHdr = (_cHdr &^ 0x1) | (uint8(_pHdrKind & 0x1) << 0)\n",
+        ],
+    );
+}
+
+/// A parent the Go backend keeps on the template's encode, which holds a body
+/// the printer prints, reads the arm of the body's variant as the printed
+/// body presents it: a type switch over `Body()`, each arm type named by the
+/// body's package, and no arm field.
+///
+/// Turns red where `parent_tag_switch_block_go` reads a printed body's arm
+/// by the template's field presence.
+#[test]
+fn a_template_parent_reads_the_arm_of_a_printed_body_by_its_type() {
+    let name = "go_template_parent_of_a_printed_variant";
+    let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="go_template_parent_of_a_printed_variant">
+  <sce:import src="codec_source_leaf.scxml" kind="codec" as="codec_source_leaf">
+    <sce:variant-dispatch flag="hdr.kind"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="1"/>
+    </sce:flags>
+    <sce:field id="reading" sce:type="float32" sce:byte="1" sce:bit-size="32"/>
+    <sce:embed id="body" type="codec_source_leaf" sce:byte="5"/>
+  </datamodel>
+</scxml>
+"#;
+    let text =
+        go_of_document(name, document).unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &text,
+        &["\tswitch s.Body.Body().(type) {\n\
+           \tcase codec_source_leaf.CodecSourceLeafVariantCodecVariantSessionOpen:\n\
+           \t\t_derivedHdr |= 0x00\n\
+           \tcase codec_source_leaf.CodecSourceLeafVariantCodecVariantSessionClose:\n\
+           \t\t_derivedHdr |= 0x01\n\
+           \t}\n"],
+    );
+    holds_none(
+        name,
+        &text,
+        &["func EncodeSource(", "Body.Body.CodecVariant"],
+    );
+}
+
+/// A variant whose arm's own header holds its tag (a peek byte) derives no
+/// tag: the arm writes it. An arm made by default is its codec's value made
+/// by its constructor, so the tag its header holds is the arm's.
+///
+/// Turns red where `variant_declarations` presents a default arm by its
+/// codec's zero value where the codec declares a constructor.
+#[test]
+fn a_peek_byte_variant_writes_its_arm_and_derives_no_tag() {
+    assert!(unlowered("codec_variant_default_marker").is_empty());
+    let text = resource_go("codec_variant_default_marker");
+    holds(
+        "codec_variant_default_marker",
+        &text,
+        &[
+            "\t\treturn codec_default_marker_arm_b.NewCodecDefaultMarkerArmB()\n",
+            "\t\treturn CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmB{}\n",
+            "\t_rBody := src.Body()\n\tswitch _b := _rBody.(type) {\n",
+        ],
+    );
+    holds_none("codec_variant_default_marker", &text, &["_tBody"]);
+}
+
+/// A variant whose arm is a codec the Go printer does not print keeps the
+/// template's encode, and the printer names the arm.
+///
+/// Turns red where `positional_forms` stops asking whether each arm's codec
+/// is printed.
+#[test]
+fn a_variant_of_an_arm_the_printer_does_not_print_keeps_the_template_encode() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    std::fs::write(
+        dir.path().join("go_unprinted_arm.scxml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="go_unprinted_arm">
+  <datamodel>
+    <sce:field id="reading" sce:type="float32" sce:byte="0" sce:bit-size="32"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("the arm is written");
+    let variant = dir.path().join("go_variant_of_an_unprinted_arm.scxml");
+    std::fs::write(
+        &variant,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="go_variant_of_an_unprinted_arm">
+  <sce:import src="go_unprinted_arm.scxml" kind="codec" as="go_unprinted_arm"/>
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="tag">
+      <sce:arm value="0x01" type="go_unprinted_arm" default="true"/>
+      <sce:default type="go_unprinted_arm"/>
+    </sce:variant>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("the variant is written");
+    let forms = go_codec_unlowered_file(&variant, &[], &ForgeCompileOptions::default())
+        .expect("the variant reads")
+        .expect("the document is a codec");
+    assert!(
+        forms.iter().any(|f| f
+            == "a variant: the arm `go_unprinted_arm` is a codec the Go backend does not print"),
+        "the printer names the arm: {forms:?}"
+    );
+}
+
 /// A codec of a form the Go printer does not lower keeps the template's
 /// encode whole: its fields stay exported, and it has no source, constructor
 /// or encode over a source.
 ///
-/// Turns red where `go_source::positional_forms` stops naming a chain, a
-/// variant or a CBOR map, or where `render_codec` prints a codec it names a
-/// form of.
+/// Turns red where `go_source::positional_forms` stops naming a group or a
+/// CBOR map, or where `render_codec` prints a codec it names a form of.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_chain_has_marker", "a group of fields"),
-        ("codec_variant_default_marker", "a variant"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);
@@ -1006,6 +1256,11 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_chain_depth_plain",
         "codec_chain_handed_entry",
         "codec_chain_handed",
+        "codec_variant_dispatch",
+        "codec_variant_peek_basic",
+        "codec_variant_default_marker",
+        "codec_source_leaf",
+        "codec_source_parent_tag",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
