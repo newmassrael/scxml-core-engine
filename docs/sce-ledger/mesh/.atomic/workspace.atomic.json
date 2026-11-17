@@ -26,11 +26,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/mesh/InvokeCorrelation.h",
           "symbol": "cancelAllPending",
           "kind": "references"
@@ -112,6 +107,11 @@
         },
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
           "kind": "references"
         }
       ]
@@ -721,11 +721,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/mesh/MeshEnvelope.h",
           "symbol": "sequence_no",
           "kind": "references"
@@ -770,6 +765,11 @@
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
+          "kind": "references"
         }
       ]
     },
@@ -779,11 +779,6 @@
       "parent_section": "mesh-10.6",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
           "symbol": "admit",
@@ -817,6 +812,11 @@
         },
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Inbound.swift",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
           "kind": "references"
         }
       ]
@@ -1846,11 +1846,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/mesh/InvokeCorrelation.h",
           "symbol": "failLocally",
           "kind": "references"
@@ -1928,6 +1923,11 @@
         },
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Signal.swift",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
           "kind": "references"
         }
       ]
@@ -2133,11 +2133,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
           "symbol": "SCE::Mesh::Someip",
           "kind": "references"
@@ -2264,6 +2259,11 @@
           "file": "sce-build/src/mesh/transport/someip.rs",
           "symbol": "SCXML_LIVENESS_SERVICE_RANGE_SIZE",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
+          "kind": "references"
         }
       ]
     },
@@ -2273,11 +2273,6 @@
       "parent_section": "mesh-16",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
         {
           "file": "sce/include/mesh/CommunicationError.h",
           "symbol": "parallel_id",
@@ -2415,6 +2410,11 @@
           "file": "sce-build/src/mesh/error.rs",
           "symbol": "HostCoreGap",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "SCE::Mesh",
+          "kind": "references"
         }
       ]
     },
@@ -2431,11 +2431,6 @@
       "parent_section": "mesh-16",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode",
-          "kind": "references"
-        },
         {
           "file": "sce/include/mesh/CommunicationError.h",
           "symbol": "SCE::Mesh",
@@ -5428,6 +5423,48 @@
       "target_kind": "section",
       "target_id": "mesh-20.4",
       "reason": "the test file was renamed to zenoh_through_a_router.rs when the router became a protocol-level choice (no consumer named in the repository)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.10",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.6.3",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.6.4",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-14.6",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-16.4",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-16.5",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-16.7",
+      "reason": "ReasonCode is now an alias of the engine vocabulary's enum (docs/adr/0106 #111); the rows that cite this section are the entries of kReasonCodeTable, at namespace scope"
     }
   ],
   "frames": {},

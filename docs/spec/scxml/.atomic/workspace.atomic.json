@@ -5872,6 +5872,16 @@
         {
           "file": "backends/c/runtime/include/sce/session_id.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "raiseError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "platformError",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

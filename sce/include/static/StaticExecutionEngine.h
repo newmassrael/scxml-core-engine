@@ -16,6 +16,7 @@
 #pragma once
 
 #include "common/CompilerHints.h"
+#include "common/ErrorData.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
 #include "common/ForwardedEvent.h"
@@ -468,6 +469,20 @@ public:
                           const std::string &s = "", const std::string &t = "", const std::string &i = "",
                           const std::string &tgt = "")
             : event(e), data(d), origin(std::move(o)), sendId(s), type(t), invokeId(i), target(tgt) {}
+
+        /**
+         * @brief An `error.*` event the processor raises for itself
+         *
+         * `_event.data` is the record SCE_MESH.md section 10.7.1 pins
+         * (docs/adr/0106, #111): `errorName` read from `reason`'s value range,
+         * `reason` spelled by the vocabulary's declared name, and `detail`, the
+         * sentence the raise site wrote. `sendId` is the failed `<send>`'s id
+         * when there is one (§scxml-5.10).
+         */
+        static EventWithMetadata platformError(Event e, ::SCE::Common::ErrorReason reason, const std::string &detail,
+                                               const std::string &sendId = "") {
+            return EventWithMetadata(e, ::SCE::Common::errorData(reason, detail), std::nullopt, sendId);
+        }
     };
 
 private:
@@ -1711,10 +1726,10 @@ public:
                 // §scxml-C-1: a target the processor cannot dispatch to is
                 // error.communication on the sender's internal queue.
                 if (auto error = policy_.getEventFromName("error.communication")) {
-                    raise(EventWithMetadata(*error,
-                                            "<send target='" + eventWithMetadata.target +
-                                                "'> names no Mesh session this machine reaches",
-                                            std::nullopt, eventWithMetadata.sendId));
+                    raise(EventWithMetadata::platformError(*error, ::SCE::Common::ErrorReason::TargetUnreachable,
+                                                           "<send target='" + eventWithMetadata.target +
+                                                               "'> names no Mesh session this machine reaches",
+                                                           eventWithMetadata.sendId));
                 }
             }
             return;
@@ -1884,9 +1899,9 @@ public:
                           const std::string &senderSessionId, const ::SCE::ScheduledRoute &route) {
         if (!deliverRouted(event, eventData, sendId, senderSessionId, route)) {
             if (auto communicationError = policy_.getEventFromName("error.communication")) {
-                raise(EventWithMetadata(*communicationError,
-                                        "<send> named a target that was no longer there when its delay elapsed",
-                                        std::nullopt, sendId));
+                raise(EventWithMetadata::platformError(
+                    *communicationError, ::SCE::Common::ErrorReason::TargetUnreachable,
+                    "<send> named a target that was no longer there when its delay elapsed", sendId));
             }
         }
     }
@@ -5104,7 +5119,8 @@ private:
      */
     void refuseMeshSend(const std::string &target, const char *why) {
         if (auto error = policy_.getEventFromName("error.execution")) {
-            raise(EventWithMetadata(*error, "<send target='" + target + "'>: " + why));
+            raise(EventWithMetadata::platformError(*error, ::SCE::Common::ErrorReason::SendTargetInvalid,
+                                                   "<send target='" + target + "'>: " + why));
         }
     }
 
@@ -5140,8 +5156,9 @@ private:
             if (!errorEvent) {
                 return Admission::Refused;
             }
-            inPlace.emplace(*errorEvent,
-                            std::string("`") + policy_.getEventName(delivery.event) + "` payload: " + refusal);
+            inPlace.emplace(EventWithMetadata::platformError(*errorEvent, ::SCE::Common::ErrorReason::PayloadRefused,
+                                                             std::string("`") + policy_.getEventName(delivery.event) +
+                                                                 "` payload: " + refusal));
             // The engine's own error: it came off no queue a host or a child
             // fills, and it carries no typed payload, so binding it clears the
             // view the refused delivery left half read.
@@ -5212,10 +5229,10 @@ private:
             // §scxml-6.2.4 + §scxml-5.10 (test 332): the error event MUST carry the
             // sendid, and a deferred send always has one — the scheduler needed
             // it to be cancellable.
-            raise(EventWithMetadata(*event,
-                                    "<send type='" + request.processorType +
-                                        "'> names a processor the host declared but never registered",
-                                    std::nullopt, request.sendId));
+            raise(EventWithMetadata::platformError(*event, ::SCE::Common::ErrorReason::ProcessorUnregistered,
+                                                   "<send type='" + request.processorType +
+                                                       "'> names a processor the host declared but never registered",
+                                                   request.sendId));
         }
     }
 };

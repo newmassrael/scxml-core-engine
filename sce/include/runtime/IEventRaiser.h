@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "common/ErrorData.h"
 #include "core/EventMetadata.h"
 #include <cstdint>
 #include <functional>
@@ -91,6 +92,25 @@ public:
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
     virtual bool raiseEvent(const Core::EventMetadata &event) = 0;
+
+    /**
+     * @brief Raise an `error.*` event the processor raises for itself
+     *
+     * The event is `error.execution` or `error.communication`, as the value
+     * range of @p reason says, and `_event.data` the record SCE_MESH.md section
+     * 10.7.1 pins (docs/adr/0106, #111): `errorName`, `reason` spelled by the
+     * vocabulary's declared name, and `detail`, the sentence of the raise site.
+     * @p sendId is the failed `<send>`'s id when there is one (§scxml-5.10).
+     * One form for every raise site, so no site pairs a code with the other
+     * event or writes the record by hand.
+     *
+     * @return true if the event was successfully queued, false if the raiser is not ready
+     */
+    bool raiseError(Common::ErrorReason reason, const std::string &detail, const std::string &sendId = "") {
+        const std::string eventName = Common::errorEventName(reason);
+        const std::string eventData = Common::errorData(reason, detail);
+        return sendId.empty() ? raiseEvent(eventName, eventData) : raiseEvent(eventName, eventData, sendId, false);
+    }
 
     virtual bool isReady() const = 0;
 

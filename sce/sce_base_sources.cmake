@@ -61,4 +61,8 @@ set(SCE_BASE_INCLUDE_DIRS
     backends
     model
     actions
+    # The standard engine documents generated for C++, the tree runtime-cpp of
+    # tools/codegen/trees: common/ErrorData.h includes the reasons an engine
+    # raises `error.*` for.
+    generated
 )

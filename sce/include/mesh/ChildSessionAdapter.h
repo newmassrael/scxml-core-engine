@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "common/ErrorData.h"
 #include "common/ForwardedEvent.h"
 #include "common/SCXMLConstants.h"
 #include "common/Uuid.h"
@@ -50,8 +51,11 @@ namespace SCE::Mesh {
 using ChildToParentPublisher = std::function<bool(const MeshEnvelope &env)>;
 
 /// Reason code a worker reports when a child session could not be brought
-/// up; see [makeInvokeChildInitFailedEnvelope].
-inline constexpr const char *kInvokeChildInitFailed = "INVOKE_CHILD_INIT_FAILED";
+/// up; see [makeInvokeChildInitFailedEnvelope]. The vocabulary's declared
+/// name (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), read through
+/// the generated accessor so the document is its one spelling.
+inline constexpr const char *kInvokeChildInitFailed =
+    ::SCE::Generated::ErrorReason::declared_name(::SCE::Common::ErrorReason::InvokeChildInitFailed);
 
 /// Build the wire-18 `InvokeDone` envelope a worker publishes when a child
 /// session completes.
@@ -91,7 +95,7 @@ inline MeshEnvelope makeInvokeChildInitFailedEnvelope(const std::string &host_ma
     //
     // The code rides in `rpc_error_message`, which that dispatch surfaces as
     // `_event.data` — the same payload shape the transport-absent local
-    // setup fault produces for `INVOKE_SRC_NOT_FOUND`, so an author's
+    // setup fault produces for `invokeSrcNotFound`, so an author's
     // `<transition event="error.execution">` reads one shape either way. The
     // structured `_event.data` JSON of §mesh-10.7.1 is a separate landing;
     // until then the code travels in the message text, prefixed rather than

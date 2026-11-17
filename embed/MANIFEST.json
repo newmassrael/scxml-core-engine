@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "610dffd",
+  "embed_version": "c418aae",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 607,
+  "symbol_count": 615,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -167,6 +167,30 @@
       "kind": "class",
       "members": [],
       "name": "SCE::DoneDataHelper"
+    },
+    {
+      "header": "common/ErrorData.h",
+      "kind": "function",
+      "name": "SCE::Common::errorData",
+      "signature": "std::string SCE::Common::errorData(ErrorReason, std::string_view)"
+    },
+    {
+      "header": "common/ErrorData.h",
+      "kind": "function",
+      "name": "SCE::Common::errorEventName",
+      "signature": "std::string SCE::Common::errorEventName(ErrorReason)"
+    },
+    {
+      "header": "common/ErrorData.h",
+      "kind": "function",
+      "name": "SCE::Common::errorName",
+      "signature": "const char * SCE::Common::errorName(ErrorReason) noexcept"
+    },
+    {
+      "header": "common/ErrorData.h",
+      "kind": "typedef",
+      "name": "SCE::Common::ErrorReason",
+      "type": "::SCE::Generated::ErrorReason::ErrorReason"
     },
     {
       "header": "common/EventDataHelper.h",
@@ -2439,6 +2463,69 @@
       "kind": "function",
       "name": "SCE::createPlatformEventRaiserHelper",
       "signature": "std::unique_ptr<PlatformEventRaiserHelper> SCE::createPlatformEventRaiserHelper(EventRaiserImpl *, std::shared_ptr<IEventScheduler>)"
+    },
+    {
+      "header": "generated/error_reason.h",
+      "kind": "enum",
+      "name": "SCE::Generated::ErrorReason::ErrorReason",
+      "values": [
+        "ExpressionFailed",
+        "LocationInvalid",
+        "AssignmentFailed",
+        "ScriptFailed",
+        "DataInitFailed",
+        "ForeachInvalid",
+        "SendTypeUnsupported",
+        "SendTargetInvalid",
+        "SendDelayInvalid",
+        "ParamUnfit",
+        "ProcessorUnregistered",
+        "InvokeTypeUnsupported",
+        "InvokeSrcNotFound",
+        "InvokeChildInitFailed",
+        "ReservedParamConflict",
+        "SessionTransportUnavailable",
+        "PayloadRefused",
+        "CapacityExceeded",
+        "TargetUnreachable",
+        "HttpTargetInvalid",
+        "TransportUnavailable",
+        "SendFailed",
+        "DeliveryExhausted",
+        "EnvelopeCorrupt",
+        "InvokeChildLost",
+        "ParallelBarrierTimeout",
+        "DedupWindowOverflow",
+        "PeerPartitioned",
+        "BackpressureDrop",
+        "Unauthorized",
+        "MissingSequence",
+        "OrderingGap",
+        "RegionPartitioned",
+        "RpcReplyFromUndeclaredPeer",
+        "OutboundStaleDrop",
+        "NotificationDeadlineMissed",
+        "Restored",
+        "CausalViewMismatch"
+      ]
+    },
+    {
+      "header": "generated/error_reason.h",
+      "kind": "function",
+      "name": "SCE::Generated::ErrorReason::declared_name",
+      "signature": "const char * SCE::Generated::ErrorReason::declared_name(ErrorReason) noexcept"
+    },
+    {
+      "header": "generated/error_reason.h",
+      "kind": "function",
+      "name": "SCE::Generated::ErrorReason::from_underlying",
+      "signature": "std::optional<ErrorReason> SCE::Generated::ErrorReason::from_underlying(uint8_t) noexcept"
+    },
+    {
+      "header": "generated/error_reason.h",
+      "kind": "function",
+      "name": "SCE::Generated::ErrorReason::to_underlying",
+      "signature": "uint8_t SCE::Generated::ErrorReason::to_underlying(ErrorReason) noexcept"
     },
     {
       "header": "model/DoneData.h",

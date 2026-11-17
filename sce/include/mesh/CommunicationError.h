@@ -48,6 +48,7 @@
 
 #pragma once
 
+#include "common/ErrorData.h"
 #include "common/Uuid.h"
 
 #include <nlohmann/json.hpp>
@@ -62,153 +63,94 @@
 
 namespace SCE::Mesh {
 
-/// §mesh-16.7 reason-code vocabulary. One variant per row of the catalog
-/// (`SCE_MESH.md` §mesh-16.7 rows 1-17). Raise sites populate
-/// `CommunicationError::reason` with one of these values; the JSON
-/// wire emission converts to the canonical UPPER_SNAKE string via
-/// `reasonCodeString()`.
-///
-/// Variant naming follows the existing `PayloadCodec` enum convention
-/// (UpperCamel C++ identifiers, UPPER_SNAKE wire strings). The
-/// bidirectional binding between variant and wire string is enforced
-/// by `kReasonCodeTable` (the single source of truth) and verified at
-/// build time by `tests/mesh/ReasonCodeCatalogTest` against
-/// `SCE_MESH.md` §mesh-16.7.
-enum class ReasonCode : std::uint8_t {
-    /// §mesh-16.7 row 1 — wire `"TRANSPORT_UNAVAILABLE"`. Transport connect
-    /// or reconnect failure.
-    TransportUnavailable,
-    /// §mesh-16.7 row 2 — wire `"SEND_FAILED"`. Envelope `send()` returns
-    /// error from transport API.
-    SendFailed,
-    /// §mesh-16.7 row 3 — wire `"DELIVERY_EXHAUSTED"`. Reliable transport
-    /// unable to deliver after configured retries.
-    DeliveryExhausted,
-    /// §mesh-16.7 row 4 — wire `"ENVELOPE_CORRUPT"`. Inbound envelope
-    /// deserialization or schema validation fails.
-    EnvelopeCorrupt,
-    /// §mesh-16.7 row 5 — wire `"INVOKE_CHILD_LOST"`. Invoke child device
-    /// unreachable (transport-level).
-    InvokeChildLost,
-    /// §mesh-16.7 row 6 — wire `"PARALLEL_BARRIER_TIMEOUT"`. Parallel
-    /// barrier timeout (§mesh-16.5).
-    ParallelBarrierTimeout,
-    /// §mesh-16.7 row 7 — wire `"DEDUP_WINDOW_OVERFLOW"`. Envelope dedup
-    /// window overflow (sustained rate exceeds window capacity).
-    DedupWindowOverflow,
-    /// §mesh-16.7 row 8 — wire `"PEER_PARTITIONED"`. Peer machine's
-    /// liveness signal observed lost.
-    PeerPartitioned,
-    /// §mesh-16.7 row 9 — wire `"BACKPRESSURE_DROP"`. Transport backpressure
-    /// queue full, outbound envelope dropped (§mesh-10.10
-    /// `OutboundBuffer` at `max_pending_per_target`).
-    BackpressureDrop,
-    /// §mesh-16.7 row 10 — wire `"UNAUTHORIZED"`. Peer rejected envelope
-    /// due to authorization failure.
-    Unauthorized,
-    /// §mesh-16.7 row 11 — wire `"MISSING_SEQUENCE"`. Inbound envelope
-    /// reached an active `OrderingBuffer` without `sequence_no`
-    /// (§mesh-10.6.3).
-    MissingSequence,
-    /// §mesh-16.7 row 12 — wire `"ORDERING_GAP"`. `OrderingBuffer`
-    /// fast-forwarded past a missing sequence range after
-    /// `gap_timeout` expired (§mesh-10.6.4).
-    OrderingGap,
-    /// §mesh-16.7 row 13 — wire `"REGION_PARTITIONED"`. Peer
-    /// region-partition's liveness signal observed lost (§mesh-16.4
-    /// per-partition liveness).
-    RegionPartitioned,
-    /// §mesh-16.7 row 14 — wire `"RPC_REPLY_FROM_UNDECLARED_PEER"`. An
-    /// RpcReply carried a live correlation id but arrived from a peer
-    /// outside the request binding's §mesh-14.6 responder set. The
-    /// correlation entry is left in place, so the request stays
-    /// answerable by a declared responder; this raise is the loud-fail
-    /// that keeps the rejection from being a silent drop.
-    RpcReplyFromUndeclaredPeer,
-    /// §mesh-16.7 row 15 — wire `"OUTBOUND_STALE_DROP"`. An envelope
-    /// held by the §mesh-10.10 `OutboundBuffer` waiting for peer
-    /// readiness exceeded the deploy.yaml
-    /// `outbound_buffer.max_age_ms` bound and was dropped instead of
-    /// dispatched when readiness finally arrived. Distinct from row 9
-    /// `BACKPRESSURE_DROP`, which is a capacity bound observed at
-    /// admit: this one is an age bound observed at drain, and the two
-    /// answer different questions ("the peer is slower than I produce"
-    /// versus "the peer came back too late for this to still mean
-    /// anything").
-    OutboundStaleDrop,
-    /// §mesh-16.7 row 16 — wire `"NOTIFICATION_DEADLINE_MISSED"`. A DDS
-    /// notification reader whose deployment declared
-    /// `transports.dds.qos.deadline_ms` went a full period with no
-    /// sample. Distinct from row 8 `PEER_PARTITIONED`: the peer may be
-    /// perfectly alive and merely publishing slower than the deployment
-    /// declared it would, which is a different repair.
-    NotificationDeadlineMissed,
-    /// §mesh-16.7 row 17 — wire `"RESTORED"`. A machine was restored from a
-    /// checkpoint (§mesh-10.11), and an envelope a peer source sent it after
-    /// that checkpoint was durable may have been admitted and lost with the
-    /// process, which neither side can know. Raised once per peer source in
-    /// each restored session that holds state for it, in the first macrostep
-    /// after the restore. Specified by ADR 0045 and raised once the host cores
-    /// checkpoint (its step 6); the vocabulary carries it from the day the
-    /// catalog does, so a document can already name it in a transition.
-    Restored,
-    /// §mesh-16.7 row 18 — wire `"CAUSAL_VIEW_MISMATCH"`. An envelope on a
-    /// causal route tagged with another epoch than the receiver's view, or by a
-    /// replica the view does not hold. Raised by the causal route
-    /// (mesh/CausalRoute.h) through `causalViewMismatch`, on the receiving
-    /// side; the envelope is not delivered.
-    CausalViewMismatch,
-};
+/// §mesh-16.7 reason-code vocabulary: the communication half of the one
+/// vocabulary every engine and the Mesh write `_event.data.reason` from
+/// (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), generated into
+/// sce/include/generated (tools/codegen/trees/runtime-cpp.toml). Its members
+/// keep the names this header gave the rows (`ReasonCode::TransportUnavailable`),
+/// and the wire string is the vocabulary's declared name
+/// (`"transportUnavailable"`), so no spelling of a code is written here.
+using ReasonCode = ::SCE::Common::ErrorReason;
 
-/// Canonical mapping table — single source of truth for both JSON
-/// emission and the build-time cross-doc test against
-/// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
-/// this table; the cross-doc test fails the build if the table and
-/// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 18> kReasonCodeTable = {{
-    {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
-    {ReasonCode::SendFailed, "SEND_FAILED"},
-    {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
-    {ReasonCode::EnvelopeCorrupt, "ENVELOPE_CORRUPT"},
-    {ReasonCode::InvokeChildLost, "INVOKE_CHILD_LOST"},
-    {ReasonCode::ParallelBarrierTimeout, "PARALLEL_BARRIER_TIMEOUT"},
-    {ReasonCode::DedupWindowOverflow, "DEDUP_WINDOW_OVERFLOW"},
-    {ReasonCode::PeerPartitioned, "PEER_PARTITIONED"},
-    {ReasonCode::BackpressureDrop, "BACKPRESSURE_DROP"},
-    {ReasonCode::Unauthorized, "UNAUTHORIZED"},
-    {ReasonCode::MissingSequence, "MISSING_SEQUENCE"},
-    {ReasonCode::OrderingGap, "ORDERING_GAP"},
-    {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
-    {ReasonCode::RpcReplyFromUndeclaredPeer, "RPC_REPLY_FROM_UNDECLARED_PEER"},
-    {ReasonCode::OutboundStaleDrop, "OUTBOUND_STALE_DROP"},
-    {ReasonCode::NotificationDeadlineMissed, "NOTIFICATION_DEADLINE_MISSED"},
-    {ReasonCode::Restored, "RESTORED"},
-    {ReasonCode::CausalViewMismatch, "CAUSAL_VIEW_MISMATCH"},
+/// The rows of `SCE_MESH.md` §mesh-16.7, in row order: the codes a
+/// `CommunicationError` carries. `tests/mesh/ReasonCodeCatalogTest` holds it to
+/// the markdown catalog in both directions, so adding a §mesh-16.7 row
+/// requires adding its code to the vocabulary and to this list. Each row says
+/// what its code reports.
+inline constexpr std::array<ReasonCode, 18> kReasonCodeTable = {{
+    // 1: transport connect or reconnect failure.
+    ReasonCode::TransportUnavailable,
+    // 2: envelope `send()` returns error from transport API.
+    ReasonCode::SendFailed,
+    // 3: reliable transport unable to deliver after configured retries.
+    ReasonCode::DeliveryExhausted,
+    // 4: inbound envelope deserialization or schema validation fails.
+    ReasonCode::EnvelopeCorrupt,
+    // 5: invoke child device unreachable (transport-level).
+    ReasonCode::InvokeChildLost,
+    // 6: parallel barrier timeout (§mesh-16.5).
+    ReasonCode::ParallelBarrierTimeout,
+    // 7: envelope dedup window overflow (sustained rate exceeds window
+    // capacity).
+    ReasonCode::DedupWindowOverflow,
+    // 8: peer machine's liveness signal observed lost.
+    ReasonCode::PeerPartitioned,
+    // 9: transport backpressure queue full, outbound envelope dropped
+    // (§mesh-10.10 `OutboundBuffer` at `max_pending_per_target`).
+    ReasonCode::BackpressureDrop,
+    // 10: peer rejected envelope due to authorization failure.
+    ReasonCode::Unauthorized,
+    // 11: inbound envelope reached an active `OrderingBuffer` without
+    // `sequence_no` (§mesh-10.6.3).
+    ReasonCode::MissingSequence,
+    // 12: `OrderingBuffer` fast-forwarded past a missing sequence range after
+    // `gap_timeout` expired (§mesh-10.6.4).
+    ReasonCode::OrderingGap,
+    // 13: peer region-partition's liveness signal observed lost (§mesh-16.4
+    // per-partition liveness).
+    ReasonCode::RegionPartitioned,
+    // 14: an RpcReply carried a live correlation id but arrived from a peer
+    // outside the request binding's §mesh-14.6 responder set. The correlation
+    // entry is left in place, so the request stays answerable by a declared
+    // responder; this raise is the loud-fail that keeps the rejection from
+    // being a silent drop.
+    ReasonCode::RpcReplyFromUndeclaredPeer,
+    // 15: an envelope held by the §mesh-10.10 `OutboundBuffer` waiting for
+    // peer readiness exceeded the deploy.yaml `outbound_buffer.max_age_ms`
+    // bound and was dropped instead of dispatched when readiness finally
+    // arrived. Distinct from row 9, which is a capacity bound observed at
+    // admit: this one is an age bound observed at drain.
+    ReasonCode::OutboundStaleDrop,
+    // 16: a DDS notification reader whose deployment declared
+    // `transports.dds.qos.deadline_ms` went a full period with no sample.
+    // Distinct from row 8: the peer may be alive and merely publishing slower
+    // than the deployment declared it would.
+    ReasonCode::NotificationDeadlineMissed,
+    // 17: a machine was restored from a checkpoint (§mesh-10.11), and an
+    // envelope a peer source sent it after that checkpoint was durable may
+    // have been admitted and lost with the process, which neither side can
+    // know. Raised once per peer source in each restored session that holds
+    // state for it, in the first macrostep after the restore (ADR 0045).
+    ReasonCode::Restored,
+    // 18: an envelope on a causal route tagged with another epoch than the
+    // receiver's view, or by a replica the view does not hold. Raised by the
+    // causal route (mesh/CausalRoute.h) through `causalViewMismatch`, on the
+    // receiving side; the envelope is not delivered.
+    ReasonCode::CausalViewMismatch,
 }};
 
-/// Map a `ReasonCode` to its canonical wire string. Linear lookup
-/// over the table; the compiler collapses the loop under
-/// `-O2`. Crashes (logic-error path) if a future variant is added
-/// to the enum without extending `kReasonCodeTable` — the missing-
-/// entry case is caught earlier by the cross-doc test, but the
-/// runtime guard exists so a partial-edit during development surfaces
-/// as a deterministic failure rather than reading off the end.
+/// The wire string of `code`: the vocabulary's declared name. The empty
+/// string for a value no member names, which the enum holds only through a
+/// cast, and the record then names no code.
 [[nodiscard]] inline constexpr std::string_view reasonCodeString(ReasonCode code) {
-    for (const auto &entry : kReasonCodeTable) {
-        if (entry.first == code) {
-            return entry.second;
-        }
-    }
-    // Unreachable in a well-formed build (kReasonCodeTable covers
-    // every enum variant; the cross-doc test enforces this). The
-    // runtime fallback below avoids UB and surfaces the gap.
-    return "UNKNOWN_REASON";
+    const char *name = ::SCE::Generated::ErrorReason::declared_name(code);
+    return name != nullptr ? std::string_view(name) : std::string_view();
 }
 
 struct CommunicationError {
     /// §mesh-16.7 machine-readable reason code. Required — raise sites
-    /// must populate it via the `ReasonCode` enum; the JSON emit
-    /// converts to the canonical UPPER_SNAKE wire string.
+    /// must populate it with one of `kReasonCodeTable`'s codes; the JSON
+    /// emit writes its declared name.
     ReasonCode reason{ReasonCode::TransportUnavailable};
 
     /// §mesh-10.7.1 baseline: human-readable detail string. Optional.
@@ -247,7 +189,7 @@ struct CommunicationError {
     /// whose liveliness token transitioned to DELETE (e.g. "motor").
     /// Authors branch on this inside
     /// `<transition event="error.communication"
-    ///  cond="_event.data.reason == 'PEER_PARTITIONED' &&
+    ///  cond="_event.data.reason == 'peerPartitioned' &&
     ///        _event.data.target == 'motor'">` to react to a specific
     /// peer's drop.
     std::optional<std::string> target;
@@ -294,7 +236,7 @@ struct CommunicationError {
     /// chain), the SD response code label for SOMEIP. Lets the author
     /// log / correlate the rejection without re-deriving it from
     /// transport telemetry, while keeping the SCE-authored reason
-    /// (`reason: "UNAUTHORIZED"`) on the wire as the SCE-level signal.
+    /// (`reason: "unauthorized"`) on the wire as the SCE-level signal.
     /// Absent on every other row's raise site — row 10 is the only
     /// producer.
     ///
@@ -388,7 +330,7 @@ struct CommunicationError {
     /// the `<parallel>` whose §mesh-16.5 completion barrier fired. Always
     /// populated by the barrier-timeout raise site; absent for every
     /// other row. Authors branch on the combination of
-    /// `reason == 'PARALLEL_BARRIER_TIMEOUT'` and
+    /// `reason == 'parallelBarrierTimeout'` and
     /// `_event.data.parallel_id == '<id>'` to react to a specific
     /// barrier.
     std::optional<std::string> parallel_id;
@@ -411,7 +353,7 @@ struct CommunicationError {
     /// the peer whose **partition** liveliness token transitioned to
     /// DELETE. Orthogonal to `target` (row 8) — row 13 is a machine +
     /// partition pair, row 8 is a machine identity. Authors branch on
-    /// `_event.data.reason == 'REGION_PARTITIONED' &&
+    /// `_event.data.reason == 'regionPartitioned' &&
     ///  _event.data.machine == 'motor' &&
     ///  _event.data.partition == 'motor_right'` to react to a specific
     /// region going down within a sibling machine.
