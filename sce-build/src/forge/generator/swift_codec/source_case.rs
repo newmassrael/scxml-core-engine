@@ -18,7 +18,7 @@ use super::super::rust_source::{
 use super::source::{presented_order, Presented};
 use super::*;
 use crate::forge::codec_roles::GateGroup;
-use crate::forge::encode_plan::{Element, EncodePlan, Law, Value};
+use crate::forge::encode_plan::{EncodePlan, Law, Value};
 
 /// The name the harness gives the value a case makes.
 const VALUE: &str = "value";
@@ -156,7 +156,7 @@ fn value_literal(
                 let value = object
                     .get(&label)
                     .ok_or_else(|| format!("the source states no `{label}`"))?;
-                let spelled = group_literal(plan, type_name, group, value, &*held, bindings)
+                let spelled = group_literal(plan, type_name, group, value, held, bindings)
                     .map_err(|e| format!("`{label}`: {e}"))?;
                 arguments.push(format!("{}: {spelled}", super::source::group_name(group)));
                 continue;
@@ -178,7 +178,7 @@ fn value_literal(
             })
             .map_err(|e| format!("`{id}`: {e}"))?
         } else if let Value::List { codec, law, .. } = &element.value {
-            list_literal(type_name, element, codec, law, value, held, bindings)
+            list_literal(type_name, id, codec, law, value, held, bindings)
                 .map_err(|e| format!("`{id}`: {e}"))?
         } else {
             number_literal(&element.value, value, &*held).map_err(|e| format!("`{id}`: {e}"))?
@@ -219,13 +219,16 @@ fn bounded_literal(
 /// The value of the gate group `group` of the codec `plan`, whose Swift type is `type_name`, that
 /// `json` states (`rust_source::group_choice`): `nil` where it states none, else the arm it states,
 /// the case of the group's enum or its one arm's struct, each member as the arm holds it (docs/adr
-/// /0065 §6 R4b, R4c).
+/// /0065 §6 R4b, R4c): a number as a literal, a byte string or a text through its bound's door, a
+/// body by its own codec's initializer, a list of entries through its count bound's door, as an
+/// element is. The group's type is generic over the source of each body and list it holds, which
+/// the value the initializer is handed binds to each codec's own value.
 fn group_literal(
     plan: &EncodePlan<'_>,
     type_name: &str,
     group: &GateGroup,
     json: &serde_json::Value,
-    held: &dyn HeldCodecs,
+    held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
     let Some(ChosenGroupArm {
@@ -248,9 +251,19 @@ fn group_literal(
             .get(id)
             .ok_or_else(|| format!("the arm states no `{id}`"))?;
         let value = plan.value(field);
-        let spelled = match super::source::bounded_field_type(type_name, plan, field) {
-            Some(bounded) => bounded_literal(&bounded, &value, stated, bindings),
-            None => number_literal(&value, stated, held),
+        let spelled = match (
+            super::source::bounded_field_type(type_name, plan, field),
+            &value,
+        ) {
+            (Some(bounded), _) => bounded_literal(&bounded, &value, stated, bindings),
+            (None, Value::Body { codec }) => held.read(codec, &mut |plan, _, held| {
+                let type_name = filters::to_pascal_case(plan.model.name.clone());
+                value_literal(plan, &type_name, stated, held, bindings)
+            }),
+            (None, Value::List { codec, law, .. }) => {
+                list_literal(type_name, id, codec, law, stated, held, bindings)
+            }
+            (None, _) => number_literal(&value, stated, &*held),
         }
         .map_err(|e| format!("`{id}`: {e}"))?;
         members.push(format!("{id}: {spelled}"));
@@ -299,14 +312,14 @@ fn variant_literal(
     })
 }
 
-/// The list or chain `element` of the codec whose Swift type is `type_name`, its entries of the
-/// codec imported as `codec`, that `json` states as an array of its entries: each made by its own
-/// codec's initializer, and the list through its count bound's one door (docs/adr/0065 §6 R2),
-/// bound first in `bindings`, which the harness requires to answer. A list held to its law, which
-/// a source states with its start, is refused by name.
+/// The list or chain `id` of the codec whose Swift type is `type_name`, an element or a member of a
+/// gate group, its entries of the codec imported as `codec`, that `json` states as an array of its
+/// entries: each made by its own codec's initializer, and the list through its count bound's one
+/// door (docs/adr/0065 §6 R2), bound first in `bindings`, which the harness requires to answer. A
+/// list held to its law, which a source states with its start, is refused by name.
 fn list_literal(
     type_name: &str,
-    element: &Element<'_>,
+    id: &str,
     codec: &str,
     law: &Law,
     json: &serde_json::Value,
@@ -336,8 +349,7 @@ fn list_literal(
     let entry_type = held.read(codec, &mut |plan, _, _| {
         Ok(filters::to_pascal_case(plan.model.name.clone()))
     })?;
-    let list = super::source::list_type(type_name, element, &entry_type)
-        .expect("a list is held in a list type");
+    let list = super::source::list_type(type_name, id, &entry_type);
     // Numbered, as a byte string's door is bound.
     let local = format!("bound{}", bindings.len());
     bindings.push(format!(

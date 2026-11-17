@@ -47,10 +47,13 @@
 //! entry codec's `Overrides` (§6 R7), whatever the entry presents; an input every entry says that
 //! the parent hands them from elsewhere is held to it entry by entry before the first byte.
 //!
-//! A gate group of numbers, byte strings and texts (docs/adr/0065 §6 R4b, R4c) is presented as one
-//! property: an enum of its arms, each holding its members by name, or a struct of its one arm,
-//! optional where the gates may name no arm. The encode reads each member off the arm the value
-//! holds, and derives each gate from which arm that is; a decode makes the arm its gates name.
+//! A gate group (docs/adr/0065 §6 R4b, R4c) is presented as one property: an enum of its arms,
+//! each holding its members by name, or a struct of its one arm, optional where the gates may name
+//! no arm. A member is a number, a byte string or a text, a body, a list, or a length or a count
+//! the value states on the side where what it measures is absent; the group's type is generic over
+//! the source of each body and list it holds, an associated type of the protocol as an element's
+//! is. The encode reads each member off the arm the value holds, and derives each gate from which
+//! arm that is; a decode makes the arm its gates name.
 //!
 //! A variant every arm of which is a codec the Swift printer prints is presented as the generic
 //! enum `{Codec}Arms` over a source of each arm's codec, an associated type of the protocol each,
@@ -105,23 +108,44 @@ fn walk_of<'p>(plan: &'p EncodePlan<'_>, id: &str) -> Option<&'p ListWrite> {
     })
 }
 
-/// Whether every element of the codec that holds the codec imported as `alias` is a chain that
+/// Whether every field of the codec that holds the codec imported as `alias` is a chain that
 /// supplies its entries the input `input` from the entry before (`ListWrite::previous`), which the
 /// parent then binds nothing to.
 fn chain_supplies(plan: &EncodePlan<'_>, alias: &str, input: &str) -> bool {
     let mut holders = plan
-        .elements
+        .model
+        .fields
         .iter()
-        .filter(|element| match &element.value {
-            Value::Body { codec } | Value::List { codec, .. } => *codec == alias,
+        .filter(|field| match presented_value(plan, field) {
+            Some(Value::Body { codec } | Value::List { codec, .. }) => codec == alias,
             _ => false,
         })
         .peekable();
     holders.peek().is_some()
-        && holders.all(|element| {
-            walk_of(plan, &element.field.id)
+        && holders.all(|field| {
+            walk_of(plan, &field.id)
                 .is_some_and(|walk| walk.previous.iter().any(|(bound, _)| bound == input))
         })
+}
+
+/// What the field `field` of the codec of `plan` holds where a value holds it, where the value
+/// presents it: as an element of its own, or as a member of the gate group that holds it
+/// (docs/adr/0065 §6 R4b, R4c); `None` for a field the encode derives.
+fn presented_value<'f>(plan: &EncodePlan<'_>, field: &'f CodecField) -> Option<Value<'f>> {
+    let presented =
+        plan.elements.iter().any(|e| e.field.id == field.id) || group_of(plan, &field.id).is_some();
+    presented.then(|| plan.value(field))
+}
+
+/// Whether a value may hold none of the presented field `id` of the codec of `plan`: an element a
+/// gate decides or the value states, or a member of a gate group, which an arm the value does not
+/// hold leaves out.
+fn presented_optional(plan: &EncodePlan<'_>, id: &str) -> bool {
+    group_of(plan, id).is_some()
+        || plan
+            .elements
+            .iter()
+            .any(|e| e.field.id == id && e.presence.optional())
 }
 
 /// The identifier of `entry`, an entry of the chain `chain` of the codec of `plan`, as a `UInt64`
@@ -162,10 +186,13 @@ pub(super) fn group_of(plan: &EncodePlan<'_>, id: &str) -> Option<usize> {
 
 /// The first gate group of `plan` the Swift printer does not print, described for a reader: one of
 /// a chain's memberships (docs/adr/0065 §6 R6), one whose arm holds two lists of one count (R5),
-/// and one that holds a body, a list, a value of a type no number is, or a length stated where
-/// what it measures is absent. A group the printer prints holds numbers, byte strings and texts,
-/// decided by flags of the codec's carriers and by flag inputs (R4b, R4c).
-fn group_unlowered(plan: &EncodePlan<'_>) -> Option<String> {
+/// and one that holds a value of a type no number is, a body or the entries of a codec the Swift
+/// printer does not print, or a list held to its law (R8). A group the printer prints holds
+/// numbers, byte strings, texts, bodies and lists, and the lengths and counts the value states on
+/// the side where what they measure is absent, decided by flags of the codec's carriers and by
+/// flag inputs (R4b, R4c). `imports` says which codec each import is and whether the Swift printer
+/// prints it.
+fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<String> {
     for group in plan.groups() {
         let label = super::super::rust_source::gates_label(group);
         if group.chain().is_some() {
@@ -179,18 +206,28 @@ fn group_unlowered(plan: &EncodePlan<'_>) -> Option<String> {
             ));
         }
         for id in group.fields() {
-            let field = field_named(plan, id);
-            let what = match plan.value(field) {
+            let what = match plan.value(field_named(plan, id)) {
                 Value::Scalar(t) if is_number(t) => None,
                 Value::Scalar(t) => Some(format!("a `{}` value", t.as_attr())),
                 Value::Bytes(_) | Value::Text(_) => None,
-                Value::Body { codec } => Some(format!("an embedded body of `{codec}`")),
-                Value::List { codec, .. } => Some(format!("a list of `{codec}`")),
-            }
-            .or_else(|| {
-                (plan.presence(field) == Presence::Stated)
-                    .then(|| "a number stated where what it measures is absent".to_string())
-            });
+                // A member body or list is written by its own codec's printed encode, as an
+                // element is.
+                Value::Body { codec } => match import_of(imports, codec) {
+                    Some(import) if import.swift_printed => None,
+                    _ => Some(format!(
+                        "an embedded body of `{codec}`, which the Swift printer does not print,"
+                    )),
+                },
+                Value::List { codec, law, .. } => match import_of(imports, codec) {
+                    Some(import) if import.swift_printed && law.is_none() => None,
+                    Some(import) if import.swift_printed => {
+                        Some("a list held to the law of the inputs its entries say".to_string())
+                    }
+                    _ => Some(format!(
+                        "a list of `{codec}`, which the Swift printer does not print,"
+                    )),
+                },
+            };
             if let Some(what) = what {
                 return Some(format!(
                     "field '{id}': {what} the gate group `{label}` holds"
@@ -199,6 +236,56 @@ fn group_unlowered(plan: &EncodePlan<'_>) -> Option<String> {
         }
     }
     None
+}
+
+/// The generic parameters of the type of the gate group `group` of `plan`, each with the protocol
+/// it is bound to: one for each body the group holds, a source of the body's codec, and one for
+/// each list, a source of its entries' codec, named as the associated type of the codec's
+/// protocol that the value presents it by ([`body_source_type`], [`entry_source_type`]), in the
+/// order the arms first name the members. A group of numbers, byte strings and texts has none.
+/// `held` is the Swift struct of each body and list's entries by the field that holds it.
+fn group_generics(
+    plan: &EncodePlan<'_>,
+    group: &GateGroup,
+    held: &HeldTypes,
+) -> Vec<(String, String)> {
+    group
+        .fields()
+        .into_iter()
+        .filter_map(|id| {
+            let name = match plan.value(field_named(plan, id)) {
+                Value::Body { .. } => body_source_type(id),
+                Value::List { .. } => entry_source_type(id),
+                _ => return None,
+            };
+            let child = held
+                .get(id)
+                .expect("a body or a list a group holds holds a codec of the module");
+            Some((name, format!("{child}Source")))
+        })
+        .collect()
+}
+
+/// The type a value of `plan` holds the gate group `group` in, with the source of each body and
+/// list it holds named by the associated type the codec's protocol presents it by (which the
+/// generated value binds to the codec's own value), optional where the value may hold no arm.
+fn group_holds(plan: &EncodePlan<'_>, group: &GateGroup, held: &HeldTypes) -> String {
+    let struct_name = filters::to_pascal_case(plan.model.name.clone());
+    let ty = group_type_name(&struct_name, group);
+    let arguments: Vec<String> = group_generics(plan, group, held)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    let ty = if arguments.is_empty() {
+        ty
+    } else {
+        format!("{ty}<{}>", arguments.join(", "))
+    };
+    if group.absent.is_some() {
+        format!("{ty}?")
+    } else {
+        ty
+    }
 }
 
 /// The property a printed value holds the gate group `group` in, and the label a member of a
@@ -235,11 +322,38 @@ fn field_named<'m>(plan: &EncodePlan<'m>, id: &str) -> &'m CodecField {
 }
 
 /// The Swift type a member `field` of a gate group of `plan` is held as within its arm: its number,
-/// or its byte string or text in the bound its codec declares (docs/adr/0065 §6 R1).
-pub(super) fn member_type(l: &LangCtx, plan: &EncodePlan<'_>, field: &CodecField) -> String {
+/// its byte string or text in the bound its codec declares (docs/adr/0065 §6 R1), the source of
+/// its body, or its list of sources of its entries within the count bound its codec declares
+/// (R2). A source is named by the generic parameter of the group's type ([`group_generics`]),
+/// reached through `of`: nothing in the type's own declaration, `Source.` in an encode over a
+/// source of the codec, whose associated type of that name it is.
+fn member_type(l: &LangCtx, plan: &EncodePlan<'_>, field: &CodecField, of: &str) -> String {
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
-    bounded_value_type(&struct_name, &field.id, &plan.value(field))
-        .unwrap_or_else(|| l.type_name(&field.sce_type).into_owned())
+    match plan.value(field) {
+        Value::Body { .. } => format!("{of}{}", body_source_type(&field.id)),
+        Value::List { .. } => list_type(
+            &struct_name,
+            &field.id,
+            &format!("{of}{}", entry_source_type(&field.id)),
+        ),
+        value => bounded_value_type(&struct_name, &field.id, &value)
+            .unwrap_or_else(|| l.type_name(&field.sce_type).into_owned()),
+    }
+}
+
+/// The bounded list a printed value of the codec named `struct_name` holds the field `field` of
+/// `plan` in, an element or a member of a gate group, each entry an `entry` (docs/adr/0065 §6
+/// R2); `None` for a field that holds no list, or that the value does not present.
+pub(super) fn listed_field_type(
+    struct_name: &str,
+    plan: &EncodePlan<'_>,
+    field: &CodecField,
+    entry: &str,
+) -> Option<String> {
+    match presented_value(plan, field)? {
+        Value::List { .. } => Some(list_type(struct_name, &field.id, entry)),
+        _ => None,
+    }
 }
 
 /// The bounded type a printed value of the codec named `struct_name` holds the field `field` of
@@ -371,10 +485,15 @@ fn presented_read(plan: &EncodePlan<'_>, id: &str) -> String {
     }
 }
 
+/// The source `encodeSource` is handed, through which a type of the encode names an associated
+/// type of the codec's protocol.
+const OF_SOURCE: &str = "Source.";
+
 /// The statements that read each member of the gate group `group` off the arm a source of the
 /// codec of `plan` holds into the member's local ([`member_local`]), `nil` where that arm does not
 /// hold it: a switch over the arms of a sum, each arm's members bound by their names, or the one
-/// arm's members where the value holds it.
+/// arm's members where the value holds it. A body or a list is kept as the source presents it,
+/// of the source's associated type, so a host's type is written with no copy.
 fn group_member_lines(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> Vec<String> {
     let held = format!("{SOURCE}.{}", group_name(group));
     let mut lines: Vec<String> = group
@@ -384,7 +503,7 @@ fn group_member_lines(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> 
             format!(
                 "var {}: {}? = nil",
                 member_local(id),
-                member_type(l, plan, field_named(plan, id))
+                member_type(l, plan, field_named(plan, id), OF_SOURCE)
             )
         })
         .collect();
@@ -431,10 +550,23 @@ fn group_member_lines(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> 
 /// the arm among them, `arm`, which the encode reads the gates off) or a struct of its one arm; the
 /// value it starts at, `nil` where it may hold no arm and otherwise the arm of a frame of zeros,
 /// each member at its own start; and the statements that make it, once the frame is read, from
-/// the locals the decode read each member into, the arm the gates the frame holds name.
-fn group_context(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> serde_json::Value {
+/// the locals the decode read each member into, the arm the gates the frame holds name. A group
+/// that holds a body or a list is generic over the source of each ([`group_generics`]), as the
+/// variant is over its arms, so a host's type is presented with no copy; it is `Equatable` and
+/// `Sendable` where those sources are. `held` is the Swift struct of each body and list's entries
+/// by the field that holds it.
+fn group_context(
+    l: &LangCtx,
+    plan: &EncodePlan<'_>,
+    group: &GateGroup,
+    held: &HeldTypes,
+) -> serde_json::Value {
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     let ty = group_type_name(&struct_name, group);
+    let generics: Vec<serde_json::Value> = group_generics(plan, group, held)
+        .into_iter()
+        .map(|(name, protocol)| serde_json::json!({ "name": name, "protocol": protocol }))
+        .collect();
     // The arm `arm` holding the members `value` gives each, by its id.
     let make = |arm: &GroupArm, value: &dyn Fn(&CodecField) -> String| -> String {
         let members: Vec<String> = arm
@@ -448,14 +580,18 @@ fn group_context(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> serde
             (false, _) => format!("{ty}({})", members.join(", ")),
         }
     };
-    // Each member of an arm the gates name was read where the gate holds it, which they do.
-    let read = |f: &CodecField| format!("{}!", super::decoded(&f.id));
-    let local = group_local(group);
-    let holds = if group.absent.is_some() {
-        format!("{ty}?")
-    } else {
-        ty.clone()
+    // Each gated member of an arm the gates name was read where the gate holds it, which they do;
+    // a length or a count the value states on the side where what it measures is absent is read
+    // always.
+    let read = |f: &CodecField| {
+        if f.present_if.is_some() {
+            format!("{}!", super::decoded(&f.id))
+        } else {
+            super::decoded(&f.id)
+        }
     };
+    let local = group_local(group);
+    let holds = group_holds(plan, group, held);
     let mut decode = vec![format!("let {local}: {holds}")];
     let last = group.arms.len() - 1;
     for (index, arm) in group.arms.iter().enumerate() {
@@ -474,9 +610,17 @@ fn group_context(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> serde
     }
     decode.push("}".to_string());
     // A frame of zeros holds the arm whose gates are all clear, each member at its start: an enum's
-    // first value, a carrier's flags' declared values, no bytes.
+    // first value, a carrier's flags' declared values, no bytes, a body's own value of a frame of
+    // zeros, the fewest entries a list's bound admits.
+    let child = |f: &CodecField| {
+        held.get(&f.id)
+            .expect("a body or a list a group holds holds a codec of the module")
+            .clone()
+    };
     let start = |f: &CodecField| match (&plan.value(f), &f.sce_type) {
         (Value::Bytes(_) | Value::Text(_), _) => ".fewest".to_string(),
+        (Value::Body { .. }, _) => format!("{}()", child(f)),
+        (Value::List { .. }, _) => format!(".fewest(of: {}())", child(f)),
         (_, SceType::Enum(r)) => l.enum_default_expr(&r.alias),
         _ => match flag_default_carrier_value(f) {
             0 => "0".to_string(),
@@ -513,7 +657,7 @@ fn group_context(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> serde
                     .iter()
                     .map(|id| serde_json::json!({
                         "name": id,
-                        "type": member_type(l, plan, field_named(plan, id)),
+                        "type": member_type(l, plan, field_named(plan, id), ""),
                     }))
                     .collect::<Vec<_>>(),
             })
@@ -522,6 +666,8 @@ fn group_context(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> serde
     serde_json::json!({
         "name": group_name(group),
         "type": ty,
+        "generics": generics,
+        "optional": group.absent.is_some(),
         "holds": holds,
         "label": super::super::rust_source::gates_label(group),
         "sum": group.is_sum(),
@@ -548,7 +694,7 @@ pub(crate) fn unlowered_positional(
             arm.codec
         ));
     }
-    if let Some(what) = group_unlowered(plan) {
+    if let Some(what) = group_unlowered(plan, imports) {
         return Some(what);
     }
     for element in &plan.elements {
@@ -767,8 +913,9 @@ pub(crate) fn unlowered_positional(
 /// The number `element` is, where `by` derives it as one the printer writes: a number of the byte
 /// strings and texts it measures, of the entries of the lists it counts, of the inputs the bodies
 /// it measures say, or of the bytes the bodies it measures encode to, into a field of its own
-/// (zero where a gate leaves every one of them out, beside which the field is gated too) or, but
-/// for an encoded length, into a flag of a carrier.
+/// (zero where a gate leaves every one of them out, beside which the field is gated too, or what
+/// the arm of the gate group that holds the field states there, docs/adr/0065 §6 R4b) or, but for
+/// an encoded length, into a flag of a carrier.
 fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d Number<'m>> {
     let Derive::Number(number) = by else {
         return None;
@@ -791,7 +938,7 @@ fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<
             && number.measures.iter().all(|m| encoded(&m.of)));
     let into = match (element, &number.into) {
         (ElementId::Field(_), NumberInto::Field { absent, .. }) => {
-            matches!(absent, Absent::Never | Absent::Zero)
+            matches!(absent, Absent::Never | Absent::Zero | Absent::Group)
         }
         (ElementId::Flag { .. }, NumberInto::Flag) => true,
         _ => false,
@@ -862,9 +1009,14 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
             });
             past_its_field || below_its_arithmetic
         }),
+        // A body or a list the value presents, as an element or in the arm of a gate group.
         RefusalKind::Child => {
-            plan.elements.iter().any(|e| {
-                e.field.id == element && matches!(e.value, Value::Body { .. } | Value::List { .. })
+            plan.model.fields.iter().any(|f| {
+                f.id == element
+                    && matches!(
+                        presented_value(plan, f),
+                        Some(Value::Body { .. } | Value::List { .. })
+                    )
             }) || plan.arms.iter().any(|arm| arm.codec == element)
         }
         _ => false,
@@ -1029,16 +1181,10 @@ fn entry_source_type(field: &str) -> String {
     format!("{}_Entry", filters::to_pascal_case(field.to_string()))
 }
 
-/// The Swift type a printed codec named `struct_name` holds the list or chain `element` as, each
-/// entry an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2, R7);
-/// `None` for another element.
-pub(super) fn list_type(struct_name: &str, element: &Element<'_>, entry: &str) -> Option<String> {
-    matches!(element.value, Value::List { .. }).then(|| {
-        format!(
-            "BoundedList<{entry}, {struct_name}.{}>",
-            bound_name(&element.field.id)
-        )
-    })
+/// The Swift type a printed codec named `struct_name` holds the list or chain `id` as, each entry
+/// an `entry`, within the count bound its own type declares (docs/adr/0065 §6 R2, R7).
+pub(super) fn list_type(struct_name: &str, id: &str, entry: &str) -> String {
+    format!("BoundedList<{entry}, {struct_name}.{}>", bound_name(id))
 }
 
 /// The Swift type the protocol of `plan` presents `element` as: its number, its bounded byte string
@@ -1048,10 +1194,11 @@ fn presented_type(l: &LangCtx, plan: &EncodePlan<'_>, element: &Element<'_>) -> 
     let struct_name = filters::to_pascal_case(plan.model.name.clone());
     let ty = match &element.value {
         Value::Body { .. } => body_source_type(&element.field.id),
-        Value::List { .. } => {
-            list_type(&struct_name, element, &entry_source_type(&element.field.id))
-                .expect("a list is held in a list type")
-        }
+        Value::List { .. } => list_type(
+            &struct_name,
+            &element.field.id,
+            &entry_source_type(&element.field.id),
+        ),
         _ => bounded_type(&struct_name, element)
             .unwrap_or_else(|| l.type_name(&element.field.sce_type).into_owned()),
     };
@@ -1165,8 +1312,9 @@ fn combine(
 
 /// The derived number `size` (there where `present` holds, if it may not be), held in the local of
 /// the field `id` it goes `into`, of that field's type: refused where it may not fit (docs/adr/0065
-/// §5), and zero where nothing it measures is there, beside which the field is gated and no write
-/// reads it.
+/// §5); where nothing it measures is there, zero, beside which the field is gated and no write
+/// reads it, or what the arm the value holds of the gate group that holds the field states, zero
+/// where the arm states nothing (§6 R4b, `Absent::Group`), as every printer reads it.
 fn field_number(
     l: &LangCtx,
     plan: &EncodePlan<'_>,
@@ -1176,8 +1324,18 @@ fn field_number(
     present: Option<&str>,
     body: &mut Vec<String>,
 ) {
-    let NumberInto::Field { field, narrow, .. } = into else {
+    let NumberInto::Field {
+        field,
+        narrow,
+        absent,
+    } = into
+    else {
         unreachable!("a number held in a field goes into that field")
+    };
+    let otherwise = match absent {
+        Absent::Group => format!("({} ?? 0)", member_local(id)),
+        Absent::Never | Absent::Zero => "0".to_string(),
+        Absent::Stated => unreachable!("`unlowered` refuses a number an element states alone"),
     };
     let ty = l.type_name(&field.sce_type).into_owned();
     if *narrow == Narrow::Checked {
@@ -1195,7 +1353,7 @@ fn field_number(
     }
     let value = match present {
         None => format!("{ty}({size})"),
-        Some(there) => format!("{there} ? {ty}({size}) : 0"),
+        Some(there) => format!("{there} ? {ty}({size}) : {otherwise}"),
     };
     body.push(format!(
         "let {}: {ty} = {value}",
@@ -1233,15 +1391,9 @@ pub(super) fn context(
             }),
             Presented::Group(index) => {
                 let group = &plan.groups()[index];
-                let ty = group_type_name(&struct_name, group);
-                let holds = if group.absent.is_some() {
-                    format!("{ty}?")
-                } else {
-                    ty
-                };
                 serde_json::json!({
                     "name": group_name(group),
-                    "type": holds,
+                    "type": group_holds(plan, group, held),
                     "local": group_local(group),
                 })
             }
@@ -1263,37 +1415,35 @@ pub(super) fn context(
         held.get(&f.id)
             .expect("every body the printer writes holds a codec of the module")
     };
-    // The source each body is presented as: an associated type the protocol requires to be a
-    // source of the body's codec, which the generated value binds to the body's own value.
-    let bodies: Vec<serde_json::Value> = plan
-        .elements
-        .iter()
-        .filter(|element| matches!(element.value, Value::Body { .. }))
-        .map(|element| {
-            let child = held_of(element.field);
-            serde_json::json!({
-                "name": body_source_type(&element.field.id),
-                "field": element.field.id,
-                "protocol": format!("{child}Source"),
-                "type": child,
-            })
-        })
-        .collect();
+    // The source each body is presented as, an element or a member of a gate group: an associated
+    // type the protocol requires to be a source of the body's codec, which the generated value
+    // binds to the body's own value, and which a group's type is generic over.
+    let sourced =
+        |is: fn(&Value<'_>) -> bool, name: fn(&str) -> String| -> Vec<serde_json::Value> {
+            plan.model
+                .fields
+                .iter()
+                .filter(|field| presented_value(plan, field).is_some_and(|value| is(&value)))
+                .map(|field| {
+                    let child = held_of(field);
+                    serde_json::json!({
+                        "name": name(&field.id),
+                        "field": field.id,
+                        "protocol": format!("{child}Source"),
+                        "type": child,
+                    })
+                })
+                .collect()
+        };
+    let bodies = sourced(
+        |value| matches!(value, Value::Body { .. }),
+        body_source_type,
+    );
     // The source each entry of a list or a chain is presented as, as a body is.
-    let entries: Vec<serde_json::Value> = plan
-        .elements
-        .iter()
-        .filter(|element| matches!(element.value, Value::List { .. }))
-        .map(|element| {
-            let child = held_of(element.field);
-            serde_json::json!({
-                "name": entry_source_type(&element.field.id),
-                "field": element.field.id,
-                "protocol": format!("{child}Source"),
-                "type": child,
-            })
-        })
-        .collect();
+    let entries = sourced(
+        |value| matches!(value, Value::List { .. }),
+        entry_source_type,
+    );
     // The bound each byte string and text is held to, a type of the codec's own (docs/adr/0065 §6
     // R1), and the count bound each list or chain is held to (R2, R7): the value's type of the
     // element names it, so a value made for one is no value of another, and a byte bound is no
@@ -1425,9 +1575,10 @@ pub(super) fn context(
                     }
                 }
                 // How many entries a list or a chain holds, as the value presents it within its
-                // bound (docs/adr/0065 §6 R2); where a gate leaves the list out, it counts none.
+                // bound (docs/adr/0065 §6 R2), an element or a member of a gate group; where a gate
+                // leaves the list out, it counts none.
                 Measured::Entries { list } => {
-                    let content = format!("{SOURCE}.{}", list.id);
+                    let content = presented_read(plan, &list.id);
                     if measure.gated {
                         MeasureText {
                             size: format!("({content}?.count ?? 0)"),
@@ -1451,7 +1602,7 @@ pub(super) fn context(
                 } => {
                     let child = held_of(holder);
                     let reader = said_reader(input);
-                    let content = format!("{SOURCE}.{}", holder.id);
+                    let content = presented_read(plan, &holder.id);
                     if measure.gated {
                         MeasureText {
                             size: format!("({content}.map {{ Int({child}.{reader}($0)) }} ?? 0)"),
@@ -1667,13 +1818,6 @@ pub(super) fn context(
         body.push(format!("var {local}: UInt64 = 0"));
         for term in &parent.terms {
             let id = &term.body.id;
-            let gated = plan
-                .elements
-                .iter()
-                .find(|e| e.field.id == *id)
-                .expect("a parent tag is filled by a body the value presents")
-                .presence
-                .optional();
             let fill = |body: &str| {
                 format!(
                     "{local} |= UInt64({body}.{}.tag) & 0x{:X}",
@@ -1681,13 +1825,12 @@ pub(super) fn context(
                     term.mask
                 )
             };
-            if gated {
-                body.push(format!(
-                    "if let {HELD} = {SOURCE}.{id} {{ {} }}",
-                    fill(HELD)
-                ));
+            // The body as the value presents it, an element or a member of a gate group.
+            let read = presented_read(plan, id);
+            if presented_optional(plan, id) {
+                body.push(format!("if let {HELD} = {read} {{ {} }}", fill(HELD)));
             } else {
-                body.push(fill(&format!("{SOURCE}.{id}")));
+                body.push(fill(&read));
             }
         }
         let carrier = fold(field, &mut body);
@@ -1758,14 +1901,15 @@ pub(super) fn context(
             })
             .collect()
     };
-    // Each body, encoded into bytes of its own by its codec, handed the inputs it does not say: its
-    // encoded length is the count of those bytes, measured once (docs/adr/0058 §3).
-    for element in &plan.elements {
-        let Value::Body { codec } = element.value else {
+    // Each body, an element or a member of a gate group, encoded into bytes of its own by its codec,
+    // handed the inputs it does not say: its encoded length is the count of those bytes, measured
+    // once (docs/adr/0058 §3).
+    for field in &plan.model.fields {
+        let Some(Value::Body { codec }) = presented_value(plan, field) else {
             continue;
         };
-        let id = &element.field.id;
-        let child = held_of(element.field);
+        let id = &field.id;
+        let child = held_of(field);
         let arguments = handed_arguments(codec, &|_| None);
         // A body whose codec refuses a value throws its refusal, which this encode passes on.
         if plan.totality.refuses(RefusalKind::Child, id) {
@@ -1775,9 +1919,10 @@ pub(super) fn context(
         let encode = |value: &str, piece: &str| {
             format!("try {child}.encodeSource({value}, into: &{piece}{arguments})")
         };
-        if element.presence.optional() {
+        let read = presented_read(plan, id);
+        if presented_optional(plan, id) {
             body.push(format!("var {bytes}: [UInt8]? = nil"));
-            body.push(format!("if let {HELD} = {SOURCE}.{id} {{"));
+            body.push(format!("if let {HELD} = {read} {{"));
             body.push("    var piece = BytesSink()".to_string());
             body.push(format!("    {}", encode(HELD, "piece")));
             body.push(format!("    {bytes} = piece.bytes"));
@@ -1785,7 +1930,7 @@ pub(super) fn context(
         } else {
             let piece = format!("{id}_piece");
             body.push(format!("var {piece} = BytesSink()"));
-            body.push(encode(&format!("{SOURCE}.{id}"), &piece));
+            body.push(encode(&read, &piece));
             body.push(format!("let {bytes} = {piece}.bytes"));
         }
     }
@@ -1936,12 +2081,7 @@ pub(super) fn context(
                 guard,
                 list: Some(ref walk),
             } => {
-                let Some(&Value::List { codec, .. }) = plan
-                    .elements
-                    .iter()
-                    .find(|e| e.field.id == f.id)
-                    .map(|e| &e.value)
-                else {
+                let Some(Value::List { codec, .. }) = presented_value(plan, f) else {
                     unreachable!("a list the program walks is a list the value presents")
                 };
                 // A list whose entries' codec refuses a value throws its refusal, which this
@@ -1959,13 +2099,12 @@ pub(super) fn context(
                 });
                 let write =
                     |entries: &str| list_write(plan, f, walk, held_of(f), entries, &arguments);
+                // The list as the value presents it, an element or a member of a gate group.
+                let entries = presented_read(plan, &f.id);
                 match guard {
-                    Guard::Always => {
-                        let entries = format!("{SOURCE}.{}", f.id);
-                        body.extend(write(entries.as_str()))
-                    }
+                    Guard::Always => body.extend(write(entries.as_str())),
                     Guard::Present => {
-                        body.push(format!("if let {HELD} = {SOURCE}.{} {{", f.id));
+                        body.push(format!("if let {HELD} = {entries} {{"));
                         body.extend(write(HELD).into_iter().map(|line| format!("    {line}")));
                         body.push("}".to_string());
                     }
@@ -2096,7 +2235,7 @@ pub(super) fn context(
     let groups: Vec<serde_json::Value> = plan
         .groups()
         .iter()
-        .map(|group| group_context(l, plan, group))
+        .map(|group| group_context(l, plan, group, held))
         .collect();
     serde_json::json!({
         "protocol": source_protocol(&plan.model.name),
@@ -2184,11 +2323,13 @@ fn input_check(
         Against::Input { name } => format!("{name} != 0"),
         Against::PreviousEntry { id } => format!("{before} == 0x{id:X}"),
     };
-    let gated = holder.present_if.is_some();
+    // The body or the list as the value presents it, an element or a member of a gate group.
+    let read = presented_read(plan, &holder.id);
+    let gated = presented_optional(plan, &holder.id);
     let content = if gated {
         HELD.to_string()
     } else {
-        format!("{SOURCE}.{}", holder.id)
+        read.clone()
     };
     let mut lines = vec!["do {".to_string()];
     match &check.site {
@@ -2199,7 +2340,7 @@ fn input_check(
                 lines.push(format!("    var {before}: UInt64? = nil"));
             }
             if gated {
-                lines.push(format!("    if let {HELD} = {SOURCE}.{} {{", holder.id));
+                lines.push(format!("    if let {HELD} = {read} {{"));
             }
             lines.push(format!("    {indent}for entry in {content} {{"));
             lines.push(format!("    {indent}    let handed: Bool = {handed}"));
@@ -2220,11 +2361,7 @@ fn input_check(
         }
         _ => {
             let differs = if gated {
-                format!(
-                    "let {HELD} = {SOURCE}.{}, {}",
-                    holder.id,
-                    says_otherwise(HELD)
-                )
+                format!("let {HELD} = {read}, {}", says_otherwise(HELD))
             } else {
                 says_otherwise(&content)
             };

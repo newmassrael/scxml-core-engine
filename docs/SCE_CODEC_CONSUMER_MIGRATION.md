@@ -2253,4 +2253,14 @@ Landing: the commit that adds this section, and each later one that names a form
   `CodecChainFlagEntry(header: h, short_value: 7, long_value: nil)` to
   `CodecChainFlagEntry(header: h, wide: .notWide(short_value: 7))`. A group of a chain's memberships, one whose
   arm holds two lists of one count, and one that holds a body or a list keep their template's encode.
+- A gate group that holds a body or a list of a printed codec, or a length or a count the value states on the
+  side where what it measures is absent, is printed as the group above, its type now generic over the source of
+  each body and list (`{Codec}{Gates}<{Field}_Source, {Field}_Entry>`), which the value binds to the codecs' own
+  values: a pattern or a value made of the body structs is unchanged, and a host's type presents the group of
+  its own body and entry types. The stated length is a member of the arm where its content is absent and is
+  derived on the other side. A call site moves from
+  `CodecZenohValueZbuf(value_len: 3, value: [1, 2, 3], encoding: nil, slice_count: nil, slices: nil)` to
+  `CodecZenohValueZbuf(after_shm: .notAfterShm(value: BoundedBytes([1, 2, 3])!))`, and from
+  `CodecZenohInterest(header: h, id: 1, body: b, extensions: nil)` to
+  `CodecZenohInterest(header: h, id: 1, header_current_or_future: .current(body: b), extensions: nil)`.
 

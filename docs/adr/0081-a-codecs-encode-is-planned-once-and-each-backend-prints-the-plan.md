@@ -1408,6 +1408,22 @@ old encode, the old encode and its templates are removed in the same landing.
    into. The case printer states a group as the arm `group_choice` reads, and compares it whole. A group of a
    chain's memberships (R6), one whose arm holds two lists of one count (R5), and one that holds a body or a
    list stay refused by name.
+   *Gate groups that hold a body or a list, 2026-11-17:* a group whose members include a body or a list of a
+   codec the Swift printer prints, or a length or a count the value states on the side where what it measures
+   is absent (docs/adr/0065 §6 R4b, `Absent::Group`), is printed. The group's type is now generic over the
+   source of each body and list it holds, one parameter a member (`{Field}_Source`, `{Field}_Entry`), named and
+   bound as the associated type of the codec's protocol that presents it, which the generated value binds to
+   the codec's own value: the protocol requires the group as `{Codec}{Gates}<{Field}_Source, ..>`, and the same
+   spelling in the value names its typealiases. This amends the first decision of the entry above for these
+   groups alone: a group of numbers, byte strings and texts stays concrete, since a host makes those as cheaply
+   as the group, while a body or a list is what a host holds and a source spares it copying, as the variant's
+   arms enum is generic for the same reason. One parameter a member, not one an arm, so a member several arms
+   hold is one type in all of them, as the Rust group holds it. The type is `Equatable` and `Sendable` where its
+   sources are. The encode keeps each member as the source presents it, a local of the source's associated
+   type (`Source.{Field}_Source`), and writes a body and walks a list off that local where it writes an
+   element's off the source; a stated number is the measure where the arm holds what it measures, else what the
+   arm states, zero where it states nothing, as every printer reads it. Considered and refused: a concrete
+   group whose arm holds the body codec's own value, which would make a host copy each body into it.
 
 ## Consequences
 

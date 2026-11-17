@@ -269,6 +269,8 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_present_if_disjunction.scxml",
         "tests/forge/resources/codec_chain_flag_entry.scxml",
         "tests/forge/resources/codec_repeat_flag_carrier.scxml",
+        "tests/forge/resources/codec_zenoh_value_zbuf.scxml",
+        "tests/forge/resources/codec_zenoh_value_entry.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -1206,6 +1208,164 @@ fn a_gate_group_is_one_property_whose_arm_the_encode_derives_the_gates_from() {
         ),
     ] {
         assert!(entry.contains(expected), "{why}: {expected} in {entry}");
+    }
+}
+
+/// The Swift source of the codec document `document`, named `name`, written beside a copy of each
+/// resource codec `imports` names (a file under `tests/forge/resources`), which it imports by the
+/// file's stem; or the refusal it is answered with.
+fn swift_of_beside(name: &str, document: &str, imports: &[&str]) -> Result<String, String> {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for import in imports {
+        std::fs::copy(
+            repo_root().join("tests/forge/resources").join(import),
+            dir.path().join(import),
+        )
+        .expect("copy an imported codec");
+    }
+    let path = dir.path().join(format!("{name}.scxml"));
+    std::fs::write(&path, document).expect("write the codec");
+    let output = compile_forge_file(&path, Language::Swift, &[], &ForgeCompileOptions::default())
+        .map_err(|e| format!("{e:?}"))?;
+    let (_, code) = output
+        .files
+        .into_iter()
+        .next()
+        .expect("a document that is written writes a file");
+    Ok(code)
+}
+
+#[test]
+fn a_gate_group_that_holds_a_body_is_generic_over_the_source_of_it() {
+    // docs/adr/0065 §6 R4c: `detail` is on the wire under `near || far`, two flags nothing else
+    // reads, so the value holds the arm of the disjunction; the arm holds the body as a source of
+    // its codec, which the protocol names by an associated type the value binds to the codec's own
+    // value, so a host's type is written with no copy.
+    let code = swift_of_beside(
+        "codec_group_body",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_group_body">
+  <sce:import src="codec_simple_frame.scxml" kind="codec" as="codec_simple_frame"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="near" bit="0"/>
+      <sce:flag name="far" bit="1"/>
+    </sce:flags>
+    <sce:embed id="detail" type="codec_simple_frame" sce:byte="1"
+               sce:present-if="flags.near || flags.far"/>
+  </datamodel>
+</scxml>"#,
+        &["codec_simple_frame.scxml"],
+    )
+    .expect("a group that holds a body is written");
+    for (expected, why) in [
+        (
+            "public enum CodecGroupBodyFlagsNearOrFar<Detail_Source: CodecSimpleFrameSource> {\n",
+            "the group's type is generic over the body's source",
+        ),
+        (
+            "    case nearFar(detail: Detail_Source)\n",
+            "an arm holds the body as that source",
+        ),
+        (
+            "extension CodecGroupBodyFlagsNearOrFar: Equatable where Detail_Source: Equatable {}\n",
+            "the group compares where its sources do",
+        ),
+        (
+            "extension CodecGroupBodyFlagsNearOrFar: Sendable where Detail_Source: Sendable {}\n",
+            "the group is sent where its sources are",
+        ),
+        (
+            "    associatedtype Detail_Source: CodecSimpleFrameSource\n",
+            "the protocol names the body's source",
+        ),
+        (
+            "    var flags_near_or_far: CodecGroupBodyFlagsNearOrFar<Detail_Source>? { get }\n",
+            "the protocol requires the group over that source",
+        ),
+        (
+            "    public typealias Detail_Source = CodecSimpleFrame\n",
+            "the value binds the source to the body codec's own value",
+        ),
+        (
+            "    public var flags_near_or_far: CodecGroupBodyFlagsNearOrFar<Detail_Source>? = nil\n",
+            "the value holds the group, none of it until a frame is read",
+        ),
+        (
+            "var detail_member: Source.Detail_Source? = nil",
+            "the encode keeps the body as the source presents it",
+        ),
+        (
+            "case .nearFar(let detail)?: detail_member = detail",
+            "off the arm the value holds",
+        ),
+        (
+            "        if let held = detail_member {\n            var piece = BytesSink()\n            try CodecSimpleFrame.encodeSource(held, into: &piece)\n            detail_bytes = piece.bytes\n        }\n",
+            "the body is encoded once, by its own codec's encode",
+        ),
+        (
+            "if let held = detail_bytes { frame += held }",
+            "and written where the arm holds it",
+        ),
+        (
+            "flags_near_or_far_group = .nearFar(detail: detail!)",
+            "a decode makes the arm the flags name",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+    assert!(
+        !code.contains("var detail: Detail_Source? { get }")
+            && !code.contains("public var detail: "),
+        "the body is no element of its own: {code}"
+    );
+}
+
+#[test]
+fn a_gate_group_that_holds_a_list_and_a_stated_length_derives_the_length_on_one_side() {
+    // docs/adr/0065 §6 R4b: `after_shm` decides `value` on its clear side and `encoding` and the
+    // slices on its set side, where `value_len`, which measures `value`, is stated by the value.
+    let code = swift_of("tests/forge/resources/codec_zenoh_value_zbuf.scxml")
+        .expect("a group that holds a list is written");
+    for (expected, why) in [
+        (
+            "public enum CodecZenohValueZbufAfterShm<Slices_Entry: CodecZenohValueSliceSource> {\n",
+            "the group's type is generic over the source of the list's entries",
+        ),
+        (
+            "    case afterShm(encoding: UInt64, slices: BoundedList<Slices_Entry, CodecZenohValueZbuf.SlicesBound>, value_len: UInt64)\n",
+            "the arm holds the list within its count bound, and the length it states",
+        ),
+        (
+            "    public var after_shm: CodecZenohValueZbufAfterShm<Slices_Entry> = .notAfterShm(value: .fewest)\n",
+            "a frame of zeros holds the arm of the input clear",
+        ),
+        (
+            "var slices_member: BoundedList<Source.Slices_Entry, CodecZenohValueZbuf.SlicesBound>? = nil",
+            "the encode keeps the list as the source presents it",
+        ),
+        (
+            "let value_len_derived: UInt64 = value_member != nil ? UInt64((value_member?.byteCount ?? 0)) : (value_len_member ?? 0)",
+            "the length is the bytes' where the arm holds them, else what the arm states",
+        ),
+        (
+            "let slice_count_derived: UInt64 = slices_member != nil ? UInt64((slices_member?.count ?? 0)) : 0",
+            "the count is the entries the arm holds",
+        ),
+        (
+            "        if let held = slices_member {\n            var slices_entries = BytesSink()\n            for entry in held {\n                try CodecZenohValueSlice.encodeSource(entry, into: &slices_entries)\n            }\n            frame += slices_entries.bytes\n        }\n",
+            "the list is walked where the arm holds it",
+        ),
+        (
+            "after_shm_group = .afterShm(encoding: encoding!, slices: slices!, value_len: value_len)",
+            "a decode makes the arm of the stated length, which it reads always",
+        ),
+        (
+            "slices = try BoundedList<CodecZenohValueSlice, CodecZenohValueZbuf.SlicesBound>(decoding: slices_items)",
+            "a decode holds the list to its bound",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
     }
 }
 

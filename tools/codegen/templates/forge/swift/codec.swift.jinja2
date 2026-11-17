@@ -123,12 +123,16 @@ public struct {{ u.name }}: Equatable, Hashable, Sendable {
 {% endif %}
 {% if printed %}
 {% for g in printed.groups %}
+{% set params %}{% if g.generics %}<{% for p in g.generics %}{{ p.name }}: {{ p.protocol }}{% if not loop.last %}, {% endif %}{% endfor %}>{% else %}: Equatable, Sendable{% endif %}{% endset %}
 /// The elements of `{{ struct_name }}` the gates `{{ g.label }}` decide together (docs/adr/0065 §6
 /// R4b, R4c): {% if g.sum %}the arm a value holds, each arm the elements present under one assignment of
 /// the gates{% else %}the elements present while the gates are as the one arm says{% endif %}. The encode derives the gates
 /// from {% if g.sum %}which arm it is{% else %}whether a value holds it{% endif %}, and a decode makes the arm the gates of the frame name.
+{% if g.generics %}
+/// Each body and list is a source of its codec, so a host's type is presented with no copy.
+{% endif %}
 {% if g.sum %}
-public enum {{ g.type }}: Equatable, Sendable {
+public enum {{ g.type }}{{ params }} {
 {% for a in g.arms %}
     /// While {{ a.when }}.
     case {{ a.case }}{% if a.members %}({% for m in a.members %}{{ m.name }}: {{ m.type }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}
@@ -146,7 +150,7 @@ public enum {{ g.type }}: Equatable, Sendable {
 }
 {% else %}
 {% set a = g.arms[0] %}
-public struct {{ g.type }}: Equatable, Sendable {
+public struct {{ g.type }}{{ params }} {
 {% for m in a.members %}
     public var {{ m.name }}: {{ m.type }}
 {% endfor %}
@@ -157,6 +161,12 @@ public struct {{ g.type }}: Equatable, Sendable {
 {% endfor %}
     }
 }
+{% endif %}
+{% if g.generics %}
+
+extension {{ g.type }}: Equatable where {% for p in g.generics %}{{ p.name }}: Equatable{% if not loop.last %}, {% endif %}{% endfor %} {}
+
+extension {{ g.type }}: Sendable where {% for p in g.generics %}{{ p.name }}: Sendable{% if not loop.last %}, {% endif %}{% endfor %} {}
 {% endif %}
 
 {% endfor %}
@@ -297,7 +307,7 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
 {% if printed %}
 {% for g in printed.groups %}
 
-    /// The elements the gates `{{ g.label }}` decide together{% if g.holds != g.type %}, `nil` while they name no arm{% endif %}.
+    /// The elements the gates `{{ g.label }}` decide together{% if g.optional %}, `nil` while they name no arm{% endif %}.
     public var {{ g.name }}: {{ g.holds }} = {{ g.default }}
 {% endfor %}
 {% endif %}

@@ -1354,14 +1354,14 @@ pub(super) fn render(
         }
     };
     // A printed value holds each list and chain in the bounded list type its plan gives it, of the
-    // entry codec's own value (docs/adr/0065 §6 R2, R7), which a decode makes through the door that
-    // refuses what the bound does not hold.
+    // entry codec's own value (docs/adr/0065 §6 R2, R7), an element or a member of a gate group,
+    // which a decode makes through the door that refuses what the bound does not hold.
     let listed_of = |f: &CodecField, entry: &str| {
-        plan.elements
-            .iter()
-            .find(|e| e.field.id == f.id)
-            .filter(|_| prints)
-            .and_then(|e| source::list_type(&struct_name, e, entry))
+        if prints {
+            source::listed_field_type(&struct_name, &plan, f, entry)
+        } else {
+            None
+        }
     };
     // The type, the default and the door of a list or a chain of entries `element`: the bounded
     // list a printed value holds, which holds the fewest entries its bound admits until a frame is
@@ -1711,7 +1711,8 @@ pub(super) fn render(
         .collect();
     // A value printed from its plan holds no element the encode derives (docs/adr/0081 §3): the
     // decode reads it into a local alone. A member of a gate group is no property of its own
-    // either: the value holds it in its group, which the decode makes of the members' locals.
+    // either, a body and a list among them: the value holds it in its group, which the decode
+    // makes of the members' locals.
     let mut fields = fields;
     for field in &mut fields {
         let id = field["id"].as_str().unwrap_or_default();
