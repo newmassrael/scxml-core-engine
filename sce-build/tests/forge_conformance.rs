@@ -9266,10 +9266,11 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_kotlin() {
 
 /// RFC variant-default-uniformity (Python): the inner arm
 /// body codec with `<sce:flag value="0x02"/>` on its dispatch flag
-/// must emit a Python-int default `header: int = 0x02` on the
-/// `@dataclass` so a freshly-constructed instance carries the
-/// wire-MID for its dispatch tag. Python's `int` is unbounded so
-/// the literal needs no carrier-width suffix.
+/// must declare the default `0x02` on the `@dataclass` so a
+/// freshly-constructed instance carries the wire-MID for its dispatch
+/// tag. The codec is printed from its plan (docs/adr/0081 §2), which
+/// holds `header` to its 8 bits by the element's own `BoundedInt`
+/// class.
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_python() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
@@ -9285,18 +9286,18 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_python() {
     .expect("forge codegen for arm B fixture must succeed (python)");
     let (_, generated) = &output.files[0];
     assert!(
-        generated.contains("header: int = 0x02"),
-        "arm B's @dataclass must declare `header: int = 0x02` \
+        generated.contains("header: CodecDefaultMarkerArmBHeaderInt = 0x02"),
+        "arm B's @dataclass must declare \
+         `header: CodecDefaultMarkerArmBHeaderInt = 0x02` \
          (value=\"0x02\" shifted by bit=0). Generated source:\n{generated}"
     );
 }
 
-/// RFC variant-default-uniformity (Python): the outer
-/// codec's `Variant` @dataclass must (a) select the declared default
-/// arm via `kind = "<ArmName>"` AND (b) populate that arm's body
-/// field via `field(default_factory=ArmType)`. Without (b) the body
-/// would remain `None` even though `kind` names the arm — a latent
-/// inconsistency the RFC closes alongside the dispatch fix.
+/// RFC variant-default-uniformity (Python): the outer codec's `body`
+/// must default to a value of the arm marked `default="true"`, made by
+/// that arm's class. The codec is printed from its plan (docs/adr/0081
+/// §2): its variant is the union of the arms' own classes and the
+/// default arm, so the arm a value holds is the class of its `body`.
 #[test]
 fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
@@ -9312,23 +9313,20 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     .expect("forge codegen for outer marker fixture must succeed (python)");
     let (_, generated) = &output.files[0];
     assert!(
-        generated.contains("kind: str = \"CodecDefaultMarkerArmB\""),
-        "outer Variant must select kind=CodecDefaultMarkerArmB (the \
-         arm marked default=\"true\"). Generated source:\n{generated}"
-    );
-    assert!(
         generated.contains(
-            "codec_default_marker_arm_b: Optional[CodecDefaultMarkerArmB] = \
-             field(default_factory=CodecDefaultMarkerArmB)"
+            "body: CodecVariantDefaultMarkerVariant = \
+             field(default_factory=sce_codec_default_marker_arm_b.CodecDefaultMarkerArmB)"
         ),
-        "the declared default arm's body field must be populated via \
-         field(default_factory=CodecDefaultMarkerArmB), not left None. \
-         Generated source:\n{generated}"
+        "outer body must default to a value of the arm marked \
+         default=\"true\" (CodecDefaultMarkerArmB). Generated source:\n{generated}"
     );
     assert!(
-        !generated.contains("kind: str = \"CodecDefaultMarkerArmA\""),
-        "outer Variant must NOT select kind=CodecDefaultMarkerArmA (the \
-         first declared arm) when another arm is marked default. \
+        !generated.contains(
+            "body: CodecVariantDefaultMarkerVariant = \
+             field(default_factory=sce_codec_default_marker_arm_a.CodecDefaultMarkerArmA)"
+        ),
+        "outer body must NOT default to the first declared arm \
+         (CodecDefaultMarkerArmA) when another arm is marked default. \
          Generated source:\n{generated}"
     );
 }
@@ -17934,38 +17932,42 @@ fn marker_python_program() -> String {
         .find(|f| f.name == MARKER_WITH_FLAG_SET)
         .expect("the frame the encoder is held to exists");
     format!(
-        r#"from marker_pkg.codec_chain_has_marker import CodecChainHasMarker
+        r#"from marker_pkg.codec_chain_has_marker import (
+    CodecChainHasMarker,
+    CodecChainHasMarkerExtensionsHas0x12Has0x12 as Sliced,
+    CodecChainHasMarkerExtensionsHas0x12NotHas0x12 as Plain,
+    CodecChainHasMarkerExtensionsHas0x12NotHas0x12Chain as PlainChain,
+)
 from sce_forge_runtime.codec import PresentIfMismatch, SceCursor
 
 FRAMES = [
 {frames}]
 
-def decode(name, frame):
-    v = CodecChainHasMarker.decode(SceCursor(frame))
-    assert v is not None, name + ": decode"
-    return v
+def decode(frame):
+    # A refused frame raises the CodecError that names why (docs/adr/0099,
+    # amendment of 2026-11-16).
+    return CodecChainHasMarker.decode(SceCursor(frame))
 
 for name, frame, sliced in FRAMES:
-    v = decode(name, frame)
+    v = decode(frame)
+    arm = v.extensions_has_0x12
     if sliced:
-        assert v.payload_len is None and v.payload is None, name + ": plain fields on a marker"
-        assert v.slice_count == 1 and len(v.slices) == 1, name + ": slices missing"
+        assert isinstance(arm, Sliced), name + ": plain layout on a marker"
+        assert len(arm.slices) == 1, name + ": slices missing"
     else:
-        assert v.slice_count is None and v.slices is None, name + ": slices without a marker"
-        assert v.payload_len is not None, name + ": plain layout missing"
+        assert isinstance(arm, Plain), name + ": slices without a marker"
     assert v.encode_to_bytes() == frame, name + ": round trip"
 
-v = decode("{MARKER_WITH_FLAG_SET}", bytes([{flagged_bytes}]))
-v.slice_count = None
-v.slices = None
-v.payload_len = 2
-v.payload = bytes([0xAA, 0xBB])
+# A plain layout under a marker is no value: the chain of the arm without the
+# marker is made of no list that holds it, read through the same mask.
+arm = decode(bytes([{flagged_bytes}])).extensions_has_0x12
+assert isinstance(arm, Sliced), "{MARKER_WITH_FLAG_SET}: decode"
 try:
-    v.encode_to_bytes()
+    PlainChain(arm.extensions)
 except PresentIfMismatch:
     pass
 else:
-    raise AssertionError("the encoder wrote a plain layout under a marker")
+    raise AssertionError("a plain layout was made under a marker")
 "#,
         flagged_bytes = marker_frame_bytes(flagged),
     )
@@ -19885,6 +19887,10 @@ fn chain_prev_python_program() -> String {
 from prev_pkg.codec_chain_prev_gated import CodecChainPrevGated
 from prev_pkg.codec_chain_prev_tail import CodecChainPrevTail
 from prev_pkg.codec_chain_prev_tail_gated import CodecChainPrevTailGated
+from prev_pkg.codec_chain_prev_entry import (
+    CodecChainPrevEntryAfterMarkerAfterMarker as AfterMarker,
+    CodecChainPrevEntryAfterMarkerNotAfterMarker as NotAfterMarker,
+)
 from sce_forge_runtime.codec import SceCursor
 
 AFTER = bytes([@P_AFTER@])
@@ -19898,12 +19904,18 @@ G_TAGGED = bytes([@G_TAGGED@])
 G_ABSENT = bytes([@G_ABSENT@])
 
 def shape(e):
-    return (e.header, e.short_value, e.long_value, e.tag)
+    # The short value or the long one, the two arms of the one sum
+    # `after_marker` decides (docs/adr/0065 section 6, R4b), and the tag.
+    arm = e.after_marker
+    if isinstance(arm, AfterMarker):
+        return (e.header, None, arm.long_value, e.tag)
+    assert isinstance(arm, NotAfterMarker), type(arm).__name__
+    return (e.header, arm.short_value, None, e.tag)
 
 def entries_of(codec, frame, label):
-    v = codec.decode(SceCursor(frame))
-    assert v is not None, label + " decode"
-    return v
+    # A refused frame raises the CodecError that names why (docs/adr/0099,
+    # amendment of 2026-11-16).
+    return codec.decode(SceCursor(frame))
 
 def check(codec, frame, expected, label):
     v = entries_of(codec, frame, label)
