@@ -15,10 +15,11 @@
 //! name, as the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, entry_rows, enum_variant, integer_value, source_members,
-    variant_choice, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    byte_values, case_inputs, case_tag, entry_rows, enum_variant, gates_label, group_choice,
+    integer_value, source_members, variant_choice, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
+use super::group::groups;
 use super::{arm_kind, arm_member, BODY};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
@@ -99,11 +100,6 @@ pub(crate) fn source_case(
             format!("{says} == {value}u")
         };
         said.push((format!("flag input {}", input.name), holds));
-    }
-    if !plan.groups().is_empty() {
-        return Err("a C11 case states no group yet: the C11 printer \
-                    prints no codec that holds one"
-            .to_string());
     }
     // The decode of a variant with no tag of its own is handed the tag of the
     // arm the source holds after the flag inputs, and the value made and the
@@ -281,6 +277,43 @@ fn members(
                 ));
             }
         }
+    }
+    // Each group, held in the struct's member of it: the arm the source
+    // states, its kind and each of its members, or no arm, as the zeroed value
+    // holds none (docs/adr/0065 §6 R4).
+    let snake = filters::to_snake_case(plan.model.name.clone());
+    for g in groups(plan, &snake) {
+        let label = gates_label(g.group);
+        let id = format!("{id_at}{label}");
+        let json = object
+            .get(&label)
+            .ok_or_else(|| format!("the source states no `{id}`"))?;
+        let chosen = group_choice(g.group, json).map_err(|e| format!("`{id}`: {e}"))?;
+        let mut literals = Vec::new();
+        let arm = match chosen {
+            None => None,
+            Some(chosen) => {
+                for member in &chosen.arm.fields {
+                    let field = plan
+                        .model
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == member)
+                        .ok_or_else(|| format!("`{id}`: the codec has no field `{member}`"))?;
+                    let stated = chosen
+                        .members
+                        .get(member)
+                        .ok_or_else(|| format!("`{id}`: the arm states no `{member}`"))?;
+                    let literal = member_literal(&plan.value(field), stated, held)
+                        .map_err(|e| format!("`{id}.{member}`: {e}"))?;
+                    literals.push((member.clone(), literal));
+                }
+                Some(chosen.index)
+            }
+        };
+        let (set, held_to) = g.stated(at, arm, &literals, &id, (VALUE, DECODED));
+        statements.extend(set);
+        checks.extend(held_to);
     }
     // The arm of the variant, held in the struct's variant: its kind, the tag
     // the catch-all holds, and the members of its body in the union's member

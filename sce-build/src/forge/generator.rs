@@ -15551,6 +15551,8 @@ fn render_codec(
         ctx.insert(
             "c11_source".into(),
             serde_json::json!({
+                "before_struct": printed.before_struct,
+                "members": printed.members,
                 "before_encode": printed.before_encode,
                 "encode_body": printed.encode_body,
                 "decoded": printed.decoded,
