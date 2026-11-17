@@ -2704,3 +2704,20 @@ No document of the catalog has either shape, so no generated codec of the catalo
 - A carrier whose flag such a body is handed is answered as the frame carries it by `Wire{Carrier}()`, beside the
   bits the value presents (`frame.Flags()`).
 
+## A printed Go codec takes the flags a parent sets in its Overrides, and a chain sets its entries' end flag (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree and the Go round-trip tree are regenerated after them.
+They move the positional codecs that also hold a chain that ends on its entries' flag or hands each entry what the
+entry before it was (`codec_chain_depth_plain` and `codec_chain_handed` among them), and change the encode of every
+printed codec whose value presents a one-bit flag of a fixed carrier. A chain that holds a bare entry's place or a
+list held to a law, and a codec with a group, a variant or an input its value says, are unchanged.
+
+- A codec whose value presents a one-bit flag of a fixed carrier has `{Codec}Overrides`, one `optional.Of[bool]`
+  field for each such flag (`HeaderZ` for the `Z` flag of `header`), and
+  `EncodeSourceOverriding(src, w, inputs.., overrides)`, which writes each flag the struct sets in place of the one
+  the source presents. `EncodeSource` and `Encode` are unchanged and set none.
+- A chain that ends on its entries' flag sets it on every entry but the last: the entries a value holds no longer
+  state it, and an entry's own `Z` is written only where the entry is written alone.
+- A chain that hands each entry what the one before it was computes it from the entries' identifiers; a caller
+  hands the entry codec nothing for that input.
+

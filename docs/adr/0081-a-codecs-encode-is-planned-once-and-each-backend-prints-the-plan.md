@@ -1777,6 +1777,22 @@ old encode, the old encode and its templates are removed in the same landing.
    cannot know the number, which is a function of the input, and a method over the input states exactly that. Such
    a number is therefore no member a validator, a procedure or an algorithm is offered (`GoPrinted::answers`), so an
    expression that reads it is refused where it is generated; no document reads one.
+
+   *The sixth Go landing, 2026-11-17:* a chain that ends on its entries' flag, and one that hands each entry what
+   the entry before it was (R7, `<sce:entry-flag-bind previous-entry-id>`). A codec whose value presents a one-bit
+   flag of a fixed carrier declares `{Codec}Overrides`, a struct of an `optional.Of[bool]` for each such flag, and
+   `EncodeSourceOverriding(src, w, inputs.., overrides)`, which folds each flag the struct sets into its carrier
+   last, so what the parent says is what the wire holds; `EncodeSource` hands it an empty struct. The decision was
+   between that struct and an adapter the chain would wrap each entry's source in, presenting the carrier with the
+   flag set: the plan names the flags a parent may set as an argument of the encode (`EncodePlan::overridable`), as
+   the C++ `Overrides` and the Python keywords spell it, and an adapter would restate in the parent which carrier
+   method holds the flag. Go has neither default arguments nor keywords, so the struct is a parameter of a second
+   function, and every other caller is unchanged. The walk counts down the entries left from the list's `Len()` and
+   sets the flag where any are, and keeps, for each input a bind waits on, whether the entry it wrote last is of the
+   kind (`entry-id`, read off the entry by its method, less the flags `entry-id-except` leaves out), clear for the
+   first; the walk is one function, so a list whose entries' encode can refuse is counted before the first byte
+   handed exactly what it is written with. A chain that holds a bare entry's place (R6b) waits for the groups, and
+   a list held to a law (R8) for its refinement.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
