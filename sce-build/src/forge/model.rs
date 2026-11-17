@@ -6195,7 +6195,7 @@ pub struct LinkInboundEvent {
     /// SCXML event name to inject when the framer decode + `when`
     /// predicate succeed.
     pub event: String,
-    /// Optional decode-side predicate (`when="decoded.msg_id == 0x02"`).
+    /// Optional decode-side predicate (`when="decoded.msg_id === 0x02"`).
     /// `None` means inject every successful decode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<String>,

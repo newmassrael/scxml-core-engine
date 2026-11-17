@@ -16,7 +16,7 @@
   <sce:import as="link_events_tx_pool" src="link_events_tx_pool.scxml" kind="buffer-pool"/>
   <sce:tx-pool ref="link_events_tx_pool"/>
   <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id === 0x02"/>
     <sce:inbound event="scout.any.received"/>
     <sce:outbound event="scout.query.send" encode="link_events_query"/>
     <sce:outbound event="scout.frame.send" encode="link_events_frame"/>

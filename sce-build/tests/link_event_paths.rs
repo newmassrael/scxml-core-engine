@@ -58,7 +58,7 @@ fn link(body: &str) -> String {
 }
 
 const INBOUND: &str = r##"  <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id === 0x02"/>
     <sce:inbound event="scout.any.received"/>
   </sce:events>"##;
 

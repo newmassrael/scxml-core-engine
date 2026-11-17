@@ -31,7 +31,7 @@ use crate::generator::Language;
 use super::ImportContext;
 
 /// The name an `<sce:inbound when>` predicate reads the decoded frame by
-/// (`when="decoded.msg_id == 0x02"`, the RFC's own example).
+/// (`when="decoded.msg_id === 0x02"`, the RFC's own example).
 pub(crate) const DECODED: &str = "decoded";
 
 /// One event name of a link, with the identifiers each template spells it by.

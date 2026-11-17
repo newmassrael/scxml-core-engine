@@ -13,7 +13,7 @@
   <sce:backpressure>drop</sce:backpressure>
   <sce:import as="link_events_query" src="link_events_query.scxml" kind="codec"/>
   <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id === 0x02"/>
     <sce:outbound event="scout.query.send" encode="link_events_query"/>
     <sce:outbound event="scout.frame.send" encode="link_events_frame"/>
   </sce:events>

@@ -718,7 +718,7 @@ bytes and terminate as raw bytes.
   <sce:tx-pool ref="scout_tx_pool"/>
   <sce:backpressure>drop</sce:backpressure>  <!-- drop | block | signal-event -->
   <sce:events>
-    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id === 0x02"/>
     <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
   </sce:events>
 </scxml>
