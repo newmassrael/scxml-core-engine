@@ -280,9 +280,25 @@ static engine, `CppTarget::raise_execution_error` and the native-action guard am
 `IEventRaiser::raiseError(reason, detail[, sendId])`, which derives the event from the code, so an Interpreter site
 names no event at all. The door's refusal is `payloadRefused` on both.
 
-Left, each its own commit: the C11 engine; the Mesh runtimes' move to the generated enum and its spellings, with
-SCE_MESH.md sections 10.7.1 and 16.7 and the two sheet-peer scenarios; the scenarios and expected logs that read a
-reason on the C++ and C11 lanes.
+Implemented (2026-11-17), the C11 engine: the tree `runtime-c` generates the document into
+`backends/c/runtime/include/sce/generated` (ADR 0097, amendment of 2026-11-17, "The C11 engine's tree"), and
+`sce/error_data.h` writes the record. A machine has no allocator where it raises, so the event record carries the code
+in one byte, `error_reason`, beside the sentence its `data` holds, and the record is written where `_event.data` is
+handed to the script engine (`set_current_event`), into a string of the engine's own, through the writer every saved
+state is written with: the JSON text the Lua binding parses is the one every other engine builds, and `_event.raw` is
+that text, as on the C++ engines. A machine raises through `<machine>_raise_platform_error(sm, event, reason,
+detail)`, every C template, `CTarget::raise_execution_error`, the native-action guard and the door's rewrite of a
+refused delivery among its sites; the host's refusal of an `<invoke>` is raised with no code, its data whole.
+
+The C11 engine refuses whole what a store it bounds cannot hold (docs/adr/0086, section 8.5): an event's data past its
+slot, a text past the scratch, a send or a deadline past the scheduled queue, a host's replies past their room. None of
+the vocabulary's codes names that, and `payloadRefused` names a value that is not of its declared payload, which is the
+door's question and not this one, so the vocabulary gains `capacityExceeded` (18, `error.execution`). It is additive;
+an engine that bounds nothing never raises it.
+
+Left, each its own commit: the Mesh runtimes' move to the generated enum and its spellings, with SCE_MESH.md sections
+10.7.1 and 16.7 and the two sheet-peer scenarios; the scenarios and expected logs that read a reason on the C++ and
+C11 lanes.
 
 ## Consequences
 
