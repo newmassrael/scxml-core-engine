@@ -560,17 +560,21 @@ row_G2() {
 #                   `(none)` — the block that makes the table a trace
 #                   table rather than a list of annotations.
 #
-#   the refusal     a kind SCE declares no annotation site for is
-#                   REFUSED, not handed an empty table. Zero rows has two
-#                   causes and they must not collapse: rendering "nobody
-#                   can annotate this kind" as "reviewed, nothing to
-#                   report" is the vacuous green this row would otherwise
-#                   be closed by.
+#   the root        every kind claims on its `<scxml>` root
+#                   (docs/adr/0106, item G3, 2026-11-16: the root is the
+#                   one node every kind has), so a kind with no node of its
+#                   own to annotate — a condition — answers a table of the
+#                   root's row alone, carrying the claim the root makes.
+#                   Until then such a kind was refused, and this gate
+#                   asked for the refusal; a table that dropped the root's
+#                   claim would now read "reviewed, nothing to report" for
+#                   a document that claims something, the vacuous green
+#                   this row would otherwise be closed by.
 #
 # ⚠ The control is the load-bearing half, for G4's reason: an artefact
-# that refused every document would satisfy the refusal check above, so
-# the lookup must be ACCEPTED first and a failure there stops the gate
-# instead of reporting the row.
+# that answered nothing for every document would leave the checks below
+# unasked, so the lookup must be ACCEPTED first and a failure there stops
+# the gate instead of reporting the row.
 G3_LOOKUP='<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="lookup" name="g3_probe_lookup">
@@ -584,10 +588,10 @@ G3_LOOKUP='<?xml version="1.0" encoding="UTF-8"?>
   </datamodel>
 </scxml>'
 
-# A kind the grammar gives no place to put a claim.
+# A kind with no node of its own to annotate: it claims on its root.
 G3_CONDITION='<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="condition" name="g3_probe_condition">
+       sce:kind="condition" name="g3_probe_condition" sce:req="REQ-G3-ROOT">
   <datamodel>
     <data id="rpm" sce:type="uint32" sce:direction="in"/>
     <data id="result" sce:type="bool" sce:direction="out" expr="rpm &gt;= 10"/>
@@ -621,9 +625,9 @@ row_G3() {
     # above while losing the reading the table exists for.
     grep -qF '"source":"(none)"' <<<"$table" || return 1
 
-    # A kind with no annotation site is refused AND prints no rows.
-    "$bin" review-table "$dir/condition.scxml" >"$dir/cond.out" 2>/dev/null && return 1
-    [[ ! -s "$dir/cond.out" ]] || return 1
+    # A kind with no node of its own answers its root's row, the claim on it.
+    "$bin" review-table "$dir/condition.scxml" >"$dir/cond.out" 2>/dev/null || return 1
+    grep -qF '"source":"REQ-G3-ROOT","node":"document"' "$dir/cond.out" || return 1
 }
 
 # G4 — decomposition, and a delegation checked against its destination.
