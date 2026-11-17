@@ -556,6 +556,45 @@ target_include_directories(positional_forms_generated_test PRIVATE
 target_compile_options(positional_forms_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME positional_forms_generated COMMAND positional_forms_generated_test)
 
+# A procedure and a validator that hold a value of a printed codec (docs/adr/0081
+# step 4), compiled and run: the procedure makes the value again from the
+# elements it presents, a text made into its bounded value or refused as
+# `error.execution`, and both read the numbers its encode derives through the
+# functions of its namespace that derive them. The two documents are sce-build's
+# fixtures; the codec and the body it holds come from tests/forge/resources and
+# are generated into the same directory of their own, as the gated arms are.
+set(PRINTED_CODEC_READER_FIXTURE_DIR "${REPO_ROOT}/sce-build/tests/fixtures/printed_codec_reader")
+set(PRINTED_CODEC_READER_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/printed_codec_reader_headers")
+file(MAKE_DIRECTORY "${PRINTED_CODEC_READER_GENERATED_DIR}")
+set(PRINTED_CODEC_READER_DOCUMENTS
+    "${RESOURCE_DIR}/codec_origin_leaf.scxml"
+    "${RESOURCE_DIR}/codec_origin_envelope.scxml"
+    "${PRINTED_CODEC_READER_FIXTURE_DIR}/printed_codec_rebuild.scxml"
+    "${PRINTED_CODEC_READER_FIXTURE_DIR}/printed_codec_check.scxml"
+)
+set(PRINTED_CODEC_READER_GENERATED_HEADERS "")
+foreach(_reader_document IN LISTS PRINTED_CODEC_READER_DOCUMENTS)
+    get_filename_component(_reader_fixture "${_reader_document}" NAME_WE)
+    sce_codegen_generation(_PRINTED_CODEC_READER
+        DOCUMENT "${_reader_document}"
+        OUTPUT_DIR "${PRINTED_CODEC_READER_GENERATED_DIR}"
+        LANGUAGE cpp
+        CLAIM SCE_PRINTED_CODEC_READER_CPP_DECLARED_OUTPUTS
+        COMMENT "Generating C++ printed-codec reader fixture ${_reader_fixture}")
+    list(APPEND PRINTED_CODEC_READER_GENERATED_HEADERS ${_PRINTED_CODEC_READER_HEADERS})
+endforeach()
+add_custom_target(generate_printed_codec_reader_fixtures_cpp)
+target_sources(generate_printed_codec_reader_fixtures_cpp PRIVATE ${PRINTED_CODEC_READER_GENERATED_HEADERS})
+add_executable(printed_codec_reader_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/printed_codec_reader_generated_test.cpp")
+add_dependencies(printed_codec_reader_generated_test generate_printed_codec_reader_fixtures_cpp)
+set_target_properties(printed_codec_reader_generated_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(printed_codec_reader_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${PRINTED_CODEC_READER_GENERATED_DIR}"
+)
+target_compile_options(printed_codec_reader_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME printed_codec_reader_generated COMMAND printed_codec_reader_generated_test)
+
 # The queues on real threads, written as histories and judged by the command
 # every backend's histories are judged by (verification layer 2). The recorder
 # runs the runtime's queues and writes one history per run; the second test

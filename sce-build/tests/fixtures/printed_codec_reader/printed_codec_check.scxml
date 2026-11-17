@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A validator that holds a value of a codec the C++ backend prints from its
+  plan (docs/adr/0081 step 4) and reads two numbers its encode derives, which
+  the value holds no field for (§3): `m`, the count of the entries of `items`,
+  and `note_len`, the length of `note`. Each is read as the encode derives it
+  from what it measures, so it is the number the value's frame carries.
+
+  Read by sce-build/tests/a_printed_cpp_codec_is_read_and_made_again_through_its_interface.rs
+  and compiled and run by the C++ conformance arm
+  (backends/cpp/forge-runtime/tests/conformance/printed_codec_reader_generated_test.cpp).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="../../../../tests/forge/resources/codec_origin_envelope.scxml"
+              kind="codec" as="env"/>
+
+  <datamodel>
+    <data id="entries" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="3"/>
+    <data id="noteSize" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="16"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="env.m === entries &amp;&amp; env.note_len === noteSize"/>
+  </datamodel>
+</scxml>

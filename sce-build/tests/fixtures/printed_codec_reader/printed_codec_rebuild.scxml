@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A procedure that holds a value of a codec the C++ backend prints from its
+  plan (docs/adr/0081 step 4), assigns two of its elements and reads a number
+  its encode derives.
+
+  `codec_origin_envelope` presents `hdr`, `note` (a text of at most 16 bytes),
+  `required` and `optional` (a body that `hdr.has_opt` gates) and `items`; its
+  encode derives `note_len` from the note and `m` from the items, and the value
+  holds neither. Each assign makes the value again by its constructor from the
+  elements it presents. The note is made into its bounded value first, and a
+  note past the bound raises `error.execution`, which ends the procedure in
+  `refused` before the value is sent. The final state reports the `note_len`
+  the frame carried.
+
+  Read by sce-build/tests/a_printed_cpp_codec_is_read_and_made_again_through_its_interface.rs
+  and compiled and run by the C++ conformance arm
+  (backends/cpp/forge-runtime/tests/conformance/printed_codec_reader_generated_test.cpp).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="start" version="1.0">
+  <sce:import src="../../../../tests/forge/resources/codec_origin_envelope.scxml"
+              kind="codec" as="env"/>
+
+  <datamodel>
+    <data id="hdr" sce:type="uint8" sce:direction="in"/>
+    <data id="note" sce:type="string" sce:direction="in"/>
+  </datamodel>
+
+  <state id="start">
+    <transition target="send">
+      <assign location="env.hdr" expr="hdr"/>
+      <assign location="env.note" expr="note"/>
+    </transition>
+    <transition event="error.execution" target="refused"/>
+  </state>
+
+  <state id="send">
+    <onentry>
+      <send sce:service="transport" sce:payload="env.encode()"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="error"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="note_len" expr="env.note_len"/></donedata>
+  </final>
+  <final id="refused">
+    <donedata><param name="result" expr="'refused'"/></donedata>
+  </final>
+  <final id="error">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>
