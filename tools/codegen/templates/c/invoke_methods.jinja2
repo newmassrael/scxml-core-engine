@@ -176,7 +176,7 @@
                    invoke cannot start its child. */
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
                     {{ reason("invoke_child_start_refused", invoke_info.invoke_id) }});
 {% endif %}
                 continue;

@@ -5684,7 +5684,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         try {
             engine.setVariable(sid, id, pendingInvokeParams[id])
         } catch (_: Exception) {
-            raisePlatformError(failed, "<data id='$id'> could not take the value its invoke handed it")
+            raisePlatformError(failed, ErrorReason.DATA_INIT_FAILED, "<data id='$id'> could not take the value its invoke handed it")
         }
         return true
     }

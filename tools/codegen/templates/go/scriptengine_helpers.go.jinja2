@@ -442,7 +442,7 @@ func (p *{{ machine_name }}Policy) SetParamValueInScriptEngine(name string, valu
 func (p *{{ machine_name }}Policy) declareHandedValue(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
 {% if 'error.execution' in model.events %}
-		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 {% endif %}
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
