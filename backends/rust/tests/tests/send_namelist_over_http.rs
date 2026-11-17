@@ -22,8 +22,8 @@
 // Fixture: integration_resources/send_namelist_over_http/send_namelist_over_http.scxml
 // (canonical, shared with the other channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 //
 // Needs the W3C harness server, like every BasicHTTP fixture here, with
 // SCE_W3C_HTTP_PORT set to the port its `[READY] port=<n>` line names:

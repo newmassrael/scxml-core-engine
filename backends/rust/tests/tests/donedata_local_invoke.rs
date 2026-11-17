@@ -14,8 +14,8 @@
 //
 // Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 //
 // The script wraps the mktemp + per-child --as-child workflow so the
 // synth-invoke side files (Mesh §9.6.6 rule 1 pins them adjacent to the
