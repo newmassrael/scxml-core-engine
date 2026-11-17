@@ -650,7 +650,7 @@ impl Router {
     /// holds it or drops it; a `causalVector` is recorded as its sender's mark
     /// and answered with every change of the log it lacks. An envelope of
     /// another epoch, or by a replica the view does not hold, is raised as
-    /// `CAUSAL_VIEW_MISMATCH` and is not delivered (docs/adr/0085, section
+    /// `causalViewMismatch` and is not delivered (docs/adr/0085, section
     /// 3.2).
     fn receive_causal(
         &mut self,
@@ -1384,7 +1384,7 @@ mod tests {
         // peer it was, and nothing a deployment did not declare.
         assert_eq!(
             signal.event_data(ecu.binding(peer.as_deref())),
-            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"nowhere"}"#
+            r#"{"errorName":"communication","reason":"transportUnavailable","target":"nowhere"}"#
         );
 
         ecu.peer_ready("hmi", 0).unwrap();
@@ -1394,7 +1394,7 @@ mod tests {
         };
         assert_eq!(
             signal.event_data(ecu.binding(peer.as_deref())),
-            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}"#
+            r#"{"errorName":"communication","reason":"transportUnavailable","target":"hmi","transport":"wss"}"#
         );
     }
 
@@ -1670,7 +1670,7 @@ mod tests {
         assert_eq!(
             ecu.invoke(&ask("#nobody", None), WIRE, [1; 16], 0, 0),
             Ok(Invoked::Refused(
-                r##"{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#nobody'"}"##
+                r##"{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#nobody'"}"##
                     .to_string()
             ))
         );

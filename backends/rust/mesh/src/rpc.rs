@@ -16,6 +16,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use sce_rust_runtime::ErrorReason;
+
 use crate::generated::rpc_status::RpcStatus;
 use crate::signal::Json;
 
@@ -149,9 +151,9 @@ pub fn invoke_error_data(
 
 /// The `_event.data` of the `error.execution` a request that cannot reach
 /// the wire raises instead of starting (§mesh-9.5's pre-envelope tier):
-/// reason `INVOKE_SRC_NOT_FOUND`, with what the target was.
+/// reason `invokeSrcNotFound`, with what the target was.
 pub fn src_not_found_data(detail: &str) -> String {
-    let mut json = Json::new("execution", "INVOKE_SRC_NOT_FOUND");
+    let mut json = Json::new("execution", ErrorReason::InvokeSrcNotFound.declared_name());
     json.string("detail", detail);
     json.finish()
 }
@@ -231,7 +233,7 @@ mod tests {
     fn a_request_with_no_route_is_src_not_found() {
         assert_eq!(
             src_not_found_data("no binding for '#cloud'"),
-            r#"{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#cloud'"}"#
+            r#"{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#cloud'"}"#
         );
     }
 

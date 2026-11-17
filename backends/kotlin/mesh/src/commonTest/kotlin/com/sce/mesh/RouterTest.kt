@@ -226,13 +226,13 @@ class RouterTest {
         ecu.addPeer("hmi", ordered)
         val raised = done(ecu.send(request("#nowhere", "a", ""), id(1), 0)).single() as Effect.Raise
         assertEquals(
-            """{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"nowhere"}""",
+            """{"errorName":"communication","reason":"transportUnavailable","target":"nowhere"}""",
             raised.signal.eventData(ecu.binding(raised.peer)),
         )
         done(ecu.peerReady("hmi", 0))
         val lost = done(ecu.peerNotReady("hmi")).single() as Effect.Raise
         assertEquals(
-            """{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}""",
+            """{"errorName":"communication","reason":"transportUnavailable","target":"hmi","transport":"wss"}""",
             lost.signal.eventData(ecu.binding(lost.peer)),
         )
     }
@@ -430,7 +430,7 @@ class RouterTest {
     fun aRequestThatCannotReachTheWireIsRefused() {
         val ecu = requester(null)
         assertEquals(
-            Invoked.Refused("""{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#nobody'"}"""),
+            Invoked.Refused("""{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#nobody'"}"""),
             ecu.invoke(ask("#nobody", null), wire, id(1), 0, 0),
         )
         val refused = ecu.invoke(ask("hmi", null), wire, id(1), 0, 0)

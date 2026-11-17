@@ -793,7 +793,7 @@ typedef struct sce_host_invoke_response_s {
         be started is an error of the element, not an `error.invoke` of a
         process that ran): text, or JSON when the host reports a structured
         reason, as a Mesh router does with SCE_MESH.md §mesh-10.7.1's
-        `{"reason":"INVOKE_SRC_NOT_FOUND", …}`. A refused invocation never
+        `{"reason":"invokeSrcNotFound", …}`. A refused invocation never
         started: its deadline is dropped, no cancel follows, and a completion
         reported for it later is refused. It overrides `has_done_data`, since
         nothing ran to complete. */

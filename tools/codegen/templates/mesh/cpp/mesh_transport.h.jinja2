@@ -4027,7 +4027,7 @@ struct TransportRouter {
             // auth / handshake, case-insensitive). Match ⇒ raise
             // UNAUTHORIZED for every auth-required zenoh target so the
             // author's `<transition event="error.communication">` can
-            // branch on `_event.data.reason == "UNAUTHORIZED"`. No
+            // branch on `_event.data.reason == "unauthorized"`. No
             // match ⇒ the existing row 1 path stays unchanged.
             const std::string __sce_what_msg = __sce_zex.what()
                                                    ? __sce_zex.what()
@@ -4797,7 +4797,7 @@ struct TransportRouter {
         // SCE_MESH.md §10.4.1 row 1704 + §16.7 row 5: every outstanding
         // `<invoke type="sce:mesh-rpc">` whose reply has not yet
         // arrived is failed with `error.communication` carrying
-        // `reason="INVOKE_CHILD_LOST"` + `invoke_id` + `target`. Runs
+        // `reason="invokeChildLost"` + `invoke_id` + `target`. Runs
         // BEFORE transport teardown so the sender engine's external
         // queue still accepts the event (transports are still up at
         // this point; only the ordering tick has joined). The
@@ -5667,7 +5667,7 @@ struct TransportRouter {
             // this operationally as "eviction happened", surfaced
             // here as the closest in-bounds signal of the
             // underlying fault. Authors guard on `_event.data.reason
-            // == 'DEDUP_WINDOW_OVERFLOW' && _event.data.source ==
+            // == 'dedupWindowOverflow' && _event.data.source ==
             // '<peer>'` to react to the specific peer overrunning
             // the window.
             ::SCE::Mesh::CommunicationError __sce_dedup_err;
@@ -5936,16 +5936,16 @@ struct TransportRouter {
     ///
     /// Call sites:
     ///   * `admitOrdered` when an envelope arrives on an ordered route
-    ///     without `sequence_no` — raises `reason = "MISSING_SEQUENCE"`
+    ///     without `sequence_no` — raises `reason = "missingSequence"`
     ///     (§16.7 row 11). Drift diagnostic for the sender.
     ///   * `driveOrderingTick` via the `OrderingBuffer::OnGap` callback
     ///     when a gap has been blocked past `gap_timeout` — raises
-    ///     `reason = "ORDERING_GAP"` with `lost_seq_lo`/`lost_seq_hi`
+    ///     `reason = "orderingGap"` with `lost_seq_lo`/`lost_seq_hi`
     ///     (§16.7 row 12). Recovery signal: the receiver has fast-
     ///     forwarded past the missing range.
     ///   * The Zenoh liveliness subscriber (when
     ///     `machines.<name>.liveliness:` is declared) on DELETE samples —
-    ///     raises `reason = "PEER_PARTITIONED"` with `target` and, when
+    ///     raises `reason = "peerPartitioned"` with `target` and, when
     ///     a prior PUT was observed, `last_seen_ms_ago` (§16.7 row 8).
     ///
     /// All three sites observe a condition at the transport layer, not
@@ -5957,7 +5957,7 @@ struct TransportRouter {
     /// The event reaches each session via `dispatchToSession`, the same
     /// path used for ordinary inbound envelopes. SCXML authors can
     /// guard with `<transition event="error.communication"
-    /// cond="_event.data.reason == 'ORDERING_GAP'">` etc.; unhandled
+    /// cond="_event.data.reason == 'orderingGap'">` etc.; unhandled
     /// events are silently dropped per W3C SCXML 1.0 §3.12, which is
     /// the desired behaviour when the author did not opt in.
     ///

@@ -37,7 +37,7 @@ class RpcTest {
     @Test
     fun aRequestWithNoRouteIsSrcNotFound() {
         assertEquals(
-            """{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#cloud'"}""",
+            """{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#cloud'"}""",
             srcNotFoundData("no binding for '#cloud'"),
         )
     }
@@ -45,7 +45,7 @@ class RpcTest {
     @Test
     fun anUndeclaredResponderNamesItsSourceAndTheRequest() {
         assertEquals(
-            """{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}""",
+            """{"errorName":"communication","reason":"rpcReplyFromUndeclaredPeer","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}""",
             Signal.RpcReplyFromUndeclaredPeer("mallory", uuidText(wire)).eventData(Binding("hmi", "wss")),
         )
     }
@@ -69,7 +69,7 @@ class RpcTest {
     @Test
     fun aRequestWhoseLinkIsLostNamesItAndItsTarget() {
         assertEquals(
-            """{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}""",
+            """{"errorName":"communication","reason":"invokeChildLost","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}""",
             Signal.InvokeChildLost(uuidText(wire), "hmi").eventData(Binding("hmi", "wss")),
         )
     }

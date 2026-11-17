@@ -1708,7 +1708,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * SCXML 6.4.1 — an invocation that cannot be started is an error of the
      * element, not an `error.invoke` of a process that ran). Text, or JSON when
      * the host reports a structured reason, as a Mesh router does with
-     * SCE_MESH.md §mesh-10.7.1's `{"reason":"INVOKE_SRC_NOT_FOUND", …}`. A
+     * SCE_MESH.md §mesh-10.7.1's `{"reason":"invokeSrcNotFound", …}`. A
      * refused invocation never started: its deadline is dropped, no cancel
      * follows, and a completion reported for it later is refused. It overrides
      * [doneData], since nothing ran to complete.

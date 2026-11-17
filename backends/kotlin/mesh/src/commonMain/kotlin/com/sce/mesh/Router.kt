@@ -505,7 +505,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      * holds it or drops it; a `causalVector` is recorded as its sender's mark
      * and answered with every change of the log it lacks. An envelope of
      * another epoch, or by a replica the view does not hold, is raised as
-     * `CAUSAL_VIEW_MISMATCH` and is not delivered (docs/adr/0085, section 3.2).
+     * `causalViewMismatch` and is not delivered (docs/adr/0085, section 3.2).
      */
     private fun receiveCausal(peerName: String, peer: Peer, bytes: ByteArray, nowMs: Long): Routed {
         // §mesh-10.12: every envelope of a causal peer reaches its layer

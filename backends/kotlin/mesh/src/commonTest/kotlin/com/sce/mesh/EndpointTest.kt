@@ -193,7 +193,7 @@ class EndpointTest {
         val event = ecu.endpoint.takeEvents().single()
         assertEquals("error.communication", event.name)
         assertEquals(
-            """{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss","transport_error":"reset"}""",
+            """{"errorName":"communication","reason":"sendFailed","target":"hmi","transport":"wss","transport_error":"reset"}""",
             event.metadata.data,
         )
         // Raised as the C++ core raises it: an envelope from its own machine.
@@ -229,7 +229,7 @@ class EndpointTest {
         ecu.endpoint.tick()
 
         assertEquals(
-            """{"errorName":"communication","reason":"DELIVERY_EXHAUSTED","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}""",
+            """{"errorName":"communication","reason":"deliveryExhausted","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}""",
             ecu.endpoint.takeEvents().single().metadata.data,
         )
     }

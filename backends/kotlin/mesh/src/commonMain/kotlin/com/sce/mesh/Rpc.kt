@@ -16,6 +16,7 @@
 package com.sce.mesh
 
 import com.sce.generated.rpc_status.RpcStatus
+import com.sce.runtime.ErrorReason
 import com.sce.runtime.Json
 
 /** The `<param>` a lowered Mesh request carries its event name in. */
@@ -125,7 +126,7 @@ fun invokeErrorData(status: RpcStatus, detail: String?, source: String?, wireIdH
  * wire raises instead of starting (§mesh-9.5's pre-envelope tier).
  */
 fun srcNotFoundData(detail: String): String =
-    ErrorData("execution", "INVOKE_SRC_NOT_FOUND").apply { text("detail", detail) }.finish()
+    ErrorData("execution", ErrorReason.INVOKE_SRC_NOT_FOUND.declaredName()).apply { text("detail", detail) }.finish()
 
 /** Where RFC 4122 §3's canonical text puts its dashes. */
 private val UUID_DASHES = setOf(8, 13, 18, 23)

@@ -552,7 +552,7 @@ public final class Router {
     /// Envelope `bytes` the causal peer `peer` delivered: a change goes through the causal layer, which
     /// delivers it with whatever it releases, holds it or drops it; a `causalVector` is recorded as its
     /// sender's mark and answered with every change of the log it lacks. An envelope of another epoch,
-    /// or by a replica the view does not hold, is raised as §mesh-16.7 row 18, `CAUSAL_VIEW_MISMATCH`,
+    /// or by a replica the view does not hold, is raised as §mesh-16.7 row 18, `causalViewMismatch`,
     /// and is not delivered (docs/adr/0085, section 3.2).
     private func receiveCausal(_ peer: String, _ bound: BoundPeer, _ bytes: [UInt8], nowMs: Int64) -> Routed {
         // §mesh-10.12: every envelope of a causal peer reaches its layer before the engine; a

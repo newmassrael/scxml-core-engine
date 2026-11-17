@@ -191,7 +191,7 @@ class WssClientTest {
         assertIs<LinkEvent.Lost>(lost)
         deliver(endpoint, lost)
         assertEquals(
-            """{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"server","transport":"wss"}""",
+            """{"errorName":"communication","reason":"transportUnavailable","target":"server","transport":"wss"}""",
             endpoint.takeEvents().single().metadata.data,
         )
     }

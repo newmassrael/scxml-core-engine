@@ -773,7 +773,7 @@ mod tests {
     }
 
     /// What the machine is told when it sends to `target` and no binding for it is held: one
-    /// `error.communication`, row 1 (`TRANSPORT_UNAVAILABLE`), that names the target and no
+    /// `error.communication`, row 1 (`transportUnavailable`), that names the target and no
     /// transport, because the deployment bound none.
     fn assert_unbound(hub: &mut Endpoint<Recorder, Fixed>, target: &str) {
         hub.send(&HostSendRequest {
@@ -786,7 +786,7 @@ mod tests {
         };
         assert_eq!(event.name, "error.communication");
         assert!(
-            event.metadata.data.contains("TRANSPORT_UNAVAILABLE")
+            event.metadata.data.contains("transportUnavailable")
                 && event
                     .metadata
                     .data
@@ -1038,7 +1038,7 @@ mod tests {
         assert_eq!(event.name, "error.communication");
         assert_eq!(
             event.metadata.data,
-            r#"{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss","transport_error":"reset"}"#
+            r#"{"errorName":"communication","reason":"sendFailed","target":"hmi","transport":"wss","transport_error":"reset"}"#
         );
         // Raised as the C++ core raises it: an envelope from its own machine.
         assert_eq!(event.metadata.origin_address(), "mesh://ecu");
@@ -1091,7 +1091,7 @@ mod tests {
         assert_eq!(events.len(), 1, "{events:?}");
         assert_eq!(
             events[0].metadata.data,
-            r#"{"errorName":"communication","reason":"DELIVERY_EXHAUSTED","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}"#
+            r#"{"errorName":"communication","reason":"deliveryExhausted","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}"#
         );
     }
 

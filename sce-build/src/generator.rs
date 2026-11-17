@@ -2408,7 +2408,7 @@ fn reject_native_scripts_in_unsupported_lang(
 //
 // A deploy.yaml `barrier_timeout_ms:` on a Root partition is a signal
 // that the author wants to **observe** the `error.communication`
-// (reason `PARALLEL_BARRIER_TIMEOUT`) raise when regions fail to
+// (reason `parallelBarrierTimeout`) raise when regions fail to
 // converge in time. If the author's SCXML carries no transition for
 // `error.communication`, the raised event falls into the default
 // microstep path and is silently discarded — the knob is set but has
@@ -2443,12 +2443,12 @@ fn reject_barrier_timeout_without_handler(model: &SCXMLModel) -> Result<(), Gene
             "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
              for <parallel id=\"{}\"> but the SCXML has no transition for \
              event `error.communication`. SCE_MESH.md §16.5 raises \
-             `error.communication` (reason PARALLEL_BARRIER_TIMEOUT) when \
+             `error.communication` (reason parallelBarrierTimeout) when \
              the barrier elapses — without a transition the raise is \
              silently discarded and the timeout has no observable effect. \
              Add a `<transition event=\"error.communication\">` handler \
              (optionally guarded on `_event.data.reason == \
-             'PARALLEL_BARRIER_TIMEOUT'`) or drop `barrier_timeout_ms:` \
+             'parallelBarrierTimeout'`) or drop `barrier_timeout_ms:` \
              from the partition declaration.",
             model.name,
             parallels.join(", ")
@@ -2462,10 +2462,10 @@ fn reject_barrier_timeout_without_handler(model: &SCXMLModel) -> Result<(), Gene
 // Symmetric to `reject_barrier_timeout_without_handler` for the
 // liveness raise paths. `deploy.yaml`'s `liveliness:` block drives
 // two §16.7 rows that both surface as `error.communication`:
-//   - row 8 `PEER_PARTITIONED` — fires on DROP of a machine-level
+//   - row 8 `peerPartitioned` — fires on DROP of a machine-level
 //     `sce/live/<machine>` token, i.e. on every machine that
 //     declares `liveliness:` regardless of partitioning.
-//   - row 13 `REGION_PARTITIONED` — fires on DROP of a partition
+//   - row 13 `regionPartitioned` — fires on DROP of a partition
 //     token `sce/live/<machine>/<partition>` — partitioned machines
 //     only.
 // Without a matching `<transition event="error.communication">`
@@ -2487,7 +2487,7 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
             "machine '{}' declares `liveliness:` but the SCXML has no \
              transition for event `error.communication`. SCE_MESH.md \
              §16.4 / §16.7 rows 8 and 13 raise `error.communication` \
-             (reason PEER_PARTITIONED or REGION_PARTITIONED) when a \
+             (reason peerPartitioned or regionPartitioned) when a \
              peer's Zenoh liveliness token drops — without a transition \
              the raise is silently discarded and the signal has no \
              observable effect. Add a `<transition \
@@ -8171,7 +8171,7 @@ mod tests {
     fn partition_barrier_timeout_absent_emits_no_timer_machinery() {
         // Root role without `partition_barrier_timeouts` ⇒ W3C
         // normative infinity ⇒ no TimerHooks, no scheduler call,
-        // no `PARALLEL_BARRIER_TIMEOUT` string.
+        // no `parallelBarrierTimeout` string.
         let body = render_root_with_barrier_timeout(None);
         assert!(
             body.contains("tracker_root_"),
@@ -8265,7 +8265,7 @@ mod tests {
                     "msg names the missing handler: {msg}"
                 );
                 assert!(
-                    msg.contains("PARALLEL_BARRIER_TIMEOUT"),
+                    msg.contains("parallelBarrierTimeout"),
                     "msg names §16.7 row 6 reason: {msg}"
                 );
                 // Machine name is whatever the test parser assigned via
@@ -8287,8 +8287,8 @@ mod tests {
         // for the §16.4 / §16.7 liveness raise paths. `machine_liveliness_opt_in=true`
         // with no `<transition event="error.communication">` in the SCXML
         // must be refused at codegen — the `feedback_silently_broken_hooks`
-        // gate covers both row 8 (`PEER_PARTITIONED`, non-partitioned) and
-        // row 13 (`REGION_PARTITIONED`, partitioned) because both rows
+        // gate covers both row 8 (`peerPartitioned`, non-partitioned) and
+        // row 13 (`regionPartitioned`, partitioned) because both rows
         // surface through `error.communication` and share the same
         // silent-broken failure mode. Partitioned and non-partitioned
         // fixtures both probed so the gate is never dead for either axis.
@@ -8330,11 +8330,11 @@ mod tests {
                     // a future narrowing (e.g. re-splitting the gate) has
                     // to update the test intentionally rather than drift.
                     assert!(
-                        msg.contains("PEER_PARTITIONED"),
+                        msg.contains("peerPartitioned"),
                         "{label}: msg names §16.7 row 8 reason: {msg}"
                     );
                     assert!(
-                        msg.contains("REGION_PARTITIONED"),
+                        msg.contains("regionPartitioned"),
                         "{label}: msg names §16.7 row 13 reason: {msg}"
                     );
                     // Machine name is whatever `<scxml name=...>` carries

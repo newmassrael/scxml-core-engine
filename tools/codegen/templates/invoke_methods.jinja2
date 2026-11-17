@@ -1468,11 +1468,11 @@
     // `is_available=false`) once per dropped peer, per session. For every
     // statically-declared §9.6 invoke whose `remote_mesh_target == peer`,
     // erase the matching `activeInvokes_` entry and raise a single
-    // `error.communication{INVOKE_CHILD_LOST, invoke_id, target: peer}`
+    // `error.communication{invokeChildLost, invoke_id, target: peer}`
     // event into THIS session's external queue (W3C SCXML 5.10 unhandled events
     // silently drop, so sessions whose state has already passed the
     // invoking state see a benign no-op). `pendingDoneInvoke_*_` flags
-    // are intentionally untouched: INVOKE_CHILD_LOST is the spec-named
+    // are intentionally untouched: invokeChildLost is the spec-named
     // replacement for `done.invoke.<id>` / `error.invoke.<id>` when the
     // child becomes unreachable, so further state cleanup would
     // duplicate the author's transition contract. Non-active invoke
@@ -1523,7 +1523,7 @@
             meta.data = std::string(json_bytes.begin(), json_bytes.end());
             engine.raiseExternal(std::move(meta));
             AOT_DEBUG("AOT failScxmlRemoteInvokesForPeer: raised "
-                      "error.communication INVOKE_CHILD_LOST for invoke='{}' target='{}'",
+                      "error.communication invokeChildLost for invoke='{}' target='{}'",
                       iid, peer);
         }
     }

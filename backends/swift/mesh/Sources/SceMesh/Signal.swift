@@ -6,70 +6,78 @@
 // observe. The Swift twin of backends/kotlin/mesh Signal.kt and backends/rust/mesh/src/signal.rs,
 // row for row and byte for byte.
 
+import SceRuntime
+
 /// One §mesh-16.7 row, with the extras the row carries.
 public enum Signal: Equatable, Sendable {
-    /// ORDERING_GAP (row 12): `source`'s sequences `lostLo`...`lostHi` waited out the gap timeout.
+    /// `orderingGap` (row 12): `source`'s sequences `lostLo`...`lostHi` waited out the gap timeout.
     case orderingGap(source: String, lostLo: UInt64, lostHi: UInt64)
 
-    /// DEDUP_WINDOW_OVERFLOW (row 7): a novel id was admitted to a full window of `windowSize` ids.
+    /// `dedupWindowOverflow` (row 7): a novel id was admitted to a full window of `windowSize` ids.
     case dedupWindowOverflow(source: String, windowSize: UInt32)
 
-    /// ENVELOPE_CORRUPT (row 4): what arrived could not be read. `codec` is `"cbor"` when the bytes
+    /// `envelopeCorrupt` (row 4): what arrived could not be read. `codec` is `"cbor"` when the bytes
     /// are not an envelope the standard document accepts, or the payload's own codec when the
     /// envelope decoded but its payload is not one the engine can be handed; then the envelope also
     /// named its `source`.
     case envelopeCorrupt(source: String?, codec: String)
 
-    /// MISSING_SEQUENCE (row 11): an envelope reached an ordered binding without a `sequence_no`.
+    /// `missingSequence` (row 11): an envelope reached an ordered binding without a `sequence_no`.
     case missingSequence(source: String)
 
-    /// BACKPRESSURE_DROP (row 9): the target's queue already held `depth` envelopes.
+    /// `backpressureDrop` (row 9): the target's queue already held `depth` envelopes.
     case backpressureDrop(depth: UInt32)
 
-    /// OUTBOUND_STALE_DROP (row 15): a queued envelope had waited `ageMs`, past `maxAgeMs`.
+    /// `outboundStaleDrop` (row 15): a queued envelope had waited `ageMs`, past `maxAgeMs`.
     case outboundStaleDrop(ageMs: Int64, maxAgeMs: Int64)
 
-    /// TRANSPORT_UNAVAILABLE (row 1).
+    /// `transportUnavailable` (row 1).
     case transportUnavailable
 
-    /// SEND_FAILED (row 2): declined with no retry configured; `transportError` is the transport's
+    /// `sendFailed` (row 2): declined with no retry configured; `transportError` is the transport's
     /// words.
     case sendFailed(transportError: String?)
 
-    /// DELIVERY_EXHAUSTED (row 3): given up after `attempts` sends.
+    /// `deliveryExhausted` (row 3): given up after `attempts` sends.
     case deliveryExhausted(attempts: UInt32, transportError: String?)
 
-    /// RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from `source` named the live request
+    /// `rpcReplyFromUndeclaredPeer` (row 14): a reply from `source` named the live request
     /// `invokeID` (the wire id, RFC 4122 text) but arrived on a binding outside that request's
     /// responder set (§mesh-14.6). The request stays answerable.
     case rpcReplyFromUndeclaredPeer(source: String, invokeID: String)
 
-    /// INVOKE_CHILD_LOST (row 5): the link to `target` was lost while the request `invokeID` (the
+    /// `invokeChildLost` (row 5): the link to `target` was lost while the request `invokeID` (the
     /// wire id, RFC 4122 text) waited on it. The request is forgotten, as a cancel forgets it
     /// (§mesh-9.5), since no reply can arrive on a link that is gone.
     case invokeChildLost(invokeID: String, target: String)
 
-    /// CAUSAL_VIEW_MISMATCH (row 18): an envelope from `source` on a causal route was tagged with
+    /// `causalViewMismatch` (row 18): an envelope from `source` on a causal route was tagged with
     /// `epoch`, another than the receiver's view, or by the replica `replica` (RFC 4122 text) the view
     /// does not hold (docs/adr/0085, section 3.2). It was not delivered.
     case causalViewMismatch(source: String, epoch: UInt64, replica: String)
 
-    /// The row's `reason`, as §mesh-16.7 spells it.
-    public var reason: String {
+    /// The row's code, a member of the engines' one vocabulary (sce:std/engine/error_reason.scxml,
+    /// docs/adr/0106 #111), whose communication half is §mesh-16.7 row by row.
+    public var code: ErrorReason {
         switch self {
-        case .orderingGap: "ORDERING_GAP"
-        case .dedupWindowOverflow: "DEDUP_WINDOW_OVERFLOW"
-        case .envelopeCorrupt: "ENVELOPE_CORRUPT"
-        case .missingSequence: "MISSING_SEQUENCE"
-        case .backpressureDrop: "BACKPRESSURE_DROP"
-        case .outboundStaleDrop: "OUTBOUND_STALE_DROP"
-        case .transportUnavailable: "TRANSPORT_UNAVAILABLE"
-        case .sendFailed: "SEND_FAILED"
-        case .deliveryExhausted: "DELIVERY_EXHAUSTED"
-        case .rpcReplyFromUndeclaredPeer: "RPC_REPLY_FROM_UNDECLARED_PEER"
-        case .invokeChildLost: "INVOKE_CHILD_LOST"
-        case .causalViewMismatch: "CAUSAL_VIEW_MISMATCH"
+        case .orderingGap: ErrorReason.orderingGap
+        case .dedupWindowOverflow: ErrorReason.dedupWindowOverflow
+        case .envelopeCorrupt: ErrorReason.envelopeCorrupt
+        case .missingSequence: ErrorReason.missingSequence
+        case .backpressureDrop: ErrorReason.backpressureDrop
+        case .outboundStaleDrop: ErrorReason.outboundStaleDrop
+        case .transportUnavailable: ErrorReason.transportUnavailable
+        case .sendFailed: ErrorReason.sendFailed
+        case .deliveryExhausted: ErrorReason.deliveryExhausted
+        case .rpcReplyFromUndeclaredPeer: ErrorReason.rpcReplyFromUndeclaredPeer
+        case .invokeChildLost: ErrorReason.invokeChildLost
+        case .causalViewMismatch: ErrorReason.causalViewMismatch
         }
+    }
+
+    /// The row's `reason`, the code's declared name.
+    public var reason: String {
+        code.declaredName
     }
 
     /// The rows a send observes: their columns name the `target` the envelope was bound for.

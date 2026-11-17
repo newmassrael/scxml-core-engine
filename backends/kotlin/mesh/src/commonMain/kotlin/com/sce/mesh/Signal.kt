@@ -8,16 +8,18 @@
 
 package com.sce.mesh
 
+import com.sce.runtime.ErrorReason
+
 /** One §mesh-16.7 row, with the extras the row carries. */
 sealed class Signal {
-    /** ORDERING_GAP (row 12): [source]'s sequences [lostLo]..[lostHi] waited out the gap timeout. */
+    /** `orderingGap` (row 12): [source]'s sequences [lostLo]..[lostHi] waited out the gap timeout. */
     data class OrderingGap(val source: String, val lostLo: ULong, val lostHi: ULong) : Signal()
 
-    /** DEDUP_WINDOW_OVERFLOW (row 7): a novel id was admitted to a full window of [windowSize] ids. */
+    /** `dedupWindowOverflow` (row 7): a novel id was admitted to a full window of [windowSize] ids. */
     data class DedupWindowOverflow(val source: String, val windowSize: UInt) : Signal()
 
     /**
-     * ENVELOPE_CORRUPT (row 4): what arrived could not be read. [codec] is
+     * `envelopeCorrupt` (row 4): what arrived could not be read. [codec] is
      * `"cbor"` when the bytes are not an envelope the standard document
      * accepts, or the payload's own codec when the envelope decoded but its
      * payload is not one the engine can be handed — then the envelope also
@@ -25,26 +27,26 @@ sealed class Signal {
      */
     data class EnvelopeCorrupt(val source: String?, val codec: String) : Signal()
 
-    /** MISSING_SEQUENCE (row 11): an envelope reached an ordered binding without a `sequence_no`. */
+    /** `missingSequence` (row 11): an envelope reached an ordered binding without a `sequence_no`. */
     data class MissingSequence(val source: String) : Signal()
 
-    /** BACKPRESSURE_DROP (row 9): the target's queue already held [depth] envelopes. */
+    /** `backpressureDrop` (row 9): the target's queue already held [depth] envelopes. */
     data class BackpressureDrop(val depth: UInt) : Signal()
 
-    /** OUTBOUND_STALE_DROP (row 15): a queued envelope had waited [ageMs], past [maxAgeMs]. */
+    /** `outboundStaleDrop` (row 15): a queued envelope had waited [ageMs], past [maxAgeMs]. */
     data class OutboundStaleDrop(val ageMs: Long, val maxAgeMs: Long) : Signal()
 
-    /** TRANSPORT_UNAVAILABLE (row 1). */
+    /** `transportUnavailable` (row 1). */
     data object TransportUnavailable : Signal()
 
-    /** SEND_FAILED (row 2): declined with no retry configured; [transportError] is the transport's words. */
+    /** `sendFailed` (row 2): declined with no retry configured; [transportError] is the transport's words. */
     data class SendFailed(val transportError: String?) : Signal()
 
-    /** DELIVERY_EXHAUSTED (row 3): given up after [attempts] sends. */
+    /** `deliveryExhausted` (row 3): given up after [attempts] sends. */
     data class DeliveryExhausted(val attempts: UInt, val transportError: String?) : Signal()
 
     /**
-     * RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from [source] named the
+     * `rpcReplyFromUndeclaredPeer` (row 14): a reply from [source] named the
      * live request [invokeId] (the wire id, RFC 4122 text) but arrived on a binding
      * outside that request's responder set (§mesh-14.6). The request stays
      * answerable.
@@ -52,7 +54,7 @@ sealed class Signal {
     data class RpcReplyFromUndeclaredPeer(val source: String, val invokeId: String) : Signal()
 
     /**
-     * INVOKE_CHILD_LOST (row 5): the link to [target] was lost while the
+     * `invokeChildLost` (row 5): the link to [target] was lost while the
      * request [invokeId] (the wire id, RFC 4122 text) waited on it. The request is
      * forgotten, as a cancel forgets it (§mesh-9.5), since no reply can arrive
      * on a link that is gone.
@@ -60,29 +62,37 @@ sealed class Signal {
     data class InvokeChildLost(val invokeId: String, val target: String) : Signal()
 
     /**
-     * CAUSAL_VIEW_MISMATCH (row 18): an envelope from [source] on a causal
+     * `causalViewMismatch` (row 18): an envelope from [source] on a causal
      * route was tagged with [epoch], another than the receiver's view, or by
      * the replica [replica] (RFC 4122 text) the view does not hold
      * (docs/adr/0085, section 3.2). It was not delivered.
      */
     data class CausalViewMismatch(val source: String, val epoch: ULong, val replica: String) : Signal()
 
-    /** The row's `reason`, as §mesh-16.7 spells it. */
-    val reason: String
+    /**
+     * The row's code, a member of the engines' one vocabulary
+     * (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), whose
+     * communication half is §mesh-16.7 row by row.
+     */
+    val code: ErrorReason
         get() = when (this) {
-            is OrderingGap -> "ORDERING_GAP"
-            is DedupWindowOverflow -> "DEDUP_WINDOW_OVERFLOW"
-            is EnvelopeCorrupt -> "ENVELOPE_CORRUPT"
-            is MissingSequence -> "MISSING_SEQUENCE"
-            is BackpressureDrop -> "BACKPRESSURE_DROP"
-            is OutboundStaleDrop -> "OUTBOUND_STALE_DROP"
-            TransportUnavailable -> "TRANSPORT_UNAVAILABLE"
-            is SendFailed -> "SEND_FAILED"
-            is DeliveryExhausted -> "DELIVERY_EXHAUSTED"
-            is RpcReplyFromUndeclaredPeer -> "RPC_REPLY_FROM_UNDECLARED_PEER"
-            is InvokeChildLost -> "INVOKE_CHILD_LOST"
-            is CausalViewMismatch -> "CAUSAL_VIEW_MISMATCH"
+            is OrderingGap -> ErrorReason.ORDERING_GAP
+            is DedupWindowOverflow -> ErrorReason.DEDUP_WINDOW_OVERFLOW
+            is EnvelopeCorrupt -> ErrorReason.ENVELOPE_CORRUPT
+            is MissingSequence -> ErrorReason.MISSING_SEQUENCE
+            is BackpressureDrop -> ErrorReason.BACKPRESSURE_DROP
+            is OutboundStaleDrop -> ErrorReason.OUTBOUND_STALE_DROP
+            TransportUnavailable -> ErrorReason.TRANSPORT_UNAVAILABLE
+            is SendFailed -> ErrorReason.SEND_FAILED
+            is DeliveryExhausted -> ErrorReason.DELIVERY_EXHAUSTED
+            is RpcReplyFromUndeclaredPeer -> ErrorReason.RPC_REPLY_FROM_UNDECLARED_PEER
+            is InvokeChildLost -> ErrorReason.INVOKE_CHILD_LOST
+            is CausalViewMismatch -> ErrorReason.CAUSAL_VIEW_MISMATCH
         }
+
+    /** The row's `reason`, the code's declared name. */
+    val reason: String
+        get() = code.declaredName()
 
     /**
      * The `_event.data` of the `error.communication` this row raises: byte for

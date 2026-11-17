@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(event.name, "error.communication");
         assert_eq!(
             event.metadata.data,
-            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"server","transport":"wss"}"#
+            r#"{"errorName":"communication","reason":"transportUnavailable","target":"server","transport":"wss"}"#
         );
     }
 

@@ -16,15 +16,15 @@ class SignalTest {
     @Test
     fun aSendingRowNamesItsTargetThenItsTransport() {
         assertEquals(
-            """{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}""",
+            """{"errorName":"communication","reason":"transportUnavailable","target":"hmi","transport":"wss"}""",
             Signal.TransportUnavailable.eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"OUTBOUND_STALE_DROP","target":"hmi","transport":"wss","age_ms":900,"max_age_ms":500}""",
+            """{"errorName":"communication","reason":"outboundStaleDrop","target":"hmi","transport":"wss","age_ms":900,"max_age_ms":500}""",
             Signal.OutboundStaleDrop(900, 500).eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"BACKPRESSURE_DROP","target":"hmi","transport":"wss","queue_depth":4}""",
+            """{"errorName":"communication","reason":"backpressureDrop","target":"hmi","transport":"wss","queue_depth":4}""",
             Signal.BackpressureDrop(4u).eventData(wssToHmi),
         )
     }
@@ -32,11 +32,11 @@ class SignalTest {
     @Test
     fun aTransportErrorPrecedesTheAttemptCount() {
         assertEquals(
-            """{"errorName":"communication","reason":"DELIVERY_EXHAUSTED","target":"hmi","transport":"wss","transport_error":"closed \"early\"","attempts":3}""",
+            """{"errorName":"communication","reason":"deliveryExhausted","target":"hmi","transport":"wss","transport_error":"closed \"early\"","attempts":3}""",
             Signal.DeliveryExhausted(3u, "closed \"early\"").eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss"}""",
+            """{"errorName":"communication","reason":"sendFailed","target":"hmi","transport":"wss"}""",
             Signal.SendFailed(null).eventData(wssToHmi),
         )
     }
@@ -44,19 +44,19 @@ class SignalTest {
     @Test
     fun aReceivingRowNamesItsSourceAndNoTarget() {
         assertEquals(
-            """{"errorName":"communication","reason":"ENVELOPE_CORRUPT","transport":"wss","codec":"cbor"}""",
+            """{"errorName":"communication","reason":"envelopeCorrupt","transport":"wss","codec":"cbor"}""",
             Signal.EnvelopeCorrupt(null, "cbor").eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"ENVELOPE_CORRUPT","source":"ecu","transport":"wss","codec":"typed"}""",
+            """{"errorName":"communication","reason":"envelopeCorrupt","source":"ecu","transport":"wss","codec":"typed"}""",
             Signal.EnvelopeCorrupt("ecu", "typed").eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"MISSING_SEQUENCE","source":"ecu"}""",
+            """{"errorName":"communication","reason":"missingSequence","source":"ecu"}""",
             Signal.MissingSequence("ecu").eventData(wssToHmi),
         )
         assertEquals(
-            """{"errorName":"communication","reason":"DEDUP_WINDOW_OVERFLOW","source":"ecu","window_size":256}""",
+            """{"errorName":"communication","reason":"dedupWindowOverflow","source":"ecu","window_size":256}""",
             Signal.DedupWindowOverflow("ecu", 256u).eventData(wssToHmi),
         )
     }
@@ -68,7 +68,7 @@ class SignalTest {
     @Test
     fun aViewMismatchNamesItsSourceEpochAndReplica() {
         assertEquals(
-            """{"errorName":"communication","reason":"CAUSAL_VIEW_MISMATCH","source":"list","epoch":1,"replica":"01010101-0101-0101-0101-010101010101"}""",
+            """{"errorName":"communication","reason":"causalViewMismatch","source":"list","epoch":1,"replica":"01010101-0101-0101-0101-010101010101"}""",
             Signal.CausalViewMismatch("list", 1uL, "01010101-0101-0101-0101-010101010101").eventData(wssToHmi),
         )
     }
@@ -76,7 +76,7 @@ class SignalTest {
     @Test
     fun aGapEndedByATickHasNoBindingToName() {
         assertEquals(
-            """{"errorName":"communication","reason":"ORDERING_GAP","source":"ecu","lost_seq_lo":4,"lost_seq_hi":6}""",
+            """{"errorName":"communication","reason":"orderingGap","source":"ecu","lost_seq_lo":4,"lost_seq_hi":6}""",
             Signal.OrderingGap("ecu", 4u, 6u).eventData(null),
         )
     }

@@ -171,7 +171,7 @@
 #include "mesh/MeshEnvelope.h"
 #include "mesh/PatternKind.h"
 // SCE_MESH.md §16.7 row 5 sub-atomic C — failScxmlRemoteInvokesForPeer
-// raises `error.communication{INVOKE_CHILD_LOST}` events built from
+// raises `error.communication{invokeChildLost}` events built from
 // `CommunicationError::toJsonBytes()`.
 #include "mesh/CommunicationError.h"
 {% endif %}
@@ -239,7 +239,7 @@
 #include <utility>
 {% if model.partition_barrier_timeouts %}
 // SCE_MESH.md §16.5 — barrier-timeout runtime surfaces
-// `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`) through
+// `error.communication` (reason `parallelBarrierTimeout`) through
 // the PullScheduler-driven external queue.
 #include "mesh/CommunicationError.h"
 #include <chrono>
@@ -1406,7 +1406,7 @@ public:
         // entry down by its deterministic send-id. At fire time the
         // scheduler pops the event onto the external queue, where
         // the author's `<transition event="error.communication"
-        // cond="_event.data.reason == 'PARALLEL_BARRIER_TIMEOUT'">`
+        // cond="_event.data.reason == 'parallelBarrierTimeout'">`
         // picks it up. §16.7 row 6 pins the `_event.data` shape —
         // `CommunicationError::toJsonBytes()` is the single-source
         // JSON renderer.

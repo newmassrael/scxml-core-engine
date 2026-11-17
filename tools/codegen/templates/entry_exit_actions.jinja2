@@ -171,7 +171,7 @@
                 // raises `done.invoke.<id>`). Transport-absent deployments
                 // (no matching peer binding in deploy.yaml) fall through to
                 // the local raise path — `error.execution` with the
-                // §10.7.1 `SESSION_F_TRANSPORT_UNAVAILABLE` reason so the
+                // §10.7.1 `sessionTransportUnavailable` reason so the
                 // SCXML-level `<transition event="error.execution">` handler
                 // observes the degraded path identically to the A0 scaffold.
                 // ============================================================
@@ -214,7 +214,7 @@
                         // same `error.execution` shape as the wire-20 path.
                         engine.raise(Engine::EventWithMetadata::platformError(
                             Event::Error_execution, ::SCE::Common::ErrorReason::SessionTransportUnavailable,
-                            "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_TRANSPORT_UNAVAILABLE per SCE_MESH.md §9.6/§10.7.1 — no mesh transport binding to peer device"));
+                            "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': sessionTransportUnavailable per SCE_MESH.md §9.6/§10.7.1 — no mesh transport binding to peer device"));
                     }
                 }
 {% endfor %}
@@ -410,11 +410,11 @@
                         // key-substitution miss, malformed pool payload,
                         // unknown method on target, or zenoh::ZException
                         // while constructing the KeyExpr). Per §10.7.1
-                        // this is INVOKE_SRC_NOT_FOUND — no envelope
+                        // this is invokeSrcNotFound — no envelope
                         // reached the wire.
                         engine.raise(Engine::EventWithMetadata::platformError(
                             Event::Error_execution, ::SCE::Common::ErrorReason::InvokeSrcNotFound,
-                            "mesh-rpc invoke '{{ invoke_info.invoke_id }}' to '{{ invoke_info.src }}' failed: setup fault (INVOKE_SRC_NOT_FOUND per SCE_MESH.md §9.5/§10.7.1 — no transport wired, pool instance out-of-set, or key-substitution miss)"));
+                            "mesh-rpc invoke '{{ invoke_info.invoke_id }}' to '{{ invoke_info.src }}' failed: setup fault (invokeSrcNotFound per SCE_MESH.md §9.5/§10.7.1 — no transport wired, pool instance out-of-set, or key-substitution miss)"));
                     }
 {% endif %}
 {% if invoke_info.srcexpr %}
@@ -951,7 +951,7 @@
                 // SCE_MESH.md §16.7 row 5 sub-atomic C — a peer-down signal
                 // applied at an earlier boundary may have erased the entry;
                 // issue wire-19 only when the local exit finds the entry
-                // live (a peer-down erase already raised INVOKE_CHILD_LOST
+                // live (a peer-down erase already raised invokeChildLost
                 // in lieu of done.invoke / error.invoke, so sending a cancel
                 // envelope to an unreachable peer is wasted wire).
                 {% for invoke_info in state.invokes | scxml_remote %}

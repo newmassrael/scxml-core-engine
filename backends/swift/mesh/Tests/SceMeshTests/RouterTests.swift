@@ -245,7 +245,7 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         }
         #expect(
             signal.eventData(binding: ecu.binding(peer))
-                == #"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"nowhere"}"#)
+                == #"{"errorName":"communication","reason":"transportUnavailable","target":"nowhere"}"#)
         _ = try done(ecu.peerReady("hmi", nowMs: 0))
         let lost = try done(ecu.peerNotReady("hmi"))
         guard lost.count == 1, case let .raise(lostPeer, lostSignal) = lost[0] else {
@@ -253,7 +253,7 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         }
         #expect(
             lostSignal.eventData(binding: ecu.binding(lostPeer))
-                == #"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}"#
+                == #"{"errorName":"communication","reason":"transportUnavailable","target":"hmi","transport":"wss"}"#
         )
     }
 
@@ -440,7 +440,7 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         #expect(
             ecu.invoke(ask("#nobody", deadlineMs: nil), wireID: wire, id: envelopeID(1), nowMs: 0, nowUnixMs: 0)
                 == .refused(
-                    #"{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#nobody'"}"#))
+                    #"{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#nobody'"}"#))
         let refused = ecu.invoke(ask("hmi", deadlineMs: nil), wireID: wire, id: envelopeID(1), nowMs: 0, nowUnixMs: 0)
         guard case let .refused(data) = refused else {
             Issue.record("expected a refusal, got \(refused)")

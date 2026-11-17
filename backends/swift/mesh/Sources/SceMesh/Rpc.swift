@@ -127,7 +127,7 @@ public func invokeErrorData(status: RpcStatus, detail: String?, source: String?,
 /// The `_event.data` of the `error.execution` a request that cannot reach the wire raises instead
 /// of starting (§mesh-9.5's pre-envelope tier).
 public func srcNotFoundData(_ detail: String) -> String {
-    var json = ErrorData(errorName: "execution", reason: "INVOKE_SRC_NOT_FOUND")
+    var json = ErrorData(errorName: "execution", reason: ErrorReason.invokeSrcNotFound.declaredName)
     json.text("detail", detail)
     return json.finish()
 }

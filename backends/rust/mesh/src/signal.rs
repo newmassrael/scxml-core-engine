@@ -14,22 +14,23 @@
 use alloc::string::String;
 
 use sce_rust_runtime::helpers::event_data::escape_json_string;
+use sce_rust_runtime::ErrorReason;
 
 /// One §mesh-16.7 row, with the extras the row carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
-    /// ORDERING_GAP: `source`'s sequences `lost_lo..=lost_hi` waited out the
+    /// `orderingGap`: `source`'s sequences `lost_lo..=lost_hi` waited out the
     /// gap timeout and will not be delivered.
     OrderingGap {
         source: String,
         lost_lo: u64,
         lost_hi: u64,
     },
-    /// DEDUP_WINDOW_OVERFLOW (row 7): a novel id from `source` was admitted
+    /// `dedupWindowOverflow` (row 7): a novel id from `source` was admitted
     /// to a full window of `window_size` ids, so its oldest id is no longer
     /// remembered.
     DedupWindowOverflow { source: String, window_size: u32 },
-    /// ENVELOPE_CORRUPT (row 4): what arrived could not be read. `codec` is
+    /// `envelopeCorrupt` (row 4): what arrived could not be read. `codec` is
     /// the row's field: `"cbor"` when the bytes are not an envelope the
     /// standard document accepts, or the payload's own codec when the
     /// envelope decoded but its payload is not one the engine can be handed
@@ -38,38 +39,38 @@ pub enum Signal {
         source: Option<String>,
         codec: &'static str,
     },
-    /// MISSING_SEQUENCE (row 11): an envelope reached an ordered binding
+    /// `missingSequence` (row 11): an envelope reached an ordered binding
     /// without a `sequence_no`, so it cannot be placed (§mesh-10.6.3).
     MissingSequence { source: String },
-    /// BACKPRESSURE_DROP: an envelope that could not be sent at once found
+    /// `backpressureDrop`: an envelope that could not be sent at once found
     /// its target's queue already holding `depth` envelopes, and was dropped.
     BackpressureDrop { depth: u32 },
-    /// OUTBOUND_STALE_DROP (row 15): a queued envelope had waited `age_ms`
+    /// `outboundStaleDrop` (row 15): a queued envelope had waited `age_ms`
     /// when its transport became ready, past the bound of `max_age_ms`.
     OutboundStaleDrop { age_ms: i64, max_age_ms: i64 },
-    /// TRANSPORT_UNAVAILABLE (row 1): a ready target stopped being ready.
+    /// `transportUnavailable` (row 1): a ready target stopped being ready.
     TransportUnavailable,
-    /// SEND_FAILED (row 2): the transport declined a send and no retry is
+    /// `sendFailed` (row 2): the transport declined a send and no retry is
     /// configured, so the envelope is gone. `transport_error` is the
     /// transport's own words, when it gave any.
     SendFailed { transport_error: Option<String> },
-    /// DELIVERY_EXHAUSTED (row 3): a send was given up after `attempts`
+    /// `deliveryExhausted` (row 3): a send was given up after `attempts`
     /// sends, because the failure was terminal or the retries ran out.
     DeliveryExhausted {
         attempts: u32,
         transport_error: Option<String>,
     },
-    /// RPC_REPLY_FROM_UNDECLARED_PEER (row 14): a reply from `source` named
+    /// `rpcReplyFromUndeclaredPeer` (row 14): a reply from `source` named
     /// the live request `invoke_id` (the wire id, RFC 4122 text) but arrived on a
     /// binding outside that request's responder set (§mesh-14.6). The
     /// request stays answerable.
     RpcReplyFromUndeclaredPeer { source: String, invoke_id: String },
-    /// INVOKE_CHILD_LOST (row 5): the link to `target` was lost while the
+    /// `invokeChildLost` (row 5): the link to `target` was lost while the
     /// request `invoke_id` (the wire id, RFC 4122 text) waited on it. The request is
     /// forgotten, as a cancel forgets it (§mesh-9.5), since no reply can
     /// arrive on a link that is gone.
     InvokeChildLost { invoke_id: String, target: String },
-    /// CAUSAL_VIEW_MISMATCH (row 18): an envelope from `source` on a causal
+    /// `causalViewMismatch` (row 18): an envelope from `source` on a causal
     /// route was tagged with `epoch`, another than the receiver's view, or by
     /// the replica `replica` (RFC 4122 text) the view does not hold
     /// (docs/adr/0085, section 3.2). It was not delivered.
@@ -90,22 +91,29 @@ pub struct Binding<'a> {
 }
 
 impl Signal {
-    /// The row's `reason`, as §mesh-16.7 spells it.
-    pub fn reason(&self) -> &'static str {
+    /// The row's code, a member of the engines' one vocabulary
+    /// (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), whose
+    /// communication half is §mesh-16.7 row by row.
+    pub fn code(&self) -> ErrorReason {
         match self {
-            Signal::OrderingGap { .. } => "ORDERING_GAP",
-            Signal::DedupWindowOverflow { .. } => "DEDUP_WINDOW_OVERFLOW",
-            Signal::EnvelopeCorrupt { .. } => "ENVELOPE_CORRUPT",
-            Signal::MissingSequence { .. } => "MISSING_SEQUENCE",
-            Signal::BackpressureDrop { .. } => "BACKPRESSURE_DROP",
-            Signal::OutboundStaleDrop { .. } => "OUTBOUND_STALE_DROP",
-            Signal::TransportUnavailable => "TRANSPORT_UNAVAILABLE",
-            Signal::SendFailed { .. } => "SEND_FAILED",
-            Signal::DeliveryExhausted { .. } => "DELIVERY_EXHAUSTED",
-            Signal::RpcReplyFromUndeclaredPeer { .. } => "RPC_REPLY_FROM_UNDECLARED_PEER",
-            Signal::InvokeChildLost { .. } => "INVOKE_CHILD_LOST",
-            Signal::CausalViewMismatch { .. } => "CAUSAL_VIEW_MISMATCH",
+            Signal::OrderingGap { .. } => ErrorReason::OrderingGap,
+            Signal::DedupWindowOverflow { .. } => ErrorReason::DedupWindowOverflow,
+            Signal::EnvelopeCorrupt { .. } => ErrorReason::EnvelopeCorrupt,
+            Signal::MissingSequence { .. } => ErrorReason::MissingSequence,
+            Signal::BackpressureDrop { .. } => ErrorReason::BackpressureDrop,
+            Signal::OutboundStaleDrop { .. } => ErrorReason::OutboundStaleDrop,
+            Signal::TransportUnavailable => ErrorReason::TransportUnavailable,
+            Signal::SendFailed { .. } => ErrorReason::SendFailed,
+            Signal::DeliveryExhausted { .. } => ErrorReason::DeliveryExhausted,
+            Signal::RpcReplyFromUndeclaredPeer { .. } => ErrorReason::RpcReplyFromUndeclaredPeer,
+            Signal::InvokeChildLost { .. } => ErrorReason::InvokeChildLost,
+            Signal::CausalViewMismatch { .. } => ErrorReason::CausalViewMismatch,
         }
+    }
+
+    /// The row's `reason`, the code's declared name.
+    pub fn reason(&self) -> &'static str {
+        self.code().declared_name()
     }
 
     /// The `_event.data` of the `error.communication` this row raises, as
@@ -260,7 +268,7 @@ mod tests {
     fn a_sending_row_names_its_target_then_its_transport() {
         assert_eq!(
             Signal::TransportUnavailable.event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"hmi","transport":"wss"}"#
+            r#"{"errorName":"communication","reason":"transportUnavailable","target":"hmi","transport":"wss"}"#
         );
         assert_eq!(
             Signal::OutboundStaleDrop {
@@ -268,11 +276,11 @@ mod tests {
                 max_age_ms: 500
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"OUTBOUND_STALE_DROP","target":"hmi","transport":"wss","age_ms":900,"max_age_ms":500}"#
+            r#"{"errorName":"communication","reason":"outboundStaleDrop","target":"hmi","transport":"wss","age_ms":900,"max_age_ms":500}"#
         );
         assert_eq!(
             Signal::BackpressureDrop { depth: 4 }.event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"BACKPRESSURE_DROP","target":"hmi","transport":"wss","queue_depth":4}"#
+            r#"{"errorName":"communication","reason":"backpressureDrop","target":"hmi","transport":"wss","queue_depth":4}"#
         );
     }
 
@@ -284,14 +292,14 @@ mod tests {
                 transport_error: Some("closed \"early\"".to_string()),
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"DELIVERY_EXHAUSTED","target":"hmi","transport":"wss","transport_error":"closed \"early\"","attempts":3}"#
+            r#"{"errorName":"communication","reason":"deliveryExhausted","target":"hmi","transport":"wss","transport_error":"closed \"early\"","attempts":3}"#
         );
         assert_eq!(
             Signal::SendFailed {
                 transport_error: None
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss"}"#
+            r#"{"errorName":"communication","reason":"sendFailed","target":"hmi","transport":"wss"}"#
         );
     }
 
@@ -303,7 +311,7 @@ mod tests {
                 codec: "cbor"
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"ENVELOPE_CORRUPT","transport":"wss","codec":"cbor"}"#
+            r#"{"errorName":"communication","reason":"envelopeCorrupt","transport":"wss","codec":"cbor"}"#
         );
         assert_eq!(
             Signal::EnvelopeCorrupt {
@@ -311,14 +319,14 @@ mod tests {
                 codec: "typed"
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"ENVELOPE_CORRUPT","source":"ecu","transport":"wss","codec":"typed"}"#
+            r#"{"errorName":"communication","reason":"envelopeCorrupt","source":"ecu","transport":"wss","codec":"typed"}"#
         );
         assert_eq!(
             Signal::MissingSequence {
                 source: "ecu".to_string()
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"MISSING_SEQUENCE","source":"ecu"}"#
+            r#"{"errorName":"communication","reason":"missingSequence","source":"ecu"}"#
         );
         assert_eq!(
             Signal::DedupWindowOverflow {
@@ -326,7 +334,7 @@ mod tests {
                 window_size: 256
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"DEDUP_WINDOW_OVERFLOW","source":"ecu","window_size":256}"#
+            r#"{"errorName":"communication","reason":"dedupWindowOverflow","source":"ecu","window_size":256}"#
         );
     }
 
@@ -340,7 +348,7 @@ mod tests {
                 invoke_id: "01920000-0000-7000-8000-0000000000ab".to_string(),
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
+            r#"{"errorName":"communication","reason":"rpcReplyFromUndeclaredPeer","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
         );
     }
 
@@ -354,7 +362,7 @@ mod tests {
                 target: "hmi".to_string(),
             }
             .event_data(WSS_TO_HMI),
-            r#"{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
+            r#"{"errorName":"communication","reason":"invokeChildLost","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
         );
     }
 
@@ -367,7 +375,7 @@ mod tests {
                 lost_hi: 6
             }
             .event_data(None),
-            r#"{"errorName":"communication","reason":"ORDERING_GAP","source":"ecu","lost_seq_lo":4,"lost_seq_hi":6}"#
+            r#"{"errorName":"communication","reason":"orderingGap","source":"ecu","lost_seq_lo":4,"lost_seq_hi":6}"#
         );
     }
 }

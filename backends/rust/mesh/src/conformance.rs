@@ -417,7 +417,7 @@ impl<T: Transport> Hub<T> {
                 // this hub was just told is gone, and nothing else is held against it.
                 "error.communication" => {
                     let target = json_text(&data, "target").expect("who is gone");
-                    assert!(data.contains("TRANSPORT_UNAVAILABLE"), "{data}");
+                    assert!(data.contains("transportUnavailable"), "{data}");
                     assert!(self.lost.contains(&target), "{target} was not lost: {data}");
                 }
                 other => panic!("the hub was sent an event it does not know: {other} {data}"),

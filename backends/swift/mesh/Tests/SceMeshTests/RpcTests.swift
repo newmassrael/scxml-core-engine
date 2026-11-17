@@ -32,14 +32,14 @@ import Testing
     @Test func aRequestWithNoRouteIsSrcNotFound() {
         #expect(
             srcNotFoundData("no binding for '#cloud'")
-                == #"{"errorName":"execution","reason":"INVOKE_SRC_NOT_FOUND","detail":"no binding for '#cloud'"}"#)
+                == #"{"errorName":"execution","reason":"invokeSrcNotFound","detail":"no binding for '#cloud'"}"#)
     }
 
     @Test func anUndeclaredResponderNamesItsSourceAndTheRequest() {
         #expect(
             Signal.rpcReplyFromUndeclaredPeer(source: "mallory", invokeID: uuidText(wire))
                 .eventData(binding: Binding(peer: "hmi", transport: "wss"))
-                == #"{"errorName":"communication","reason":"RPC_REPLY_FROM_UNDECLARED_PEER","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
+                == #"{"errorName":"communication","reason":"rpcReplyFromUndeclaredPeer","source":"mallory","invoke_id":"01920000-0000-7000-8000-0000000000ab"}"#
         )
     }
 
@@ -69,7 +69,7 @@ import Testing
         #expect(
             Signal.invokeChildLost(invokeID: uuidText(wire), target: "hmi")
                 .eventData(binding: Binding(peer: "hmi", transport: "wss"))
-                == #"{"errorName":"communication","reason":"INVOKE_CHILD_LOST","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
+                == #"{"errorName":"communication","reason":"invokeChildLost","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
         )
     }
 

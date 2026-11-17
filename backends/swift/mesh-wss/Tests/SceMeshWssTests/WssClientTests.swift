@@ -176,7 +176,7 @@ func sendRequest(_ event: String, target: String = "#server", sendID: String = "
         let raised = try takeEvents(endpoint)
         #expect(
             raised.first?.metadata.data
-                == #"{"errorName":"communication","reason":"TRANSPORT_UNAVAILABLE","target":"server","transport":"wss"}"#
+                == #"{"errorName":"communication","reason":"transportUnavailable","target":"server","transport":"wss"}"#
         )
     }
 

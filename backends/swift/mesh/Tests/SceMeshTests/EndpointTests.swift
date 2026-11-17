@@ -215,7 +215,7 @@ private final class Host {
         #expect(event.name == "error.communication")
         #expect(
             event.metadata.data
-                == #"{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss","transport_error":"reset"}"#
+                == #"{"errorName":"communication","reason":"sendFailed","target":"hmi","transport":"wss","transport_error":"reset"}"#
         )
         // Raised as the C++ core raises it: an envelope from its own machine.
         #expect(event.metadata.originAddress == "mesh://ecu")
@@ -255,7 +255,7 @@ private final class Host {
 
         #expect(
             try ecu.takeEvents().first?.metadata.data
-                == #"{"errorName":"communication","reason":"DELIVERY_EXHAUSTED","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}"#
+                == #"{"errorName":"communication","reason":"deliveryExhausted","target":"hmi","transport":"wss","transport_error":"reset","attempts":2}"#
         )
     }
 
