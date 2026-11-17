@@ -257,9 +257,23 @@ answering `error.execution` was handed a DOM of the sentence.
 
 Implemented (2026-11-16): the vocabulary document, its Rust tree (`runtime-rust`), and the Rust engine
 (`EventWithMetadata::platform_error(event, reason, detail)`; every raise site of the runtime, the Rust templates and
-the generator's own emitted raises takes its code). Left, each its own commit: the Kotlin, Python, Go, C++ (AOT and
-interpreter), C11 and Swift engines, each with a tree of the document into its runtime; the Mesh runtimes' move to the
-generated enum and its spellings; the scenarios and expected logs that read a reason.
+the generator's own emitted raises takes its code).
+
+Implemented (2026-11-17), one commit per engine, the same way: the Kotlin (`raisePlatformError(event, reason,
+detail)`, the enum named `com.sce.runtime.ErrorReason`), Go (`sce.NewPlatformError(event, reason, detail)`, the enum a
+package of the runtime module, imported by a machine as `sceerrorreason`; the runtime module now requires the forge
+runtime's `optional`, which the generated enum reads, and every module that builds it replaces both), Python
+(`sce_runtime.platform_error(reason, detail)`, one helper `_raise_platform_error` in a machine, through which the
+send errors that used to carry no data at all now carry their code and sentence) and Swift (`platformError(event,
+reason:, message:)`) engines, each with a tree (`runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`).
+Where a backend raised a BasicHTTP send with no target as `error.execution` because the document names no
+`error.communication`, the code is `sendTargetInvalid`, so the record never names the other event.
+`sce-build/tests/every_error_reason_is_a_declared_code.rs` holds the document's names (lowerCamel, one value each, every
+value in one half), the codes the generator hands `raise_execution_error`, and every code a Rust, Kotlin, Go, Python or
+Swift template or runtime writes to the declared set and to the event its value names. Left, each its own commit: the
+C++ (AOT and interpreter) and C11 engines; the Mesh runtimes' move to the generated enum and its spellings, with
+SCE_MESH.md sections 10.7.1 and 16.7 and the two sheet-peer scenarios; the scenarios and expected logs that read a
+reason on the C++ and C11 lanes.
 
 ## Consequences
 
