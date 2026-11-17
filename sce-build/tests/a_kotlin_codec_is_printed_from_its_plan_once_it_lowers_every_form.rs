@@ -1038,17 +1038,61 @@ fn a_bare_entrys_arm_holds_the_others_and_the_named_entrys_place() {
     );
 }
 
-/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a CBOR map and a chain held to a law each name
-/// their form.
+/// A list whose entries say the inputs it hands them is held in the class of
+/// its law (docs/adr/0065 §6 R8): the list in the class of its bound and the
+/// start of the law, made only of entries that follow the law from the start.
+/// The encode derives the flag the list's start binds; the decode holds what
+/// it read to the law from the start the frame gave.
 ///
-/// Turns red where `kotlin_source::positional_forms` stops naming a list held
-/// to a law, or `unlowered_forms` a CBOR map.
+/// Turns red where `kotlin_source::value_forms` refuses a list held to a law,
+/// `lawful_declaration` stops holding an entry to the start or to the kind of
+/// the entry before, `encode_source` derives the bound flag other than from
+/// the list's start (`Measured::Start`), or `decoded_starts` starts the decode
+/// other than from the carrier's bit.
+#[test]
+fn a_list_held_to_a_law_is_held_in_the_class_of_its_law() {
+    let name = "codec_chain_prev_carrier";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "class CodecChainPrevCarrierEntriesLawful private constructor(\n",
+            "    val list: CodecChainPrevCarrierEntriesList,\n",
+            "    val startTagged: Boolean,\n",
+            "        fun of(list: CodecChainPrevCarrierEntriesList, startTagged: Boolean): \
+             CodecChainPrevCarrierEntriesLawful? {\n",
+            "            var afterAfterMarker = false\n",
+            "                if ((CodecChainPrevEntry.inputTagged(entry).toUInt() != 0u) != \
+             startTagged) return null\n",
+            "                if ((CodecChainPrevEntry.inputAfterMarker(entry).toUInt() != 0u) != \
+             afterAfterMarker) return null\n",
+            "                afterAfterMarker = kind(entry) == 0x4uL\n",
+            "    val entries: CodecChainPrevCarrierEntriesLawful\n",
+            "_u_head = (_u_head and 0x1u.inv()) or \
+             (((if (_e_entries.startTagged) 1 else 0)).toUInt() shl 0)\n",
+            "entries = CodecChainPrevCarrierEntriesLawful.of(\
+             CodecChainPrevCarrierEntriesList.of(entries) ?: return null, \
+             startTagged = ((head.toUInt() shr 0) and 0x1u) != 0x0u) ?: return null",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
+/// template's encode whole: a CBOR map and a list on one side of a gate held
+/// to a law each name their form.
+///
+/// Turns red where `kotlin_source::positional_forms` stops naming a list a
+/// group holds held to a law, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_cbor_map", "a CBOR map"),
-        ("codec_chain_prev_tail", "held to a law"),
+        (
+            "codec_repeat_flag_group",
+            "a list on one side of a gate held to a law",
+        ),
     ] {
         let forms = unlowered(name);
         assert!(

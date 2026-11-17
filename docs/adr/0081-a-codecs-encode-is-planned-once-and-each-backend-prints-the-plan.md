@@ -1542,6 +1542,26 @@ old encode, the old encode and its templates are removed in the same landing.
    printer refuses it: a check would see the others alone. The case printer states the arm's chain by
    `placed_parts` as the class made of the others and the place. The same landing binds the walk's
    `ListWrite` in the encode, which the fourteenth landing read and did not bind.
+
+   *The eighteenth Kotlin landing, 2026-11-17:* a list held to the law its entries say their inputs by (§6
+   R8), and what the law's start derives. The value holds such a list as `{Codec}{Element}Lawful`
+   (`lawful_class`), the Kotlin form of the Rust and C++ runtimes' `Lawful`: the list in the class of its
+   bound, and for each input the list hands every entry the start, a `Boolean` property `start{Input}`
+   (`start_property`). Its constructor is private and `of` runs the law over the entries: each entry says an
+   input the list hands every entry as the start says it, and one a chain hands from the entry before set
+   exactly where the entry before is of the kind, the first clear, each read by the entry codec's
+   `input{Name}`; an entry that says nothing of an input follows any state (R8b). A value made by default holds
+   the fewest entries of the bound from the start the first of them says, as the C++ `Uniform::start_of`
+   reads it. The class answers `entries` and `size` as a list's class does, so the walk and a count read it
+   unchanged. A flag the parent binds to the input is derived from the start (`Measured::Start`) where the
+   list is there and keeps the value's bit where it is not; an input of the codec's own the list binds is said
+   by the start (`InputSource::List`). The decode holds what it read to the law from the start the frame gave,
+   the bound carrier's bit or the input it is handed. The case printer states the list by `lawful_parts` as
+   the class made of the list and each start, and compares the starts beside the entries. Considered and
+   refused: a runtime class generic over the law, handed the law as a function, which would spell each law
+   as a closure every value carries, where a class of the law spells it once; and the start held in the
+   list's own class, which would make every list a class of two properties. A list on one side of a gate
+   held to a law, whose start the arm would hold, and a chain of slots held to a law stay refused by name.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

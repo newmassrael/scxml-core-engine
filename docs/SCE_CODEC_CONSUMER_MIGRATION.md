@@ -2520,3 +2520,14 @@ codecs whose one gate names an entry of a chain whose identifier is all it is.
 - A decoded value takes the first entry of the kind out of the chain it read; read the others by `.rest` and where
   it stood by `.place`.
 
+## A printed Kotlin codec holds a list to the law its entries say their inputs by (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that hold a list whose entries say a flag input the list hands them.
+
+- Such a list is `{Codec}{Element}Lawful`, made by `of(list, start{Input} = ..)`: the list in the class of its bound
+  and, for each input the list hands every entry, the value it hands them. `of` answers `null` where an entry says
+  otherwise than the start, or than whether the entry before is of the kind a chain waits for.
+- The flag the codec writes for such an input is the start: stop setting it on the value. Read the entries by
+  `.entries` and the start by `.start{Input}`.
+

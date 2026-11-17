@@ -17,17 +17,20 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, chain_optional_in, entry_rows, enum_variant, gates_label,
-    group_choice, holds_chain, integer_value, placed_parts, source_members, variant_choice,
-    ChainInArm, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    group_choice, holds_chain, integer_value, law_start_bits, lawful_parts, placed_parts,
+    source_members, variant_choice, ChainInArm, CodecPath as RustCodecPath, HeldCodecs,
+    CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
 use super::group::{
     aligned_property, chain_class, group_arm_class, group_property, placed_class, placed_in,
     ALIGNED,
 };
-use super::{arm_class, list_class, refinement_class, unknown_tag_class};
+use super::{
+    arm_class, lawful_class, list_class, refinement_class, start_property, unknown_tag_class,
+};
 use crate::forge::codec_roles::{GateGroup, GroupArm};
-use crate::forge::encode_plan::{EncodePlan, Value};
+use crate::forge::encode_plan::{Automaton, EncodePlan, Value};
 
 /// Where a codec's Kotlin value is: the package of the document that declares
 /// it and the data class of its value, both named after the document's name.
@@ -216,9 +219,20 @@ fn member_holds(
                 ),
             }
         }
-        // A list by its entries, each compared as a body is.
-        Value::List { codec, .. } => {
+        // A list by its entries, each compared as a body is, and a list held
+        // to a law by the start of its law too (docs/adr/0065 §6 R8).
+        Value::List { codec, law, .. } => {
             let (d, v) = (format!("d{depth}"), format!("v{depth}"));
+            let starts = |x: &str, y: &str| -> String {
+                law.inputs
+                    .iter()
+                    .filter(|input| matches!(input.automaton, Automaton::Uniform))
+                    .map(|input| {
+                        let p = start_property(&input.input);
+                        format!(" && {x}.{p} == {y}.{p}")
+                    })
+                    .collect()
+            };
             if optional {
                 let entries = list_holds(
                     codec,
@@ -229,12 +243,15 @@ fn member_holds(
                 )?;
                 format!(
                     "{decoded}.let {{ {d} -> {value}.let {{ {v} -> \
-                     if ({d} == null || {v} == null) {d} == null && {v} == null else {entries} }} }}"
+                     if ({d} == null || {v} == null) {d} == null && {v} == null else \
+                     {entries}{} }} }}",
+                    starts(&d, &v)
                 )
             } else {
                 let entries = list_holds(codec, &d, &v, depth, held)?;
                 format!(
-                    "{decoded}.entries.let {{ {d} -> {value}.entries.let {{ {v} -> {entries} }} }}"
+                    "{decoded}.entries.let {{ {d} -> {value}.entries.let {{ {v} -> {entries} }} }}{}",
+                    starts(&decoded, &value)
                 )
             }
         }
@@ -641,11 +658,27 @@ fn member_literal(
             path.qualified(&list_class(&path.type_name, &field.id)),
             entry_literals(codec, json, held)?.join(", ")
         )),
-        Value::List { .. } => Err(
-            "a list held to a law is not spelled as a Kotlin literal yet: the Kotlin printer \
-             prints no codec that holds one"
-                .into(),
-        ),
+        // A list held to the law its entries say their inputs by
+        // (docs/adr/0065 §6 R8), `{"start": {input: 0|1}, "entries": [..]}`:
+        // the class of the law made of the list and each start the value
+        // gives, by its factory, which runs the law over the entries.
+        Value::List { codec, law, .. } => {
+            let (start, entries) = lawful_parts(json)?;
+            let starts: String = law
+                .inputs
+                .iter()
+                .zip(law_start_bits(law, start)?)
+                .filter_map(|(input, bit)| {
+                    bit.map(|bit| format!(", {} = {bit}", start_property(&input.input)))
+                })
+                .collect();
+            Ok(format!(
+                "{}.of({}.of(listOf({}))!!{starts})!!",
+                path.qualified(&lawful_class(&path.type_name, &field.id)),
+                path.qualified(&list_class(&path.type_name, &field.id)),
+                entry_literals(codec, entries, held)?.join(", ")
+            ))
+        }
     }
 }
 

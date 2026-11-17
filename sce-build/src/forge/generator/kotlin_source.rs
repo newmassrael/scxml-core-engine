@@ -25,12 +25,12 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::{ElementId, GateVar, InputSource};
+use crate::forge::codec_roles::{BindSite, ElementId, GateVar, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId,
-    Guard, HandedFrom, ListWrite, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence,
-    PresenceFlag, Value, Write,
+    Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan,
+    EntryId, Guard, HandedFrom, Law, ListWrite, Measure, Measured, Narrow, Number, NumberInto,
+    Offset, Presence, PresenceFlag, Value, Write,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -101,21 +101,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // An input the value says is read off it, by a function of the companion a
     // parent calls; one it does not say is a parameter of the encode. The
     // printer reads one a gated field says, one a body always there says in
-    // every value or in some of its values only, and one the arm of the
-    // variant the value holds says (docs/adr/0065 §6 R4d, R4e).
-    for said in &plan.said {
-        match &plan.roles.inputs[&said.input.name] {
-            InputSource::Gate { .. }
-            | InputSource::Forward { .. }
-            | InputSource::Group
-            | InputSource::EveryArm { .. }
-            | InputSource::SomeArms { .. } => {}
-            InputSource::List { .. } => forms.push(format!(
-                "input '{}': a flag input the value says through a list's law",
-                said.input.name
-            )),
-        }
-    }
+    // every value or in some of its values only, one the arm of the variant
+    // the value holds says (docs/adr/0065 §6 R4d, R4e), and one a list's law
+    // starts from (R8), each of every form `InputSource` has.
     // An input a held codec says, held to what the codec is handed: a body's,
     // each entry's or an arm's, against a carrier's bit or an input of the
     // codec's own; a codec that says it in some values only disagrees with
@@ -155,7 +143,15 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 .iter()
                 .find(|f| f.id == id)
                 .expect("a group's member is a field of the codec");
-            forms.extend(value_forms(plan, imports, id, &plan.value(member)));
+            let value = plan.value(member);
+            // A list an arm holds is held to no law yet: its law's start
+            // would be the arm's (R8).
+            if matches!(&value, Value::List { law, .. } if !law.is_none()) {
+                forms.push(format!(
+                    "field '{id}': a list on one side of a gate held to a law"
+                ));
+            }
+            forms.extend(value_forms(plan, imports, id, &value));
         }
     }
     for derived in &plan.derivations {
@@ -214,19 +210,18 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 // A walk of each entry in turn, which sets on each entry but
                 // the last the flag the chain ends on, hands each entry what
                 // the one before it was, and writes a bare entry where the
-                // value holds its place (docs/adr/0065 §6 R6a); a chain held
-                // to a law is not printed yet.
-                if list.as_ref().is_some_and(|walk| walk.lawful) {
-                    forms.push(format!("field '{}': a chain held to a law", field.id));
-                }
-                // The entries of a chain of slots a check holds to an input
-                // would be the others alone, the named entry left out, as the
-                // C++ printer refuses them.
+                // value holds its place (docs/adr/0065 §6 R6a). The entries
+                // of a list held to its law follow it already, which the
+                // class of the list holds (R8).
+                // The entries of a chain of slots a check or a law holds to an
+                // input would be the others alone, the named entry left out,
+                // as the C++ printer refuses them.
                 let slots = list.as_ref().is_some_and(|walk| walk.slots.is_some());
+                let lawful = list.as_ref().is_some_and(|walk| walk.lawful);
                 let checked = plan.input_checks.iter().any(
                     |check| matches!(&check.site, CheckSite::List { list: held } if held.id == field.id),
                 );
-                if slots && checked {
+                if slots && (checked || lawful) {
                     forms.push(format!(
                         "field '{}': a chain of slots whose entries are held to an input",
                         field.id
@@ -293,17 +288,16 @@ fn value_forms(
             forms.extend(handed_form(plan, id, codec));
         }
         // A list is walked, each entry written by its codec's own
-        // `encodeSource`, which a codec the Kotlin backend prints has.
-        Value::List { codec, law, .. } => {
+        // `encodeSource`, which a codec the Kotlin backend prints has; one
+        // held to the law its entries say their inputs by is held in a class
+        // of the law, which reads each input through that codec's functions.
+        Value::List { codec, .. } => {
             if printed_import(imports, codec).is_none() {
                 forms.push(format!(
                     "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
                 ));
             }
             forms.extend(handed_form(plan, id, codec));
-            if !law.is_none() {
-                forms.push(format!("field '{id}': a list held to a law"));
-            }
         }
     }
     forms
@@ -320,6 +314,9 @@ fn number_form(element: &ElementId, number: &Number<'_>, imports: &[ImportContex
     for measure in &number.measures {
         match &measure.of {
             Measured::Bytes { .. } | Measured::Entries { .. } | Measured::Encoded { .. } => {}
+            // The start of a list's law, which the class of the list holds
+            // (docs/adr/0065 §6 R8).
+            Measured::Start { .. } => {}
             // What a body says in every value, read by its codec's function,
             // and what the arm the value holds says, read by its codec's.
             Measured::Says { codec, input, .. } if !says_partly(imports, codec, input) => {}
@@ -327,10 +324,10 @@ fn number_form(element: &ElementId, number: &Number<'_>, imports: &[ImportContex
                 if arms
                     .iter()
                     .all(|said| !says_partly(imports, &said.codec, &said.input)) => {}
-            Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
+            Measured::Says { .. } | Measured::ArmSays { .. } => {
                 forms.push(format!(
-                    "element '{element}': a flag a list's law, or an arm or a body that says \
-                     it in some values only, says"
+                    "element '{element}': a flag an arm or a body that says it in some values \
+                     only says"
                 ));
             }
         }
@@ -715,7 +712,7 @@ pub(super) fn render(
                 class
             }
             // A list of sources of its entries' codec, held to its bound.
-            Value::List { codec, bound, .. } => {
+            Value::List { codec, bound, law } => {
                 let import = printed_import(imports, codec)
                     .expect("`unlowered` prints a list of a printed codec only");
                 let class = list_class(struct_name, id);
@@ -726,7 +723,45 @@ pub(super) fn render(
                     bound,
                     body_type(import),
                 ));
-                class
+                if law.is_none() {
+                    class
+                } else {
+                    // Held to the law its entries say their inputs by, from the
+                    // start the value gives it (docs/adr/0065 §6 R8); the
+                    // decode holds what it read to the law from the start the
+                    // frame gave.
+                    let lawful = lawful_class(struct_name, id);
+                    before.push_str(&lawful_declaration(
+                        plan,
+                        l,
+                        imports,
+                        struct_name,
+                        element.field,
+                        law,
+                        &class,
+                        &lawful,
+                    ));
+                    inline = true;
+                    let local = l.codec_field_id(id);
+                    let starts = decoded_starts(plan, l, id, law);
+                    let make = |list: &str| {
+                        format!(
+                            "{lawful}.of({class}.of({list}) ?: return null{starts}) ?: return null"
+                        )
+                    };
+                    let (default, made) = if gated {
+                        (
+                            "null".to_string(),
+                            format!("{local}?.let {{ {} }}", make("it")),
+                        )
+                    } else {
+                        (format!("{lawful}.fewest()"), make(&local))
+                    };
+                    let ty = optional(lawful);
+                    presented.insert(id.clone(), ty.clone());
+                    held.insert(id.clone(), Held { ty, default, made });
+                    continue;
+                }
             }
             _ => {
                 let ty = l.type_name(&element.field.sce_type).into_owned();
@@ -1141,6 +1176,242 @@ fn bounded_list_class(
     )
 }
 
+/// The class the Kotlin value of the codec whose data class is `struct_name`
+/// holds its list `id` in where the list's entries say the inputs it hands
+/// them (docs/adr/0065 §6 R8): the list, in the class of its bound, and the
+/// start of its law. The one place the name is made, as [`list_class`] is.
+pub(crate) fn lawful_class(struct_name: &str, id: &str) -> String {
+    format!(
+        "{struct_name}{}Lawful",
+        filters::to_pascal_case(id.to_string())
+    )
+}
+
+/// The property of a class [`lawful_class`] names that holds where the law
+/// over the input `input` its entries say starts: the value the list hands
+/// every entry for it.
+pub(crate) fn start_property(input: &str) -> String {
+    format!("start{}", filters::to_pascal_case(input.to_string()))
+}
+
+/// The arguments after the list a decode hands `of` of the class of the
+/// lawful list `id` of `plan` (docs/adr/0065 §6 R8): for each input of `law`
+/// the list hands every entry, where the frame the decode read starts it,
+/// the flag of a carrier the input is bound to, read off the local the
+/// decode read the carrier into, or the codec's own input it is handed.
+fn decoded_starts(plan: &EncodePlan<'_>, l: &LangCtx, id: &str, law: &Law) -> String {
+    law.inputs
+        .iter()
+        .filter(|input| matches!(input.automaton, Automaton::Uniform))
+        .map(|input| {
+            let bound = plan
+                .roles
+                .list_laws
+                .iter()
+                .find(|held| {
+                    held.binder.input == input.input
+                        && matches!(&held.binder.site, BindSite::List { field } if field == id)
+                })
+                .expect("a list's law over an input it hands every entry is bound");
+            let start = match &bound.against {
+                InputValue::Carrier { carrier, flag } => {
+                    let def = flag_def(plan, carrier, flag);
+                    let bits = CarrierBits::of(&carrier_field(plan, carrier).sce_type);
+                    format!(
+                        "(({} shr {}) and {}) != {}",
+                        bits.viewed(&l.codec_field_decode_local(carrier)),
+                        def.bit,
+                        bits.literal(1),
+                        bits.literal(0)
+                    )
+                }
+                InputValue::Input { name } => format!("{}.toUInt() != 0u", input_name(name)),
+                InputValue::PreviousEntry { .. } => {
+                    unreachable!("an input the entry before decides starts fixed")
+                }
+            };
+            format!(", {} = {start}", start_property(&input.input))
+        })
+        .collect()
+}
+
+/// The class `class` the list `field` of `plan`, whose data class is
+/// `struct_name`, is held in where its entries say the inputs it hands them
+/// (docs/adr/0065 §6 R8), as the Rust and C++ runtimes' `Lawful` holds it: the
+/// list in `list`, the class of its bound, and for each input it hands every
+/// entry the start, the value it hands them. Its constructor is private and
+/// `of` makes a value only of a list whose entries follow `law` from the
+/// start: each entry says an input the list hands every entry as the start
+/// says it, and one a chain hands from the entry before set exactly where the
+/// entry before is of the kind, the first clear; an entry that says nothing
+/// of an input follows any state (§6 R8b). A value made by default holds the
+/// fewest entries of the bound, from the start the first of them says.
+#[allow(clippy::too_many_arguments)]
+fn lawful_declaration(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    struct_name: &str,
+    field: &CodecField,
+    law: &Law,
+    list: &str,
+    class: &str,
+) -> String {
+    let id = &field.id;
+    let alias = held_alias(plan, field);
+    let entry = body_type(
+        printed_import(imports, alias).expect("`unlowered` prints a list of a printed codec only"),
+    );
+    let source = format!("{entry}Source");
+    // What the entry `of` says of `input`, by its codec's function: a `UByte`,
+    // or a `UByte?` where it says it in some of its values only.
+    let said = |input: &str, of: &str| format!("{entry}.{}({of})", said_function(input));
+    let uniform: Vec<&str> = law
+        .inputs
+        .iter()
+        .filter(|input| matches!(input.automaton, Automaton::Uniform))
+        .map(|input| input.input.as_str())
+        .collect();
+    let mut states = String::new();
+    let mut checks = String::new();
+    let mut steps = String::new();
+    for input in &law.inputs {
+        let state = match input.automaton {
+            Automaton::Uniform => start_property(&input.input),
+            Automaton::AfterKey { id: kind } => {
+                let state = format!("after{}", filters::to_pascal_case(input.input.clone()));
+                states.push_str(&format!("            var {state} = false\n"));
+                steps.push_str(&format!(
+                    "                {state} = kind(entry) == 0x{kind:X}uL\n"
+                ));
+                state
+            }
+        };
+        let says = said(&input.input, "entry");
+        checks.push_str(&if says_partly(imports, alias, &input.input) {
+            format!(
+                "                {says}?.let {{ if ((it.toUInt() != 0u) != {state}) return null }}\n"
+            )
+        } else {
+            format!("                if (({says}.toUInt() != 0u) != {state}) return null\n")
+        });
+    }
+    let kind = if steps.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\
+             \x20       /// The kind of `entry`: the identifier the chain tells its entries apart by.\n\
+             \x20       private fun kind(entry: {source}): ULong = {}\n",
+            entry_identifier(plan, l, id, "entry")
+        )
+    };
+    let properties: String = uniform
+        .iter()
+        .map(|input| {
+            format!(
+                "    /// The value of the input `{input}` the list hands every entry: where its\n\
+                 \x20   /// law starts.\n\
+                 \x20   val {}: Boolean,\n",
+                start_property(input)
+            )
+        })
+        .collect();
+    let parameters: String = uniform
+        .iter()
+        .map(|input| format!(", {}: Boolean", start_property(input)))
+        .collect();
+    let passed: String = uniform
+        .iter()
+        .map(|input| format!(", {}", start_property(input)))
+        .collect();
+    let equal: String = uniform
+        .iter()
+        .map(|input| {
+            let p = start_property(input);
+            format!(" && other.{p} == {p}")
+        })
+        .collect();
+    let hash = uniform
+        .iter()
+        .fold("list.hashCode()".to_string(), |h, input| {
+            format!("31 * ({h}) + {}.hashCode()", start_property(input))
+        });
+    let shown: String = uniform
+        .iter()
+        .map(|input| {
+            let p = start_property(input);
+            format!(", {p}=${p}")
+        })
+        .collect();
+    // The start of the fewest entries: what the first of them says, else
+    // clear, as the C++ `Uniform::start_of` reads it.
+    let (first, fewest_starts) = if uniform.is_empty() {
+        (String::new(), String::new())
+    } else {
+        (
+            "\x20           val first = list.entries.firstOrNull()\n".to_string(),
+            uniform
+                .iter()
+                .map(|input| {
+                    format!(
+                        ", (first?.let {{ {} }}?.toUInt() ?: 0u) != 0u",
+                        said(input, "it")
+                    )
+                })
+                .collect(),
+        )
+    };
+    format!(
+        "/// The `{id}` element of [{struct_name}], its entries held to the law they say\n\
+         /// their inputs by (docs/adr/0065 §6 R8, docs/adr/0081 §2): its constructor is\n\
+         /// private and [of] makes a value only of a list whose entries follow the law\n\
+         /// from the start the value gives it, so the encode, which writes the flags the\n\
+         /// list hands its entries from the start, refuses nothing of it.\n\
+         class {class} private constructor(\n\
+         \x20   /// The list, within its bound.\n\
+         \x20   val list: {list},\n\
+         {properties}\
+         ) : com.sce.forge.runtime.Counted {{\n\
+         \x20   /// The entries the list holds.\n\
+         \x20   val entries: List<{source}>\n\
+         \x20       get() = list.entries\n\
+         \n\
+         \x20   /// How many entries the list holds, the count a frame writes of it.\n\
+         \x20   override val size: Int\n\
+         \x20       get() = list.size\n\
+         \n\
+         \x20   override fun equals(other: Any?): Boolean =\n\
+         \x20       other is {class} && other.list == list{equal}\n\
+         \n\
+         \x20   override fun hashCode(): Int = {hash}\n\
+         \n\
+         \x20   override fun toString(): String = \"{class}(list=$list{shown})\"\n\
+         \n\
+         \x20   companion object {{{kind}\n\
+         \x20       /// `list` as a value of the law from the start given, or `null` where an\n\
+         \x20       /// entry says a value other than the one its place asks of it.\n\
+         \x20       fun of(list: {list}{parameters}): {class}? {{\n\
+         {states}\
+         \x20           for (entry in list.entries) {{\n\
+         {checks}\
+         {steps}\
+         \x20           }}\n\
+         \x20           return {class}(list{passed})\n\
+         \x20       }}\n\
+         \n\
+         \x20       /// The fewest entries of the bound, each made by default, from the start\n\
+         \x20       /// the first of them says: what a value made by default holds.\n\
+         \x20       fun fewest(): {class} {{\n\
+         \x20           val list = {list}.fewest()\n\
+         {first}\
+         \x20           return checkNotNull(of(list{fewest_starts})) {{ \"the entries made by default follow the law\" }}\n\
+         \x20       }}\n\
+         \x20   }}\n\
+         }}\n\n"
+    )
+}
+
 /// The value class a byte string or a text (`text`) `id` of `struct_name` is
 /// held in, `class`, within `bound`: a private constructor, and `of`, which
 /// makes a value only of bytes, or of a text whose UTF-8 bytes, within the
@@ -1462,6 +1733,16 @@ fn encode_source(
                         body_writer(held),
                         said_function(input)
                     ),
+                    present: measure.gated.then(|| format!("{content} != null")),
+                }
+            }
+            // The start of the law of the list that hands every entry the
+            // input, which the class of the list holds (docs/adr/0065 §6 R8);
+            // an `Int`, there where the list is.
+            Measured::Start { list, input } => {
+                let content = element(&list.id);
+                MeasureText {
+                    size: format!("(if ({content}.{}) 1 else 0)", start_property(input)),
                     present: measure.gated.then(|| format!("{content} != null")),
                 }
             }
@@ -2444,8 +2725,24 @@ fn said_value(
             };
             over_arms(plan, imports, struct_name, &variant(), &each, otherwise)
         }
-        InputSource::List { .. } => {
-            unreachable!("`unlowered` prints no input a list's law says")
+        // Where the law of the list that hands every entry the input starts,
+        // which the class of the list holds (docs/adr/0065 §6 R8); nothing
+        // where a gate leaves the list out.
+        InputSource::List {
+            list,
+            input: held,
+            partly,
+            ..
+        } => {
+            let start = start_property(held);
+            if *partly {
+                format!(
+                    "{}?.let {{ (if (it.{start}) 1 else 0).toUByte() }}",
+                    read(list)
+                )
+            } else {
+                format!("(if ({}.{start}) 1 else 0).toUByte()", read(list))
+            }
         }
     }
 }
