@@ -4054,6 +4054,7 @@ pub fn compile_forge_with_deploy(
                 // A single document: its element is not in hand, and the
                 // collection declares no index here.
                 element_cpp_printed: false,
+                element_kotlin_printed: false,
             },
         );
         Some(map)
@@ -4663,6 +4664,12 @@ pub struct BoundedCollectionResolution {
     /// element through its accessor. `false` on every other backend, for an
     /// element that is no codec, and when the element document is not in hand.
     pub element_cpp_printed: bool,
+    /// docs/adr/0081 step 4: whether the Kotlin backend prints the element
+    /// codec from its plan, so the collection reads a text or a byte string
+    /// `<sce:index-by>` field out of the value class of its bound. `false` on
+    /// every other backend, for an element that is no codec, and when the
+    /// element document is not in hand.
+    pub element_kotlin_printed: bool,
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-P — what a queue's two
@@ -6250,6 +6257,8 @@ fn compile_document_set(
                 index_by_imports,
                 element_swift_unlowered,
                 element_cpp_printed: element_type_cpp_printed
+                    .contains(&filters::to_snake_case(bc.element_type.clone())),
+                element_kotlin_printed: element_type_kotlin_printed
                     .contains(&filters::to_snake_case(bc.element_type.clone())),
             },
         );

@@ -31252,6 +31252,21 @@ fn render_bounded_collection_cpp(
     })
 }
 
+/// The test `findByIndex` makes of an element `elem` against `key`, the
+/// `<sce:index-by>` field `field` of type `ty`: a byte string compared by its
+/// content, as a `ByteArray`'s `==` compares identity, and a text or a byte
+/// string of an element the Kotlin backend prints from its plan (`printed`)
+/// read out of the value class of its bound (docs/adr/0081 §2,
+/// [`kotlin_source::refinement_class`]).
+fn kotlin_index_by_match(field: &str, ty: Option<&SceType>, printed: bool) -> String {
+    match (ty, printed) {
+        (Some(SceType::Bytes), true) => format!("elem.{field}.bytes.contentEquals(key)"),
+        (Some(SceType::Bytes), false) => format!("elem.{field}.contentEquals(key)"),
+        (Some(SceType::String), true) => format!("elem.{field}.text == key"),
+        _ => format!("elem.{field} == key"),
+    }
+}
+
 /// Render a `<sce:kind="bounded-collection">` document for the
 /// Kotlin backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits
 /// `Array<T?>(N)` + `BooleanArray(N)` occupancy + `IntArray(N)`
@@ -31280,6 +31295,15 @@ fn render_bounded_collection_kotlin(
     let snake = filters::to_snake_case(m.name.clone());
     let element_pascal = filters::to_pascal_case(m.element_type.clone());
     let element_snake = filters::to_snake_case(m.element_type.clone());
+    let resolution = options
+        .bounded_collection_resolutions
+        .as_ref()
+        .and_then(|map| map.get(&m.name));
+    let index_by_match = kotlin_index_by_match(
+        m.index_by.as_deref().unwrap_or_default(),
+        resolution.and_then(|r| r.index_by_field_sce_type.as_ref()),
+        resolution.is_some_and(|r| r.element_kotlin_printed),
+    );
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -31294,6 +31318,7 @@ fn render_bounded_collection_kotlin(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
+        index_by_match => index_by_match,
         index_by_kotlin_type => inputs.index_type,
         index_imports => inputs.index_imports,
         runtime_dep => "self-contained — Kotlin stdlib only",

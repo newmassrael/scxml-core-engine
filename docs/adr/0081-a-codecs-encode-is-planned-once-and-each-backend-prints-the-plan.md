@@ -1599,6 +1599,11 @@ old encode, the old encode and its templates are removed in the same landing.
    caller's sink untouched, as a positional encode stages a frame. An optional parameter is read once into a local
    Kotlin narrows. The value's `encode` is `encodeSource`'s answer and keeps its signature; the value and its records
    hold what they held. The template's encode is gone: every content-line plan is printed.
+
+   A bounded collection whose element the Kotlin backend prints reads a text or a byte string `<sce:index-by>`
+   field out of the value class of its bound (`element_kotlin_printed` beside `element_cpp_printed` in the
+   collection's resolution), as the C++ collection reads the field through its accessor; a byte string is compared
+   by its content, printed or not, since a `ByteArray`'s `==` compares identity.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

@@ -196,7 +196,7 @@ class {{ pascal }} : Iterable<{{ element_pascal }}> {
         for (slotIdx in 0 until CAPACITY) {
             if (!occupied[slotIdx]) continue
             val elem = slots[slotIdx] ?: continue
-            if (elem.{{ index_by_field }} == key) {
+            if ({{ index_by_match }}) {
                 val gen = generation[slotIdx].toUInt() and GEN_MASK
                 return {{ pascal }}Handle.pack(slotIdx.toUInt(), gen)
             }

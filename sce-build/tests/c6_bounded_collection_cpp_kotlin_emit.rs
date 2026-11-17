@@ -347,6 +347,75 @@ fn kotlin_happy_compile_const_with_index_by() {
     );
 }
 
+/// An element the Kotlin backend prints from its plan holds a byte string and a
+/// text in the value class of its bound (docs/adr/0081 §2), so `findByIndex`
+/// reads the index out of it: a byte string by its content, as a `ByteArray`'s
+/// `==` compares identity, and a text as its `String`.
+///
+/// Turns red where `kotlin_index_by_match` compares the element's field with
+/// `==` whatever its type, or where the orchestrator stops threading
+/// `element_kotlin_printed` into the collection's resolution.
+#[test]
+fn kotlin_index_by_reads_a_printed_elements_text_or_bytes_out_of_its_class() {
+    let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="named_entry" version="1.0">
+  <datamodel>
+    <data id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref" sce:length-field="len" sce:max-size="32"/>
+  </datamodel>
+</scxml>"##;
+    let bc = bc_doc(
+        "named_table",
+        "named_entry",
+        8,
+        "\n  <sce:index-by field=\"payload\"/>",
+    );
+    let code = compile_pair_for(
+        Language::Kotlin,
+        &bc,
+        codec,
+        "named_entry.scxml",
+        "named_table.scxml",
+    );
+    assert!(
+        code.contains("fun findByIndex(key: ByteArray): NamedTableHandle?"),
+        "expected findByIndex(key: ByteArray); got:\n{code}"
+    );
+    assert!(
+        code.contains("if (elem.payload.bytes.contentEquals(key)) {"),
+        "expected the index read out of the element's class by content; got:\n{code}"
+    );
+
+    let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="labelled_entry" version="1.0">
+  <datamodel>
+    <data id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="label" sce:type="string" sce:byte="1" sce:bit-size="length-ref" sce:length-field="len" sce:max-size="16"/>
+  </datamodel>
+</scxml>"##;
+    let bc = bc_doc(
+        "labelled_table",
+        "labelled_entry",
+        8,
+        "\n  <sce:index-by field=\"label\"/>",
+    );
+    let code = compile_pair_for(
+        Language::Kotlin,
+        &bc,
+        codec,
+        "labelled_entry.scxml",
+        "labelled_table.scxml",
+    );
+    assert!(
+        code.contains("if (elem.label.text == key) {"),
+        "expected the index read out of the element's class as its text; got:\n{code}"
+    );
+}
+
 #[test]
 fn kotlin_overflow_reject_emits_err_return() {
     let codec = codec_doc("subscription_entry");
