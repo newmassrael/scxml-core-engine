@@ -3055,3 +3055,18 @@ it is absent (`codec_present_if_length_ref`, `codec_present_if_length_from` amon
 - The decode writes each such member into the arm of the group the gates it read select, and the struct holds it
   nowhere else.
 
+## A printed C11 codec holds a list to the law its entries say their inputs by (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the codecs
+that hold a list whose entries say the input it hands them (`codec_repeat_flag_carrier` among the resources), and by
+the chains that hand an entry whether the entry before it was of a kind (`codec_chain_handed`).
+
+- `{codec}_{list}_list_t` of such a list holds `start_<input>` after `count`, the value every entry says of an input
+  the list hands them all, and `{codec}_{list}_list_make` takes it after the entry's table:
+  `make(&list, walk, ctx, entry_table, start)`. The maker refuses a list an entry of which says another value, or,
+  for an input a chain hands from the entry before, other than whether the entry before is of the kind the bind
+  waits for, with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`. A table of a consumer's own makes its list so.
+- The struct holds the start beside the list, `{list}_start_<input>`: set it to the value the entries say, also where
+  the list is empty. The flag the list's import binds the input to (`head.W`) is derived from it, and the bit the
+  struct holds there is written over. A decode sets the start from the frame.
+
