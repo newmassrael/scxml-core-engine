@@ -491,6 +491,61 @@ fn a_list_is_held_to_its_bound_walked_by_its_sequence_and_counted() {
     );
 }
 
+/// A codec whose one-bit flags a parent may set takes them in a struct of
+/// its own, `{Codec}Overrides`, by an encode that folds each one it sets into
+/// its carrier last; `EncodeSource` sets none. A chain that ends on its
+/// entries' flag sets it on every entry but the last by that struct.
+///
+/// Turns red where `encode_source` stops declaring the overrides or folding
+/// them, where `EncodeSource` stops handing an empty struct, where
+/// `positional_forms` names a chain's end flag or its walk again, or where
+/// `walk_entries` sets the flag on the last entry too or counts the entries
+/// left other than down from the list's length.
+#[test]
+fn a_chain_sets_its_entries_end_flag_by_the_entry_codecs_overrides() {
+    assert!(unlowered("codec_chain_depth_entry").is_empty());
+    let entry = resource_go("codec_chain_depth_entry");
+    holds(
+        "codec_chain_depth_entry",
+        &entry,
+        &[
+            "type CodecChainDepthEntryOverrides struct {\n\
+             \t// HeaderZ is the `Z` flag of `header`, where a parent sets it.\n\
+             \tHeaderZ optional.Of[bool]\n\
+             }\n",
+            "func EncodeSource(src CodecChainDepthEntrySource, w codec.SceSink) error {\n\
+             \treturn EncodeSourceOverriding(src, w, CodecChainDepthEntryOverrides{})\n\
+             }\n",
+            "func EncodeSourceOverriding(src CodecChainDepthEntrySource, w codec.SceSink, \
+             overrides CodecChainDepthEntryOverrides) error {\n\
+             \t_cHeader := src.Header()\n\
+             \tif _o, ok := overrides.HeaderZ.Get(); ok {\n\
+             \t\t_cHeader &^= 0x80\n\
+             \t\tif _o {\n\
+             \t\t\t_cHeader |= 0x80\n\
+             \t\t}\n\
+             \t}\n",
+        ],
+    );
+    assert!(unlowered("codec_chain_depth_plain").is_empty());
+    let chain = resource_go("codec_chain_depth_plain");
+    holds(
+        "codec_chain_depth_plain",
+        &chain,
+        &["\t{\n\
+           \t\t_leftExtensions := src.Extensions().Len()\n\
+           \t\tfor _e := range src.Extensions().All() {\n\
+           \t\t\t_leftExtensions--\n\
+           \t\t\tif err := codec_chain_depth_entry.EncodeSourceOverriding(_e, w, \
+           codec_chain_depth_entry.CodecChainDepthEntryOverrides{HeaderZ: \
+           optional.Some(_leftExtensions != 0)}); err != nil {\n\
+           \t\t\t\treturn err\n\
+           \t\t\t}\n\
+           \t\t}\n\
+           \t}\n"],
+    );
+}
+
 /// A procedure over `codec_length_ref` that assigns `location` from `expr`,
 /// its input `blob` a byte string of at most 32 bytes and `n` an integer.
 fn length_ref_procedure(location: &str, expr: &str) -> String {
@@ -907,6 +962,8 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_encoded_length_checked",
         "codec_declared_bounds",
         "codec_tlv_chain_basic",
+        "codec_chain_depth_entry",
+        "codec_chain_depth_plain",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
