@@ -1816,6 +1816,26 @@ old encode, the old encode and its templates are removed in the same landing.
    still writes switches on a printed body's arm type the same way. A tag the encode derives into a field is
    answered by `Wire{Field}()`, and a variant whose caller hands its tag answers `Tag()` from the arm type. An
    input the arms say (R4d, R4e), and a check of an input at an arm, stay unlowered.
+
+   *The eighth Go landing, 2026-11-17:* a group of fields one flag of the codec's own decides, on one side or on
+   both, or a disjunction of such flags decides (docs/adr/0065 §6 R4b, R4c), its members of any kind the printer
+   prints, a length stated on the side without its content among them (`Absent::Group`), and two lists of one
+   count (R5). A Go value holds the group whole, named as every printer names it (`rust_source::group_type`,
+   `group_accessor`, `group_arm_name`): the struct of its one arm, or, where it has several, an interface only
+   its arm types satisfy, as the variant is held (the seventh landing); the optional type of either where the
+   gates allow no arm. Each arm holds its members in unexported fields behind methods and is made by its
+   constructor, so a member is no field of the value's own and no reader names it alone. Two lists of one count
+   are one member of the arm that holds both, the runtime's `codec.Aligned[F, S]`
+   (`backends/go/forge-runtime/codec/aligned.go`), made only by `codec.MakeAligned`, which answers `false` for
+   two lists of different counts, as the Kotlin runtime's factory refuses them and the Rust one answers `None`.
+   The encode reads the group once and binds each member to an optional local from the arm it holds, so each
+   statement that writes a member is the one that writes an element a gate decides; it derives a one-flag group's
+   flag from the presence of its first member (`PresenceFlag::together`), each flag of a disjunction from the
+   arm (`Derive::ArmFlag`, the value the gates have while no arm is held), and a length on the side without its
+   content from that side's member, zero where the value holds neither. The decode makes the arm the gates it
+   read select. `GoPrinted` now holds what `Make{Codec}` takes as parts, an element or a whole (a group, the
+   variant), as `cpp_source::CppPrinted` does, and answers no member of a group. A group an input decides, which
+   is one of an input the value says, and a group a chain's entries decide (R6) stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

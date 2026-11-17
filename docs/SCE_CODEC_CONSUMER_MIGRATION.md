@@ -2747,3 +2747,22 @@ variant whose arms say a flag input, or are held to an input the parent checks, 
 - A parent's flag that holds the tag of an embedded body's arm is derived from the body, in place of the bits the
   value presents, as before.
 
+## A printed Go codec holds a group of fields one gate decides whole (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree, the Go goldens and the Go round-trip tree are
+regenerated after them. They move the positional codecs that also hold a group of fields one flag of the codec's
+own, or a disjunction of such flags, decides (`codec_group_enum` and `codec_repeat_unconditional_count` among them).
+A group an input or a chain's entries decide is unchanged.
+
+- The members of a group are no fields of the value: `frame.State` and `frame.Attempts` are read through
+  `frame.FlagsHasSession()`, an `optional.Of[pkg.FrameFlagsHasSession]` where the flag may leave them out, whose
+  arm presents each member by its method (`arm.Attempts()`). A group of several arms is an interface only its arm
+  types satisfy, `{Group}{Arm}` (`FrameFlagsWantsAOrWantsBWantsA`), read by a type switch.
+- Make a group by its arm's constructor, `pkg.MakeFrameFlagsHasSession(state, attempts)`, and hand it to
+  `Make{Codec}` where its first member is declared; the flags that decide it are derived from it.
+- Two lists of one count are one `codec.Aligned[F, S]` in the arm that holds both, made by
+  `codec.MakeAligned(first, second)`, which answers `false` for lists of different lengths; read them by
+  `pair.First()` and `pair.Second()`.
+- A validator, a procedure or an algorithm does not name a member of a group alone; an expression that does is
+  refused when it is generated.
+
