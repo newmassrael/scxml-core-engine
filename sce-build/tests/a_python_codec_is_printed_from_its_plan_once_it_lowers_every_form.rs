@@ -93,16 +93,20 @@ fn a_length_is_derived_from_the_bytes_it_measures_and_is_no_field_of_the_value()
         "codec_length_ref",
         &text,
         &[
-            "from sce_forge_runtime.bounded import BoundedBytes\n",
+            "from sce_forge_runtime.bounded import BoundedBytes, BoundedInt\n",
             "from typing import Optional, Protocol\n",
+            "class CodecLengthRefMsgIdInt(BoundedInt):\n",
+            "    BITS = 8\n    SIGNED = False\n",
             "class CodecLengthRefPayloadBytes(BoundedBytes):\n",
             "    LEAST = 0\n    MOST = 32\n",
             "class CodecLengthRefSource(Protocol):\n",
-            "    @property\n    def msg_id(self) -> int: ...\n",
+            "    @property\n    def msg_id(self) -> CodecLengthRefMsgIdInt: ...\n",
             "    @property\n    def payload(self) -> CodecLengthRefPayloadBytes: ...\n",
+            "    msg_id: CodecLengthRefMsgIdInt = 0\n",
             "    payload: CodecLengthRefPayloadBytes = CodecLengthRefPayloadBytes()\n",
             "    def __setattr__(self, name: str, value: object) -> None:\n",
-            "        if name == \"payload\":\n            value = CodecLengthRefPayloadBytes(value)\n",
+            "        if name == \"msg_id\":\n            value = CodecLengthRefMsgIdInt(value)\n",
+            "        elif name == \"payload\":\n            value = CodecLengthRefPayloadBytes(value)\n",
             "        object.__setattr__(self, name, value)\n",
             "        encode_source(self, w)\n",
             "\ndef encode_source(src: CodecLengthRefSource, w: SceSink) -> None:\n",
@@ -157,20 +161,31 @@ fn a_length_less_its_arithmetic_is_derived_less_it() {
     );
 }
 
-/// A codec of integers alone is printed with no class of a bound, its value's
-/// fields unchanged.
+/// A codec of integers holds each in the class of its field's width and
+/// signedness, a subclass of the runtime's `BoundedInt` that the value's
+/// `__setattr__` makes wherever the element is set, so a number past the width
+/// is refused where it is made and never written as the bits the field holds.
 ///
-/// Turns red where `python_source::positional_forms` refuses an integer
-/// element, or where the template imports `BoundedBytes` for a codec that
-/// presents no byte string.
+/// Turns red where `python_source::held_as` holds an integer as a bare `int`
+/// again, where `int_width` stops reading the field's width, or where
+/// `render` declares an integer as `int`.
 #[test]
-fn a_codec_of_integers_is_printed_with_no_class_of_a_bound() {
+fn a_codec_of_integers_holds_each_in_the_class_of_its_width() {
     assert!(unlowered("codec_simple_frame").is_empty());
     let text = resource_module("codec_simple_frame");
     holds(
         "codec_simple_frame",
         &text,
         &[
+            "from sce_forge_runtime.bounded import BoundedInt\n",
+            "class CodecSimpleFrameMsgIdInt(BoundedInt):\n",
+            "    BITS = 8\n    SIGNED = False\n",
+            "class CodecSimpleFramePayloadInt(BoundedInt):\n",
+            "    BITS = 16\n    SIGNED = False\n",
+            "    @property\n    def payload(self) -> CodecSimpleFramePayloadInt: ...\n",
+            "    payload: CodecSimpleFramePayloadInt = 0\n",
+            "        if name == \"msg_id\":\n            value = CodecSimpleFrameMsgIdInt(value)\n",
+            "        elif name == \"payload\":\n            value = CodecSimpleFramePayloadInt(value)\n",
             "class CodecSimpleFrameSource(Protocol):\n",
             "\ndef encode_source(src: CodecSimpleFrameSource, w: SceSink) -> None:\n",
             "        encode_source(self, w)\n",
@@ -179,7 +194,30 @@ fn a_codec_of_integers_is_printed_with_no_class_of_a_bound() {
     holds_none(
         "codec_simple_frame",
         &text,
-        &["BoundedBytes", "__setattr__", "_d_"],
+        &["BoundedBytes", "_d_", "def payload(self) -> int"],
+    );
+}
+
+/// A signed integer narrower than a Python `int` is held to its two's
+/// complement span, and the decode reads the bits of its field as that span
+/// does, so the frame of a negative value reads back as the value.
+///
+/// Turns red where `python_source::decoded_int` stops reading a signed
+/// field's bits by `from_wire`, or where `int_class` writes a signed field as
+/// unsigned.
+#[test]
+fn a_signed_integer_is_read_back_as_the_twos_complement_of_its_bits() {
+    assert!(unlowered("codec_quantity_temperature").is_empty());
+    let text = resource_module("codec_quantity_temperature");
+    holds(
+        "codec_quantity_temperature",
+        &text,
+        &[
+            "class CodecQuantityTemperatureRawTempInt(BoundedInt):\n",
+            "    BITS = 8\n    SIGNED = True\n",
+            "raw_temp=CodecQuantityTemperatureRawTempInt.from_wire(",
+            "            value = CodecQuantityTemperatureRawTempInt(value)\n",
+        ],
     );
 }
 
@@ -198,7 +236,8 @@ fn a_gated_element_derives_its_flag_and_is_written_where_it_is_there() {
         "codec_present_if_basic",
         &text,
         &[
-            "    @property\n    def seq(self) -> Optional[int]: ...\n",
+            "    @property\n    def seq(self) -> Optional[CodecPresentIfBasicSeqInt]: ...\n",
+            "value = None if value is None else CodecPresentIfBasicSeqInt(value)\n",
             "    _c_flags = src.flags\n",
             "    _c_flags = (_c_flags & ~0x1) | (0x1 if src.seq is not None else 0)\n",
             "    w.write_u8(_c_flags & 0xFF)\n",
@@ -376,8 +415,9 @@ fn a_length_the_value_states_is_read_only_where_its_content_is_absent() {
         "codec_length_stated",
         &text,
         &[
-            "    @property\n    def span_len(self) -> Optional[int]: ...\n",
-            "    span_len: Optional[int] = None\n",
+            "    @property\n    def span_len(self) -> Optional[CodecLengthStatedSpanLenInt]: ...\n",
+            "    span_len: Optional[CodecLengthStatedSpanLenInt] = None\n",
+            "        value = None if value is None else CodecLengthStatedSpanLenInt(value)\n",
             "    _f_span_len = None\n    if src.alpha is not None:\n        \
              _f_span_len = len(src.alpha)\n    elif src.beta is not None:\n        \
              _f_span_len = len(src.beta)\n",
@@ -510,7 +550,7 @@ fn a_group_is_one_field_whose_arms_hold_its_members() {
             "@dataclass\nclass CodecPresentIfLengthRefFlagsHasPayloadHasPayload:\n",
             "    payload: CodecPresentIfLengthRefPayloadBytes = CodecPresentIfLengthRefPayloadBytes()\n",
             "@dataclass\nclass CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload:\n",
-            "    payload_size: int = 0\n",
+            "    payload_size: CodecPresentIfLengthRefPayloadSizeInt = 0\n",
             "CodecPresentIfLengthRefFlagsHasPayload = Union[\
              CodecPresentIfLengthRefFlagsHasPayloadHasPayload, \
              CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload]\n",

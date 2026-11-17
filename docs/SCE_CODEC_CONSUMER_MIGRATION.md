@@ -2092,3 +2092,18 @@ codecs whose fields are gated on `<chain>.has(<kind>)` (docs/adr/0065 §6 R6).
 - A group made by default holds the arm present while no gate holds; before, it held the first arm.
 - Every printed module whose codec has a variant defines `ARM_CLASSES`, the class of the arm each tag names.
 
+## A printed Python codec holds each integer to its field's width (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. No codec joins or leaves the
+printed set.
+
+- Each integer element, a flag set's carrier, a group's member and a length the value states among them, is held in
+  `{Codec}{Element}Int`, a subclass of `sce_forge_runtime.bounded.BoundedInt` that names the field's `BITS` (the
+  type's, or a fixed field's bits on the wire where fewer) and whether it is `SIGNED`. The value's `__setattr__`
+  makes it of the `int` it is handed, so `Frame(msg_id=5)` and `frame.msg_id = 5` are unchanged.
+- A number past the width raises `OverflowError` where it is set; before, the encode wrote the bits the field holds
+  of it. Where code relied on that, mask the number itself (`frame.seq = n & 0xFFFF`), or keep it within range.
+- A decode reads a signed field's bits as their two's complement: an `int8` frame byte `0xFB` reads as `-5`, where
+  it read as `251`.
+- A source handed to `encode_source` presents each integer as that class, as the module's `Protocol` says.
+

@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-"""The bound a codec's byte string or text is held to, as a type (docs/adr/0077
-§3).
+"""The bound a codec's integer, byte string or text is held to, as a type
+(docs/adr/0077 §3).
 
 A codec's encode printed from its plan (docs/adr/0081 §2) reads each byte
-string of a source as a value of a subclass of :class:`BoundedBytes`, and each
-text as one of :class:`BoundedText`, that names the element's bound. Such a value is made only by its constructor, which checks
-the bound, and ``bytes`` cannot change after it is made, so a value of it holds
-its bound for as long as it lives. The encode over it then has nothing of the
+string of a source as a value of a subclass of :class:`BoundedBytes`, each
+text as one of :class:`BoundedText`, and each integer as one of
+:class:`BoundedInt`, that names the element's bound or width. Such a value is
+made only by its constructor, which checks the bound, and ``bytes``, ``str``
+and ``int`` cannot change after they are made, so a value of it holds its
+bound for as long as it lives. The encode over it then has nothing of the
 bound to refuse, as the Rust and C++ encodes have nothing over their bounded
 types. Mirrors ``Bounded`` of the Rust runtime and ``SCE::Forge::Bytes`` of the
 C++ runtime.
@@ -16,7 +18,7 @@ C++ runtime.
 
 from __future__ import annotations
 
-from typing import FrozenSet, Generic, Iterable, Optional, Sized, TypeVar, Union
+from typing import FrozenSet, Generic, Iterable, Optional, Sized, Tuple, TypeVar, Union
 
 from .codec import InconsistentSource, InvalidUtf8, LengthOutOfRange, TooManyElements
 
@@ -94,6 +96,62 @@ class BoundedTuple(tuple):
         if len(held) < cls.LEAST:
             raise LengthOutOfRange(cls.__name__)
         return held
+
+
+class BoundedInt(int):
+    """An integer held to the width and signedness of the field that carries
+    it (docs/adr/0081 §2): a number ``BITS`` bits hold, in two's complement
+    where ``SIGNED`` is set. A subclass names the width of one element by its
+    two class attributes; this class itself holds any unsigned 64-bit number.
+
+    A Python ``int`` has no width, so where the Rust and C++ values hold a
+    field in a type of its width, a Python value holds it in a class of it.
+    A number past the width is no value of the class: its constructor raises
+    :class:`OverflowError`, as ``int.to_bytes`` does for a number its bytes
+    cannot hold, so no encode writes the field's bits of it and loses the
+    rest. It is not a :class:`CodecError`, since no frame holds such a
+    number: a decode reads exactly the field's bits (:meth:`from_wire`). An
+    ``int`` cannot change after it is made, so a value of the class holds its
+    width for as long as it lives; arithmetic on it answers a plain ``int``,
+    which is held again where it is set.
+
+    Made of an ``int`` alone (a ``bool`` is one); any other type raises
+    :class:`TypeError`, as a number of another kind is no integer of the
+    field."""
+
+    BITS: int = 64
+    SIGNED: bool = False
+
+    def __new__(cls, value: int = 0) -> "BoundedInt":
+        if not isinstance(value, int):
+            raise TypeError(f"{cls.__name__} is made of an int")
+        least, most = cls.span()
+        if value < least or value > most:
+            raise OverflowError(
+                f"{cls.__name__}: {value} is past the {cls.BITS} bits of the field"
+            )
+        return super().__new__(cls, value)
+
+    @classmethod
+    def span(cls) -> Tuple[int, int]:
+        """The least and the most number the class holds."""
+        if cls.SIGNED:
+            return -(1 << (cls.BITS - 1)), (1 << (cls.BITS - 1)) - 1
+        return 0, (1 << cls.BITS) - 1
+
+    @classmethod
+    def from_wire(cls, bits: int) -> "BoundedInt":
+        """The value the field's ``BITS`` bits on the wire say, ``bits`` read
+        as an unsigned number: itself where the field is unsigned, and its
+        two's complement where it is signed, as every backend reads a signed
+        field. Raises :class:`OverflowError` for a number past the bits."""
+        if bits < 0 or bits >> cls.BITS:
+            raise OverflowError(
+                f"{cls.__name__}: {bits} is past the {cls.BITS} bits of the field"
+            )
+        if cls.SIGNED and bits >> (cls.BITS - 1):
+            bits -= 1 << cls.BITS
+        return cls(bits)
 
 
 class UnknownTag(int):

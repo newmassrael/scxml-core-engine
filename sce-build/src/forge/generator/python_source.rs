@@ -678,6 +678,59 @@ fn bounded_class(
     }
 }
 
+/// The bits and the signedness of the integer `field` holds, `None` where it
+/// holds none: its type's, narrowed to the bits a fixed field has on the wire
+/// (a VLE's type bounds its value alone, as the wire carries any ZInt64).
+fn int_width(field: &CodecField) -> Option<(u32, bool)> {
+    let bits = field.sce_type.int_bit_width()?;
+    let bits = match field.bit_size {
+        BitSize::Fixed { bits: wire } => wire.min(bits),
+        _ => bits,
+    };
+    Some((bits, field.sce_type.is_signed()))
+}
+
+/// The class the integer `field` of `struct_name` is held in, a subclass of
+/// the runtime's `BoundedInt` that names its width and signedness
+/// ([`int_width`]), its definition put into `gathered`.
+fn int_class(gathered: &mut Gathered, struct_name: &str, field: &CodecField) -> String {
+    let (bits, signed) = int_width(field).expect("the field holds an integer");
+    let id = &field.id;
+    let class = format!(
+        "{struct_name}{}Int",
+        filters::to_pascal_case(id.to_string())
+    );
+    gathered.runtime("bounded", "BoundedInt");
+    let kind = if signed { "a signed" } else { "an unsigned" };
+    gathered.classes.push_str(&format!(
+        "class {class}(BoundedInt):\n\
+         \x20   \"\"\"The ``{id}`` element of :class:`{struct_name}`, {kind} integer of\n\
+         \x20   {bits} bits, held to them where a value of it is made (docs/adr/0081 §2).\"\"\"\n\
+         \n\
+         \x20   BITS = {bits}\n\
+         \x20   SIGNED = {}\n\n\n",
+        if signed { "True" } else { "False" }
+    ));
+    class
+}
+
+/// What the decode makes the integer `field` of the class `class` of, from the
+/// local `local` it read the field's bits into: the two's complement of them
+/// where the field is signed, `None` where `gated` and the field is absent;
+/// `None` where the field is unsigned, whose bits are the number.
+fn decoded_int(field: &CodecField, class: &str, local: &str, gated: bool) -> Option<String> {
+    let (_, signed) = int_width(field)?;
+    if !signed {
+        return None;
+    }
+    let made = format!("{class}.from_wire({local})");
+    Some(if gated {
+        format!("None if {local} is None else {made}")
+    } else {
+        made
+    })
+}
+
 /// The Python text of the codec `plan`, whose value's class is `struct_name`;
 /// the plan is one [`unlowered`] answers `None` for.
 pub(super) fn render(
@@ -705,10 +758,17 @@ pub(super) fn render(
         // absent (docs/adr/0058 §1): `None` while it is there, which the
         // encode then derives from it, and the decode gives back `None` where
         // it read any of it.
+        // It is an integer of its field's width, as any is.
         if element.presence == Presence::Stated {
-            let optional = format!("Optional[{}]", l.type_name(&element.field.sce_type));
+            let class = int_class(&mut gathered, struct_name, element.field);
+            let optional = format!("Optional[{class}]");
             presented.insert(id.clone(), optional.clone());
             declared.insert(id.clone(), (optional, "None".to_string()));
+            hold.push_str(&hold_line(
+                &hold,
+                &l.codec_field_id(id),
+                &format!("None if value is None else {class}(value)"),
+            ));
             let contents: Vec<String> = stated_contents(plan, id)
                 .iter()
                 .map(|content| format!("{} is None", l.codec_field_decode_local(&content.id)))
@@ -725,6 +785,14 @@ pub(super) fn render(
         }
         let held = held_as(&mut gathered, &codec, element.field, &element.value, gated);
         presented.insert(id.clone(), held.presented);
+        // A signed integer is the two's complement of the bits the decode
+        // read.
+        if let (Value::Scalar(_), Some(class)) = (&element.value, &held.class) {
+            let local = l.codec_field_decode_local(id);
+            if let Some(made) = decoded_int(element.field, class, &local, gated) {
+                decoded.insert(id.clone(), made);
+            }
+        }
         // A list held to a law is made of the start the frame gave and the
         // entries the decode read, where it read it.
         if let Some(lawful) = decoded_lawful(plan, l, struct_name, id) {
@@ -741,9 +809,11 @@ pub(super) fn render(
         if let Some(line) = held.hold {
             hold.push_str(&hold_line(&hold, &l.codec_field_id(id), &line));
         }
-        // An integer, a flag set or an enum takes the default the template
-        // gives every field of its type.
-        if !matches!(element.value, Value::Scalar(_)) {
+        // An enum takes the type and the default the template gives every
+        // field of its type; an integer is declared as the class of its
+        // width, and a flag set keeps the default its flags give it, which
+        // the template prefers to the one declared here.
+        if held.class.is_some() || !matches!(element.value, Value::Scalar(_)) {
             declared.insert(id.clone(), (held.ty, held.default));
         }
     }
@@ -928,6 +998,28 @@ fn held_as(
                 default,
                 hold: None,
                 class: None,
+            };
+        }
+        // An integer is held in the class of its field's width and
+        // signedness, which `__setattr__` makes wherever it is set, so a
+        // number past the width is refused where it is made, never written as
+        // the bits of it the field holds.
+        Value::Scalar(_) if int_width(field).is_some() => {
+            let class = int_class(gathered, struct_name, field);
+            return Held {
+                presented: optional(&class),
+                ty: optional(&class),
+                default: if gated {
+                    "None".to_string()
+                } else {
+                    l.default_expr(&field.sce_type)
+                },
+                hold: Some(if gated {
+                    format!("None if value is None else {class}(value)")
+                } else {
+                    format!("{class}(value)")
+                }),
+                class: Some(class),
             };
         }
         Value::Scalar(ty) => {
@@ -1312,9 +1404,9 @@ fn setattr(hold: &str) -> String {
     }
     format!(
         "    def __setattr__(self, name: str, value: object) -> None:\n\
-         \x20       # Each byte string and text is held to its bound wherever it is\n\
-         \x20       # set, where the value is made and after (docs/adr/0081 §2),\n\
-         \x20       # whatever it was handed.\n\
+         \x20       # Each integer, byte string and text is held to its bound\n\
+         \x20       # wherever it is set, where the value is made and after\n\
+         \x20       # (docs/adr/0081 §2), whatever it was handed.\n\
          {hold}\
          \x20       object.__setattr__(self, name, value)\n"
     )
@@ -1442,9 +1534,22 @@ fn group_part(
                 hold.push_str(&hold_line(&hold, &member, line));
             }
             // A list held to a law is held to it from the start the frame
-            // gave before the arm is made.
+            // gave before the arm is made, and a signed integer is the two's
+            // complement of the bits the decode read.
+            let local = l.codec_field_decode_local(id);
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| f.id == *id)
+                .expect("a group's member is a field of the codec");
             let read = decoded_lawful(plan, l, struct_name, id)
-                .unwrap_or_else(|| l.codec_field_decode_local(id));
+                .or_else(|| {
+                    held.class
+                        .as_ref()
+                        .and_then(|class| decoded_int(field, class, &local, false))
+                })
+                .unwrap_or(local);
             args.push(format!("{member}={read}"));
         }
         let hold = setattr(&hold);

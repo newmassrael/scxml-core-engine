@@ -1149,6 +1149,21 @@ old encode, the old encode and its templates are removed in the same landing.
    entry to whether the entry before was of the kind (`Against::PreviousEntry`, R8b). As in C++, a chain of slots
    whose entries are held to an input stays unlowered. The case printer states the chain as the arm's `Chain` of its
    entries, or its `Placed` of `{"rest", "place"}`.
+
+   *Amendment of 2026-11-17: an integer is held to its field's width.* A Python `int` has no width, so a printed
+   value held any number in an integer element and its encode wrote the bits the field holds of it (`& 0xFF`),
+   losing the rest without a word: the encode was total over values no Rust or C++ type holds. Decided: a narrow
+   integer is refined by the runtime's `BoundedInt` (`sce_forge_runtime/bounded.py`), a class of its width and
+   signedness, applied alike to the positional and the CBOR printers, so a number past its field's width is
+   refused where the value is made, never masked. The width is the type's, narrowed to the bits a fixed field has
+   on the wire, as the wire holds no more; a VLE's type bounds its value alone. The refusal is `OverflowError`, as
+   `int.to_bytes` answers a number its bytes cannot hold, and not a `CodecError`: no frame holds such a number,
+   since a decode reads exactly the field's bits. A signed field's bits are read as their two's complement
+   (`BoundedInt.from_wire`), which the template's decode had read as an unsigned number. The decision was between
+   a class per element, which names its element in the refusal and is spelled as the class of a byte string's bound
+   is, and one runtime class per width shared by every codec: the first was taken, for the one spelling of every
+   refinement of a printed module. Each element is `{Codec}{Element}Int`, held by the value's `__setattr__` as a
+   byte string is, a group's member and a length the value states among them.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
