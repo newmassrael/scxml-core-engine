@@ -274,6 +274,11 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * mode additionally peeks the cursor's next byte for variant tag
      * without advancing — arm body decoder reads it as own header. */
 {% for field in fields %}
+{# docs/adr/0065 §6 R4: a group whose members are read in place is opened
+   before the first of them. #}
+{% if field.c11_before_decode is defined %}
+    {{ field.c11_before_decode }}
+{% endif %}
 {% if field.is_repeat %}
     {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
@@ -355,6 +360,11 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * dedicated helpers; every other field flows through
      * `present_if_decode_stmt`. */
 {% for field in fields %}
+{# docs/adr/0065 §6 R4: a group whose members are read in place is opened
+   before the first of them. #}
+{% if field.c11_before_decode is defined %}
+    {{ field.c11_before_decode }}
+{% endif %}
 {% if field.is_repeat %}
     {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}

@@ -193,8 +193,10 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// byte strings, texts, and bodies and lists of codecs it prints that are
 /// handed no flag input and held to no law, always there, decided by a gate of
 /// a carrier's flags, or a number the value states while the content it
-/// measures is absent, a group of numbers and enums a gate of a flag or an
-/// input decides, held as the struct of its arm ([`group`]), and a variant of
+/// measures is absent, a group a gate of a flag or an input decides, of
+/// numbers, enums, byte strings, texts, a number the arm states where its
+/// content is absent, and bodies and lists of codecs it prints, held as the
+/// struct of its arm ([`group`]), and a variant of
 /// arms of codecs it prints, whatever holds its tag, an arm under a build
 /// feature inside the guard of its macro; whose every derived element is a
 /// number measured off byte strings, texts, lists and bodies or read off what
@@ -450,7 +452,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         // hold.
     }
     // A group of fields a gate of a flag or an input decides is held as a
-    // tagged struct of its arms ([`group`]), each member a number or an enum.
+    // tagged struct of its arms ([`group`]): a number or an enum as its type,
+    // a byte string or a text in the buffer of its bound, a body of a codec
+    // this printer prints as its struct and a list of one as the runtime's
+    // list of its entries, each read by the decode in place, where its own
+    // gate holds, into the arm the gates it read select.
     for group in plan.groups() {
         let label = gates_label(group);
         if group
@@ -483,19 +489,70 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             ));
         }
         for id in group.fields() {
-            let field = m.fields.iter().find(|f| f.id == id);
-            let number = field.is_some_and(|f| {
-                matches!(plan.value(f), Value::Scalar(t)
-                    if t.int_bit_width().is_some() || matches!(t, SceType::Enum(_)))
-            });
-            if !number {
+            let Some(field) = m.fields.iter().find(|f| f.id == id) else {
                 forms.push(format!(
-                    "group `{label}`: a member `{id}` other than a number or an enum"
+                    "group `{label}`: a member `{id}` the codec does not declare"
                 ));
+                continue;
+            };
+            match plan.value(field) {
+                Value::Scalar(t) if t.int_bit_width().is_some() => {}
+                Value::Scalar(SceType::Enum(_)) => {}
+                Value::Scalar(t) => forms.push(format!(
+                    "group `{label}`: a member `{id}`, a `{}` field",
+                    t.as_attr()
+                )),
+                Value::Bytes(_) | Value::Text(_) => {}
+                Value::Body { codec } => {
+                    if printed_body(imports, codec).is_none() {
+                        forms.push(format!(
+                            "group `{label}`: a member `{id}`, a body of `{codec}`, which the C11 \
+                             backend does not print"
+                        ));
+                    }
+                    if unbound_handed(plan, codec) {
+                        forms.push(format!(
+                            "group `{label}`: a member `{id}`, a codec handed an input its import \
+                             binds nothing to"
+                        ));
+                    }
+                }
+                Value::List { codec, law, .. } => {
+                    if printed_body(imports, codec).is_none() {
+                        forms.push(format!(
+                            "group `{label}`: a member `{id}`, a list of `{codec}`, which the C11 \
+                             backend does not print"
+                        ));
+                    }
+                    if unbound_handed(plan, codec) {
+                        forms.push(format!(
+                            "group `{label}`: a member `{id}`, a codec handed an input its import \
+                             binds nothing to"
+                        ));
+                    }
+                    if !law.is_none() {
+                        forms.push(format!(
+                            "group `{label}`: a member `{id}`, a list held to a law"
+                        ));
+                    }
+                    if field.is_tlv_chain() {
+                        forms.push(format!("group `{label}`: a member `{id}`, a chain"));
+                    }
+                }
             }
-            if field.is_some_and(|f| f.quantity.is_some()) {
+            if field.quantity.is_some() {
                 forms.push(format!(
                     "group `{label}`: a member `{id}` of a physical quantity"
+                ));
+            }
+            // The decode reads a member in place where its own gate holds,
+            // which the arm it opened holds it in; a number it reads into a
+            // local whatever the gates hold.
+            let number = matches!(plan.value(field), Value::Scalar(_));
+            if !number && field.present_if.is_none() {
+                forms.push(format!(
+                    "group `{label}`: a member `{id}` read whatever the gates hold, other than \
+                     a number"
                 ));
             }
         }
@@ -683,17 +740,9 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
         }
     }
     // Zero where a gate leaves the content out, as the field is then gated
-    // beside it, and what the value states where it states one; a group
-    // presents what the field holds on the side where its content is absent.
-    if let NumberInto::Field {
-        absent: Absent::Group,
-        ..
-    } = &number.into
-    {
-        forms.push(format!(
-            "element '{element}': a length a group holds where its content is absent"
-        ));
-    }
+    // beside it, what the value states where it states one, and what the arm
+    // of the group the value holds holds where the group holds it on the side
+    // where its content is absent (docs/adr/0065 §6 R4b).
     forms.dedup();
     forms
 }
@@ -756,17 +805,35 @@ fn read_apart(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 /// template's encode, whose value holds every field, and for every language
 /// whose decode binds every field to a local anyway.
 #[derive(Default)]
-pub(crate) struct Derived(BTreeSet<String>);
+pub(crate) struct Derived {
+    /// The fields the value holds no member of its own for.
+    apart: BTreeSet<String>,
+    /// The members of a group the decode reads in place, each with the
+    /// pointer to its place in the arm the decode opened.
+    held: BTreeMap<String, String>,
+}
 
 impl Derived {
     /// The fields of `plan`, a plan [`unlowered`] answers `None` for.
     pub(super) fn of(plan: &EncodePlan<'_>) -> Self {
-        Derived(read_apart(plan))
+        Derived {
+            apart: read_apart(plan),
+            held: group::in_place(plan),
+        }
     }
 
     /// Whether the value holds no member `id`.
     pub(crate) fn contains(&self, id: &str) -> bool {
-        self.0.contains(id)
+        self.apart.contains(id)
+    }
+
+    /// Where `id` is a byte string, a text, a body or a list a group holds,
+    /// the pointer to its place in the arm of the group the decode opened
+    /// before it (`group::Group::opened`), which the decode reads it into
+    /// where its gate holds: the value holds it nowhere else (docs/adr/0065
+    /// §6 R4).
+    pub(crate) fn held_at(&self, id: &str) -> Option<&str> {
+        self.held.get(id).map(String::as_str)
     }
 }
 
@@ -809,12 +876,18 @@ fn presented_type(l: &LangCtx, snake: &str, element: &Element<'_>) -> String {
     match &element.value {
         Value::Scalar(ty) if gated => l.c11_codec_optional(ty, None).type_name,
         Value::Scalar(ty) => l.type_name(ty).into_owned(),
-        Value::Bytes(_) | Value::Text(_) if gated => BoundedView::of(l, snake, element).optional(),
-        Value::Bytes(_) | Value::Text(_) => BoundedView::of(l, snake, element).ty(),
+        Value::Bytes(_) | Value::Text(_) if gated => {
+            BoundedView::of(l, snake, element.field, &element.value).optional()
+        }
+        Value::Bytes(_) | Value::Text(_) => {
+            BoundedView::of(l, snake, element.field, &element.value).ty()
+        }
         Value::Body { codec } if gated => format!("{}_source_ref_optional_t", body_prefix(codec)),
         Value::Body { codec } => format!("{}_source_ref_t", body_prefix(codec)),
-        Value::List { .. } if gated => BoundedList::of(l, snake, element).optional(),
-        Value::List { .. } => BoundedList::of(l, snake, element).ty(),
+        Value::List { .. } if gated => {
+            BoundedList::of(l, snake, element.field, &element.value).optional()
+        }
+        Value::List { .. } => BoundedList::of(l, snake, element.field, &element.value).ty(),
     }
 }
 
@@ -836,13 +909,14 @@ struct BoundedList {
 }
 
 impl BoundedList {
-    /// The list of `element`, a list or a chain of the codec `snake`.
-    fn of(l: &LangCtx, snake: &str, element: &Element<'_>) -> Self {
-        let Value::List { codec, bound, .. } = &element.value else {
+    /// The list of `field`, holding `value`, a list or a chain of the codec
+    /// `snake`, presented alone or as a member of a group.
+    fn of(l: &LangCtx, snake: &str, field: &CodecField, value: &Value<'_>) -> Self {
+        let Value::List { codec, bound, .. } = value else {
             unreachable!("a list's refinement is of a list or a chain");
         };
         BoundedList {
-            base: format!("{snake}_{}_list", l.codec_field_id(&element.field.id)),
+            base: format!("{snake}_{}_list", l.codec_field_id(&field.id)),
             entry: body_prefix(codec),
             bound: *bound,
         }
@@ -935,10 +1009,11 @@ struct BoundedView {
 }
 
 impl BoundedView {
-    /// The view of `element`, a byte string or a text of the codec `snake`.
-    fn of(l: &LangCtx, snake: &str, element: &Element<'_>) -> Self {
-        let name = l.codec_field_id(&element.field.id);
-        match &element.value {
+    /// The view of `field`, holding `value`, a byte string or a text of the
+    /// codec `snake`, presented alone or as a member of a group.
+    fn of(l: &LangCtx, snake: &str, field: &CodecField, value: &Value<'_>) -> Self {
+        let name = l.codec_field_id(&field.id);
+        match value {
             Value::Bytes(bound) => BoundedView {
                 base: format!("{snake}_{name}_bytes"),
                 text: false,
@@ -1087,9 +1162,14 @@ pub(super) struct C11Source {
     /// the decode read it into, present where none of that content was there
     /// and absent where some was, as the frame then says it of the content;
     /// and each group made of the locals its members were read into, the arm
-    /// the gates the decode read select. Empty where the value states none and
-    /// holds no group.
+    /// the gates the decode read select, or, for a group whose byte strings,
+    /// texts, bodies or lists the decode read in place, its numbers set in the
+    /// arm it opened. Empty where the value states none and holds no group.
     pub(super) decoded: String,
+    /// Before the decode of a field, by its id: the opening of each group the
+    /// decode reads some member of in place, before the first such member
+    /// ([`group::Group::opened`]). Empty where no group has one.
+    pub(super) before_decode: BTreeMap<String, String>,
 }
 
 /// The C11 text of the codec `plan`, a plan [`unlowered`] answers `None` for,
@@ -1115,6 +1195,7 @@ pub(super) fn render(
         before_encode: before_encode(plan, l, imports, snake),
         encode_body: encode_body(plan, snake),
         decoded: decoded(plan, l, snake),
+        before_decode: groups.iter().filter_map(|g| g.opened(plan, l)).collect(),
     };
     // Every refusal the totality analysis names is one the encode writes.
     plan.totality.assert_all_written(&plan.model.name);
@@ -1129,7 +1210,10 @@ pub(super) fn render(
 fn decoded(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     let mut out = Vec::new();
     for group in group::groups(plan, snake) {
-        out.push(group.decoded(plan).trim_end().to_string());
+        let made = group.decoded(plan);
+        if !made.is_empty() {
+            out.push(made.trim_end().to_string());
+        }
     }
     for element in &plan.elements {
         if element.presence != Presence::Stated {
@@ -1191,14 +1275,14 @@ fn before_encode(
         let gated = element.presence == Presence::Gated;
         match &element.value {
             Value::Bytes(_) | Value::Text(_) => {
-                let view = BoundedView::of(l, snake, element);
+                let view = BoundedView::of(l, snake, element.field, &element.value);
                 out.push_str(&view.declare(&element.field.id, &value));
                 if gated {
                     out.push_str(&view.declare_optional());
                 }
             }
             Value::List { .. } => {
-                let list = BoundedList::of(l, snake, element);
+                let list = BoundedList::of(l, snake, element.field, &element.value);
                 out.push_str(&list.declare(&element.field.id, &value));
                 if gated {
                     out.push_str(&list.declare_optional());
@@ -1206,6 +1290,12 @@ fn before_encode(
             }
             _ => {}
         }
+    }
+    // The views and lists each group's members are presented as, and the
+    // group as a source presents it where that is not as the value holds it.
+    let groups = group::groups(plan, snake);
+    for g in &groups {
+        out.push_str(&g.declare_presented(plan, l, snake));
     }
     let arms = Arms::of(plan);
     if variant {
@@ -1220,7 +1310,6 @@ fn before_encode(
          * derives every other element of the frame. */\n\
          typedef struct {{\n"
     ));
-    let groups = group::groups(plan, snake);
     if plan.elements.is_empty() && groups.is_empty() && !variant {
         out.push_str(
             "    /* A C struct declares at least one member; the codec presents no\n     \
@@ -1235,10 +1324,13 @@ fn before_encode(
             l.codec_field_id(&element.field.id)
         ));
     }
-    // Each group, as the value holds it, after the elements, as the value's
+    // Each group, as a source presents it, after the elements, as the value's
     // struct holds it after its fields.
     for g in &groups {
-        out.push_str(&format!("    {} (*{})(const void *ctx);\n", g.held, g.name));
+        out.push_str(&format!(
+            "    {} (*{})(const void *ctx);\n",
+            g.presented, g.name
+        ));
     }
     // The arm of the variant, after the elements, as the value's struct holds
     // it after its fields.
@@ -1272,7 +1364,7 @@ fn before_encode(
         let gated = element.presence == Presence::Gated;
         let body = match &element.value {
             Value::Bytes(_) | Value::Text(_) if gated => {
-                let view = BoundedView::of(l, snake, element);
+                let view = BoundedView::of(l, snake, element.field, &element.value);
                 let (view_ty, base) = (view.ty(), &view.base);
                 // The struct holds a text's UTF-8 as bytes when a gate decides it.
                 let data = if view.text {
@@ -1331,7 +1423,7 @@ fn before_encode(
             // beside the array, within the bound the value's check holds it
             // to.
             Value::List { .. } => {
-                let list = BoundedList::of(l, snake, element);
+                let list = BoundedList::of(l, snake, element.field, &element.value);
                 let (list_ty, base, entry) = (list.ty(), &list.base, &list.entry);
                 let (data, len) = if gated {
                     (
@@ -1390,16 +1482,10 @@ fn before_encode(
              }}\n\n"
         ));
     }
-    // Each group, as the struct holds it.
+    // Each group, as the struct holds it, each member presented where the
+    // struct holds it.
     for g in &groups {
-        out.push_str(&format!(
-            "/* The `{name}` group of the {value} at `ctx`. */\n\
-             static inline {held} {snake}_value_{name}(const void *ctx) {{\n    \
-             return ((const {value} *)ctx)->{name};\n\
-             }}\n\n",
-            name = g.name,
-            held = g.held
-        ));
+        out.push_str(&g.reader(plan, l, snake));
     }
     // The arm the struct holds, its body a source of the arm's codec by the
     // table that presents a value of it, pointed at the body the union holds.
@@ -1639,20 +1725,14 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         let held = element_local(l, &g.name);
         out.push_str(&format!(
             "    const {} {held} = src->{}(ctx);\n",
-            g.held, g.name
+            g.presented, g.name
         ));
         for id in g.group.fields() {
-            let field = plan
-                .model
-                .fields
-                .iter()
-                .find(|f| f.id == id)
-                .expect("a member of a group is a field of the codec");
             out.push_str(&format!(
                 "    const {} {} = {};\n",
-                l.c11_codec_optional(&field.sce_type, None).type_name,
+                g.member_optional(plan, l, snake, id),
                 element_local(l, id),
-                g.member_read(l, id, &field.sce_type, &held)
+                g.member_read(plan, l, snake, id, &held)
             ));
         }
     }
@@ -2005,11 +2085,9 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     // own the program writes before it.
                     BitSize::Tail | BitSize::LengthRef => body.push_str(&view_bytes(field)),
                     // A body, by its codec's encode over the source the value
-                    // presents it as.
+                    // presents it as, alone or as a member of a group.
                     BitSize::Embed => {
-                        let Some(Value::Body { codec }) =
-                            element_of(plan, &field.id).map(|e| &e.value)
-                        else {
+                        let Value::Body { codec } = plan.value(field) else {
                             unreachable!("an embedded field is a body the value presents");
                         };
                         let held = read(field);
@@ -2025,9 +2103,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     // more than the count the list's maker found, which a
                     // count before it says.
                     BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        let Some(Value::List { codec, .. }) =
-                            element_of(plan, &field.id).map(|e| &e.value)
-                        else {
+                        let Value::List { codec, .. } = plan.value(field) else {
                             unreachable!("a list or a chain is an element the value presents");
                         };
                         let held = read(field);
@@ -2913,12 +2989,18 @@ fn derive_number<'e>(
                 ));
             }
             // Where nothing it measures is there: zero, as the field is then
-            // gated beside its content, or what the value states.
+            // gated beside its content; what the value states; or what the
+            // arm of the group the value holds holds on the side where the
+            // content is not, bound to the field's local as a member of a
+            // group is, zero where the arm holds none (docs/adr/0065 §6 R4b).
+            // The two sides of a group are apart, so the number is never
+            // said twice there.
             let stated = element_local(l, &field.id);
             let otherwise = match absent {
                 Absent::Never | Absent::Zero => format!("({ty})0"),
-                Absent::Stated => format!("({stated}.present ? {stated}.value : ({ty})0)"),
-                Absent::Group => unreachable!("`unlowered` prints no length a group holds"),
+                Absent::Stated | Absent::Group => {
+                    format!("({stated}.present ? {stated}.value : ({ty})0)")
+                }
             };
             let value = match &present {
                 None => format!("({ty})({size})"),
@@ -2998,7 +3080,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         // it holds a value of its codec, by that codec's own check; where a
         // gate decides the list, only where it is present.
         if let Value::List { codec, .. } = &element.value {
-            let list = BoundedList::of(l, snake, element);
+            let list = BoundedList::of(l, snake, element.field, &element.value);
             let name = l.codec_field_id(&element.field.id);
             let held = u64::from(c11_held_entries(element.field, &plan.model.fields));
             let most = list.bound.most.map_or(held, |most| most.min(held));
@@ -3049,7 +3131,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         if !matches!(element.value, Value::Bytes(_) | Value::Text(_)) {
             continue;
         }
-        let view = BoundedView::of(l, snake, element);
+        let view = BoundedView::of(l, snake, element.field, &element.value);
         let name = l.codec_field_id(&element.field.id);
         // The array's own bound, where it is below the element's.
         let held = u64::from(c11_held_bytes(element.field, &plan.model.fields));
@@ -3088,6 +3170,11 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 "    if ({refused}) {{\n        return {status};\n    }}\n"
             ));
         }
+    }
+    // The members of the arm of each group the value holds, each held to what
+    // its type holds as an element of the type is.
+    for g in group::groups(plan, snake) {
+        out.push_str(&g.check(plan, l, snake));
     }
     // The body of the arm the value holds, a value of the arm's codec by that
     // codec's own check.

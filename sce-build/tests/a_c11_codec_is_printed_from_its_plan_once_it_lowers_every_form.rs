@@ -1004,6 +1004,106 @@ fn an_input_a_group_decides_is_said_by_the_arm_the_value_holds() {
     );
 }
 
+/// A group may hold a byte string on the side where its flag is set and the
+/// length of it, which the value states, on the side where it is clear: the
+/// arm holds the bytes in the buffer of their bound, a source presents them as
+/// their view, the encode derives the length from the view where they are
+/// there and takes the arm's where they are not, and the decode reads the
+/// bytes in place into the arm it opened before them, and sets the length the
+/// clear side states in its arm once every field is read.
+///
+/// Turns red where `c11_source::number_form` names a length a group holds
+/// again, where `derive_number` stops reading `Absent::Group` off the member's
+/// local, where `group::Group::opened` stops pointing the bytes at their arm,
+/// where `present_if_decode_length_ref` reads a held member other than
+/// through that pointer, or where `Group::decoded` sets the length in an arm
+/// other than the one the decode opened.
+#[test]
+fn a_group_holds_bytes_in_place_and_their_stated_length_on_the_other_side() {
+    let name = "codec_present_if_length_ref";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_header(name);
+    holds(
+        name,
+        &text,
+        &[
+            "    sce_static_bytes_32_t payload;\n} \
+             codec_present_if_length_ref_flags_has_payload_has_payload_t;\n",
+            "    uint8_t payload_size;\n} \
+             codec_present_if_length_ref_flags_has_payload_not_has_payload_t;\n",
+            "    codec_present_if_length_ref_payload_bytes_t payload;\n} \
+             codec_present_if_length_ref_flags_has_payload_has_payload_ref_t;\n",
+            "    codec_present_if_length_ref_flags_has_payload_ref_t (*flags_has_payload)(const void *ctx);\n",
+            "        ref.arm.has_payload.payload.data = \
+             self->flags_has_payload.arm.has_payload.payload.data;\n",
+            "    const codec_present_if_length_ref_payload_bytes_optional_t _e_payload = \
+             (_e_flags_has_payload.kind == CODEC_PRESENT_IF_LENGTH_REF_FLAGS_HAS_PAYLOAD_HAS_PAYLOAD \
+             ? codec_present_if_length_ref_payload_bytes_optional_some(\
+             _e_flags_has_payload.arm.has_payload.payload) : \
+             codec_present_if_length_ref_payload_bytes_optional_none());\n",
+            "    const uint8_t _d_payload_size = _e_payload.present ? (uint8_t)(_e_payload.value.len) \
+             : (_e_payload_size.present ? _e_payload_size.value : (uint8_t)0);\n",
+            "    sce_static_bytes_32_t *_g_payload = NULL;\n",
+            "        _g_payload = &out->flags_has_payload.arm.has_payload.payload;\n",
+            "memcpy(_g_payload->data, raw, _n);\n        _g_payload->len = _n;",
+            "    if (out->flags_has_payload.kind == \
+             CODEC_PRESENT_IF_LENGTH_REF_FLAGS_HAS_PAYLOAD_NOT_HAS_PAYLOAD) {\n        \
+             out->flags_has_payload.arm.not_has_payload.payload_size = _d_payload_size;\n    }",
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &[
+            "out->payload.",
+            "self->payload",
+            "out->payload_size",
+            "self->payload_size",
+        ],
+    );
+}
+
+/// A group may hold a body on the side where its flag is set and the encoded
+/// length of it, which the value states, on the side where it is clear: the
+/// arm holds the body as its codec's struct, a source presents it as the pair
+/// of its source, pointed at the body the arm holds, the encode counts the
+/// body over a counting sink where it is there and writes it by its codec's
+/// encode over that pair, and the decode reads it in place, within the length
+/// it read, into the arm it opened.
+///
+/// Turns red where `group::Group::reader` stops pointing a body's pair at the
+/// body the arm holds, where `encode_source` writes a body a group holds other
+/// than through the pair the member is bound to, or where
+/// `embed_streaming_decode_stmt` decodes a held body other than through the
+/// pointer the opening set.
+#[test]
+fn a_group_holds_a_body_in_place_beside_its_stated_encoded_length() {
+    let name = "codec_present_if_length_from";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_header(name);
+    holds(
+        name,
+        &text,
+        &[
+            "    codec_zenoh_timestamp_t ts;\n} \
+             codec_present_if_length_from_flags_has_ts_has_ts_t;\n",
+            "        ref.arm.has_ts.ts.table = codec_zenoh_timestamp_value_source();\n        \
+             ref.arm.has_ts.ts.ctx = &self->flags_has_ts.arm.has_ts.ts;\n",
+            "    const uint64_t _d_ext_size = _e_ts.present ? \
+             (uint64_t)(sce_forge_writer_position(&_k_ts)) : \
+             (_e_ext_size.present ? _e_ext_size.value : (uint64_t)0);\n",
+            "SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode_source(_e_ts.value.table, \
+             _e_ts.value.ctx, w));\n",
+            "    codec_zenoh_timestamp_t *_g_ts = NULL;\n",
+            "        _g_ts = &out->flags_has_ts.arm.has_ts.ts;\n",
+            "        size_t _len = (size_t)(_d_ext_size);\n",
+            "sce_forge_codec_status_t _st = codec_zenoh_timestamp_decode(&_inner, _g_ts);",
+            "out->flags_has_ts.arm.not_has_ts.ext_size = _d_ext_size;\n",
+        ],
+    );
+    holds_none(name, &text, &["out->ts", "self->ts", "out->ext_size"]);
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a group of a chain's memberships and a CBOR map
 /// each name their form, and neither has an encode over a source.
@@ -1129,6 +1229,8 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_group_enum",
         "codec_init_syn_body",
         "codec_init_syn_envelope",
+        "codec_present_if_length_ref",
+        "codec_present_if_length_from",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

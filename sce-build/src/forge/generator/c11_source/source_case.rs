@@ -69,10 +69,10 @@ impl SourceCase {
 /// R4a), which answers an absent value where the value says nothing of it. A
 /// variant with no tag of its own is handed the tag of the arm the source
 /// holds (`tag`, [`case_tag`]) after the inputs, and the value made and the
-/// value decoded are held to answering it (`{codec}_tag`). A codec that holds
-/// a group is one the C11 printer does not print, and its case is refused by
-/// name; so is a source that states an element the value does not present or
-/// leaves out one it does.
+/// value decoded are held to answering it (`{codec}_tag`). A group is set as
+/// the struct holds it, the arm the source states and each member in it. A
+/// source that states an element the value does not present or leaves out one
+/// it does is refused by name.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
@@ -187,33 +187,11 @@ fn members(
         match &element.value {
             // The bytes into the array that holds them and their count beside
             // it, the length member the C11 struct names `{member}_len`, or
-            // the value of the optional one a gate decides; a text is held as
-            // the bytes of its UTF-8, as the decode holds it.
+            // the value of the optional one a gate decides.
             Value::Bytes(_) | Value::Text(_) => {
-                let bytes = match &element.value {
-                    Value::Text(_) => json
-                        .as_str()
-                        .ok_or_else(|| format!("`{id}`: text is a JSON string"))?
-                        .as_bytes()
-                        .to_vec(),
-                    _ => byte_values(json).map_err(|e| format!("`{id}`: {e}"))?,
-                };
-                if !bytes.is_empty() {
-                    let listed: Vec<String> = bytes.iter().map(|b| format!("0x{b:02X}")).collect();
-                    statements.push(format!(
-                        "memcpy({VALUE}.{data}, (const uint8_t[]){{{}}}, {});",
-                        listed.join(", "),
-                        bytes.len()
-                    ));
-                }
-                statements.push(format!("{VALUE}.{len} = {};", bytes.len()));
-                checks.push((
-                    id.clone(),
-                    check(format!(
-                        "{DECODED}.{len} == {VALUE}.{len} && \
-                         memcmp({DECODED}.{data}, {VALUE}.{data}, {VALUE}.{len}) == 0"
-                    )),
-                ));
+                let (set, holds) = bytes_stated(&element.value, json, &id, &data, &len)?;
+                statements.extend(set);
+                checks.push((id.clone(), check(holds)));
             }
             // The members of the body the struct holds, as its codec's own
             // case sets them, under the member that holds it.
@@ -223,47 +201,21 @@ fn members(
                 } else {
                     format!("{member}.")
                 };
-                let inner_id = format!("{id}.");
-                let mut body = SourceCase::empty();
-                held.read(codec, &mut |body_plan, _path, held| {
-                    members(body_plan, json, &inner_at, &inner_id, held, &mut body)
-                        .map(|()| String::new())
-                })
-                .map_err(|e| format!("`{id}`: {e}"))?;
+                let body = body_stated(codec, json, &inner_at, &id, held)?;
                 if gated {
                     checks.push((id.clone(), format!("{DECODED}.{member}.present")));
                 }
                 statements.extend(body.statements);
                 checks.extend(body.checks);
             }
-            // Each entry into the array that holds them, member by member as
-            // its codec's own case sets them, and their count beside it, the
-            // length member the C11 struct names `{member}_len`, or the value
-            // of the optional one a gate decides. A list held to a law is
-            // stated with its start, which no C11 list holds yet.
+            // Each entry into the array that holds them and their count
+            // beside it, the length member the C11 struct names
+            // `{member}_len`, or the value of the optional one a gate decides.
             Value::List { codec, law, .. } => {
-                if !law.is_none() {
-                    return Err(format!(
-                        "`{id}`: a list held to a law is not stated as a C11 value yet: the \
-                         C11 printer prints no codec that holds one"
-                    ));
-                }
-                let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
-                let mut entries = SourceCase::empty();
-                for (i, row) in rows.iter().enumerate() {
-                    let inner_at = format!("{data}[{i}].");
-                    let inner_id = format!("{id}[{i}].");
-                    held.read(codec, &mut |entry_plan, _path, held| {
-                        members(entry_plan, row, &inner_at, &inner_id, held, &mut entries)
-                            .map(|()| String::new())
-                    })
-                    .map_err(|e| format!("`{id}`: {e}"))?;
-                }
-                statements.push(format!("{VALUE}.{len} = {};", rows.len()));
-                checks.push((
-                    id.clone(),
-                    check(format!("{DECODED}.{len} == {VALUE}.{len}")),
-                ));
+                let (count, holds, entries) =
+                    list_stated(codec, law.is_none(), json, &id, &data, &len, held)?;
+                statements.push(count);
+                checks.push((id.clone(), check(holds)));
                 statements.extend(entries.statements);
                 checks.extend(entries.checks);
             }
@@ -279,8 +231,9 @@ fn members(
         }
     }
     // Each group, held in the struct's member of it: the arm the source
-    // states, its kind and each of its members, or no arm, as the zeroed value
-    // holds none (docs/adr/0065 §6 R4).
+    // states, its kind and each of its members where the arm holds it, as
+    // an element of its type is set, or no arm, as the zeroed value holds
+    // none (docs/adr/0065 §6 R4).
     let snake = filters::to_snake_case(plan.model.name.clone());
     for g in groups(plan, &snake) {
         let label = gates_label(g.group);
@@ -289,31 +242,68 @@ fn members(
             .get(&label)
             .ok_or_else(|| format!("the source states no `{id}`"))?;
         let chosen = group_choice(g.group, json).map_err(|e| format!("`{id}`: {e}"))?;
-        let mut literals = Vec::new();
-        let arm = match chosen {
-            None => None,
-            Some(chosen) => {
-                for member in &chosen.arm.fields {
-                    let field = plan
-                        .model
-                        .fields
-                        .iter()
-                        .find(|f| &f.id == member)
-                        .ok_or_else(|| format!("`{id}`: the codec has no field `{member}`"))?;
-                    let stated = chosen
-                        .members
-                        .get(member)
-                        .ok_or_else(|| format!("`{id}`: the arm states no `{member}`"))?;
-                    let literal = member_literal(&plan.value(field), stated, held)
-                        .map_err(|e| format!("`{id}.{member}`: {e}"))?;
-                    literals.push((member.clone(), literal));
-                }
-                Some(chosen.index)
-            }
-        };
-        let (set, held_to) = g.stated(at, arm, &literals, &id, (VALUE, DECODED));
+        let (set, held_to) = g.stated(at, chosen.as_ref().map(|c| c.index), &id, (VALUE, DECODED));
         statements.extend(set);
         checks.extend(held_to);
+        let Some(chosen) = chosen else {
+            continue;
+        };
+        for member in &chosen.arm.fields {
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| &f.id == member)
+                .ok_or_else(|| format!("`{id}`: the codec has no field `{member}`"))?;
+            let stated = chosen
+                .members
+                .get(member)
+                .ok_or_else(|| format!("`{id}`: the arm states no `{member}`"))?;
+            let path = g.member_path(chosen.index, member, at);
+            let member_id = format!("{id}.{member}");
+            match plan.value(field) {
+                // The bytes into the buffer the arm holds them in.
+                value @ (Value::Bytes(_) | Value::Text(_)) => {
+                    let (set, holds) = bytes_stated(
+                        &value,
+                        stated,
+                        &member_id,
+                        &format!("{path}.data"),
+                        &format!("{path}.len"),
+                    )?;
+                    statements.extend(set);
+                    checks.push((member_id, holds));
+                }
+                // The members of the body the arm holds.
+                Value::Body { codec } => {
+                    let body = body_stated(codec, stated, &format!("{path}."), &member_id, held)?;
+                    statements.extend(body.statements);
+                    checks.extend(body.checks);
+                }
+                // Each entry into the list the arm holds, and its count.
+                Value::List { codec, law, .. } => {
+                    let (count, holds, entries) = list_stated(
+                        codec,
+                        law.is_none(),
+                        stated,
+                        &member_id,
+                        &format!("{path}.data"),
+                        &format!("{path}.len"),
+                        held,
+                    )?;
+                    statements.push(count);
+                    checks.push((member_id, holds));
+                    statements.extend(entries.statements);
+                    checks.extend(entries.checks);
+                }
+                value => {
+                    let literal = member_literal(&value, stated, held)
+                        .map_err(|e| format!("`{member_id}`: {e}"))?;
+                    statements.push(format!("{VALUE}.{path} = {literal};"));
+                    checks.push((member_id, format!("{DECODED}.{path} == {VALUE}.{path}")));
+                }
+            }
+        }
     }
     // The arm of the variant, held in the struct's variant: its kind, the tag
     // the catch-all holds, and the members of its body in the union's member
@@ -352,6 +342,103 @@ fn members(
         checks.extend(arm.checks);
     }
     Ok(())
+}
+
+/// The statements that set a byte string or a text `value` a source states as
+/// `json` into the array at the member path `data` and its count into `len`,
+/// and what holds when a decode presents the same, for the element `id`. A
+/// text is held as the bytes of its UTF-8, as the decode holds it.
+fn bytes_stated(
+    value: &Value<'_>,
+    json: &serde_json::Value,
+    id: &str,
+    data: &str,
+    len: &str,
+) -> Result<(Vec<String>, String), String> {
+    let bytes = match value {
+        Value::Text(_) => json
+            .as_str()
+            .ok_or_else(|| format!("`{id}`: text is a JSON string"))?
+            .as_bytes()
+            .to_vec(),
+        _ => byte_values(json).map_err(|e| format!("`{id}`: {e}"))?,
+    };
+    let mut statements = Vec::new();
+    if !bytes.is_empty() {
+        let listed: Vec<String> = bytes.iter().map(|b| format!("0x{b:02X}")).collect();
+        statements.push(format!(
+            "memcpy({VALUE}.{data}, (const uint8_t[]){{{}}}, {});",
+            listed.join(", "),
+            bytes.len()
+        ));
+    }
+    statements.push(format!("{VALUE}.{len} = {};", bytes.len()));
+    Ok((
+        statements,
+        format!(
+            "{DECODED}.{len} == {VALUE}.{len} && \
+             memcmp({DECODED}.{data}, {VALUE}.{data}, {VALUE}.{len}) == 0"
+        ),
+    ))
+}
+
+/// The members of a body of the codec imported as `codec` a source states as
+/// `json`, set under the member path `at` as the codec's own case sets them,
+/// each checked by its id after the element `id`.
+fn body_stated(
+    codec: &str,
+    json: &serde_json::Value,
+    at: &str,
+    id: &str,
+    held: &mut dyn HeldCodecs,
+) -> Result<SourceCase, String> {
+    let inner_id = format!("{id}.");
+    let mut body = SourceCase::empty();
+    held.read(codec, &mut |body_plan, _path, held| {
+        members(body_plan, json, at, &inner_id, held, &mut body).map(|()| String::new())
+    })
+    .map_err(|e| format!("`{id}`: {e}"))?;
+    Ok(body)
+}
+
+/// A list of entries of the codec imported as `codec` a source states as
+/// `json`: the statement that sets its count into `len`, what holds when a
+/// decode reads the same count, and each entry set into the array at the
+/// member path `data`, member by member as its codec's own case sets them,
+/// each checked by its id after the element `id` and its place. A list held to
+/// a law (`lawless` false) is stated with its start, which no C11 list holds
+/// yet.
+fn list_stated(
+    codec: &str,
+    lawless: bool,
+    json: &serde_json::Value,
+    id: &str,
+    data: &str,
+    len: &str,
+    held: &mut dyn HeldCodecs,
+) -> Result<(String, String, SourceCase), String> {
+    if !lawless {
+        return Err(format!(
+            "`{id}`: a list held to a law is not stated as a C11 value yet: the C11 printer \
+             prints no codec that holds one"
+        ));
+    }
+    let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
+    let mut entries = SourceCase::empty();
+    for (i, row) in rows.iter().enumerate() {
+        let inner_at = format!("{data}[{i}].");
+        let inner_id = format!("{id}[{i}].");
+        held.read(codec, &mut |entry_plan, _path, held| {
+            members(entry_plan, row, &inner_at, &inner_id, held, &mut entries)
+                .map(|()| String::new())
+        })
+        .map_err(|e| format!("`{id}`: {e}"))?;
+    }
+    Ok((
+        format!("{VALUE}.{len} = {};", rows.len()),
+        format!("{DECODED}.{len} == {VALUE}.{len}"),
+        entries,
+    ))
 }
 
 /// One value of the abstract type `value`, as a C expression a member of the
