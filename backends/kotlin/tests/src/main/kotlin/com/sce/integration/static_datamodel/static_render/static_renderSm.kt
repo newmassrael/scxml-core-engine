@@ -272,29 +272,27 @@ class StaticRenderStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.string(savedGrown.variable("note"), "note", 95)
-        val saved2 = SavedValues.string(savedGrown.variable("who"), "who", 8)
-        val saved3 = SavedValues.int16(savedGrown.variable("count"), "count")
-        val saved4 = StaticRenderViewModeEnum.fromSaved(savedGrown.variable("view"), "view")
-        val saved5 = SavedValues.string(savedGrown.variable("said"), "said", 16)
-        val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vNote = saved1
-            vWho = saved2
-            vCount = saved3
-            vView = saved4
-            vSaid = saved5
-            vRefusals = saved6
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNote = SavedValues.string(savedGrown.variable("note"), "note", 95)
+        vWho = SavedValues.string(savedGrown.variable("who"), "who", 8)
+        vCount = SavedValues.int16(savedGrown.variable("count"), "count")
+        vView = StaticRenderViewModeEnum.fromSaved(savedGrown.variable("view"), "view")
+        vSaid = SavedValues.string(savedGrown.variable("said"), "said", 16)
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

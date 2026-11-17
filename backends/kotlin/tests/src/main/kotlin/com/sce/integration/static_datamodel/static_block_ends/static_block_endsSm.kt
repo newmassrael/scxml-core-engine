@@ -271,37 +271,31 @@ class StaticBlockEndsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint8(savedGrown.variable("a"), "a")
-        val saved2 = SavedValues.uint8(savedGrown.variable("b"), "b")
-        val saved3 = SavedValues.uint8(savedGrown.variable("afterAssign"), "afterAssign")
-        val saved4 = SavedValues.uint8(savedGrown.variable("thenRan"), "thenRan")
-        val saved5 = SavedValues.uint8(savedGrown.variable("elseRan"), "elseRan")
-        val saved6 = SavedValues.uint8(savedGrown.variable("afterIf"), "afterIf")
-        val saved7 = SavedValues.uint8(savedGrown.variable("inBranch"), "inBranch")
-        val saved8 = SavedValues.uint8(savedGrown.variable("afterBranch"), "afterBranch")
-        val saved9 = SavedValues.uint8(savedGrown.variable("afterOk"), "afterOk")
-        val saved10 = SavedValues.uint8(savedGrown.variable("errors"), "errors")
-        return {
-            vA = saved1
-            vB = saved2
-            vAfterAssign = saved3
-            vThenRan = saved4
-            vElseRan = saved5
-            vAfterIf = saved6
-            vInBranch = saved7
-            vAfterBranch = saved8
-            vAfterOk = saved9
-            vErrors = saved10
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vA = SavedValues.uint8(savedGrown.variable("a"), "a")
+        vB = SavedValues.uint8(savedGrown.variable("b"), "b")
+        vAfterAssign = SavedValues.uint8(savedGrown.variable("afterAssign"), "afterAssign")
+        vThenRan = SavedValues.uint8(savedGrown.variable("thenRan"), "thenRan")
+        vElseRan = SavedValues.uint8(savedGrown.variable("elseRan"), "elseRan")
+        vAfterIf = SavedValues.uint8(savedGrown.variable("afterIf"), "afterIf")
+        vInBranch = SavedValues.uint8(savedGrown.variable("inBranch"), "inBranch")
+        vAfterBranch = SavedValues.uint8(savedGrown.variable("afterBranch"), "afterBranch")
+        vAfterOk = SavedValues.uint8(savedGrown.variable("afterOk"), "afterOk")
+        vErrors = SavedValues.uint8(savedGrown.variable("errors"), "errors")
     }
 
     /** [restore] at the host's wall clock now. */

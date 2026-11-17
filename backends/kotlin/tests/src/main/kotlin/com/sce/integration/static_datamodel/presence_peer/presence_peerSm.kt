@@ -334,41 +334,33 @@ class PresencePeerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint32(savedGrown.variable("node"), "node")
-        val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
-        val saved3 = SavedValues.uint32(savedGrown.variable("ttl"), "ttl")
-        val saved4 = SavedValues.uint32(savedGrown.variable("lease"), "lease")
-        val saved5 = SavedValues.list(savedGrown.variable("online"), "online", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
-        val saved6 = SavedValues.list(savedGrown.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
-        val saved7 = PresencePeerSeenRecord.fromSaved(savedGrown.variable("entry"), "entry")
-        val saved8 = SavedValues.uint32(savedGrown.variable("serial"), "serial")
-        val saved9 = SavedValues.bool(savedGrown.variable("known"), "known")
-        val saved10 = SavedValues.bool(savedGrown.variable("fresh"), "fresh")
-        val saved11 = SavedValues.uint32(savedGrown.variable("lost"), "lost")
-        val saved12 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vNode = saved1
-            vHub = saved2
-            vTtl = saved3
-            vLease = saved4
-            vOnline = saved5
-            vRebuilt = saved6
-            vEntry = saved7
-            vSerial = saved8
-            vKnown = saved9
-            vFresh = saved10
-            vLost = saved11
-            vRefusals = saved12
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNode = SavedValues.uint32(savedGrown.variable("node"), "node")
+        vHub = SavedValues.bool(savedGrown.variable("hub"), "hub")
+        vTtl = SavedValues.uint32(savedGrown.variable("ttl"), "ttl")
+        vLease = SavedValues.uint32(savedGrown.variable("lease"), "lease")
+        vOnline = SavedValues.list(savedGrown.variable("online"), "online", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        vRebuilt = SavedValues.list(savedGrown.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        vEntry = PresencePeerSeenRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        vSerial = SavedValues.uint32(savedGrown.variable("serial"), "serial")
+        vKnown = SavedValues.bool(savedGrown.variable("known"), "known")
+        vFresh = SavedValues.bool(savedGrown.variable("fresh"), "fresh")
+        vLost = SavedValues.uint32(savedGrown.variable("lost"), "lost")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

@@ -298,33 +298,29 @@ class StaticHostHttpStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.string(savedGrown.variable("method"), "method", 8)
-        val saved2 = SavedValues.string(savedGrown.variable("url"), "url", 2048)
-        val saved3 = SavedValues.string(savedGrown.variable("request_headers"), "request_headers", 2048)
-        val saved4 = SavedValues.string(savedGrown.variable("request_body"), "request_body", 16384)
-        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.uint16(savedGrown.variable("status"), "status")
-        val saved7 = SavedValues.string(savedGrown.variable("response_headers"), "response_headers", 4096)
-        val saved8 = SavedValues.string(savedGrown.variable("response_body"), "response_body", 16384)
-        return {
-            vMethod = saved1
-            vUrl = saved2
-            vRequestHeaders = saved3
-            vRequestBody = saved4
-            vOutcome = saved5
-            vStatus = saved6
-            vResponseHeaders = saved7
-            vResponseBody = saved8
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vMethod = SavedValues.string(savedGrown.variable("method"), "method", 8)
+        vUrl = SavedValues.string(savedGrown.variable("url"), "url", 2048)
+        vRequestHeaders = SavedValues.string(savedGrown.variable("request_headers"), "request_headers", 2048)
+        vRequestBody = SavedValues.string(savedGrown.variable("request_body"), "request_body", 16384)
+        vOutcome = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        vStatus = SavedValues.uint16(savedGrown.variable("status"), "status")
+        vResponseHeaders = SavedValues.string(savedGrown.variable("response_headers"), "response_headers", 4096)
+        vResponseBody = SavedValues.string(savedGrown.variable("response_body"), "response_body", 16384)
     }
 
     /** [restore] at the host's wall clock now. */

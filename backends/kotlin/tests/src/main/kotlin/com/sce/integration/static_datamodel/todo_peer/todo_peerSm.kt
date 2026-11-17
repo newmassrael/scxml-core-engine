@@ -712,103 +712,64 @@ class TodoPeerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
-        val saved2 = TodoPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
-        val saved3 = TodoPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
-        val saved4 = TodoPeerHlcRecord.fromSaved(savedGrown.variable("dot"), "dot")
-        val saved5 = SavedValues.list(savedGrown.variable("adds"), "adds", 1024) { e, w -> TodoPeerEntryRecord.fromSaved(e, w) }
-        val saved6 = SavedValues.list(savedGrown.variable("one"), "one", 1024) { e, w -> TodoPeerEntryRecord.fromSaved(e, w) }
-        val saved7 = TodoPeerEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
-        val saved8 = SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> TodoPeerValueRecord.fromSaved(e, w) }
-        val saved9 = SavedValues.string(savedGrown.variable("typed"), "typed", 32)
-        val saved10 = TodoPeerValueRecord.fromSaved(savedGrown.variable("held"), "held")
-        val saved11 = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
-        val saved12 = SavedValues.bool(savedGrown.variable("present"), "present")
-        val saved13 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        val saved14 = SavedValues.list(savedGrown.variable("agenda"), "agenda", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
-        val saved15 = SavedValues.list(savedGrown.variable("local"), "local", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
-        val saved16 = TodoPeerOccurrenceRecord.fromSaved(savedGrown.variable("occ"), "occ")
-        val saved17 = SavedValues.uint32(savedGrown.variable("agendaNext"), "agendaNext")
-        val saved18 = SavedValues.list(savedGrown.variable("zoneStarts1"), "zoneStarts1", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved19 = SavedValues.list(savedGrown.variable("zoneOffsets1"), "zoneOffsets1", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved20 = SavedValues.list(savedGrown.variable("zoneStarts2"), "zoneStarts2", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved21 = SavedValues.list(savedGrown.variable("zoneOffsets2"), "zoneOffsets2", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved22 = SavedValues.list(savedGrown.variable("zoneStarts3"), "zoneStarts3", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved23 = SavedValues.list(savedGrown.variable("zoneOffsets3"), "zoneOffsets3", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved24 = SavedValues.list(savedGrown.variable("zoneStarts4"), "zoneStarts4", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved25 = SavedValues.list(savedGrown.variable("zoneOffsets4"), "zoneOffsets4", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved26 = SavedValues.list(savedGrown.variable("zoneStarts"), "zoneStarts", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved27 = SavedValues.list(savedGrown.variable("zoneOffsets"), "zoneOffsets", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved28 = SavedValues.uint32(savedGrown.variable("zoneRows"), "zoneRows")
-        val saved29 = SavedValues.bool(savedGrown.variable("split"), "split")
-        val saved30 = TodoPeerScheduleRecord.fromSaved(savedGrown.variable("sched"), "sched")
-        val saved31 = SavedValues.uint32(savedGrown.variable("rawCount"), "rawCount")
-        val saved32 = SavedValues.uint32(savedGrown.variable("rawLast"), "rawLast")
-        val saved33 = SavedValues.int64(savedGrown.variable("utcSec"), "utcSec")
-        val saved34 = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
-        val saved35 = SavedValues.uint32(savedGrown.variable("full"), "full")
-        val saved36 = SavedValues.uint32(savedGrown.variable("gone"), "gone")
-        val saved37 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> TodoPeerMemberRecord.fromSaved(e, w) }
-        val saved38 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
-        val saved39 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
-        val saved40 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
-        val saved41 = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> TodoPeerOpRecord.fromSaved(e, w) }
-        val saved42 = SavedValues.uint32(savedGrown.variable("took"), "took")
-        val saved43 = TodoPeerOpRecord.fromSaved(savedGrown.variable("op"), "op")
-        return {
-            vNode = saved1
-            vClock = saved2
-            vStamp = saved3
-            vDot = saved4
-            vAdds = saved5
-            vOne = saved6
-            vEntry = saved7
-            vValues = saved8
-            vTyped = saved9
-            vHeld = saved10
-            vWasLive = saved11
-            vPresent = saved12
-            vRefusals = saved13
-            vAgenda = saved14
-            vLocal = saved15
-            vOcc = saved16
-            vAgendaNext = saved17
-            vZoneStarts1 = saved18
-            vZoneOffsets1 = saved19
-            vZoneStarts2 = saved20
-            vZoneOffsets2 = saved21
-            vZoneStarts3 = saved22
-            vZoneOffsets3 = saved23
-            vZoneStarts4 = saved24
-            vZoneOffsets4 = saved25
-            vZoneStarts = saved26
-            vZoneOffsets = saved27
-            vZoneRows = saved28
-            vSplit = saved29
-            vSched = saved30
-            vRawCount = saved31
-            vRawLast = saved32
-            vUtcSec = saved33
-            vRoomValues = saved34
-            vFull = saved35
-            vGone = saved36
-            vRoster = saved37
-            vDenied = saved38
-            vForbidden = saved39
-            vAuthorized = saved40
-            vTaking = saved41
-            vTook = saved42
-            vOp = saved43
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNode = SavedValues.uint64(savedGrown.variable("node"), "node")
+        vClock = TodoPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        vStamp = TodoPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        vDot = TodoPeerHlcRecord.fromSaved(savedGrown.variable("dot"), "dot")
+        vAdds = SavedValues.list(savedGrown.variable("adds"), "adds", 1024) { e, w -> TodoPeerEntryRecord.fromSaved(e, w) }
+        vOne = SavedValues.list(savedGrown.variable("one"), "one", 1024) { e, w -> TodoPeerEntryRecord.fromSaved(e, w) }
+        vEntry = TodoPeerEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        vValues = SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> TodoPeerValueRecord.fromSaved(e, w) }
+        vTyped = SavedValues.string(savedGrown.variable("typed"), "typed", 32)
+        vHeld = TodoPeerValueRecord.fromSaved(savedGrown.variable("held"), "held")
+        vWasLive = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
+        vPresent = SavedValues.bool(savedGrown.variable("present"), "present")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        vAgenda = SavedValues.list(savedGrown.variable("agenda"), "agenda", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        vLocal = SavedValues.list(savedGrown.variable("local"), "local", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        vOcc = TodoPeerOccurrenceRecord.fromSaved(savedGrown.variable("occ"), "occ")
+        vAgendaNext = SavedValues.uint32(savedGrown.variable("agendaNext"), "agendaNext")
+        vZoneStarts1 = SavedValues.list(savedGrown.variable("zoneStarts1"), "zoneStarts1", 64) { e, w -> SavedValues.int64(e, w) }
+        vZoneOffsets1 = SavedValues.list(savedGrown.variable("zoneOffsets1"), "zoneOffsets1", 64) { e, w -> SavedValues.int32(e, w) }
+        vZoneStarts2 = SavedValues.list(savedGrown.variable("zoneStarts2"), "zoneStarts2", 64) { e, w -> SavedValues.int64(e, w) }
+        vZoneOffsets2 = SavedValues.list(savedGrown.variable("zoneOffsets2"), "zoneOffsets2", 64) { e, w -> SavedValues.int32(e, w) }
+        vZoneStarts3 = SavedValues.list(savedGrown.variable("zoneStarts3"), "zoneStarts3", 64) { e, w -> SavedValues.int64(e, w) }
+        vZoneOffsets3 = SavedValues.list(savedGrown.variable("zoneOffsets3"), "zoneOffsets3", 64) { e, w -> SavedValues.int32(e, w) }
+        vZoneStarts4 = SavedValues.list(savedGrown.variable("zoneStarts4"), "zoneStarts4", 64) { e, w -> SavedValues.int64(e, w) }
+        vZoneOffsets4 = SavedValues.list(savedGrown.variable("zoneOffsets4"), "zoneOffsets4", 64) { e, w -> SavedValues.int32(e, w) }
+        vZoneStarts = SavedValues.list(savedGrown.variable("zoneStarts"), "zoneStarts", 64) { e, w -> SavedValues.int64(e, w) }
+        vZoneOffsets = SavedValues.list(savedGrown.variable("zoneOffsets"), "zoneOffsets", 64) { e, w -> SavedValues.int32(e, w) }
+        vZoneRows = SavedValues.uint32(savedGrown.variable("zoneRows"), "zoneRows")
+        vSplit = SavedValues.bool(savedGrown.variable("split"), "split")
+        vSched = TodoPeerScheduleRecord.fromSaved(savedGrown.variable("sched"), "sched")
+        vRawCount = SavedValues.uint32(savedGrown.variable("rawCount"), "rawCount")
+        vRawLast = SavedValues.uint32(savedGrown.variable("rawLast"), "rawLast")
+        vUtcSec = SavedValues.int64(savedGrown.variable("utcSec"), "utcSec")
+        vRoomValues = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
+        vFull = SavedValues.uint32(savedGrown.variable("full"), "full")
+        vGone = SavedValues.uint32(savedGrown.variable("gone"), "gone")
+        vRoster = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> TodoPeerMemberRecord.fromSaved(e, w) }
+        vDenied = SavedValues.uint32(savedGrown.variable("denied"), "denied")
+        vForbidden = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
+        vAuthorized = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
+        vTaking = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> TodoPeerOpRecord.fromSaved(e, w) }
+        vTook = SavedValues.uint32(savedGrown.variable("took"), "took")
+        vOp = TodoPeerOpRecord.fromSaved(savedGrown.variable("op"), "op")
     }
 
     /** [restore] at the host's wall clock now. */

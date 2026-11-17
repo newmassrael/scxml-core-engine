@@ -671,57 +671,41 @@ class StaticUnionStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("built"), "built")
-        val saved2 = SavedValues.optional(savedGrown.variable("kept"), "kept") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
-        val saved3 = StaticUnionKindEnum.fromSaved(savedGrown.variable("last_kind"), "last_kind")
-        val saved4 = SavedValues.uint16(savedGrown.variable("radius"), "radius")
-        val saved5 = SavedValues.uint16(savedGrown.variable("width"), "width")
-        val saved6 = SavedValues.uint16(savedGrown.variable("height"), "height")
-        val saved7 = SavedValues.uint32(savedGrown.variable("labels"), "labels")
-        val saved8 = SavedValues.uint32(savedGrown.variable("points"), "points")
-        val saved9 = SavedValues.uint32(savedGrown.variable("dots"), "dots")
-        val saved10 = SavedValues.uint16(savedGrown.variable("many_radius"), "many_radius")
-        val saved11 = SavedValues.uint16(savedGrown.variable("many_width"), "many_width")
-        val saved12 = SavedValues.uint32(savedGrown.variable("many_shapes"), "many_shapes")
-        val saved13 = SavedValues.uint16(savedGrown.variable("maybe_width"), "maybe_width")
-        val saved14 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        val saved15 = SavedValues.optional(savedGrown.variable("lifted"), "lifted") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
-        val saved16 = SavedValues.optional(savedGrown.variable("lift_why"), "lift_why") { e, w -> StaticUnionLiftRefusalRecord.fromSaved(e, w) }
-        val saved17 = StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("picked"), "picked")
-        val saved18 = SavedValues.optional(savedGrown.variable("picked_maybe"), "picked_maybe") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
-        val saved19 = SavedValues.uint32(savedGrown.variable("picks"), "picks")
-        val saved20 = SavedValues.uint16(savedGrown.variable("picked_width"), "picked_width")
-        return {
-            vBuilt = saved1
-            vKept = saved2
-            vLastKind = saved3
-            vRadius = saved4
-            vWidth = saved5
-            vHeight = saved6
-            vLabels = saved7
-            vPoints = saved8
-            vDots = saved9
-            vManyRadius = saved10
-            vManyWidth = saved11
-            vManyShapes = saved12
-            vMaybeWidth = saved13
-            vRefusals = saved14
-            vLifted = saved15
-            vLiftWhy = saved16
-            vPicked = saved17
-            vPickedMaybe = saved18
-            vPicks = saved19
-            vPickedWidth = saved20
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vBuilt = StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("built"), "built")
+        vKept = SavedValues.optional(savedGrown.variable("kept"), "kept") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        vLastKind = StaticUnionKindEnum.fromSaved(savedGrown.variable("last_kind"), "last_kind")
+        vRadius = SavedValues.uint16(savedGrown.variable("radius"), "radius")
+        vWidth = SavedValues.uint16(savedGrown.variable("width"), "width")
+        vHeight = SavedValues.uint16(savedGrown.variable("height"), "height")
+        vLabels = SavedValues.uint32(savedGrown.variable("labels"), "labels")
+        vPoints = SavedValues.uint32(savedGrown.variable("points"), "points")
+        vDots = SavedValues.uint32(savedGrown.variable("dots"), "dots")
+        vManyRadius = SavedValues.uint16(savedGrown.variable("many_radius"), "many_radius")
+        vManyWidth = SavedValues.uint16(savedGrown.variable("many_width"), "many_width")
+        vManyShapes = SavedValues.uint32(savedGrown.variable("many_shapes"), "many_shapes")
+        vMaybeWidth = SavedValues.uint16(savedGrown.variable("maybe_width"), "maybe_width")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        vLifted = SavedValues.optional(savedGrown.variable("lifted"), "lifted") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        vLiftWhy = SavedValues.optional(savedGrown.variable("lift_why"), "lift_why") { e, w -> StaticUnionLiftRefusalRecord.fromSaved(e, w) }
+        vPicked = StaticUnionUnionShapeUnion.fromSaved(savedGrown.variable("picked"), "picked")
+        vPickedMaybe = SavedValues.optional(savedGrown.variable("picked_maybe"), "picked_maybe") { e, w -> StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        vPicks = SavedValues.uint32(savedGrown.variable("picks"), "picks")
+        vPickedWidth = SavedValues.uint16(savedGrown.variable("picked_width"), "picked_width")
     }
 
     /** [restore] at the host's wall clock now. */

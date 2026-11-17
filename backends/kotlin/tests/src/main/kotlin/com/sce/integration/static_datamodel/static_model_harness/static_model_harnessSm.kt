@@ -655,39 +655,32 @@ class StaticModelHarnessStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.list(savedGrown.variable("offered"), "offered", 8) { e, w -> SavedValues.uint32(e, w) }
-        val saved2 = SavedValues.string(savedGrown.variable("request"), "request", 512)
-        val saved3 = SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
-        val saved4 = SavedValues.string(savedGrown.variable("said"), "said", 4096)
-        val saved5 = SavedValues.bool(savedGrown.variable("offered_ok"), "offered_ok")
-        val saved6 = StaticModelHarnessRefusalRecord.fromSaved(savedGrown.variable("refused"), "refused")
-        val saved7 = SavedValues.list(savedGrown.variable("refusals"), "refusals", 3) { e, w -> StaticModelHarnessRefusalRecord.fromSaved(e, w) }
-        val saved8 = SavedValues.uint32(savedGrown.variable("attempts"), "attempts")
-        val saved9 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
-        val saved10 = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticModelHarnessAnswerRecord.fromSaved(e, w) }
-        val saved11 = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticModelHarnessLiftRefusalRecord.fromSaved(e, w) }
-        return {
-            vOffered = saved1
-            vRequest = saved2
-            vPrompt = saved3
-            vSaid = saved4
-            vOfferedOk = saved5
-            vRefused = saved6
-            vRefusals = saved7
-            vAttempts = saved8
-            vOutcome = saved9
-            vAnswer = saved10
-            vWhy = saved11
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vOffered = SavedValues.list(savedGrown.variable("offered"), "offered", 8) { e, w -> SavedValues.uint32(e, w) }
+        vRequest = SavedValues.string(savedGrown.variable("request"), "request", 512)
+        vPrompt = SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
+        vSaid = SavedValues.string(savedGrown.variable("said"), "said", 4096)
+        vOfferedOk = SavedValues.bool(savedGrown.variable("offered_ok"), "offered_ok")
+        vRefused = StaticModelHarnessRefusalRecord.fromSaved(savedGrown.variable("refused"), "refused")
+        vRefusals = SavedValues.list(savedGrown.variable("refusals"), "refusals", 3) { e, w -> StaticModelHarnessRefusalRecord.fromSaved(e, w) }
+        vAttempts = SavedValues.uint32(savedGrown.variable("attempts"), "attempts")
+        vOutcome = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        vAnswer = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticModelHarnessAnswerRecord.fromSaved(e, w) }
+        vWhy = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticModelHarnessLiftRefusalRecord.fromSaved(e, w) }
     }
 
     /** [restore] at the host's wall clock now. */

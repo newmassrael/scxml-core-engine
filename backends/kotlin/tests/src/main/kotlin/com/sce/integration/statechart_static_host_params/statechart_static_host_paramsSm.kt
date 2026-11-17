@@ -227,33 +227,29 @@ class StatechartStaticHostParamsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
-        val saved2 = SavedValues.bool(savedGrown.variable("ready"), "ready")
-        val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
-        val saved4 = SavedValues.int16(savedGrown.variable("delta"), "delta")
-        val saved5 = SavedValues.float64(savedGrown.variable("ratio"), "ratio")
-        val saved6 = SavedValues.string(savedGrown.variable("tag"), "tag", 16)
-        val saved7 = SavedValues.uint32(savedGrown.variable("huge"), "huge")
-        val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        return {
-            vCount = saved1
-            vReady = saved2
-            vLabel = saved3
-            vDelta = saved4
-            vRatio = saved5
-            vTag = saved6
-            vHuge = saved7
-            vErrors = saved8
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vCount = SavedValues.uint32(savedGrown.variable("count"), "count")
+        vReady = SavedValues.bool(savedGrown.variable("ready"), "ready")
+        vLabel = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        vDelta = SavedValues.int16(savedGrown.variable("delta"), "delta")
+        vRatio = SavedValues.float64(savedGrown.variable("ratio"), "ratio")
+        vTag = SavedValues.string(savedGrown.variable("tag"), "tag", 16)
+        vHuge = SavedValues.uint32(savedGrown.variable("huge"), "huge")
+        vErrors = SavedValues.uint32(savedGrown.variable("errors"), "errors")
     }
 
     /** [restore] at the host's wall clock now. */

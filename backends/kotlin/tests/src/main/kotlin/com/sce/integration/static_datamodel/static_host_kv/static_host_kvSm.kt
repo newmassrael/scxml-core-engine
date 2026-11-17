@@ -464,39 +464,32 @@ class StaticHostKvStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.string(savedGrown.variable("key"), "key", 256)
-        val saved2 = SavedValues.string(savedGrown.variable("value"), "value", 4096)
-        val saved3 = SavedValues.string(savedGrown.variable("after"), "after", 256)
-        val saved4 = SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
-        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.bool(savedGrown.variable("found"), "found")
-        val saved7 = SavedValues.string(savedGrown.variable("got"), "got", 4096)
-        val saved8 = SavedValues.bool(savedGrown.variable("replaced"), "replaced")
-        val saved9 = SavedValues.bool(savedGrown.variable("existed"), "existed")
-        val saved10 = SavedValues.bool(savedGrown.variable("next_found"), "next_found")
-        val saved11 = SavedValues.string(savedGrown.variable("next"), "next", 256)
-        return {
-            vKey = saved1
-            vValue = saved2
-            vAfter = saved3
-            vPrefix = saved4
-            vOutcome = saved5
-            vFound = saved6
-            vGot = saved7
-            vReplaced = saved8
-            vExisted = saved9
-            vNextFound = saved10
-            vNext = saved11
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vKey = SavedValues.string(savedGrown.variable("key"), "key", 256)
+        vValue = SavedValues.string(savedGrown.variable("value"), "value", 4096)
+        vAfter = SavedValues.string(savedGrown.variable("after"), "after", 256)
+        vPrefix = SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
+        vOutcome = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        vFound = SavedValues.bool(savedGrown.variable("found"), "found")
+        vGot = SavedValues.string(savedGrown.variable("got"), "got", 4096)
+        vReplaced = SavedValues.bool(savedGrown.variable("replaced"), "replaced")
+        vExisted = SavedValues.bool(savedGrown.variable("existed"), "existed")
+        vNextFound = SavedValues.bool(savedGrown.variable("next_found"), "next_found")
+        vNext = SavedValues.string(savedGrown.variable("next"), "next", 256)
     }
 
     /** [restore] at the host's wall clock now. */

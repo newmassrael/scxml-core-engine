@@ -408,45 +408,35 @@ class StaticForgeCallsStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint8(savedGrown.variable("gear"), "gear")
-        val saved2 = SavedValues.int32(savedGrown.variable("ratio"), "ratio")
-        val saved3 = SavedValues.int32(savedGrown.variable("code"), "code")
-        val saved4 = SavedValues.uint32(savedGrown.variable("misses"), "misses")
-        val saved5 = SavedValues.int32(savedGrown.variable("level"), "level")
-        val saved6 = SavedValues.int32(savedGrown.variable("offset"), "offset")
-        val saved7 = SavedValues.bool(savedGrown.variable("accepted"), "accepted")
-        val saved8 = SavedValues.uint16(savedGrown.variable("rpm"), "rpm")
-        val saved9 = SavedValues.float64(savedGrown.variable("limit"), "limit")
-        val saved10 = SavedValues.uint32(savedGrown.variable("highs"), "highs")
-        val saved11 = StaticForgeCallsStatusEnum.fromSaved(savedGrown.variable("phase"), "phase")
-        val saved12 = StaticForgeCallsLevelEnum.fromSaved(savedGrown.variable("weight"), "weight")
-        val saved13 = SavedValues.string(savedGrown.variable("customer"), "customer", 16)
-        val saved14 = SavedValues.bool(savedGrown.variable("known"), "known")
-        return {
-            vGear = saved1
-            vRatio = saved2
-            vCode = saved3
-            vMisses = saved4
-            vLevel = saved5
-            vOffset = saved6
-            vAccepted = saved7
-            vRpm = saved8
-            vLimit = saved9
-            vHighs = saved10
-            vPhase = saved11
-            vWeight = saved12
-            vCustomer = saved13
-            vKnown = saved14
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vGear = SavedValues.uint8(savedGrown.variable("gear"), "gear")
+        vRatio = SavedValues.int32(savedGrown.variable("ratio"), "ratio")
+        vCode = SavedValues.int32(savedGrown.variable("code"), "code")
+        vMisses = SavedValues.uint32(savedGrown.variable("misses"), "misses")
+        vLevel = SavedValues.int32(savedGrown.variable("level"), "level")
+        vOffset = SavedValues.int32(savedGrown.variable("offset"), "offset")
+        vAccepted = SavedValues.bool(savedGrown.variable("accepted"), "accepted")
+        vRpm = SavedValues.uint16(savedGrown.variable("rpm"), "rpm")
+        vLimit = SavedValues.float64(savedGrown.variable("limit"), "limit")
+        vHighs = SavedValues.uint32(savedGrown.variable("highs"), "highs")
+        vPhase = StaticForgeCallsStatusEnum.fromSaved(savedGrown.variable("phase"), "phase")
+        vWeight = StaticForgeCallsLevelEnum.fromSaved(savedGrown.variable("weight"), "weight")
+        vCustomer = SavedValues.string(savedGrown.variable("customer"), "customer", 16)
+        vKnown = SavedValues.bool(savedGrown.variable("known"), "known")
     }
 
     /** [restore] at the host's wall clock now. */

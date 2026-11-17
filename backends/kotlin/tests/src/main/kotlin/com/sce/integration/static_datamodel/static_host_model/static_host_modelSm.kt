@@ -525,41 +525,33 @@ class StaticHostModelStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
-        val saved2 = SavedValues.uint32(savedGrown.variable("max_tokens"), "max_tokens")
-        val saved3 = SavedValues.uint16(savedGrown.variable("temperature_milli"), "temperature_milli")
-        val saved4 = SavedValues.uint32(savedGrown.variable("calls"), "calls")
-        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.string(savedGrown.variable("finish"), "finish", 16)
-        val saved7 = SavedValues.bool(savedGrown.variable("constrained"), "constrained")
-        val saved8 = SavedValues.string(savedGrown.variable("answered_by"), "answered_by", 128)
-        val saved9 = SavedValues.uint32(savedGrown.variable("prompt_tokens"), "prompt_tokens")
-        val saved10 = SavedValues.uint32(savedGrown.variable("answer_tokens"), "answer_tokens")
-        val saved11 = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticHostModelAnswerRecord.fromSaved(e, w) }
-        val saved12 = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticHostModelLiftRefusalRecord.fromSaved(e, w) }
-        return {
-            vPrompt = saved1
-            vMaxTokens = saved2
-            vTemperatureMilli = saved3
-            vCalls = saved4
-            vOutcome = saved5
-            vFinish = saved6
-            vConstrained = saved7
-            vAnsweredBy = saved8
-            vPromptTokens = saved9
-            vAnswerTokens = saved10
-            vAnswer = saved11
-            vWhy = saved12
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vPrompt = SavedValues.string(savedGrown.variable("prompt"), "prompt", 8192)
+        vMaxTokens = SavedValues.uint32(savedGrown.variable("max_tokens"), "max_tokens")
+        vTemperatureMilli = SavedValues.uint16(savedGrown.variable("temperature_milli"), "temperature_milli")
+        vCalls = SavedValues.uint32(savedGrown.variable("calls"), "calls")
+        vOutcome = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        vFinish = SavedValues.string(savedGrown.variable("finish"), "finish", 16)
+        vConstrained = SavedValues.bool(savedGrown.variable("constrained"), "constrained")
+        vAnsweredBy = SavedValues.string(savedGrown.variable("answered_by"), "answered_by", 128)
+        vPromptTokens = SavedValues.uint32(savedGrown.variable("prompt_tokens"), "prompt_tokens")
+        vAnswerTokens = SavedValues.uint32(savedGrown.variable("answer_tokens"), "answer_tokens")
+        vAnswer = SavedValues.optional(savedGrown.variable("answer"), "answer") { e, w -> StaticHostModelAnswerRecord.fromSaved(e, w) }
+        vWhy = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticHostModelLiftRefusalRecord.fromSaved(e, w) }
     }
 
     /** [restore] at the host's wall clock now. */

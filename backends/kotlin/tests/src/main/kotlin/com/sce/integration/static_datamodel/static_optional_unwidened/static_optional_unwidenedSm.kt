@@ -461,65 +461,45 @@ class StaticOptionalUnwidenedStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.int64(savedGrown.variable("due"), "due")
-        val saved2 = SavedValues.int64(savedGrown.variable("other"), "other")
-        val saved3 = SavedValues.string(savedGrown.variable("title"), "title", 16)
-        val saved4 = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("status"), "status")
-        val saved5 = StaticOptionalUnwidenedDueRecord.fromSaved(savedGrown.variable("item"), "item")
-        val saved6 = SavedValues.list(savedGrown.variable("items"), "items", 3) { e, w -> StaticOptionalUnwidenedDueRecord.fromSaved(e, w) }
-        val saved7 = SavedValues.int64(savedGrown.variable("days"), "days")
-        val saved8 = SavedValues.int64(savedGrown.variable("following"), "following")
-        val saved9 = SavedValues.bool(savedGrown.variable("late"), "late")
-        val saved10 = SavedValues.bool(savedGrown.variable("early"), "early")
-        val saved11 = SavedValues.string(savedGrown.variable("label"), "label", 16)
-        val saved12 = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("plain"), "plain")
-        val saved13 = SavedValues.int64(savedGrown.variable("kept"), "kept")
-        val saved14 = SavedValues.int64(savedGrown.variable("listed"), "listed")
-        val saved15 = SavedValues.uint32(savedGrown.variable("missing"), "missing")
-        val saved16 = SavedValues.bool(savedGrown.variable("same"), "same")
-        val saved17 = SavedValues.bool(savedGrown.variable("absent"), "absent")
-        val saved18 = SavedValues.bool(savedGrown.variable("statusDone"), "statusDone")
-        val saved19 = SavedValues.int64(savedGrown.variable("echoed"), "echoed")
-        val saved20 = SavedValues.string(savedGrown.variable("echoTitle"), "echoTitle", 16)
-        val saved21 = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("echoStatus"), "echoStatus")
-        val saved22 = SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
-        val saved23 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        val saved24 = SavedValues.int64(savedGrown.variable("huge"), "huge")
-        return {
-            vDue = saved1
-            vOther = saved2
-            vTitle = saved3
-            vStatus = saved4
-            vItem = saved5
-            vItems = saved6
-            vDays = saved7
-            vFollowing = saved8
-            vLate = saved9
-            vEarly = saved10
-            vLabel = saved11
-            vPlain = saved12
-            vKept = saved13
-            vListed = saved14
-            vMissing = saved15
-            vSame = saved16
-            vAbsent = saved17
-            vStatusDone = saved18
-            vEchoed = saved19
-            vEchoTitle = saved20
-            vEchoStatus = saved21
-            vFallbacks = saved22
-            vErrors = saved23
-            vHuge = saved24
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vDue = SavedValues.int64(savedGrown.variable("due"), "due")
+        vOther = SavedValues.int64(savedGrown.variable("other"), "other")
+        vTitle = SavedValues.string(savedGrown.variable("title"), "title", 16)
+        vStatus = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("status"), "status")
+        vItem = StaticOptionalUnwidenedDueRecord.fromSaved(savedGrown.variable("item"), "item")
+        vItems = SavedValues.list(savedGrown.variable("items"), "items", 3) { e, w -> StaticOptionalUnwidenedDueRecord.fromSaved(e, w) }
+        vDays = SavedValues.int64(savedGrown.variable("days"), "days")
+        vFollowing = SavedValues.int64(savedGrown.variable("following"), "following")
+        vLate = SavedValues.bool(savedGrown.variable("late"), "late")
+        vEarly = SavedValues.bool(savedGrown.variable("early"), "early")
+        vLabel = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        vPlain = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("plain"), "plain")
+        vKept = SavedValues.int64(savedGrown.variable("kept"), "kept")
+        vListed = SavedValues.int64(savedGrown.variable("listed"), "listed")
+        vMissing = SavedValues.uint32(savedGrown.variable("missing"), "missing")
+        vSame = SavedValues.bool(savedGrown.variable("same"), "same")
+        vAbsent = SavedValues.bool(savedGrown.variable("absent"), "absent")
+        vStatusDone = SavedValues.bool(savedGrown.variable("statusDone"), "statusDone")
+        vEchoed = SavedValues.int64(savedGrown.variable("echoed"), "echoed")
+        vEchoTitle = SavedValues.string(savedGrown.variable("echoTitle"), "echoTitle", 16)
+        vEchoStatus = StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("echoStatus"), "echoStatus")
+        vFallbacks = SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
+        vErrors = SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        vHuge = SavedValues.int64(savedGrown.variable("huge"), "huge")
     }
 
     /** [restore] at the host's wall clock now. */

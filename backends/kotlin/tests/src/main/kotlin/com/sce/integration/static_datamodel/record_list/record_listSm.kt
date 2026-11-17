@@ -1004,141 +1004,83 @@ class RecordListStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
-        val saved2 = SavedValues.bool(savedGrown.variable("journal"), "journal")
-        val saved3 = RecordListHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
-        val saved4 = RecordListHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
-        val saved5 = RecordListHlcRecord.fromSaved(savedGrown.variable("dot"), "dot")
-        val saved6 = SavedValues.list(savedGrown.variable("adds"), "adds", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
-        val saved7 = SavedValues.list(savedGrown.variable("one"), "one", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
-        val saved8 = RecordListEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
-        val saved9 = SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
-        val saved10 = RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
-        val saved11 = SavedValues.uint32(savedGrown.variable("shareId"), "shareId")
-        val saved12 = SavedValues.uint16(savedGrown.variable("shareField"), "shareField")
-        val saved13 = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
-        val saved14 = SavedValues.bool(savedGrown.variable("present"), "present")
-        val saved15 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        val saved16 = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
-        val saved17 = SavedValues.uint32(savedGrown.variable("full"), "full")
-        val saved18 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListMemberRecord.fromSaved(e, w) }
-        val saved19 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
-        val saved20 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
-        val saved21 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
-        val saved22 = SavedValues.bool(savedGrown.variable("announce"), "announce")
-        val saved23 = SavedValues.uint32(savedGrown.variable("announced"), "announced")
-        val saved24 = SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
-        val saved25 = SavedValues.bool(savedGrown.variable("listed"), "listed")
-        val saved26 = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
-        val saved27 = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
-        val saved28 = RecordListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
-        val saved29 = SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListStagedRecord.fromSaved(e, w) }
-        val saved30 = RecordListStagedRecord.fromSaved(savedGrown.variable("staging"), "staging")
-        val saved31 = SavedValues.bool(savedGrown.variable("holding"), "holding")
-        val saved32 = SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
-        val saved33 = SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
-        val saved34 = SavedValues.bool(savedGrown.variable("probing"), "probing")
-        val saved35 = SavedValues.uint32(savedGrown.variable("gone"), "gone")
-        val saved36 = SavedValues.uint32(savedGrown.variable("writes"), "writes")
-        val saved37 = SavedValues.bool(savedGrown.variable("covered"), "covered")
-        val saved38 = RecordListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
-        val saved39 = RecordListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
-        val saved40 = SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
-        val saved41 = SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
-        val saved42 = RecordListCommandEnum.fromSaved(savedGrown.variable("namedKind"), "namedKind")
-        val saved43 = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListOpRecord.fromSaved(e, w) }
-        val saved44 = SavedValues.uint32(savedGrown.variable("took"), "took")
-        val saved45 = RecordListOpRecord.fromSaved(savedGrown.variable("op"), "op")
-        val saved46 = SavedValues.bool(savedGrown.variable("restoring"), "restoring")
-        val saved47 = SavedValues.bool(savedGrown.variable("tentative"), "tentative")
-        val saved48 = SavedValues.uint64(savedGrown.variable("closingCommand"), "closingCommand")
-        val saved49 = SavedValues.list(savedGrown.variable("offered"), "offered", 64) { e, w -> RecordListOpRecord.fromSaved(e, w) }
-        val saved50 = RecordListHlcRecord.fromSaved(savedGrown.variable("offeredAt"), "offeredAt")
-        val saved51 = RecordListRefusalEnum.fromSaved(savedGrown.variable("refusedFor"), "refusedFor")
-        val saved52 = SavedValues.uint32(savedGrown.variable("closedOps"), "closedOps")
-        val saved53 = SavedValues.optional(savedGrown.variable("closedFor"), "closedFor") { e, w -> RecordListRefusalEnum.fromSaved(e, w) }
-        val saved54 = RecordListHlcRecord.fromSaved(savedGrown.variable("closedAt"), "closedAt")
-        val saved55 = SavedValues.list(savedGrown.variable("provisional"), "provisional", 8) { e, w -> RecordListProvisionalRecord.fromSaved(e, w) }
-        val saved56 = SavedValues.list(savedGrown.variable("provisionalKept"), "provisionalKept", 8) { e, w -> RecordListProvisionalRecord.fromSaved(e, w) }
-        val saved57 = RecordListProvisionalRecord.fromSaved(savedGrown.variable("standing"), "standing")
-        val saved58 = SavedValues.bool(savedGrown.variable("provisionalFound"), "provisionalFound")
-        val saved59 = SavedValues.uint32(savedGrown.variable("withdrawFrom"), "withdrawFrom")
-        val saved60 = SavedValues.list(savedGrown.variable("undo"), "undo", 512) { e, w -> RecordListUndoRecord.fromSaved(e, w) }
-        val saved61 = SavedValues.list(savedGrown.variable("undoKept"), "undoKept", 512) { e, w -> RecordListUndoRecord.fromSaved(e, w) }
-        val saved62 = RecordListUndoRecord.fromSaved(savedGrown.variable("undoing"), "undoing")
-        return {
-            vNode = saved1
-            vJournal = saved2
-            vClock = saved3
-            vStamp = saved4
-            vDot = saved5
-            vAdds = saved6
-            vOne = saved7
-            vEntry = saved8
-            vValues = saved9
-            vHeld = saved10
-            vShareId = saved11
-            vShareField = saved12
-            vWasLive = saved13
-            vPresent = saved14
-            vRefusals = saved15
-            vRoomValues = saved16
-            vFull = saved17
-            vRoster = saved18
-            vDenied = saved19
-            vForbidden = saved20
-            vAuthorized = saved21
-            vAnnounce = saved22
-            vAnnounced = saved23
-            vMoved = saved24
-            vListed = saved25
-            vLive = saved26
-            vOrdinal = saved27
-            vEmpty = saved28
-            vStaged = saved29
-            vStaging = saved30
-            vHolding = saved31
-            vClosingNow = saved32
-            vSpoiled = saved33
-            vProbing = saved34
-            vGone = saved35
-            vWrites = saved36
-            vCovered = saved37
-            vProbe = saved38
-            vSpoiledFor = saved39
-            vNamedId = saved40
-            vNamedField = saved41
-            vNamedKind = saved42
-            vTaking = saved43
-            vTook = saved44
-            vOp = saved45
-            vRestoring = saved46
-            vTentative = saved47
-            vClosingCommand = saved48
-            vOffered = saved49
-            vOfferedAt = saved50
-            vRefusedFor = saved51
-            vClosedOps = saved52
-            vClosedFor = saved53
-            vClosedAt = saved54
-            vProvisional = saved55
-            vProvisionalKept = saved56
-            vStanding = saved57
-            vProvisionalFound = saved58
-            vWithdrawFrom = saved59
-            vUndo = saved60
-            vUndoKept = saved61
-            vUndoing = saved62
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNode = SavedValues.uint64(savedGrown.variable("node"), "node")
+        vJournal = SavedValues.bool(savedGrown.variable("journal"), "journal")
+        vClock = RecordListHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        vStamp = RecordListHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        vDot = RecordListHlcRecord.fromSaved(savedGrown.variable("dot"), "dot")
+        vAdds = SavedValues.list(savedGrown.variable("adds"), "adds", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        vOne = SavedValues.list(savedGrown.variable("one"), "one", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        vEntry = RecordListEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        vValues = SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
+        vHeld = RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
+        vShareId = SavedValues.uint32(savedGrown.variable("shareId"), "shareId")
+        vShareField = SavedValues.uint16(savedGrown.variable("shareField"), "shareField")
+        vWasLive = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
+        vPresent = SavedValues.bool(savedGrown.variable("present"), "present")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        vRoomValues = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
+        vFull = SavedValues.uint32(savedGrown.variable("full"), "full")
+        vRoster = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListMemberRecord.fromSaved(e, w) }
+        vDenied = SavedValues.uint32(savedGrown.variable("denied"), "denied")
+        vForbidden = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
+        vAuthorized = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
+        vAnnounce = SavedValues.bool(savedGrown.variable("announce"), "announce")
+        vAnnounced = SavedValues.uint32(savedGrown.variable("announced"), "announced")
+        vMoved = SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
+        vListed = SavedValues.bool(savedGrown.variable("listed"), "listed")
+        vLive = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
+        vOrdinal = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
+        vEmpty = RecordListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
+        vStaged = SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListStagedRecord.fromSaved(e, w) }
+        vStaging = RecordListStagedRecord.fromSaved(savedGrown.variable("staging"), "staging")
+        vHolding = SavedValues.bool(savedGrown.variable("holding"), "holding")
+        vClosingNow = SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
+        vSpoiled = SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
+        vProbing = SavedValues.bool(savedGrown.variable("probing"), "probing")
+        vGone = SavedValues.uint32(savedGrown.variable("gone"), "gone")
+        vWrites = SavedValues.uint32(savedGrown.variable("writes"), "writes")
+        vCovered = SavedValues.bool(savedGrown.variable("covered"), "covered")
+        vProbe = RecordListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
+        vSpoiledFor = RecordListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
+        vNamedId = SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
+        vNamedField = SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
+        vNamedKind = RecordListCommandEnum.fromSaved(savedGrown.variable("namedKind"), "namedKind")
+        vTaking = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListOpRecord.fromSaved(e, w) }
+        vTook = SavedValues.uint32(savedGrown.variable("took"), "took")
+        vOp = RecordListOpRecord.fromSaved(savedGrown.variable("op"), "op")
+        vRestoring = SavedValues.bool(savedGrown.variable("restoring"), "restoring")
+        vTentative = SavedValues.bool(savedGrown.variable("tentative"), "tentative")
+        vClosingCommand = SavedValues.uint64(savedGrown.variable("closingCommand"), "closingCommand")
+        vOffered = SavedValues.list(savedGrown.variable("offered"), "offered", 64) { e, w -> RecordListOpRecord.fromSaved(e, w) }
+        vOfferedAt = RecordListHlcRecord.fromSaved(savedGrown.variable("offeredAt"), "offeredAt")
+        vRefusedFor = RecordListRefusalEnum.fromSaved(savedGrown.variable("refusedFor"), "refusedFor")
+        vClosedOps = SavedValues.uint32(savedGrown.variable("closedOps"), "closedOps")
+        vClosedFor = SavedValues.optional(savedGrown.variable("closedFor"), "closedFor") { e, w -> RecordListRefusalEnum.fromSaved(e, w) }
+        vClosedAt = RecordListHlcRecord.fromSaved(savedGrown.variable("closedAt"), "closedAt")
+        vProvisional = SavedValues.list(savedGrown.variable("provisional"), "provisional", 8) { e, w -> RecordListProvisionalRecord.fromSaved(e, w) }
+        vProvisionalKept = SavedValues.list(savedGrown.variable("provisionalKept"), "provisionalKept", 8) { e, w -> RecordListProvisionalRecord.fromSaved(e, w) }
+        vStanding = RecordListProvisionalRecord.fromSaved(savedGrown.variable("standing"), "standing")
+        vProvisionalFound = SavedValues.bool(savedGrown.variable("provisionalFound"), "provisionalFound")
+        vWithdrawFrom = SavedValues.uint32(savedGrown.variable("withdrawFrom"), "withdrawFrom")
+        vUndo = SavedValues.list(savedGrown.variable("undo"), "undo", 512) { e, w -> RecordListUndoRecord.fromSaved(e, w) }
+        vUndoKept = SavedValues.list(savedGrown.variable("undoKept"), "undoKept", 512) { e, w -> RecordListUndoRecord.fromSaved(e, w) }
+        vUndoing = RecordListUndoRecord.fromSaved(savedGrown.variable("undoing"), "undoing")
     }
 
     /** [restore] at the host's wall clock now. */

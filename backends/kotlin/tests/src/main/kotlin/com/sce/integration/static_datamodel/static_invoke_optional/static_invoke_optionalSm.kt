@@ -216,29 +216,27 @@ class StaticInvokeOptionalStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
-        val saved2 = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
-        val saved3 = SavedValues.optional(savedGrown.variable("nosize"), "nosize") { e, w -> SavedValues.int32(e, w) }
-        val saved4 = SavedValues.string(savedGrown.variable("lengthy"), "lengthy", 8)
-        val saved5 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
-        val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
-        return {
-            vSize = saved1
-            vLabel = saved2
-            vNosize = saved3
-            vLengthy = saved4
-            vCompleted = saved5
-            vErrors = saved6
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vSize = SavedValues.optional(savedGrown.variable("size"), "size") { e, w -> SavedValues.int32(e, w) }
+        vLabel = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 8) }
+        vNosize = SavedValues.optional(savedGrown.variable("nosize"), "nosize") { e, w -> SavedValues.int32(e, w) }
+        vLengthy = SavedValues.string(savedGrown.variable("lengthy"), "lengthy", 8)
+        vCompleted = SavedValues.uint32(savedGrown.variable("completed"), "completed")
+        vErrors = SavedValues.uint32(savedGrown.variable("errors"), "errors")
     }
 
     /** [restore] at the host's wall clock now. */

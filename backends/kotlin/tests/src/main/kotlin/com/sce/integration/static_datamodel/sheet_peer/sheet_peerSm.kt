@@ -565,57 +565,41 @@ class SheetPeerStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
-        val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
-        val saved3 = SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
-        val saved4 = SheetPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
-        val saved5 = SavedValues.list(savedGrown.variable("cells"), "cells", 256) { e, w -> SheetPeerLwwCellRecord.fromSaved(e, w) }
-        val saved6 = SavedValues.list(savedGrown.variable("rows"), "rows", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
-        val saved7 = SavedValues.list(savedGrown.variable("gone"), "gone", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
-        val saved8 = SavedValues.list(savedGrown.variable("cols"), "cols", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
-        val saved9 = SavedValues.list(savedGrown.variable("goneCols"), "goneCols", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
-        val saved10 = SavedValues.list(savedGrown.variable("trail"), "trail", 768) { e, w -> SavedValues.int64(e, w) }
-        val saved11 = SavedValues.list(savedGrown.variable("shown"), "shown", 256) { e, w -> SheetPeerShownRecord.fromSaved(e, w) }
-        val saved12 = SheetPeerLwwCellRecord.fromSaved(savedGrown.variable("write"), "write")
-        val saved13 = SheetPeerRgaNodeRecord.fromSaved(savedGrown.variable("placed"), "placed")
-        val saved14 = SheetPeerRgaGoneRecord.fromSaved(savedGrown.variable("removal"), "removal")
-        val saved15 = SavedValues.uint64(savedGrown.variable("lamport"), "lamport")
-        val saved16 = SavedValues.uint64(savedGrown.variable("newKey"), "newKey")
-        val saved17 = SavedValues.uint64(savedGrown.variable("noKey"), "noKey")
-        val saved18 = SavedValues.int64(savedGrown.variable("noNumber"), "noNumber")
-        val saved19 = SavedValues.uint32(savedGrown.variable("orphans"), "orphans")
-        val saved20 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vNode = saved1
-            vHub = saved2
-            vClock = saved3
-            vStamp = saved4
-            vCells = saved5
-            vRows = saved6
-            vGone = saved7
-            vCols = saved8
-            vGoneCols = saved9
-            vTrail = saved10
-            vShown = saved11
-            vWrite = saved12
-            vPlaced = saved13
-            vRemoval = saved14
-            vLamport = saved15
-            vNewKey = saved16
-            vNoKey = saved17
-            vNoNumber = saved18
-            vOrphans = saved19
-            vRefusals = saved20
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNode = SavedValues.uint64(savedGrown.variable("node"), "node")
+        vHub = SavedValues.bool(savedGrown.variable("hub"), "hub")
+        vClock = SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        vStamp = SheetPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        vCells = SavedValues.list(savedGrown.variable("cells"), "cells", 256) { e, w -> SheetPeerLwwCellRecord.fromSaved(e, w) }
+        vRows = SavedValues.list(savedGrown.variable("rows"), "rows", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        vGone = SavedValues.list(savedGrown.variable("gone"), "gone", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        vCols = SavedValues.list(savedGrown.variable("cols"), "cols", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        vGoneCols = SavedValues.list(savedGrown.variable("goneCols"), "goneCols", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        vTrail = SavedValues.list(savedGrown.variable("trail"), "trail", 768) { e, w -> SavedValues.int64(e, w) }
+        vShown = SavedValues.list(savedGrown.variable("shown"), "shown", 256) { e, w -> SheetPeerShownRecord.fromSaved(e, w) }
+        vWrite = SheetPeerLwwCellRecord.fromSaved(savedGrown.variable("write"), "write")
+        vPlaced = SheetPeerRgaNodeRecord.fromSaved(savedGrown.variable("placed"), "placed")
+        vRemoval = SheetPeerRgaGoneRecord.fromSaved(savedGrown.variable("removal"), "removal")
+        vLamport = SavedValues.uint64(savedGrown.variable("lamport"), "lamport")
+        vNewKey = SavedValues.uint64(savedGrown.variable("newKey"), "newKey")
+        vNoKey = SavedValues.uint64(savedGrown.variable("noKey"), "noKey")
+        vNoNumber = SavedValues.int64(savedGrown.variable("noNumber"), "noNumber")
+        vOrphans = SavedValues.uint32(savedGrown.variable("orphans"), "orphans")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

@@ -376,45 +376,35 @@ class StaticComposedSendStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint32(savedGrown.variable("deliveries"), "deliveries")
-        val saved2 = SavedValues.uint32(savedGrown.variable("item_count"), "item_count")
-        val saved3 = SavedValues.uint32(savedGrown.variable("tag_count"), "tag_count")
-        val saved4 = SavedValues.uint32(savedGrown.variable("id_sum"), "id_sum")
-        val saved5 = SavedValues.uint32(savedGrown.variable("cell_sum"), "cell_sum")
-        val saved6 = SavedValues.uint32(savedGrown.variable("level_count"), "level_count")
-        val saved7 = SavedValues.optional(savedGrown.variable("first_maybe"), "first_maybe") { e, w -> SavedValues.uint16(e, w) }
-        val saved8 = SavedValues.uint32(savedGrown.variable("late_sum"), "late_sum")
-        val saved9 = SavedValues.list(savedGrown.variable("late"), "late", 2) { e, w -> SavedValues.uint8(e, w) }
-        val saved10 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        val saved11 = SavedValues.list(savedGrown.variable("held"), "held", 2) { e, w -> SavedValues.uint8(e, w) }
-        val saved12 = SavedValues.uint32(savedGrown.variable("counted_deliveries"), "counted_deliveries")
-        val saved13 = SavedValues.uint32(savedGrown.variable("counted_sum"), "counted_sum")
-        val saved14 = SavedValues.uint8(savedGrown.variable("counted_hops"), "counted_hops")
-        return {
-            vDeliveries = saved1
-            vItemCount = saved2
-            vTagCount = saved3
-            vIdSum = saved4
-            vCellSum = saved5
-            vLevelCount = saved6
-            vFirstMaybe = saved7
-            vLateSum = saved8
-            vLate = saved9
-            vRefusals = saved10
-            vHeld = saved11
-            vCountedDeliveries = saved12
-            vCountedSum = saved13
-            vCountedHops = saved14
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vDeliveries = SavedValues.uint32(savedGrown.variable("deliveries"), "deliveries")
+        vItemCount = SavedValues.uint32(savedGrown.variable("item_count"), "item_count")
+        vTagCount = SavedValues.uint32(savedGrown.variable("tag_count"), "tag_count")
+        vIdSum = SavedValues.uint32(savedGrown.variable("id_sum"), "id_sum")
+        vCellSum = SavedValues.uint32(savedGrown.variable("cell_sum"), "cell_sum")
+        vLevelCount = SavedValues.uint32(savedGrown.variable("level_count"), "level_count")
+        vFirstMaybe = SavedValues.optional(savedGrown.variable("first_maybe"), "first_maybe") { e, w -> SavedValues.uint16(e, w) }
+        vLateSum = SavedValues.uint32(savedGrown.variable("late_sum"), "late_sum")
+        vLate = SavedValues.list(savedGrown.variable("late"), "late", 2) { e, w -> SavedValues.uint8(e, w) }
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        vHeld = SavedValues.list(savedGrown.variable("held"), "held", 2) { e, w -> SavedValues.uint8(e, w) }
+        vCountedDeliveries = SavedValues.uint32(savedGrown.variable("counted_deliveries"), "counted_deliveries")
+        vCountedSum = SavedValues.uint32(savedGrown.variable("counted_sum"), "counted_sum")
+        vCountedHops = SavedValues.uint8(savedGrown.variable("counted_hops"), "counted_hops")
     }
 
     /** [restore] at the host's wall clock now. */

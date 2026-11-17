@@ -247,29 +247,27 @@ class StaticWireWideStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint64(savedGrown.variable("low"), "low")
-        val saved2 = SavedValues.int64(savedGrown.variable("smallLow"), "smallLow")
-        val saved3 = SavedValues.bool(savedGrown.variable("large"), "large")
-        val saved4 = SavedValues.bool(savedGrown.variable("negative"), "negative")
-        val saved5 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
-        val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vLow = saved1
-            vSmallLow = saved2
-            vLarge = saved3
-            vNegative = saved4
-            vRelays = saved5
-            vRefusals = saved6
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vLow = SavedValues.uint64(savedGrown.variable("low"), "low")
+        vSmallLow = SavedValues.int64(savedGrown.variable("smallLow"), "smallLow")
+        vLarge = SavedValues.bool(savedGrown.variable("large"), "large")
+        vNegative = SavedValues.bool(savedGrown.variable("negative"), "negative")
+        vRelays = SavedValues.uint32(savedGrown.variable("relays"), "relays")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

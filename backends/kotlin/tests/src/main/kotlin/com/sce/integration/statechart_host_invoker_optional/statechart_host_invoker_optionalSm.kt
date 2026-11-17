@@ -321,41 +321,33 @@ class StatechartHostInvokerOptionalStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.optional(savedGrown.variable("at"), "at") { e, w -> SavedValues.int64(e, w) }
-        val saved2 = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 16) }
-        val saved3 = SavedValues.optional(savedGrown.variable("hit"), "hit") { e, w -> SavedValues.bool(e, w) }
-        val saved4 = SavedValues.uint8(savedGrown.variable("answered"), "answered")
-        val saved5 = SavedValues.uint8(savedGrown.variable("rows_seen"), "rows_seen")
-        val saved6 = SavedValues.uint64(savedGrown.variable("total_seen"), "total_seen")
-        val saved7 = SavedValues.bool(savedGrown.variable("at_present"), "at_present")
-        val saved8 = SavedValues.int64(savedGrown.variable("at_value"), "at_value")
-        val saved9 = SavedValues.bool(savedGrown.variable("label_present"), "label_present")
-        val saved10 = SavedValues.string(savedGrown.variable("label_value"), "label_value", 16)
-        val saved11 = SavedValues.bool(savedGrown.variable("hit_known"), "hit_known")
-        val saved12 = SavedValues.bool(savedGrown.variable("hit_true"), "hit_true")
-        return {
-            vAt = saved1
-            vLabel = saved2
-            vHit = saved3
-            vAnswered = saved4
-            vRowsSeen = saved5
-            vTotalSeen = saved6
-            vAtPresent = saved7
-            vAtValue = saved8
-            vLabelPresent = saved9
-            vLabelValue = saved10
-            vHitKnown = saved11
-            vHitTrue = saved12
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vAt = SavedValues.optional(savedGrown.variable("at"), "at") { e, w -> SavedValues.int64(e, w) }
+        vLabel = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 16) }
+        vHit = SavedValues.optional(savedGrown.variable("hit"), "hit") { e, w -> SavedValues.bool(e, w) }
+        vAnswered = SavedValues.uint8(savedGrown.variable("answered"), "answered")
+        vRowsSeen = SavedValues.uint8(savedGrown.variable("rows_seen"), "rows_seen")
+        vTotalSeen = SavedValues.uint64(savedGrown.variable("total_seen"), "total_seen")
+        vAtPresent = SavedValues.bool(savedGrown.variable("at_present"), "at_present")
+        vAtValue = SavedValues.int64(savedGrown.variable("at_value"), "at_value")
+        vLabelPresent = SavedValues.bool(savedGrown.variable("label_present"), "label_present")
+        vLabelValue = SavedValues.string(savedGrown.variable("label_value"), "label_value", 16)
+        vHitKnown = SavedValues.bool(savedGrown.variable("hit_known"), "hit_known")
+        vHitTrue = SavedValues.bool(savedGrown.variable("hit_true"), "hit_true")
     }
 
     /** [restore] at the host's wall clock now. */

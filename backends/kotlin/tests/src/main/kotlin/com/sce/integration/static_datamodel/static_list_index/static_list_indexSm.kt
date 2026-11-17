@@ -278,35 +278,30 @@ class StaticListIndexStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
-        val saved2 = SavedValues.int32(savedGrown.variable("cursor"), "cursor")
-        val saved3 = SavedValues.uint8(savedGrown.variable("under"), "under")
-        val saved4 = SavedValues.uint8(savedGrown.variable("first"), "first")
-        val saved5 = SavedValues.uint8(savedGrown.variable("last"), "last")
-        val saved6 = SavedValues.bool(savedGrown.variable("ordered"), "ordered")
-        val saved7 = SavedValues.bool(savedGrown.variable("room"), "room")
-        val saved8 = SavedValues.uint32(savedGrown.variable("count"), "count")
-        val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vPicked = saved1
-            vCursor = saved2
-            vUnder = saved3
-            vFirst = saved4
-            vLast = saved5
-            vOrdered = saved6
-            vRoom = saved7
-            vCount = saved8
-            vRefusals = saved9
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vPicked = SavedValues.list(savedGrown.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
+        vCursor = SavedValues.int32(savedGrown.variable("cursor"), "cursor")
+        vUnder = SavedValues.uint8(savedGrown.variable("under"), "under")
+        vFirst = SavedValues.uint8(savedGrown.variable("first"), "first")
+        vLast = SavedValues.uint8(savedGrown.variable("last"), "last")
+        vOrdered = SavedValues.bool(savedGrown.variable("ordered"), "ordered")
+        vRoom = SavedValues.bool(savedGrown.variable("room"), "room")
+        vCount = SavedValues.uint32(savedGrown.variable("count"), "count")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

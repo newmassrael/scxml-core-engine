@@ -331,37 +331,31 @@ class StaticComposedTextStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.bool(savedGrown.variable("note_is_ab"), "note_is_ab")
-        val saved2 = SavedValues.uint32(savedGrown.variable("note_len"), "note_len")
-        val saved3 = SavedValues.bool(savedGrown.variable("first_label_is_ab"), "first_label_is_ab")
-        val saved4 = SavedValues.uint32(savedGrown.variable("labels_ab"), "labels_ab")
-        val saved5 = SavedValues.uint32(savedGrown.variable("first_tags_ab"), "first_tags_ab")
-        val saved6 = SavedValues.uint32(savedGrown.variable("words_ab"), "words_ab")
-        val saved7 = SavedValues.string(savedGrown.variable("last_label"), "last_label", 8)
-        val saved8 = SavedValues.uint32(savedGrown.variable("blob_bytes"), "blob_bytes")
-        val saved9 = SavedValues.uint32(savedGrown.variable("blobs_ab"), "blobs_ab")
-        val saved10 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        return {
-            vNoteIsAb = saved1
-            vNoteLen = saved2
-            vFirstLabelIsAb = saved3
-            vLabelsAb = saved4
-            vFirstTagsAb = saved5
-            vWordsAb = saved6
-            vLastLabel = saved7
-            vBlobBytes = saved8
-            vBlobsAb = saved9
-            vRefusals = saved10
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vNoteIsAb = SavedValues.bool(savedGrown.variable("note_is_ab"), "note_is_ab")
+        vNoteLen = SavedValues.uint32(savedGrown.variable("note_len"), "note_len")
+        vFirstLabelIsAb = SavedValues.bool(savedGrown.variable("first_label_is_ab"), "first_label_is_ab")
+        vLabelsAb = SavedValues.uint32(savedGrown.variable("labels_ab"), "labels_ab")
+        vFirstTagsAb = SavedValues.uint32(savedGrown.variable("first_tags_ab"), "first_tags_ab")
+        vWordsAb = SavedValues.uint32(savedGrown.variable("words_ab"), "words_ab")
+        vLastLabel = SavedValues.string(savedGrown.variable("last_label"), "last_label", 8)
+        vBlobBytes = SavedValues.uint32(savedGrown.variable("blob_bytes"), "blob_bytes")
+        vBlobsAb = SavedValues.uint32(savedGrown.variable("blobs_ab"), "blobs_ab")
+        vRefusals = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
     }
 
     /** [restore] at the host's wall clock now. */

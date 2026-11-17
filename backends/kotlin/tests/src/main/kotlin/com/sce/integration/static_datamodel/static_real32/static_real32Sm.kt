@@ -224,29 +224,27 @@ class StaticReal32StateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
-        writeVariablesPart0()
+        // Every part is judged before any is written, so a refused value leaves
+        // the machine as it was; then each part reads its values again and
+        // writes them. A part answers no closure over the values it read: a
+        // closure's captures are the arguments of a JVM method, at most 255
+        // slots with a `Long` or a `Double` taking two, and a part of
+        // `kotlin_method_items` variables passed that, so the class failed to
+        // load (`ClassFormatError: Too many arguments in method signature`).
+        judgeVariablesPart0(savedGrown)
+        restoreVariablesPart0(savedGrown)
         enterSaved(savedGrown, wallNowMs)
     }
 
-    // Reads this part's variables from [savedGrown], refusing a value its
-    // variable's type cannot hold, and answers what writes them: nothing is
-    // written until every part has read.
-    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.float32(savedGrown.variable("level"), "level")
-        val saved2 = SavedValues.float32(savedGrown.variable("tenth"), "tenth")
-        val saved3 = SavedValues.float32(savedGrown.variable("drift"), "drift")
-        val saved4 = SavedValues.float64(savedGrown.variable("wide"), "wide")
-        val saved5 = SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float32(e, w) }
-        val saved6 = SavedValues.float32(savedGrown.variable("total"), "total")
-        return {
-            vLevel = saved1
-            vTenth = saved2
-            vDrift = saved3
-            vWide = saved4
-            vSamples = saved5
-            vTotal = saved6
-        }
+    // Writes this part's variables from [savedGrown], which every judge part
+    // has already held to its variables' types.
+    private fun restoreVariablesPart0(savedGrown: SavedState) {
+        vLevel = SavedValues.float32(savedGrown.variable("level"), "level")
+        vTenth = SavedValues.float32(savedGrown.variable("tenth"), "tenth")
+        vDrift = SavedValues.float32(savedGrown.variable("drift"), "drift")
+        vWide = SavedValues.float64(savedGrown.variable("wide"), "wide")
+        vSamples = SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float32(e, w) }
+        vTotal = SavedValues.float32(savedGrown.variable("total"), "total")
     }
 
     /** [restore] at the host's wall clock now. */
