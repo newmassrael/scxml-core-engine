@@ -2475,3 +2475,16 @@ codecs that write one count for a list always there and a list one flag gates (A
   the first list alone holds it as a member of its own name.
 - Every printed list class implements `com.sce.forge.runtime.Counted`: `.size` is how many entries it holds.
 
+## A printed Kotlin chain sets its entries' flag and hands on the entry before (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+chains that end on an entry's flag and that hand each entry what the entry before it was.
+
+- A printed codec that presents one-bit flags of a fixed carrier declares `{Codec}Overrides`, a `Boolean?` for each,
+  and its `encodeSource` takes `overrides: {Codec}Overrides? = null` last. A caller that sets none passes nothing;
+  a flag it sets is written in place of the value's.
+- A chain writes the flag its entries end on itself: whatever the entries' own flag holds is written over, set on
+  every entry but the last. Stop setting it on the entries you build.
+- An entry handed what the entry before it was is handed it by the chain's walk; an entry that says such an input
+  is refused with `CodecError.PresentIfMismatch` where it says otherwise than the entry before it is.
+

@@ -1481,6 +1481,19 @@ old encode, the old encode and its templates are removed in the same landing.
    refused: a class generated for each pair, which would spell one check once per codec where the runtime spells
    it once; and a generic `of` handed a counting function, which a list class that answers its own count makes
    needless.
+
+   *The fourteenth Kotlin landing, 2026-11-17:* chains that set their entries' flag and hand an entry what the
+   entry before it was (`ListWrite.ends`, `ListWrite.previous`, a `Handed` of no `from`), and an entry held to
+   what the entry before it is (`Against::PreviousEntry`). A codec whose value presents one-bit flags of a fixed
+   carrier (`EncodePlan::overridable`) declares `{Codec}Overrides`, a class of a `Boolean?` for each, and its
+   `encodeSource` takes one last, `null` by default, folding each flag set into the carrier after every flag it
+   derives, as the C++ `Overrides` and the Python keywords do: a parameter of default `null` changes no call
+   that sets none. The walk of a chain counts the entries left and sets the flag the entries end on through the
+   entry codec's class, and keeps, for each input a bind waits on a kind for, whether the entry it wrote last is
+   of the kind (`_prev_<input>`), read off the entry by the chain's `entry-id` as a `ULong`; the check of an
+   entry that says such an input walks the chain the same way before the first byte. Considered and refused: a
+   parameter for each flag, which would grow every codec's signature by its flags; and an entry's own flag the
+   chain reads back and checks, which would leave a caller to set where each entry stands.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

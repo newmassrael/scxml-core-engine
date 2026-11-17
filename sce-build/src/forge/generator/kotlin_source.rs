@@ -28,9 +28,9 @@ use super::*;
 use crate::forge::codec_roles::{ElementId, GateVar, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
-    HandedFrom, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence, PresenceFlag,
-    Value, Write,
+    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId,
+    Guard, HandedFrom, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence,
+    PresenceFlag, Value, Write,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -119,10 +119,14 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // each entry's or an arm's, against a carrier's bit or an input of the
     // codec's own; a codec that says it in some values only disagrees with
     // nothing where it says nothing.
+    // An entry held to what the entry before it is is checked by a walk of the
+    // chain as its own walk hands it on.
     for check in &plan.input_checks {
-        if matches!(check.against, Against::PreviousEntry { .. }) {
+        if matches!(check.against, Against::PreviousEntry { .. })
+            && !matches!(check.site, CheckSite::List { .. })
+        {
             forms.push(format!(
-                "element '{}': an input a held codec says, held to what the entry before is",
+                "element '{}': an input held to what the entry before is, at no chain",
                 check.at
             ));
         }
@@ -173,6 +177,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             // A flag of a disjunction, what the arm of the group the value
             // holds gives it (docs/adr/0065 §6 R4c).
             (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
+            // The flag a chain's entry is closed by, which the walk of the
+            // chain sets on each entry as it writes it.
+            (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             // The tag of the arm the value holds, into a field of an unsigned
             // number or a flag of a carrier; and a carrier's bits the arm of an
             // embedded body's variant fills, whose body the elements above
@@ -213,17 +220,16 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             }
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &derived, field));
-                // A walk of each entry in turn; a chain that sets its entries'
-                // flag, hands an entry what the one before it was, holds a
-                // bare entry's place or is held to a law is not printed yet.
-                if list.as_ref().is_some_and(|walk| {
-                    !walk.previous.is_empty()
-                        || walk.slots.is_some()
-                        || walk.ends.is_some()
-                        || walk.lawful
-                }) {
+                // A walk of each entry in turn, which sets on each entry but
+                // the last the flag the chain ends on and hands each entry
+                // what the one before it was; a chain that holds a bare
+                // entry's place or is held to a law is not printed yet.
+                if list
+                    .as_ref()
+                    .is_some_and(|walk| walk.slots.is_some() || walk.lawful)
+                {
                     forms.push(format!(
-                        "field '{}': a chain whose walk sets or hands its entries a flag",
+                        "field '{}': a chain that holds a bare entry's place or is held to a law",
                         field.id
                     ));
                 }
@@ -377,14 +383,36 @@ fn gate_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
 }
 
 /// What of the inputs the codec imported as `codec`, held by the element `id`,
-/// is handed that the printer does not print: it hands a carrier's bits or an
-/// input of the codec's own, and not what the entry before was, which a chain
-/// that hands it says.
+/// is handed that the printer does not print: it hands a carrier's bits, an
+/// input of the codec's own, or, to each entry of a chain, what the entry
+/// before it was, which the walk of the chain `id` says (`ListWrite.previous`);
+/// a codec handed nothing for an input nothing supplies is not printed.
 fn handed_form(plan: &EncodePlan<'_>, id: &str, codec: &str) -> Option<String> {
+    let supplied: Vec<&str> = plan
+        .program
+        .iter()
+        .find_map(|write| match write {
+            Write::Streamed {
+                field,
+                list: Some(walk),
+                ..
+            } if field.id == id => Some(
+                walk.previous
+                    .iter()
+                    .map(|(input, _)| input.as_str())
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
     plan.handed
         .get(codec)
-        .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-        .then(|| format!("field '{id}': a codec handed what the entry before it was"))
+        .is_some_and(|handed| {
+            handed
+                .iter()
+                .any(|h| h.from.is_none() && !supplied.contains(&h.input.as_str()))
+        })
+        .then(|| format!("field '{id}': a codec handed an input nothing supplies"))
 }
 
 /// The fields of `plan` whose value the encode derives as a number.
@@ -769,6 +797,9 @@ pub(super) fn render(
         inline = true;
         class
     });
+
+    // The flags a parent may set in place of the value's.
+    before.push_str(&overrides_declaration(plan, l, struct_name));
 
     // The source: what the encode reads, each element by the property a value
     // holds it in, `null` where a gate leaves it out, and the arm of the
@@ -1460,8 +1491,24 @@ fn encode_source(
                     .or_default()
                     .push(fold_bits(plan, l, field, flag, &local));
             }
+            // Set by the walk of the chain that holds the entry, through the
+            // entry codec's overrides, not here.
+            (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             _ => unreachable!("`unlowered` prints no other derivation"),
         }
+    }
+    // A flag a parent sets in place of the one the value presents, as a chain
+    // sets the flag its entries end on, folded last: what the parent says is
+    // what the wire holds.
+    for (carrier, def) in &plan.overridable {
+        let bits = CarrierBits::of(&carrier.sce_type);
+        let mask = bits.literal(1u64 << def.bit);
+        let u = format!("_u_{}", l.codec_field_id(&carrier.id));
+        folds.entry(carrier.id.clone()).or_default().push(format!(
+            "overrides?.{}?.let {{ {u} = ({u} and {mask}.inv()) or (if (it) {mask} else {}) }}\n",
+            override_property(l, &carrier.id, &def.name),
+            bits.literal(0)
+        ));
     }
     // Each carrier as the encode writes it: its flags the value presents, and
     // those the encode derives folded in, in place of the value's, worked on as
@@ -1557,9 +1604,9 @@ fn encode_source(
                             )
                         }
                         Some(HandedFrom::Input { name }) => format!(", {}", input(name)),
-                        None => unreachable!(
-                            "`unlowered` prints no codec handed an input from the entry before"
-                        ),
+                        // What the entry before was, which the walk of the
+                        // chain keeps as it writes each entry.
+                        None => format!(", {}", previous_local(&h.input)),
                     })
                     .collect()
             })
@@ -1642,9 +1689,12 @@ fn encode_source(
                 )
             }
             Against::Input { name } => format!("{}.toUInt()", input(name)),
-            Against::PreviousEntry { .. } => {
-                unreachable!("`unlowered` prints no check against the entry before")
-            }
+            // Whether the entry before is of the kind, which the walk of the
+            // check below keeps, clear for the first.
+            Against::PreviousEntry { .. } => format!(
+                "_before_{}",
+                filters::to_snake_case(format!("{}_{}", check.at, check.input))
+            ),
         };
         let import = printed_import(imports, &check.codec)
             .expect("`unlowered` prints a codec it holds printed");
@@ -1682,8 +1732,21 @@ fn encode_source(
                 } else {
                     format!("{content}.entries")
                 };
+                // Held to the entry before: the walk keeps whether the entry
+                // it checked last is of the kind, as the chain's own walk
+                // hands it on.
+                let (before, kept) = match &check.against {
+                    Against::PreviousEntry { id } => (
+                        format!("var {against} = 0u\n"),
+                        format!(
+                            "    {against} = if ({} == 0x{id:X}uL) 1u else 0u\n",
+                            entry_identifier(plan, l, &list.id, "_entry")
+                        ),
+                    ),
+                    _ => (String::new(), String::new()),
+                };
                 let walk = format!(
-                    "for (_entry in {entries}) {{\n    if ({}) {{\n        return {fail}\n    }}\n}}\n",
+                    "{before}for (_entry in {entries}) {{\n    if ({}) {{\n        return {fail}\n    }}\n{kept}}}\n",
                     says("_entry")
                 );
                 body.push_str(&walk);
@@ -1766,15 +1829,46 @@ fn encode_source(
                     )),
                     // A list or a chain walked entry by entry, each written by
                     // its codec's encode over the source the list holds.
-                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => format!(
-                        "for (_entry in {}.entries) {{\n    {}}}\n",
-                        read(field),
-                        written(&format!(
-                            "{}.encodeSource(_entry, {sink}{})",
-                            body_writer(field),
-                            handed(held_alias(plan, field))
-                        ))
-                    ),
+                    // A chain sets on each entry but the last the flag its
+                    // entries end on, in place of the one the entry presents,
+                    // and hands each entry, for each input it takes from the
+                    // entry before, whether that entry was of the kind the
+                    // input waits for, clear for the first.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        let entries = format!("{}.entries", read(field));
+                        let mut before = String::new();
+                        let mut left = String::new();
+                        let mut ends = String::new();
+                        let mut kept = String::new();
+                        if let Some(walk) = list {
+                            for (input, kind) in &walk.previous {
+                                let local = previous_local(input);
+                                before.push_str(&format!("var {local}: UByte = 0u\n"));
+                                kept.push_str(&format!(
+                                    "    {local} = (if ({} == 0x{kind:X}uL) 1 else 0).toUByte()\n",
+                                    entry_identifier(plan, l, &field.id, "_entry")
+                                ));
+                            }
+                            if let Some((carrier, flag)) = &walk.ends {
+                                let name = format!("_left_{}", l.codec_field_id(&field.id));
+                                before.push_str(&format!("var {name} = {entries}.size\n"));
+                                left.push_str(&format!("    {name} -= 1\n"));
+                                ends.push_str(&format!(
+                                    ", {}({} = {name} != 0)",
+                                    overrides_class(&body_writer(field)),
+                                    override_property(l, carrier, flag)
+                                ));
+                            }
+                        }
+                        format!(
+                            "{before}for (_entry in {entries}) {{\n{left}    {}{kept}}}\n",
+                            written(&format!(
+                                "{}.encodeSource(_entry, {sink}{}{ends})",
+                                body_writer(field),
+                                handed(held_alias(plan, field))
+                            ))
+                        )
+                    }
                 };
                 // What says whether the value holds the field: the local it
                 // was read into, or the buffer a body was encoded into, which
@@ -1904,15 +1998,28 @@ fn encode_source(
     };
     // The flag inputs the encode is handed, those the value does not say,
     // after the sink, as the decode is handed them after the cursor.
-    let given: String = plan
+    let mut given: String = plan
         .given
         .iter()
         .map(|input| format!(", {}: UByte", input_name(&input.name)))
         .collect();
+    // The flags a parent sets in place of the value's, which a caller that
+    // sets none leaves out.
+    let mut overrides = String::new();
+    if !plan.overridable.is_empty() {
+        given.push_str(&format!(
+            ", overrides: {}? = null",
+            overrides_class(struct_name)
+        ));
+        overrides.push_str(
+            " A chain that holds it\n/// sets the flag its entries end on by `overrides`, in \
+             place of the value's.",
+        );
+    }
     let mut text = format!(
         "/// Write any source of [{struct_name}] into `w`: each element read once off\n\
          /// `src` and written where the codec's encode plan lays it out\n\
-         /// (docs/adr/0081).{derives}{refuses}\n\
+         /// (docs/adr/0081).{derives}{overrides}{refuses}\n\
          {suppress}\
          fun encodeSource(src: {struct_name}Source, w: SceSink{given}): CodecError? {{\n\
          {}\
@@ -2175,6 +2282,84 @@ fn flag_def<'m>(plan: &EncodePlan<'m>, carrier: &str, flag: &str) -> &'m FlagDef
         .iter()
         .find(|d| d.name == flag)
         .expect("the parser found the flag a derivation names")
+}
+
+/// The local the walk of a chain keeps the input `input` of its entries in:
+/// whether the entry it wrote last is of the kind the input waits for, clear
+/// before the first.
+fn previous_local(input: &str) -> String {
+    format!("_prev_{}", input_name(input))
+}
+
+/// The identifier of `entry`, a source of the entry codec of the chain `chain`
+/// of `plan`, as a `ULong`: the flag or field the chain's `entry-id` names,
+/// read off the entry, less the flags it leaves out.
+fn entry_identifier(plan: &EncodePlan<'_>, l: &LangCtx, chain: &str, entry: &str) -> String {
+    match plan
+        .entry_ids
+        .get(chain)
+        .expect("a chain whose entries a gate or a law tells apart declares entry-id")
+    {
+        EntryId::Flag { carrier, bit, mask } => format!(
+            "(({entry}.{}.toULong() shr {bit}) and 0x{mask:X}uL)",
+            l.codec_field_id(carrier)
+        ),
+        EntryId::Whole {
+            field,
+            mask: Some(mask),
+        } => format!(
+            "({entry}.{}.toULong() and 0x{mask:X}uL)",
+            l.codec_field_id(field)
+        ),
+        EntryId::Whole { field, mask: None } => {
+            format!("{entry}.{}.toULong()", l.codec_field_id(field))
+        }
+    }
+}
+
+/// The class of the one-bit flags a parent may set in place of the ones a
+/// value of the codec whose data class is `struct_name` presents
+/// (`EncodePlan::overridable`), which its `encodeSource` takes last. The one
+/// place the name is made: the codec declares it and a chain that holds the
+/// codec makes a value of it for each entry it writes.
+pub(crate) fn overrides_class(struct_name: &str) -> String {
+    format!("{struct_name}Overrides")
+}
+
+/// The property of [`overrides_class`] that sets the flag `flag` of the
+/// carrier `carrier`.
+fn override_property(l: &LangCtx, carrier: &str, flag: &str) -> String {
+    format!("{}_{flag}", l.codec_field_id(carrier))
+}
+
+/// The class [`overrides_class`] names for `plan`, whose data class is
+/// `struct_name`, or nothing where the value presents no one-bit flag of a
+/// fixed carrier: each flag a `Boolean?`, `null` where the parent leaves the
+/// value's own.
+fn overrides_declaration(plan: &EncodePlan<'_>, l: &LangCtx, struct_name: &str) -> String {
+    if plan.overridable.is_empty() {
+        return String::new();
+    }
+    let members: Vec<String> = plan
+        .overridable
+        .iter()
+        .map(|(carrier, def)| {
+            format!(
+                "    /// The `{}` flag of `{}`, where a parent sets it.\n    val {}: Boolean? = null",
+                def.name,
+                carrier.id,
+                override_property(l, &carrier.id, &def.name)
+            )
+        })
+        .collect();
+    format!(
+        "/// One-bit flags of [{struct_name}] a parent may set in place of the ones a value\n\
+         /// presents, such as the flag a chain whose entries are [{struct_name}] ends them\n\
+         /// on, which the chain derives from where each entry stands.\n\
+         class {}(\n{},\n)\n\n",
+        overrides_class(struct_name),
+        members.join(",\n")
+    )
 }
 
 /// The Kotlin name of the flag input `name`: the parameter the encode and the

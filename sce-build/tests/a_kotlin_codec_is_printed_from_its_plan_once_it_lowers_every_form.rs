@@ -486,11 +486,60 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
         &text,
         &[
             "        fun encodeSource(src: CodecChainHandedEntrySource, w: SceSink, \
-             afterMarker: UByte): CodecError? {\n",
-            "            if ((afterMarker.toUInt() != 0u || ((_e_header.toUInt() shr 6) and 0x1u) \
+             afterMarker: UByte, overrides: CodecChainHandedEntryOverrides? = null): \
+             CodecError? {\n",
+            "            if ((afterMarker.toUInt() != 0u || ((_c_header.toUInt() shr 6) and 0x1u) \
              != 0x0u) != (_e_value != null)) {\n\
              \x20               return CodecError.PresentIfMismatch\n",
             "        return encodeSource(this, w, afterMarker)\n",
+        ],
+    );
+}
+
+/// A codec that presents one-bit flags of a fixed carrier lets a parent set
+/// them in place of the value's (`EncodePlan::overridable`), and a chain sets
+/// on each entry but the last the flag its entries end on and hands each entry
+/// whether the entry before it was of the kind its input waits for.
+///
+/// Turns red where `kotlin_source::overrides_declaration` stops declaring the
+/// class, `encode_source` stops folding an override into its carrier, or the
+/// walk of a chain stops counting the entries left or keeping the entry before
+/// (`ListWrite.ends`, `ListWrite.previous`), or `positional_forms` names such a
+/// chain unlowered.
+#[test]
+fn a_chain_sets_the_flag_its_entries_end_on_and_hands_on_the_entry_before() {
+    let entry = "codec_chain_handed_entry";
+    let text = resource_file(entry);
+    holds(
+        entry,
+        &text,
+        &[
+            "class CodecChainHandedEntryOverrides(\n",
+            "    val header_wide: Boolean? = null,\n",
+            "    val header_Z: Boolean? = null,\n)\n",
+            "            overrides?.header_Z?.let { _u_header = (_u_header and 0x80u.inv()) \
+             or (if (it) 0x80u else 0x0u) }\n",
+        ],
+    );
+    let chain = "codec_chain_handed";
+    assert!(
+        unlowered(chain).is_empty(),
+        "{chain}: {:?}",
+        unlowered(chain)
+    );
+    let text = resource_file(chain);
+    holds(
+        chain,
+        &text,
+        &[
+            "            var _prev_afterMarker: UByte = 0u\n",
+            "            var _left_entries = _e_entries.entries.size\n",
+            "                _left_entries -= 1\n",
+            "CodecChainHandedEntry.encodeSource(_entry, ",
+            ", _prev_afterMarker, CodecChainHandedEntryOverrides(header_Z = \
+             _left_entries != 0))?.let { return it }\n",
+            "                _prev_afterMarker = (if (((_entry.header.toULong() shr 0) and 0xFuL) \
+             == 0x4uL) 1 else 0).toUByte()\n",
         ],
     );
 }
@@ -1015,6 +1064,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_present_if_disjunction",
         "codec_zenoh_init_body",
         "codec_repeat_unconditional_count",
+        "codec_chain_handed",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
