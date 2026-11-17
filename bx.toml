@@ -48,9 +48,27 @@ send    = "tracked+submodules"
 # The table is read by bx-fleet (`bx-fleet decl plan`) and not by bx's line readers, so the
 # one-line rules the shorthand had (`needs` below) are history rather than a constraint;
 # `bx-fleet decl validate bx.toml` is what checks this file.
+
+# THE IMAGE THE REMOTE COMPILES RUN IN (bx RFC 0034 4.1, owner 2026-11-18). bx's compiles sent to the
+# site's workers name this image, and the fleet no longer keeps a copy of it. It is Docker's
+# buildpack-deps:noble, the Ubuntu 24.04 toolchain the compiles were already sent to, pinned by digest.
+# The record store's reconciler copies that digest byte for byte from Docker Hub into the store and
+# signs it with the fleet's key (bx RFC 0058 4.7). `.bx/trust` pins that key's certificate, and a send
+# goes out only for an image signed by it (bx RFC 0033 4.3). The repository's name in the store is the
+# fleet project this tree belongs to.
+[image]
+repository = "images/sce-spec-workbench"
+digest     = "sha256:27bdb6ab1ca0df6acfe341752ee4d9c08a341d80e3ee75ccc3b34b79af0dfaf1"
+import     = "docker.io/library/buildpack-deps"
+trust      = ".bx/trust"
+
 [platform.linux]
 os   = "linux"
 arch = "x86_64"
+# The checks run on the machine, as they did before the tree declared an image: the image above is
+# for the remote compiles only (owner 2026-11-18). Without this line every unit would run inside it
+# (bx RFC 0034 4.4), and the tools the checks need (GenMC, Swift, the browsers) are not in it.
+image = "none"
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to the echo server on localhost, and without it they route to their

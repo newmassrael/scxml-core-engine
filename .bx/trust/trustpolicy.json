@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "trustPolicies": [
+    {
+      "name": "fleet",
+      "registryScopes": ["*"],
+      "signatureVerification": { "level": "strict" },
+      "trustStores": ["ca:fleet"],
+      "trustedIdentities": ["*"]
+    }
+  ]
+}
