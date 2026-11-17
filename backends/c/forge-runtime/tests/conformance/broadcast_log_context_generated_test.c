@@ -8,7 +8,8 @@
  *
  * The log stores each of those in the entry beside the bytes, so that a reader
  * decodes an entry under what it was published under and not under whatever it
- * happens to hold: `publish` takes the flags and the read result returns them, and the
+ * happens to hold: `publish` reads the flag the element's value says off the element
+ * (ADR 0065 section 6, R4a) and the read result returns it, and the
  * tag is taken from the element (`<codec>_tag`), which the element read back reports
  * again. Two logs, each
  * generated from the documents of tests/forge/conformance/broadcast_log_context/ by
@@ -92,15 +93,10 @@ static flagged_element_t make_event(unsigned sensor, bool present, unsigned valu
     return e;
 }
 
-static FLG(flags_t) flags_of(bool has_value) {
-    FLG(flags_t) flags;
-    flags.has_value = has_value;
-    return flags;
-}
-
-static uint64_t publish_flagged(FLG(publisher_t) * publisher, const flagged_element_t *element, bool has_value) {
-    const FLG(flags_t) flags = flags_of(has_value);
-    const FLG(publish_result_t) result = FLG(publish)(publisher, element, &flags);
+/* Publish `*element`. The value says the flag, so `publish` takes none and stores the
+ * one the element says (ADR 0065 section 6, R4a). */
+static uint64_t publish_flagged(FLG(publisher_t) * publisher, const flagged_element_t *element) {
+    const FLG(publish_result_t) result = FLG(publish)(publisher, element);
     CHECK(result.status == FLG_U(PUBLISH_OK), "an element within its bound is published under its flag");
     return result.seq;
 }
@@ -138,8 +134,8 @@ static void the_context_is_in_the_word_after_the_length_and_the_bytes_follow_it(
     flagged_element_t first = make_event(1u, true, 0x0203u);
     flagged_element_t second = make_event(2u, false, 0u);
     CHECK(FLG(init)(&ring) && FLG(publisher_acquire)(&ring, &publisher), "a log and its publisher");
-    (void)publish_flagged(&publisher, &first, true);
-    (void)publish_flagged(&publisher, &second, false);
+    (void)publish_flagged(&publisher, &first);
+    (void)publish_flagged(&publisher, &second);
 
     reader = sce_blog_reader_oldest(&ring.core);
     memset(words, 0xEE, sizeof words);
@@ -178,7 +174,7 @@ static void a_reader_gets_back_the_flag_an_entry_was_published_under(void) {
     CHECK(empty.status == FLG_U(READ_EMPTY), "a new log has nothing to read");
 
     for (n = 0; n < 2u; n++) {
-        CHECK(publish_flagged(&publisher, &sent[n], flags[n]) == n, "publish %u takes sequence number %u", n, n);
+        CHECK(publish_flagged(&publisher, &sent[n]) == n, "publish %u takes sequence number %u", n, n);
     }
     for (n = 0; n < 2u; n++) {
         expect_flagged(&ring, &reader, n, &sent[n], flags[n]);
@@ -199,8 +195,8 @@ static void every_reader_of_an_entry_decodes_it_under_the_same_flag(void) {
     CHECK(FLG(init)(&ring) && FLG(publisher_acquire)(&ring, &publisher), "a log and its publisher");
     early = FLG(reader_oldest)(&ring);
     late = FLG(reader_oldest)(&ring);
-    (void)publish_flagged(&publisher, &first, true);
-    (void)publish_flagged(&publisher, &second, false);
+    (void)publish_flagged(&publisher, &first);
+    (void)publish_flagged(&publisher, &second);
     expect_flagged(&ring, &early, 0u, &first, true);
     expect_flagged(&ring, &early, 1u, &second, false);
     expect_flagged(&ring, &late, 0u, &first, true);
@@ -224,7 +220,7 @@ static void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was
     for (n = 0; n < 5u; n++) {
         const bool has_value = (n % 2u) == 0u;
         sent[n] = make_event(n + 1u, has_value, 100u + n);
-        (void)publish_flagged(&publisher, &sent[n], has_value);
+        (void)publish_flagged(&publisher, &sent[n]);
     }
     memset(&got, 0, sizeof got);
     lagged = FLG(read)(&ring, &slow, &got);
@@ -238,46 +234,21 @@ static void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was
     FLG(publisher_release)(&publisher);
 }
 
-static void a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published(void) {
-    /* The codec checks a flag input against the field it gates before it writes a
-     * byte (SCE_FORGE_CODEC_PRESENT_IF_MISMATCH, as the Rust codec does). The log
-     * stores what the codec accepted and judges nothing of its own, so a
-     * contradiction never reaches an entry: nothing is published and no sequence
-     * number is taken. */
+static void an_entry_is_stored_under_the_flag_its_element_says(void) {
+    /* The flag is read off the element, so the log cannot hold an entry whose bytes and
+     * flag disagree: there is no flag to give that could (ADR 0065 section 6, R4a). Each
+     * element comes back under the flag its value says. */
     static FLG(t) ring;
     FLG(publisher_t) publisher = {0};
     FLG(reader_t) reader;
-    FLG(publish_result_t) published;
-    FLG(read_result_t) read;
-    flagged_element_t got;
-    const FLG(flags_t) clear = flags_of(false);
-    const FLG(flags_t) set = flags_of(true);
     const flagged_element_t present = make_event(7u, true, 1u);
-    const flagged_element_t absent = make_event(8u, false, 0u);
+    const flagged_element_t absent = make_event(7u, false, 0u);
     CHECK(FLG(init)(&ring) && FLG(publisher_acquire)(&ring, &publisher), "a log and its publisher");
     reader = FLG(reader_oldest)(&ring);
-
-    /* The value is there and the flag says it is not. */
-    published = FLG(publish)(&publisher, &present, &clear);
-    CHECK(published.status == FLG_U(PUBLISH_ENCODE_FAILED) &&
-              published.codec_status == SCE_FORGE_CODEC_PRESENT_IF_MISMATCH,
-          "a value under a flag that says it is absent is refused by the codec");
-    CHECK(FLG(head)(&ring) == 0u, "nothing was published");
-
-    /* The value is absent and the flag says it is there. */
-    published = FLG(publish)(&publisher, &absent, &set);
-    CHECK(published.status == FLG_U(PUBLISH_ENCODE_FAILED) &&
-              published.codec_status == SCE_FORGE_CODEC_PRESENT_IF_MISMATCH,
-          "an absent value under a flag that says it is there is refused by the codec");
-    CHECK(FLG(head)(&ring) == 0u, "nothing was published");
-    memset(&got, 0, sizeof got);
-    read = FLG(read)(&ring, &reader, &got);
-    CHECK(read.status == FLG_U(READ_EMPTY), "a reader sees nothing of either");
-
-    /* An element and a flag that agree are published after the refused ones, as
-     * entry 0: a refusal does not spend a sequence number. */
-    published = FLG(publish)(&publisher, &present, &set);
-    CHECK(published.status == FLG_U(PUBLISH_OK) && published.seq == 0u, "a refusal spends no sequence number");
+    CHECK(publish_flagged(&publisher, &present) == 0u, "a present value is published as entry 0");
+    expect_flagged(&ring, &reader, 0u, &present, true);
+    CHECK(publish_flagged(&publisher, &absent) == 1u, "an absent value is published as entry 1");
+    expect_flagged(&ring, &reader, 1u, &absent, false);
     FLG(publisher_release)(&publisher);
 }
 
@@ -437,7 +408,7 @@ int main(void) {
     a_reader_gets_back_the_flag_an_entry_was_published_under();
     every_reader_of_an_entry_decodes_it_under_the_same_flag();
     a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under();
-    a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
+    an_entry_is_stored_under_the_flag_its_element_says();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
     the_stored_tag_is_the_tag_of_the_arm_the_element_holds();
