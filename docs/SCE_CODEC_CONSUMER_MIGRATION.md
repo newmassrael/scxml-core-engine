@@ -2999,3 +2999,22 @@ the chains closed by an entry flag of printed entries (`codec_chain_depth_plain`
   `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE` for an empty one, and `{codec}_encode` refuses a value whose `{chain}_len` is
   zero with the same status before the first byte.
 
+## A printed C11 codec reads the flag inputs its value says, and takes the others (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the codecs
+that take flag inputs (`codec_zenoh_wireexpr`, `codec_zenoh_decl_kexpr`, `codec_init_cookie_body` among the
+resources), each of whose other forms the printer already lowered.
+
+- `{codec}_encode`, `{codec}_encode_to_buf` and `{codec}_encode_source` of a printed codec take only the flag inputs
+  the value does not say, after the writer (or `out_len`) and before any overrides; an input the value says (the one
+  field gated on it, or a body that says it) is read off the value (docs/adr/0065 §6 R4a). Drop that argument from
+  every call; the decode still takes every input. `{codec}_input_<name>(src, ctx)` answers what a source says,
+  a `sce_optional_uint8_t` where the value says it in some of its values only.
+- A printed encode refuses with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`, before the first byte, a value whose field
+  disagrees with a gate the encode cannot derive, or whose body or entries say an input otherwise than the value
+  hands it.
+- A broadcast log over a printed element that says a flag input no longer takes it: `{log}_publish` reads it off the
+  element and stores it as the element says it. Where the element says some flags and not others, `{log}_publish`
+  takes `const {log}_given_flags_t *given` with the others; where it says all of them, it takes no flags. The read
+  result still returns every flag.
+
