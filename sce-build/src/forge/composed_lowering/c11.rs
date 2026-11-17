@@ -1418,6 +1418,22 @@ impl ComposedSpelling for C11Composed<'_> {
         defs
     }
 
+    // The struct's compound literal, each member designated by the name its
+    // declaration gives it ([`ComposedSpelling::record_def`]), as a record of
+    // entries' is (`StaticTarget::record_value`).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!(".{id} = {value}"))
+            .collect();
+        Some(format!("({ty}){{ {} }}", members.join(", ")))
+    }
+    // The list's struct of no element: the library's `{len, data[bound]}`,
+    // its length zero (`c11_list_def`).
+    fn empty_list(&self, ty: &str) -> Option<String> {
+        Some(format!("({ty}){{ .len = 0u }}"))
+    }
+
     // The machine's own struct, beside its records (docs/adr/0092, section 7,
     // the C11 row): named by the union's document, so one union is one type of
     // the machine whichever alias names it.
@@ -1837,6 +1853,33 @@ mod tests {
             "m",
             [("Level".to_string(), "level_enum_t".to_string())].into(),
         )
+    }
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// struct's compound literal of designated members, a list of no lower
+    /// count at its struct of length zero (docs/adr/0087, "Decided while
+    /// landing item 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        let spelling = c11();
+        assert_eq!(
+            spelling
+                .record_of(
+                    "m_record_board_t",
+                    &[
+                        ("title".to_string(), "t".to_string()),
+                        ("rects".to_string(), "l".to_string()),
+                    ],
+                )
+                .as_deref(),
+            Some("(m_record_board_t){ .title = t, .rects = l }")
+        );
+        assert_eq!(
+            spelling
+                .empty_list(&spelling.list_type("m_record_rect_t", 3))
+                .as_deref(),
+            Some("(m_record_rect_list_3_t){ .len = 0u }")
+        );
     }
 
     /// The enums the walks read, the C11 type of `Level` among them.
