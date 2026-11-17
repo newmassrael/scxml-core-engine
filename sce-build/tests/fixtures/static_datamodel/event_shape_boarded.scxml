@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A board of shapes, said as a text: what `static_union.scxml` lifts into its variable
+  of `record:Board` (`shape_board.scxml`), which is built where it is declared, whole.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shape_boarded"
+       sce:event-name="shape.boarded">
+  <datamodel>
+    <data id="text" sce:type="string[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

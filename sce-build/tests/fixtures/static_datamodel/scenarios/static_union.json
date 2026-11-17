@@ -1,13 +1,15 @@
 {
   "machine": "static_union",
-  "about": "A payload that holds a union, read by testing its tag (docs/adr/0092, sections 4 and 6.1): each case of `one`, the empty case, the tag last in the text, keys in another order, a key of another case and a `null` under one (both stepped over), each shape of `many` narrowed on the loop's item, and the present value of `maybe` read where a test proves it present and in its case. The built variable `built` has a field of its proven case written on each delivery, and `kept` takes `one` whole. A delivery outside its type (an unknown tag, a tag that is a number, a field of the case missing inside `many`, a `many` short of its lower count of one or past its bound of three, a text inside a case past its bound) is refused whole where it is read (docs/adr/0086, section 4.4) and counted in `refusals`. A text is lifted into `lifted` whole, or the refusal of it kept in `lift_why`: an unknown tag, a field of the case missing, `null` where it is not optional, an optional key left out, a text past its bound, a text that is no object and a container past the depth. A shape at an index of `shapes.picked`'s list is taken whole into `picked` and `picked_maybe` and narrowed by its tag (docs/adr/0099, section 5.3); an index past the list, or into an empty one, writes nothing, does not count the pick in `picks`, and raises error.execution, counted in `refusals`; so is a shape at an index of a list itself reached through an index, the list a group at an index of `shapes.grouped` holds or a row at an index of `shapes.rowed`, an index outside either list doing the same (docs/adr/0099, \"Still open (2026-11-16)\" item 3). A text is lifted into `held`, a record that holds a union, whole, or the refusal of it kept in `held_why`, a tag the union does not declare refused at its pointer inside the record; where `held` is proven present and its union proven a rect, its width is read into `held_width` (docs/adr/0099, \"Decided while landing steps 3 and 4\" item 3). A step that restores reads every union back from the saved state by its tag, the one the record holds among them. Expected values are derived from the document and the refusal order of section 4.1, not observed from a backend.",
+  "about": "A payload that holds a union, read by testing its tag (docs/adr/0092, sections 4 and 6.1): each case of `one`, the empty case, the tag last in the text, keys in another order, a key of another case and a `null` under one (both stepped over), each shape of `many` narrowed on the loop's item, and the present value of `maybe` read where a test proves it present and in its case. The built variable `built` has a field of its proven case written on each delivery, and `kept` takes `one` whole. A delivery outside its type (an unknown tag, a tag that is a number, a field of the case missing inside `many`, a `many` short of its lower count of one or past its bound of three, a text inside a case past its bound) is refused whole where it is read (docs/adr/0086, section 4.4) and counted in `refusals`. A text is lifted into `lifted` whole, or the refusal of it kept in `lift_why`: an unknown tag, a field of the case missing, `null` where it is not optional, an optional key left out, a text past its bound, a text that is no object and a container past the depth. A shape at an index of `shapes.picked`'s list is taken whole into `picked` and `picked_maybe` and narrowed by its tag (docs/adr/0099, section 5.3); an index past the list, or into an empty one, writes nothing, does not count the pick in `picks`, and raises error.execution, counted in `refusals`; so is a shape at an index of a list itself reached through an index, the list a group at an index of `shapes.grouped` holds or a row at an index of `shapes.rowed`, an index outside either list doing the same (docs/adr/0099, \"Still open (2026-11-16)\" item 3). A text is lifted into `held`, a record that holds a union, whole, or the refusal of it kept in `held_why`, a tag the union does not declare refused at its pointer inside the record; where `held` is proven present and its union proven a rect, its width is read into `held_width` (docs/adr/0099, \"Decided while landing steps 3 and 4\" item 3). `board`, a record that holds a list of unions and a union that may be absent, is built where it is declared, its text, number and optional text given, its list empty and its union absent (docs/adr/0087, \"Decided while landing item 8\", decision 10); a guard reads its text and number, a lift writes it whole or keeps why not in `board_why` (a list past its bound refused at the list), and the number of shapes it holds is read into `board_shapes` after each lift. A step that restores reads every union back from the saved state by its tag, the one the record holds among them, and the built record by its type. Expected values are derived from the document and the refusal order of section 4.1, not observed from a backend.",
   "steps": [
     { "note": "a built union starts at its case, an optional one absent",
       "expect": { "state": "idle", "variables": {
         "built": {"kind": "rect", "width": 1, "height": 2}, "kept": null, "last_kind": "dot",
         "lifted": null, "lift_why": null, "refusals": 0, "dots": 0, "many_shapes": 0,
         "picked": {"kind": "dot"}, "picked_maybe": null, "picks": 0, "picked_width": 0,
-        "held": null, "held_why": null, "held_width": 0 } } },
+        "held": null, "held_why": null, "held_width": 0,
+        "board": {"title": "desk", "count": 2, "note": null, "shapes": [], "pinned": null},
+        "board_why": null, "board_shapes": 0, "boards": 0 } } },
 
     { "note": "a circle, a shared field under the test of both cases, and each shape of many",
       "event": "shapes.sent",
@@ -174,6 +176,29 @@
         "held": {"title": "orb", "shape": {"kind": "circle", "radius": 2}},
         "held_why": null, "held_width": 7, "refusals": 5 } } },
 
+    { "note": "a read of the record built where it is declared: the guard reads the text and the number its <sce:set>s gave",
+      "event": "board.read",
+      "expect": { "variables": {
+        "board": {"title": "desk", "count": 2, "note": null, "shapes": [], "pinned": null},
+        "boards": 1, "board_shapes": 0, "refusals": 5 } } },
+
+    { "note": "a text of a board of two shapes and a pinned circle: the lift writes the built record whole",
+      "event": "shape.boarded", "data": {"text": "{\"title\":\"shelf\",\"count\":3,\"note\":\"top\",\"shapes\":[{\"kind\":\"dot\"},{\"kind\":\"rect\",\"width\":4,\"height\":5}],\"pinned\":{\"kind\":\"circle\",\"radius\":6}}"},
+      "expect": { "variables": {
+        "board": {"title": "shelf", "count": 3, "note": "top", "shapes": [{"kind": "dot"}, {"kind": "rect", "width": 4, "height": 5}], "pinned": {"kind": "circle", "radius": 6}},
+        "board_why": null, "board_shapes": 2, "boards": 1, "refusals": 5 } } },
+
+    { "note": "a read of the board lifted: its title is no longer the first, so the guard is false",
+      "event": "board.read",
+      "expect": { "variables": { "boards": 1, "refusals": 5 } } },
+
+    { "note": "a board of four shapes, past the three its list declares: refused at the list, the record as it was",
+      "event": "shape.boarded", "data": {"text": "{\"title\":\"over\",\"count\":1,\"note\":null,\"shapes\":[{\"kind\":\"dot\"},{\"kind\":\"dot\"},{\"kind\":\"dot\"},{\"kind\":\"dot\"}],\"pinned\":null}"},
+      "expect": { "variables": {
+        "board": {"title": "shelf", "count": 3, "note": "top", "shapes": [{"kind": "dot"}, {"kind": "rect", "width": 4, "height": 5}], "pinned": {"kind": "circle", "radius": 6}},
+        "board_why": {"code": "tooMany", "path": "/shapes", "bound": 3},
+        "board_shapes": 2, "refusals": 5 } } },
+
     { "note": "restored from its saved state, every union is read back by its tag and the machine carries on",
       "restore": true,
       "event": "shapes.sent",
@@ -187,13 +212,26 @@
         "picked_maybe": {"kind": "circle", "radius": 3},
         "picks": 2, "picked_width": 5,
         "held": {"title": "orb", "shape": {"kind": "circle", "radius": 2}},
-        "held_why": null, "held_width": 7 } } },
+        "held_why": null, "held_width": 7,
+        "board": {"title": "shelf", "count": 3, "note": "top", "shapes": [{"kind": "dot"}, {"kind": "rect", "width": 4, "height": 5}], "pinned": {"kind": "circle", "radius": 6}},
+        "board_why": {"code": "tooMany", "path": "/shapes", "bound": 3},
+        "board_shapes": 2, "boards": 1 } } },
 
     { "note": "after the restore, the record read back holds its union by its tag: a rect lifted again is narrowed",
       "event": "shape.held", "data": {"text": "{\"title\":\"slab\",\"shape\":{\"kind\":\"rect\",\"width\":9,\"height\":1}}"},
       "expect": { "variables": {
         "held": {"title": "slab", "shape": {"kind": "rect", "width": 9, "height": 1}},
         "held_why": null, "held_width": 9 } } },
+
+    { "note": "after the restore, a text of the board as it was built is lifted whole: its list empty and its union absent again",
+      "event": "shape.boarded", "data": {"text": "{\"title\":\"desk\",\"count\":2,\"note\":null,\"shapes\":[],\"pinned\":null}"},
+      "expect": { "variables": {
+        "board": {"title": "desk", "count": 2, "note": null, "shapes": [], "pinned": null},
+        "board_why": null, "board_shapes": 0, "boards": 1 } } },
+
+    { "note": "a read of the board read back and lifted again: its first title and number, so the guard is true",
+      "event": "board.read",
+      "expect": { "variables": { "boards": 2 } } },
 
     { "note": "many holds none, short of the one its type declares: the delivery is refused whole where it is read, and its dot is not counted",
       "event": "shapes.sent",

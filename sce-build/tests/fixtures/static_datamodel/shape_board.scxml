@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A board of shapes (docs/adr/0087, "Decided while landing item 8", decision 10): a
+  record that holds a list of unions with no lower count and a union that may be absent,
+  beside a text, a number and a text that may be absent. `static_union.scxml` declares a
+  variable of `record:Board` built where it is declared: its text, its number and its
+  optional text given by a <sce:set> each, its list empty and its union absent, which
+  are the one value each of those types has before something writes one. A lift writes
+  it whole. An event schema used as a record type: no machine sends `shape.board`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="shape_board"
+       sce:event-name="shape.board">
+  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <datamodel>
+    <data id="title" sce:type="string[8]" sce:direction="in"/>
+    <data id="count" sce:type="uint8" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[8]&gt;" sce:direction="in"/>
+    <data id="shapes" sce:type="list&lt;union:Shape&gt;[3]" sce:direction="in"/>
+    <data id="pinned" sce:type="optional&lt;union:Shape&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

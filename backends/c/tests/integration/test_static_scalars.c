@@ -3644,7 +3644,7 @@ int main(void) {
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_lift_scenario("static_lift", 37);
     bad |= static_lift_list_scenario("static_lift_list", 25);
-    bad |= static_union_scenario("static_union", 41);
+    bad |= static_union_scenario("static_union", 47);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

@@ -17,7 +17,10 @@
   rows. A text is lifted into a record that holds a union, an optional one that
   starts absent and is written whole, and the union the record holds is narrowed by
   its tag where a test proves the record present (docs/adr/0099, "Decided while
-  landing steps 3 and 4" item 3). A delivery outside its type is
+  landing steps 3 and 4" item 3). A record that holds a list of unions and a union
+  that may be absent is built where it is declared, its list empty and its union
+  absent, read in a guard, and written whole by a lift (docs/adr/0087, "Decided
+  while landing item 8", decision 10). A delivery outside its type is
   refused whole and counted. Every out variable is what a host reads back, and
   scenarios/static_union.json replays it.
 
@@ -46,6 +49,8 @@
   <sce:import kind="event-schema" src="event_shapes_rows.scxml" as="Rows"/>
   <sce:import kind="event-schema" src="shape_held.scxml" as="Held"/>
   <sce:import kind="event-schema" src="event_shape_held.scxml" as="HeldSaid"/>
+  <sce:import kind="event-schema" src="shape_board.scxml" as="Board"/>
+  <sce:import kind="event-schema" src="event_shape_boarded.scxml" as="Boarded"/>
   <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
   <datamodel>
     <!-- A union variable is built where it is declared, a case and each of its
@@ -88,6 +93,20 @@
     <data id="held" sce:type="optional&lt;record:Held&gt;" expr="null" sce:direction="out"/>
     <data id="held_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
     <data id="held_width" sce:type="uint16" expr="0" sce:direction="out"/>
+    <!-- A record that holds a list of unions and a union that may be absent,
+         built where it is declared by definite assignment: each field of one
+         entry given, its list empty and its union absent (docs/adr/0087,
+         "Decided while landing item 8", decision 10). A lift writes it whole,
+         or why not is kept; how many shapes it holds is read after each lift,
+         and `boards` counts the reads that found its first title and number. -->
+    <data id="board" sce:type="record:Board" sce:direction="out">
+      <sce:set name="title" expr="'desk'"/>
+      <sce:set name="count" expr="2"/>
+      <sce:set name="note" expr="null"/>
+    </data>
+    <data id="board_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+    <data id="board_shapes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="boards" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <transition event="shapes.sent" type="internal">
@@ -135,6 +154,16 @@
       <if cond="held !== null &amp;&amp; held.value.shape.kind === Kind.rect">
         <assign location="held_width" expr="held.value.shape.width"/>
       </if>
+    </transition>
+    <!-- The record built where it is declared is written whole by a lift, and
+         its fields are read as any record variable's are. -->
+    <transition event="shape.boarded" type="internal">
+      <sce:lift text="_event.data.text" schema="Board" location="board" refusal="board_why"/>
+      <assign location="board_shapes" expr="len(board.shapes)"/>
+    </transition>
+    <transition event="board.read" type="internal"
+                cond="board.title === 'desk' &amp;&amp; board.count === 2">
+      <assign location="boards" expr="boards + 1"/>
     </transition>
     <!-- The element at an index is read by the checked read of an index, which
          fails outside the list: then nothing is written, the rest of the block

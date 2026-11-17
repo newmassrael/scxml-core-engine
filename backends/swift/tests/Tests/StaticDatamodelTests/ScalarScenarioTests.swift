@@ -872,6 +872,18 @@ private func unionPayload() -> Machine {
             (key: "shape", value: unionShape(h.shape)),
         ])
     }
+    // A record built where it is declared (docs/adr/0087, "Decided while landing item 8", decision 10), as
+    // a scenario writes it: its text, its number, its text that may be absent, its list of unions each by
+    // its tag, and its union that may be absent.
+    let board = { (b: StaticUnionBoardRecord) -> JSONValue in
+        .object([
+            (key: "title", value: .text(b.title)),
+            (key: "count", value: integer(b.count)),
+            (key: "note", value: optionalText(b.note)),
+            (key: "shapes", value: .array(b.shapes.map(unionShape))),
+            (key: "pinned", value: b.pinned.map(unionShape) ?? .null),
+        ])
+    }
     return driveSaved({ StaticUnionPolicy() }) { policy in
         [
             "built": { unionShape(policy.built) },
@@ -897,6 +909,10 @@ private func unionPayload() -> Machine {
             "held": { policy.held.map(held) ?? .null },
             "held_why": { policy.heldWhy.map(why) ?? .null },
             "held_width": { integer(policy.heldWidth) },
+            "board": { board(policy.board) },
+            "board_why": { policy.boardWhy.map(why) ?? .null },
+            "board_shapes": { integer(policy.boardShapes) },
+            "boards": { integer(policy.boards) },
         ]
     }
 }

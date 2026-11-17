@@ -2980,6 +2980,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    shape_label.scxml shape_path.scxml union_shape.scxml event_shape_said.scxml
                    event_shapes_picked.scxml shape_group.scxml event_shapes_grouped.scxml
                    event_shapes_rows.scxml shape_held.scxml event_shape_held.scxml
+                   shape_board.scxml event_shape_boarded.scxml
     )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"

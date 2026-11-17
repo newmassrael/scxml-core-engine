@@ -10,6 +10,12 @@
 //! variable by name, naming the repair `optional<record:R>`, and so does a
 //! `<sce:set>` of a composed field, since no expression of the language builds
 //! a list, a union or a record.
+//!
+//! `static_union.scxml`'s `board` is such a variable, and its scenario
+//! (`scenarios/static_union.json`) replays its start, a guard's read of it, a
+//! lift into it and its restore on every lane and the Interpreter.
+
+mod common;
 
 use std::path::{Path, PathBuf};
 
@@ -262,4 +268,100 @@ fn a_given_text_past_its_bound_is_refused() {
     );
     assert!(!ok, "a text past its bound is refused:\n{text}");
     holds(&text, &["title"]);
+}
+
+/// The variable every lowering takes: each field of one entry given, the list
+/// and the union left to start empty and absent.
+const BUILT: &str = r#"    <data id="kept" sce:type="record:Board" sce:direction="out">
+      <sce:set name="title" expr="'desk'"/>
+      <sce:set name="count" expr="2"/>
+      <sce:set name="note" expr="null"/>
+    </data>"#;
+
+/// Pinned by `composed_record_start` (`sce-build/src/forge/static_lowering.rs`)
+/// and each backend's `ComposedSpelling::record_of` and `empty_list`: every
+/// backend whose row holds a record that holds a composition builds the
+/// variable where it is declared, and so does the Interpreter.
+#[test]
+fn every_lowering_that_holds_the_record_builds_it_where_it_is_declared() {
+    let document = statechart(BUILT);
+    let mut held = 0;
+    for (language, row) in common::composed_lowering::checked_backends() {
+        if !row.records {
+            continue;
+        }
+        held += 1;
+        let (ok, text) = checked(&["-l", language], &document, &board());
+        assert!(
+            ok,
+            "{language} builds the record where it is declared:\n{text}"
+        );
+    }
+    assert!(held > 0, "some backend holds the record");
+    let (ok, text) = checked(&[], &document, &board());
+    assert!(
+        ok,
+        "the Interpreter builds the record where it is declared:\n{text}"
+    );
+}
+
+/// The generated text of `static_union.scxml`, whose `board` is a `record:Board`
+/// built where it is declared, on `language`.
+fn static_union(language: sce_build::generator::Language) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/static_datamodel/static_union.scxml");
+    sce_build::compile_scxml_lang_typed(
+        path.to_str().expect("a utf-8 path"),
+        &sce_build::find_template_dir_for(language),
+        language,
+    )
+    .unwrap_or_else(|e| panic!("{language:?} lowers static_union: {e:?}"))
+    .files
+    .into_iter()
+    .map(|(_, code)| code)
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Pinned by each backend's `record_of` and `empty_list` and by
+/// `absent_value`: `board` starts at its record built from its fields in the
+/// schema's order, its list of shapes empty and its pinned shape absent.
+#[test]
+fn each_backend_spells_the_start_of_the_built_record() {
+    use sce_build::generator::Language;
+    for (language, start) in [
+        (
+            Language::Rust,
+            "shapes: ::sce_rust_runtime::portable::BoundedList::new(), pinned: None }",
+        ),
+        (Language::Kotlin, "shapes = emptyList(), pinned = null)"),
+        (Language::Go, "{}, pinned: optional.None["),
+        (Language::Python, "shapes=[], pinned=None)"),
+        (Language::Swift, "shapes: [], pinned: nil)"),
+        (Language::Cpp, "{}, /*pinned=*/std::optional<"),
+        (
+            Language::C11,
+            "){ .len = 0u }, .pinned = sce_optional_record_",
+        ),
+    ] {
+        holds(&static_union(language), &[start]);
+    }
+}
+
+/// Pinned by `JsComposed::record_of` and `empty_list`: the Interpreter's
+/// `<data>` of `board` is the plain object of its fields.
+#[test]
+fn the_interpreter_starts_the_built_record_at_the_object_of_its_fields() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/static_datamodel/static_union.scxml");
+    let lowered =
+        sce_build::forge::static_js::lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
+            .unwrap_or_else(|e| panic!("the Interpreter lowers static_union: {e:?}"));
+    let document = roxmltree::Document::parse(&lowered).expect("well-formed");
+    let start = document
+        .descendants()
+        .find(|node| node.has_tag_name("data") && node.attribute("id") == Some("board"))
+        .and_then(|node| node.attribute("expr"))
+        .expect("the <data> of `board` holds its start");
+    holds(start, &["'title': ", "'shapes': [], 'pinned': null})"]);
 }
