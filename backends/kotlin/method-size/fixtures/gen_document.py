@@ -43,6 +43,14 @@ STATES = 300
 ADDENDS = 11
 """Variables `a0` .. `a10` each transition adds to, besides `steps`."""
 
+KEPT = 300
+"""`int64` variables `k0` .. `k299`, each starting at its index, that entering
+`paused` adds one to. A restore once read every variable of a part of 256 into
+a closure, whose captures are the arguments of one JVM method: at most 255
+slots, a `Long` taking two. KEPT longs are past that in any part, so a machine
+of the old shape fails to load (`ClassFormatError`); JvmMethodSizeTest saves
+and restores them."""
+
 NAME = "jvm_method_size_static.scxml"
 
 
@@ -63,6 +71,8 @@ def document() -> str:
         "  checked additions. Under the Kotlin machine's old shape, the content of",
         "  every transition was one method past the 65,535 bytes of code one JVM",
         "  method holds; the machine now compiles. JvmMethodSizeTest drives it.",
+        f"  {KEPT} int64 variables, which entering `paused` adds one to, are more than",
+        "  one JVM method takes as arguments: a restore holds them all.",
         "",
         "  Kotlin compile+run gate: scripts/regen_jvm_method_size_kotlin.sh commits",
         "  the generated machine, and JvmMethodSizeTest.kt drives it.",
@@ -77,6 +87,10 @@ def document() -> str:
     for addend in range(ADDENDS):
         lines.append(
             f'    <data id="a{addend}" sce:type="uint32" expr="0" sce:direction="out"/>'
+        )
+    for kept in range(KEPT):
+        lines.append(
+            f'    <data id="k{kept}" sce:type="int64" expr="{kept}" sce:direction="out"/>'
         )
     lines += [
         "  </datamodel>",
@@ -106,6 +120,12 @@ def document() -> str:
         '    <transition event="pause" target="paused"/>',
         "  </state>",
         '  <state id="paused">',
+        "    <onentry>",
+    ]
+    for kept in range(KEPT):
+        lines.append(f'      <assign location="k{kept}" expr="k{kept} + 1"/>')
+    lines += [
+        "    </onentry>",
         '    <transition event="resume" target="back"/>',
         "  </state>",
         "</scxml>",

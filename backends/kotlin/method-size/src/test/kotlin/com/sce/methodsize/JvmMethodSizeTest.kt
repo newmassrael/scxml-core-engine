@@ -35,6 +35,7 @@ package com.sce.methodsize
 import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticEvent
 import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticState
 import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticStateMachine
+import com.sce.runtime.SavedState
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -187,6 +188,54 @@ class JvmMethodSizeTest {
             assertEquals(6L, sm.left.toLong(), "each exit of an `s` state ran its <onexit>")
         } finally {
             sm.cleanup()
+        }
+    }
+
+    // A restore once read each part of 256 variables into one closure, whose
+    // captures are the arguments of a JVM method: at most 255 slots, a `Long`
+    // taking two. The document's `int64` variables passed that, and the class
+    // failed to load (`ClassFormatError`); that this test runs at all is half of
+    // the evidence, and the state a restored machine saves again is the other.
+    @Test
+    fun aSavedStateOfMoreLongsThanOneMethodTakesIsRestored() {
+        val document = File(fixture).readText()
+        val kept = generateSequence(0) { it + 1 }
+            .map { "k$it" }
+            .takeWhile { id -> document.contains("<data id=\"$id\" sce:type=\"int64\"") }
+            .toList()
+        assertTrue(
+            kept.size * 2 > 255,
+            "the document has ${kept.size} int64 variables, whose slots one JVM method " +
+                "takes as arguments; the fixture no longer measures a restore",
+        )
+        val savedAtMs = 1_700_000_000_000L
+        val sm = JvmMethodSizeStaticStateMachine()
+        sm.initialize()
+        val saved = try {
+            repeat(3) {
+                sm.send(JvmMethodSizeStaticEvent.Next)
+                sm.tick()
+            }
+            sm.send(JvmMethodSizeStaticEvent.Pause)
+            sm.tick()
+            sm.save(savedAtMs)
+        } finally {
+            sm.cleanup()
+        }
+        for ((index, id) in kept.withIndex()) {
+            assertEquals(index + 1L, saved.variable(id), "entering `paused` added one to `$id`")
+        }
+
+        val restored = JvmMethodSizeStaticStateMachine()
+        try {
+            restored.restore(SavedState.fromJson(saved.toJson()), savedAtMs)
+            assertEquals(setOf(JvmMethodSizeStaticState.Paused), restored.snapshot.value.configuration)
+            // `k299` starts at 299 and entering `paused` added one.
+            assertEquals(300L, restored.k299, "the last int64 variable, read from the restored machine")
+            assertEquals(3L, restored.steps.toLong(), "the three `next`s before `pause`")
+            assertEquals(saved.toJson(), restored.save(savedAtMs).toJson(), "the restored machine saves what it was given")
+        } finally {
+            restored.cleanup()
         }
     }
 }
