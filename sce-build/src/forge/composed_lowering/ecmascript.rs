@@ -273,6 +273,19 @@ impl ComposedSpelling for JsComposed {
     fn copy_list(&self, held: &Held, elem: &str, _elem_ty: &str) -> String {
         each_element(&held.text, JS_COPY_BINDING, elem)
     }
+    // The plain object of the fields, parenthesised as a record of entries' is
+    // (`JsTarget::record_value`): `{a: 1}` alone reads as a block.
+    fn record_of(&self, _ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("'{id}': {value}"))
+            .collect();
+        Some(format!("({{{}}})", members.join(", ")))
+    }
+    // A new empty array, as a list variable starts (`JsTarget::list_empty`).
+    fn empty_list(&self, _ty: &str) -> Option<String> {
+        Some("[]".to_string())
+    }
 
     // A union is the wire's own object (docs/adr/0092, section 2.1, and section
     // 7, the Interpreter row): the tag's key holding the declared name of the
@@ -453,6 +466,31 @@ fn js_string(text: &str) -> String {
 mod tests {
     use super::super::test_support::*;
     use super::*;
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// plain object of its fields, a list of no lower count at an empty array
+    /// (docs/adr/0087, "Decided while landing item 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            JsComposed
+                .record_of(
+                    "record:Board",
+                    &[
+                        ("title".to_string(), "t".to_string()),
+                        ("rects".to_string(), "l".to_string()),
+                    ],
+                )
+                .as_deref(),
+            Some("({'title': t, 'rects': l})")
+        );
+        assert_eq!(
+            JsComposed
+                .empty_list(&JsComposed.list_type("record:Rect", 3))
+                .as_deref(),
+            Some("[]")
+        );
+    }
 
     /// The Interpreter's row of the one table of what is lowered of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
