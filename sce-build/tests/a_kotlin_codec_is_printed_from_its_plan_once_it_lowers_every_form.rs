@@ -1202,6 +1202,92 @@ fn a_cbor_map_holds_each_entry_in_the_class_of_its_bound_and_writes_it_by_key() 
     );
 }
 
+/// A content-line component is printed from its own plan: every property and
+/// each of its parameters a property of the source interface, nullable where it
+/// may be absent, a repeated property a `List`; the encode over any source
+/// writes the component into a staged sink first, judges a list against its
+/// count before its lines, and refuses a parameter given without its property,
+/// so a refusal leaves the caller's sink untouched.
+///
+/// Turns red where `kotlin_source::content_line::render` writes into the
+/// caller's sink before the component is whole, drops the judgement of a
+/// list's count, or reads an optional parameter without narrowing it, or where
+/// `unlowered_forms` names a content-line component again.
+#[test]
+fn a_content_line_component_is_written_whole_into_a_staged_sink_first() {
+    assert!(unlowered("codec_content_line_event").is_empty());
+    let text = resource_file("codec_content_line_event");
+    holds(
+        "codec_content_line_event",
+        &text,
+        &[
+            "interface CodecContentLineEventSource {\n    val uid: String\n    \
+             val dtstart: String\n    val dtstartTzid: String\n",
+            "    val exdate: List<String>\n    val sequence: UShort?\n",
+            ") : CodecContentLineEventSource {\n",
+            "    override var organizerCn: String? = null,\n",
+            "    fun encode(w: SceSink): CodecError? = encodeSource(this, w)\n",
+            "        fun encodeSource(src: CodecContentLineEventSource, w: SceSink): CodecError? {\n            \
+             val _f = mutableListOf<Byte>()\n            \
+             val out = ContentLineWriter(MutableListSink(_f), \"VEVENT\")\n            \
+             out.begin()?.let { return it }\n",
+            "            out.property(\"DTSTART\")?.let { return it }\n            \
+             out.param(\"TZID\", src.dtstartTzid, 24)?.let { return it }\n",
+            "            val _e_organizer = src.organizer\n            \
+             val _p_organizerCn = src.organizerCn\n            \
+             if (_e_organizer != null) {\n                \
+             out.property(\"ORGANIZER\")?.let { return it }\n                \
+             if (_p_organizerCn != null) out.param(\"CN\", _p_organizerCn, 24)?.let { return it }\n",
+            "            } else if (_p_organizerCn != null) {\n                \
+             return CodecError.LineRequiredMissing\n            }\n",
+            "            if (_e_exdate.size > 3) return CodecError.LineTooMany\n            \
+             for (_v in _e_exdate) {\n",
+            "                out.uint(_e_sequence.toULong())?.let { return it }\n",
+            "            out.finish()?.let { return it }\n            \
+             return w.writeBytes(_f.toByteArray())\n        }\n",
+        ],
+    );
+    // The template's encode, which wrote into the caller's sink as it went, is
+    // gone.
+    holds_none(
+        "codec_content_line_event",
+        &text,
+        &[
+            "val out = ContentLineWriter(w, ",
+            "        run {\n            val v = ",
+        ],
+    );
+}
+
+/// A repeated property whose lines are records presents a `List` of the
+/// record's source interface, which the record's data class implements; the
+/// encode reads an optional parameter of each line into a local it narrows.
+///
+/// Turns red where `kotlin_source::content_line::render` declares no
+/// interface of a line record, or where `write_params` reads a record's
+/// optional parameter twice off the record.
+#[test]
+fn a_line_record_is_a_source_of_its_own_interface() {
+    assert!(unlowered("codec_content_line_records").is_empty());
+    let text = resource_file("codec_content_line_records");
+    holds(
+        "codec_content_line_records",
+        &text,
+        &[
+            "interface CodecContentLineRecordsAttendeeLineSource {\n    \
+             val attendeeCn: String?\n    val attendeeRole: String\n    val value: String\n}\n",
+            "    val attendee: List<CodecContentLineRecordsAttendeeLineSource>\n",
+            ") : CodecContentLineRecordsAttendeeLineSource\n",
+            "            for (_line in _e_attendee) {\n                \
+             out.property(\"ATTENDEE\")?.let { return it }\n                \
+             val _p_attendeeCn = _line.attendeeCn\n                \
+             if (_p_attendeeCn != null) out.param(\"CN\", _p_attendeeCn, 24)?.let { return it }\n                \
+             out.param(\"ROLE\", _line.attendeeRole, 16)?.let { return it }\n                \
+             out.string(_line.value, false, 40)?.let { return it }\n            }\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a list on one side of a gate held to a law names
 /// its form.
@@ -1315,6 +1401,7 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
     sources.push(runtime.join("Utf8.kt"));
     sources.push(runtime.join("Aligned.kt"));
     sources.push(runtime.join("Cbor.kt"));
+    sources.push(runtime.join("ContentLine.kt"));
     let out = std::process::Command::new(&kotlinc)
         .arg("-Werror")
         .arg("-d")
@@ -1406,6 +1493,11 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_repeat_unconditional_count",
         "codec_chain_handed",
         "codec_cbor_map",
+        "codec_content_line_event",
+        "codec_content_line_records",
+        "codec_content_line_enums",
+        "codec_content_line_open",
+        "codec_content_line_required_lists",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

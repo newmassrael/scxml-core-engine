@@ -4288,14 +4288,14 @@ fn fold_case_rows(
                                      component, so no value of it is made from a case"
                                 ))
                             }
-                            // The Kotlin printer prints positional codecs only,
-                            // so `CasePrinter::of` answers it for no component.
-                            CasePrinter::Kotlin => {
-                                return Err(format!(
-                                    "{at}: the Kotlin printer prints no content-line \
-                                     component, so no value of it is made from a case"
-                                ))
-                            }
+                            CasePrinter::Kotlin => PrintedCase::from(
+                                crate::forge::generator::kotlin_content_line_source_case(
+                                    plan,
+                                    &kotlin_path,
+                                    source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
                         },
                     };
                     fold_row(codec_plan.totality(), &at, row, case.noted(printer, note))
@@ -5817,13 +5817,15 @@ mod tests {
     /// in order (docs/adr/0081 §5): Rust makes it by `new` and sets each entry
     /// stated, C++ hands its constructor each property's value and then its
     /// parameters, the values of a repeated property as a vector bound first,
-    /// and Python makes its dataclass. A list is compared structurally: in C++
-    /// by its size and each value, in Python as the `list` of its values.
+    /// Python makes its dataclass and Kotlin its data class. A list is compared
+    /// structurally: in C++ by its size and each value, in Python as the `list`
+    /// of its values, in Kotlin by the list's own equality.
     ///
     /// Turns red where `source_notation::content_line_elements` reads an entry
     /// otherwise, or `rust_source::content_line::source_case`,
-    /// `cpp_source::source_case::map_or_line_case` with `Texts::Views` or
-    /// `python_source::source_case::map_or_line_case` spells one otherwise.
+    /// `cpp_source::source_case::map_or_line_case` with `Texts::Views`,
+    /// `python_source::source_case::map_or_line_case` or
+    /// `kotlin_source::source_case::map_or_line_case` spells one otherwise.
     #[test]
     fn a_source_case_of_a_content_line_component_is_the_component_each_printer_makes() {
         let case = serde_json::json!({
@@ -5889,7 +5891,7 @@ mod tests {
              false; } } return true; }((*decoded).exdate(), value.exdate())"
         );
 
-        let python = folded_source("codec_content_line_event", case, Language::Python)
+        let python = folded_source("codec_content_line_event", case.clone(), Language::Python)
             .expect("the Python harness states it");
         assert_eq!(
             python["literal"],
@@ -5904,6 +5906,25 @@ mod tests {
                 "element": "exdate",
                 "holds": "list(decoded.exdate) == list(value.exdate)"
             })
+        );
+
+        // Kotlin makes its data class by its constructor, a text as a bare
+        // `String`, a number as a literal of its width and a repeated
+        // property's values as a `MutableList`, compared as a list is
+        // (`kotlin_source::content_line::source_case`).
+        let kotlin = folded_source("codec_content_line_event", case, Language::Kotlin)
+            .expect("the Kotlin harness states it");
+        assert_eq!(
+            kotlin["literal"],
+            "com.sce.generated.codec_content_line_event.CodecContentLineEvent(uid = \"evt-1\", \
+             dtstart = \"20261008T090000\", dtstartTzid = \"Asia/Seoul\", summary = null, \
+             description = null, organizer = null, organizerCn = null, rrule = null, \
+             exdate = mutableListOf(\"20261015T090000\"), sequence = 65535u, priority = -2, \
+             allDay = true)"
+        );
+        assert_eq!(
+            kotlin["checks"][8],
+            serde_json::json!({ "element": "exdate", "holds": "decoded.exdate == value.exdate" })
         );
     }
 

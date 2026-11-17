@@ -784,6 +784,8 @@ pub(super) enum Holds<'t> {
     Bool,
     /// An integer of the type.
     Int(&'t SceType),
+    /// A text held in a bare `String`, as a content line holds it.
+    Text,
     /// A text or a byte string in the value class of its bound, named by the
     /// codec's file, made by its factory.
     Classed(String),
@@ -792,9 +794,10 @@ pub(super) enum Holds<'t> {
 /// The case of a CBOR map or of a content-line component made of `elements`
 /// (`source_notation`), each beside how the value holds it, a value of the
 /// codec at `path`: its data class made by its constructor, each element by
-/// its name, `null` where the case states none. A byte string is compared by
-/// its content, as a value class over an array compares the array by
-/// identity, and any other element whole. A map and a component take no flag
+/// its name, `null` where the case states none and a `MutableList` of the
+/// values of a repeated property. A byte string is compared by its content, as
+/// a value class over an array compares the array by identity, and any other
+/// element whole, a list value by value. A map and a component take no flag
 /// input and no caller's tag.
 pub(super) fn map_or_line_case(
     path: &CodecPath,
@@ -814,6 +817,7 @@ pub(super) fn map_or_line_case(
             match (scalar, &holds) {
                 (Scalar::Bool(b), Holds::Bool) => Ok(b.to_string()),
                 (Scalar::Int(n), Holds::Int(ty)) => integer_literal(*n, ty),
+                (Scalar::Text(text), Holds::Text) => Ok(string_literal(text)),
                 (Scalar::Text(text), Holds::Classed(class)) => Ok(format!(
                     "{}.of({})!!",
                     path.qualified(class),
@@ -850,12 +854,19 @@ pub(super) fn map_or_line_case(
                 };
                 (literal(scalar)?, check)
             }
-            Stated::List(_) => {
-                return Err(format!(
-                    "`{}`: a Kotlin case does not state the values of a repeated property yet",
-                    element.id
-                ))
-            }
+            // The values of a repeated property, in order, in the list the
+            // value holds them in, compared as a list is, value by value.
+            Stated::List(items) => (
+                format!(
+                    "mutableListOf({})",
+                    items
+                        .iter()
+                        .map(literal)
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join(", ")
+                ),
+                format!("{decoded} == {value}"),
+            ),
         };
         args.push(format!("{property} = {argument}"));
         checks.push((element.id.clone(), check));

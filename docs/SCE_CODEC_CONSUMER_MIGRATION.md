@@ -2545,3 +2545,14 @@ Landing: the commit that adds this section; every Kotlin tree is regenerated aft
   of its lower count, and a record whose text or byte string is past its bound.
 - The mesh's `stamp(envelope, tag)` answers `null` for a vector past its 64 entries.
 
+## A printed Kotlin content-line component is encoded over any source (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. Every content-line component
+is printed.
+
+- The encode is the companion's `encodeSource(src, w)`, over any object that implements `{Codec}Source`, a line
+  record over `{Codec}{Entry}LineSource`; `encode` and `encodeToByteArray` call it and keep their signatures. The
+  value and its line records hold what they held.
+- A refused value leaves the sink untouched: the component is written into a staged sink first. Before, the lines
+  before the refused one had reached the sink. The encode's answer names the rule, as it did.
+

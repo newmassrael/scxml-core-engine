@@ -399,6 +399,13 @@ fn render_kotlin(
             optional_default: Some("null"),
         },
     );
+    // docs/adr/0081 step 4: the component is printed from its plan, the value
+    // and each line record implementing the interface of what they present,
+    // and encoded over any source of it.
+    ctx.insert(
+        "kotlin_source".into(),
+        crate::forge::generator::kotlin_content_line_printed(m, imports),
+    );
     insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());

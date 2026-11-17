@@ -1585,6 +1585,20 @@ old encode, the old encode and its templates are removed in the same landing.
    the encode answered before, and `stamp` answers no envelope for a vector past its 64 entries. Considered and
    refused: an encode that answers no error where the map refuses nothing, which would give a map two signatures
    by its entries and move every consumer when an entry is added.
+
+   *The twentieth Kotlin landing, 2026-11-17:* a content-line component, printed from its own plan
+   (`kotlin_source::content_line`), as the C++ and Python printers print it. Every entry is a property of
+   `{Codec}Source`: a property's value and each parameter declared for it, nullable for one that may be absent, a
+   `List` for a repeated property and for the values of one line, and a `List` of line records for a repeated
+   property that declares a parameter or whose line holds a list of values, each record a source of its own
+   `{Codec}{Entry}LineSource`, which the record's data class implements. A line refuses a text by its content as well
+   as its size, so no bound refines a text or a list, as in C++ and Python; an integer is the Kotlin type of its
+   width. The encode writes each property's lines in declaration order, the judgements of the plan before a line (a
+   required list empty, a list past its `sce:max-count`, a parameter given without its property; one every value
+   holds is always given), into a staged sink first where a line can refuse the value, so a refusal leaves the
+   caller's sink untouched, as a positional encode stages a frame. An optional parameter is read once into a local
+   Kotlin narrows. The value's `encode` is `encodeSource`'s answer and keeps its signature; the value and its records
+   hold what they held. The template's encode is gone: every content-line plan is printed.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

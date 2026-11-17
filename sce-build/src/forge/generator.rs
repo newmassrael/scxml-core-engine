@@ -87,6 +87,7 @@ pub(crate) use python_source::source_case::{
 pub(crate) use cpp_source::cbor::source_case as cpp_cbor_source_case;
 pub(crate) use cpp_source::content_line::source_case as cpp_content_line_source_case;
 pub(crate) use kotlin_source::cbor::source_case as kotlin_cbor_source_case;
+pub(crate) use kotlin_source::content_line::source_case as kotlin_content_line_source_case;
 pub(crate) use python_source::cbor::source_case as python_cbor_source_case;
 pub(crate) use python_source::content_line::source_case as python_content_line_source_case;
 pub(crate) use rust_source::cbor::source_case as rust_cbor_source_case;
@@ -10853,6 +10854,23 @@ pub(crate) fn kotlin_cbor_printed(
         .map(|(id, d)| (id, (d.ty, d.default, d.made)))
         .collect();
     (context, declared)
+}
+
+/// What the Kotlin backend prints the content-line codec `m` as from its plan
+/// (docs/adr/0081 step 4): the template's `kotlin_source`, the interface of
+/// each line record and of the value, and the encode over any source. Every
+/// content-line component is printed.
+pub(crate) fn kotlin_content_line_printed(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> serde_json::Value {
+    let l = LangCtx::new(crate::generator::Language::Kotlin, imports);
+    let printed =
+        kotlin_source::content_line::render(m, &l, &filters::to_pascal_case(m.name.clone()));
+    serde_json::json!({
+        "before": printed.before,
+        "encode": printed.encode,
+    })
 }
 
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
