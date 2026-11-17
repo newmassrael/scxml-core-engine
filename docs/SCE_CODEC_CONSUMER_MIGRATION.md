@@ -1931,3 +1931,32 @@ Go and Swift: `codec.ErrCapacityExceeded` and `codec.ErrVariantArmNotBuilt` are 
 gains `capacityExceeded` beside the `undeclaredEnumValue` and `variantArmNotBuilt` the section on Swift's codecs
 above adds; a Swift `switch` over `CodecError` that names every case adds it.
 
+## An engine's `error.*` carries its code, and a Mesh reason is the code's declared name (ADR 0106 #111)
+
+Landing: 3dcf8010c8c..f85f49788f2 (every engine raising the record, each runtime's generated `error_reason` tree,
+and the Mesh rows spelled by the vocabulary). The vocabulary is `stdlib/engine/error_reason.scxml`: one enum whose
+values below 64 are `error.execution` codes and the rest `error.communication` codes, §mesh-16.7's rows among them.
+
+- The `_event.data` of an `error.execution` or `error.communication` an engine raises is the §mesh-10.7.1 record
+  `{"errorName":"execution"|"communication","reason":"<code>","detail":"<sentence>"}` on every engine and the
+  Interpreter, where it was the sentence alone (or, on Python's undelivered BasicHTTP send, nothing). A document or
+  host that read `_event.data` as text reads `_event.data.detail` for the sentence and `_event.data.reason` for the
+  code. A host's own refusal of an `<invoke>` keeps the data the host refused with.
+- `reason` is the code's declared name in lowerCamel: `expressionFailed`, `targetUnreachable`,
+  `transportUnavailable`. A Mesh `CommunicationError`'s `reason` was the upper-case row label
+  (`TRANSPORT_UNAVAILABLE`); a guard such as `_event.data.reason == 'TRANSPORT_UNAVAILABLE'` is now
+  `_event.data.reason === 'transportUnavailable'`, and a peer that compares the wire text compares the new one.
+- The Mesh signal has a code: Rust `Signal::code() -> ErrorReason` beside `reason()`, which now answers
+  `code().declared_name()`; Kotlin and Swift `Signal.code` beside `reason`. C++ `SCE::Mesh::ReasonCode` is an alias
+  of `SCE::Common::ErrorReason` with the same member names, so `ReasonCode::TransportUnavailable` still compiles;
+  `kReasonCodeTable` is a `std::array<ReasonCode, 18>` in §mesh-16.7's row order, no longer pairs of a code and its
+  label, and `reasonCodeString` answers the declared name.
+- A host that raises an engine error itself names the code: Rust `EventWithMetadata::platform_error(event, reason,
+  detail)`, Go `NewPlatformError(event, reason, detail)`, Kotlin `raisePlatformError(event, reason, detail, sendId)`,
+  Python `platform_error(reason, detail, send_id=...)`, Swift `EventWithMetadata.platformError(event, reason:,
+  message:)`, C++ `IEventRaiser::raiseError(reason, detail, sendId)` and the static engine's
+  `EventWithMetadata::platformError(event, reason, detail, sendId)`, C11 `<machine>_raise_platform_error(sm, event,
+  reason, detail)`. The code decides the event; a host no longer names `error.execution` beside it.
+- The vocabulary gains `capacityExceeded`, raised as `error.execution` where C11 refuses whole what a store it bounds
+  cannot hold (an event's data past its slot, a scheduled queue full, a child with no stack room to start).
+
