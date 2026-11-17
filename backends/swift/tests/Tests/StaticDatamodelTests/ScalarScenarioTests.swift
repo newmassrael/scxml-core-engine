@@ -743,6 +743,21 @@ private func payloadEnum() -> Machine {
     )
 }
 
+private func payloadEnumGrown() -> Machine {
+    let policy = StaticPayloadEnumGrownPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "agendas": { integer(policy.agendas) },
+            "changes": { integer(policy.changes) },
+            "marks": { integer(policy.marks) },
+            "shown": { integer(policy.shown) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func view(_ layout: String, _ zoom: UInt8) -> JSONValue {
     .object([(key: "layout", value: .text(layout)), (key: "zoom", value: integer(zoom))])
 }
@@ -1525,6 +1540,13 @@ private func recordBytes() -> Machine {
 
 @Test func anEventsPayloadCarriesAnEnumField() {
     replay("static_payload_enum", payloadEnum())
+}
+
+// An enum field beside a list of records its schema's second revision added is a
+// value of its enum there too, compared to a variant and to a variable of the enum
+// and stored in that variable.
+@Test func anEnumFieldBesideAListIsAValueOfItsEnum() {
+    replay("static_payload_enum_grown", payloadEnumGrown())
 }
 
 // A payload is taken into a record whole, and a list takes the record by name.

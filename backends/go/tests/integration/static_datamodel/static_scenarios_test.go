@@ -78,6 +78,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum_grown"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_relay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real32"
@@ -1029,6 +1030,22 @@ func TestAnEventsPayloadCarriesAnEnumField(t *testing.T) {
 		"zoom":   func() any { return policy.Zoom() },
 		"agenda": func() any { return policy.Agenda() },
 		"shown":  func() any { return policy.Shown() },
+	}))
+}
+
+// An event's payload carries an enum field beside a list of records its schema's
+// second revision added: the field is a value of its enum there too, compared to a
+// variant and to a variable of the enum and stored in that variable.
+func TestAnEnumFieldBesideAListIsAValueOfItsEnum(t *testing.T) {
+	policy := static_payload_enum_grown.NewStaticPayloadEnumGrownPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_payload_enum_grown", drive[static_payload_enum_grown.StaticPayloadEnumGrownState, static_payload_enum_grown.StaticPayloadEnumGrownEvent](&policy, map[string]func() any{
+		"layout":   func() any { return policy.Layout().String() },
+		"agendas":  func() any { return policy.Agendas() },
+		"changes":  func() any { return policy.Changes() },
+		"marks":    func() any { return policy.Marks() },
+		"shown":    func() any { return policy.Shown() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

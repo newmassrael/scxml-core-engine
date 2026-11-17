@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, docs/adr/0086): an event's
+  payload whose schema grew a list of records in its second revision, read by its enum
+  field in a guard and in assignments. `view.grown` carries the fields of
+  schema_view_grown.scxml: `layout`, a value of the enum `ViewMode` the document
+  imports under the alias the schema writes, and `marks`, a list of records of
+  schema_view_mark.scxml the second revision added, which a delivery of the first
+  revision reads as empty.
+
+  The enum field is a value of its enum beside the list as it is in a schema of one
+  entry per field: a guard compares it with `===` to a variant and with `!==` to the
+  variable that holds the last layout, and an assignment stores it in that variable.
+  The list is read by its length. A name the enum does not declare, and a list past
+  its bound, do not fit the schema: the delivery is refused whole, nothing is written,
+  and error.execution says so, which `refusals` counts.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="browsing" datamodel="sce-static" name="static_payload_enum_grown">
+  <sce:import kind="event-schema" src="schema_view_grown.scxml" as="Grown"/>
+  <sce:import kind="event-schema" src="schema_view_mark.scxml" as="Mark"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="agendas" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="changes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="marks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="shown" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="browsing">
+    <transition event="view.grown" cond="_event.data.layout === ViewMode.agenda_list" type="internal">
+      <assign location="agendas" expr="agendas + 1"/>
+      <assign location="layout" expr="_event.data.layout"/>
+      <assign location="marks" expr="len(_event.data.marks)"/>
+      <assign location="shown" expr="shown + 1"/>
+    </transition>
+    <transition event="view.grown" type="internal">
+      <if cond="_event.data.layout !== layout">
+        <assign location="changes" expr="changes + 1"/>
+        <assign location="layout" expr="_event.data.layout"/>
+      </if>
+      <assign location="marks" expr="len(_event.data.marks)"/>
+      <assign location="shown" expr="shown + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

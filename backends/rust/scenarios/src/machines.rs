@@ -253,6 +253,7 @@ scenarios! {
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};
     "static_payload_bytes" => static_payload_bytes_sm::{StaticPayloadBytesPolicy, StaticPayloadBytesPersist};
     "static_payload_enum" => static_payload_enum_sm::{StaticPayloadEnumPolicy, StaticPayloadEnumPersist};
+    "static_payload_enum_grown" => static_payload_enum_grown_sm::{StaticPayloadEnumGrownPolicy, StaticPayloadEnumGrownPersist};
     "static_payload_relay" => static_payload_relay_sm::{StaticPayloadRelayPolicy, StaticPayloadRelayPersist};
     "static_real" => static_real_sm::{StaticRealPolicy, StaticRealPersist};
     "static_real32" => static_real32_sm::{StaticReal32Policy, StaticReal32Persist};

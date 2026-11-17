@@ -69,6 +69,7 @@ import com.sce.integration.static_datamodel.static_overflow.StaticOverflowStateM
 import com.sce.integration.static_datamodel.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_datamodel.static_payload_bytes.StaticPayloadBytesStateMachine
 import com.sce.integration.static_datamodel.static_payload_enum.StaticPayloadEnumStateMachine
+import com.sce.integration.static_datamodel.static_payload_enum_grown.StaticPayloadEnumGrownStateMachine
 import com.sce.integration.static_datamodel.static_payload_relay.StaticPayloadRelayStateMachine
 import com.sce.integration.static_datamodel.static_real.StaticRealStateMachine
 import com.sce.integration.static_datamodel.static_real32.StaticReal32StateMachine
@@ -1768,6 +1769,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_payload_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // An event's payload carries an enum field beside a list of records its
+    // schema's second revision added: the field is a value of its enum there too,
+    // compared to a variant and to a variable of the enum and stored in that
+    // variable.
+    @Test
+    fun staticPayloadEnumGrownReadsTheVariantBesideAList() {
+        val sm = StaticPayloadEnumGrownStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_payload_enum_grown"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How a calendar screen is shown, in a schema that grew a list: the payload
+  `static_payload_enum_grown.scxml` reads (docs/adr/0086, section 10). The first
+  revision carried the layout alone; the second added `marks`, a list of records of
+  `schema_view_mark.scxml`, at most four, which a delivery written
+  against the first revision reads as empty. `layout` is an enum field, so the machine
+  that reads it imports the same enum under the alias this schema writes (`ViewMode`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_view_grown"
+       sce:event-name="view.grown"
+       sce:revision="2">
+  <sce:import src="enum_view_mode.scxml" kind="enum" as="ViewMode"/>
+  <sce:import src="schema_view_mark.scxml" kind="event-schema" as="Mark"/>
+  <datamodel>
+    <data id="layout" sce:type="enum:ViewMode" sce:direction="in"/>
+    <data id="marks" sce:type="list&lt;record:Mark&gt;[4]" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

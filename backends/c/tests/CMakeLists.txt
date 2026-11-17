@@ -2542,6 +2542,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # The same enum field beside a list of records the schema's second revision added:
+    # the schema, the record its list holds and the enum travel beside it.
+    sce_generate_static_integration_c_test(static_payload_enum_grown
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_enum_grown.scxml"
+        STAGE_ALSO schema_view_grown.scxml schema_view_mark.scxml enum_view_mode.scxml
+    )
     # The payload of the event a transition is on, carried on as the `<param>`s
     # of a `<send>`: both schemas of the pair and the enum they name travel
     # beside it.
@@ -3296,6 +3303,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_MONTH_LENGTH_HEADERS}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
+        ${INTEGRATION_C_TEST_static_payload_enum_grown_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_number_SOURCES}

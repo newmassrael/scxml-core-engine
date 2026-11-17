@@ -143,6 +143,9 @@ use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
 use sce_rust_tests::integration::static_datamodel::static_payload_bytes_sm::{
     StaticPayloadBytesPersist, StaticPayloadBytesPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_payload_enum_grown_sm::{
+    StaticPayloadEnumGrownPersist, StaticPayloadEnumGrownPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_payload_enum_sm::{
     StaticPayloadEnumPersist, StaticPayloadEnumPolicy,
 };
@@ -1456,6 +1459,20 @@ fn static_payload_enum_reads_a_variant_the_event_names() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_enum.json"
+        ),
+    );
+}
+
+// An event's payload carries an enum field beside a list of records its schema's
+// second revision added: the field is a value of its enum there too, compared to a
+// variant and to a variable of the enum and stored in that variable.
+#[test]
+fn static_payload_enum_grown_reads_the_variant_beside_a_list() {
+    replay(
+        Engine::new(StaticPayloadEnumGrownPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_enum_grown.json"
         ),
     );
 }

@@ -593,6 +593,13 @@ def test_an_events_payload_carries_an_enum_field() -> None:
     replay("static_payload_enum")
 
 
+# An event's payload carries an enum field beside a list of records its schema's
+# second revision added: the field is a value of its enum there too, compared to a
+# variant and to a variable of the enum and stored in that variable.
+def test_an_enum_field_beside_a_list_is_a_value_of_its_enum() -> None:
+    replay("static_payload_enum_grown")
+
+
 # The payload of the event a transition is on is carried on as the <param>s of a
 # <send>: an enum field as the name its enum declares and an integer, read where
 # the send runs.

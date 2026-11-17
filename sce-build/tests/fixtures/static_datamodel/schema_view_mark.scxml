@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One mark on a calendar screen: the record each element of
+  `schema_view_grown.scxml`'s `marks` is, a day and a shift of it that may be
+  absent. An event schema used as a record type: no machine sends `view.mark`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_view_mark"
+       sce:event-name="view.mark">
+  <datamodel>
+    <data id="day" sce:type="uint32" sce:direction="in"/>
+    <data id="shift" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

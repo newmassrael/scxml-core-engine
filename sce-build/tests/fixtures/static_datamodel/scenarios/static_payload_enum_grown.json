@@ -1,0 +1,40 @@
+{
+  "machine": "static_payload_enum_grown",
+  "about": "An event's payload carries an enum field beside a list of records its schema's second revision added: the enum field is a value of its enum there as in a schema of one entry per field. A guard compares it with `===` to a variant, a condition compares it with `!==` to the variable that holds the last layout, and an assignment stores it in that variable; the list is read by its length, and a delivery of the first revision reads it as empty. A name the enum does not declare, and a list past its bound of four, do not fit the schema: the delivery is refused whole, nothing is written, and error.execution says so, counted by `refusals`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "each variable starts at the value its expr names",
+      "expect": { "state": "browsing", "variables": { "layout": "month", "agendas": 0, "changes": 0, "marks": 0, "shown": 0, "refusals": 0 } } },
+
+    { "note": "a week, from a delivery of the first revision: the guard on the agenda is false, the layout changes, and the list the second revision added reads empty",
+      "event": "view.grown", "data": { "layout": "week" },
+      "expect": { "variables": { "layout": "week", "agendas": 0, "changes": 1, "marks": 0, "shown": 1, "refusals": 0 } } },
+
+    { "note": "an agenda with two marks: the guard compares the enum field with the variant and takes the first transition",
+      "event": "view.grown", "data": { "layout": "agenda_list", "marks": [ { "day": 3, "shift": null }, { "day": 9, "shift": "-4" } ] },
+      "expect": { "variables": { "layout": "agenda_list", "agendas": 1, "changes": 1, "marks": 2, "shown": 2, "refusals": 0 } } },
+
+    { "note": "a day with one mark: the field differs from the variable that holds the last layout, which takes it",
+      "event": "view.grown", "data": { "layout": "day", "marks": [ { "day": 1, "shift": "7" } ] },
+      "expect": { "variables": { "layout": "day", "agendas": 1, "changes": 2, "marks": 1, "shown": 3, "refusals": 0 } } },
+
+    { "note": "the same day again, from a delivery of the first revision: the field equals the variable, so nothing changes but the count of marks and of screens",
+      "event": "view.grown", "data": { "layout": "day" },
+      "expect": { "variables": { "layout": "day", "agendas": 1, "changes": 2, "marks": 0, "shown": 4, "refusals": 0 } } },
+
+    { "note": "an agenda from a delivery of the first revision takes the guarded transition as one of the second does",
+      "event": "view.grown", "data": { "layout": "agenda_list" },
+      "expect": { "variables": { "layout": "agenda_list", "agendas": 2, "changes": 2, "marks": 0, "shown": 5, "refusals": 0 } } },
+
+    { "note": "a name the enum does not declare is no value of it: the delivery is refused whole, nothing is written, and error.execution says so",
+      "event": "view.grown", "data": { "layout": "fortnight", "marks": [] },
+      "expect": { "variables": { "layout": "agenda_list", "agendas": 2, "changes": 2, "marks": 0, "shown": 5, "refusals": 1 } } },
+
+    { "note": "five marks, past the list's bound of four: refused the same way, though the enum field is a variant",
+      "event": "view.grown", "data": { "layout": "week", "marks": [ { "day": 1, "shift": null }, { "day": 2, "shift": null }, { "day": 3, "shift": null }, { "day": 4, "shift": null }, { "day": 5, "shift": null } ] },
+      "expect": { "variables": { "layout": "agenda_list", "agendas": 2, "changes": 2, "marks": 0, "shown": 5, "refusals": 2 } } },
+
+    { "note": "a well formed payload after the refused ones is read as any other",
+      "event": "view.grown", "data": { "layout": "month", "marks": [] },
+      "expect": { "variables": { "layout": "month", "agendas": 2, "changes": 3, "marks": 0, "shown": 6, "refusals": 2 } } }
+  ]
+}

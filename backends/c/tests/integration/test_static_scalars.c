@@ -194,6 +194,7 @@
 #include "static_optional_widened_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
+#include "static_payload_enum_grown_sm.h"
 #include "static_payload_enum_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
@@ -676,6 +677,39 @@ static const variable_t payload_enum_variables[] = {
 };
 STATIC_SCENARIO(static_payload_enum, payload_enum_states, payload_enum_variables, static_payload_enum_text, no_lists,
                 no_records)
+
+// static_payload_enum_grown: an event's payload carries an enum field beside a list of
+// records its schema's second revision added. The field is a value of its enum there
+// too, compared to a variant and to a variable of the enum and stored in that variable;
+// a delivery that does not fit the schema is refused whole and writes nothing.
+VARIABLE_READER(static_payload_enum_grown, agendas)
+VARIABLE_READER(static_payload_enum_grown, changes)
+VARIABLE_READER(static_payload_enum_grown, marks)
+VARIABLE_READER(static_payload_enum_grown, shown)
+VARIABLE_READER(static_payload_enum_grown, refusals)
+
+static int64_t static_payload_enum_grown_read_layout(const void *sm) {
+    return (int64_t)static_payload_enum_grown_get_layout((const static_payload_enum_grown_t *)sm);
+}
+
+static const char *static_payload_enum_grown_text(void *sm, const char *name) {
+    if (strcmp(name, "layout") == 0) {
+        return enum_view_mode_declared_name(
+            static_payload_enum_grown_get_layout((const static_payload_enum_grown_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t payload_enum_grown_states[] = {
+    {"browsing", STATIC_PAYLOAD_ENUM_GROWN_STATE_BROWSING},
+};
+static const variable_t payload_enum_grown_variables[] = {
+    {"layout", static_payload_enum_grown_read_layout},   {"agendas", static_payload_enum_grown_read_agendas},
+    {"changes", static_payload_enum_grown_read_changes}, {"marks", static_payload_enum_grown_read_marks},
+    {"shown", static_payload_enum_grown_read_shown},     {"refusals", static_payload_enum_grown_read_refusals},
+};
+STATIC_SCENARIO(static_payload_enum_grown, payload_enum_grown_states, payload_enum_grown_variables,
+                static_payload_enum_grown_text, no_lists, no_records)
 
 // static_payload_relay: the payload of the event a transition is on is carried
 // on as the `<param>`s of a `<send>` — an enum field as the name its enum
@@ -3802,6 +3836,7 @@ int main(void) {
     bad |= static_enum_number_scenario("static_enum_number", 12);
     bad |= static_forge_calls_scenario("static_forge_calls", 24);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
+    bad |= static_payload_enum_grown_scenario("static_payload_enum_grown", 9);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 14);
     bad |= static_string_literal_scenario("static_string_literal", 11);
