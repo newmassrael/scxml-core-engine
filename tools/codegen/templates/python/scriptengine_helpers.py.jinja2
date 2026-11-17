@@ -23,7 +23,7 @@
 
     # ── Script helpers ─────────────────────────────────────────────
 
-    def _raise_error_execution(self, engine, message: str) -> None:
+    def _raise_error_execution(self, engine, reason: _ErrorReason, message: str) -> None:
         """W3C SCXML 3.8 — push `error.execution` onto the internal queue
         when the running document declares the descriptor. The event is
         platform-generated (`<assign>` or `<script>` eval failure), so
@@ -35,20 +35,31 @@
         `_ActionAbort` independently of whether this method enqueues
         anything.
 
-        `message` names the failing construct and rides in `_event.data`.
-        It was absent until 2026-08-19, so a document that answered
-        `error.execution` got an empty string: it could see THAT
-        something failed and never WHAT. The parameter is required
-        rather than defaulted — a raise site that forgets it should not
-        compile quietly, which is the whole reason the other five
-        backends had drifted apart on this."""
+        `_event.data` is the record SCE_MESH.md section 10.7.1 pins
+        (docs/adr/0106 #111): `reason`, the code of
+        sce:std/engine/error_reason, and `message`, the failing construct,
+        as its `detail`. Both are required rather than defaulted — a raise
+        site that forgets either should not compile quietly, which is the
+        whole reason the backends had drifted apart on this."""
+        self._raise_platform_error(engine, "error.execution", reason, message)
+
+    def _raise_platform_error(
+        self, engine, event_name: str, reason: _ErrorReason, message: str,
+        send_id: str = "", rests_on: tuple = (),
+    ) -> None:
+        """The one way this machine raises an `error.*` event it produced:
+        a platform event (W3C SCXML 5.10.1) carrying the record of `reason`
+        and `message` (`sce_runtime.platform_error`) and the send id of the
+        `<send>` it reports, if any (test 332), when the document declares
+        `event_name`."""
         # §scxml-3.12.2: the processor signals its own failures as
         # `error.*`, and "platforms MAY include additional information
         # about the nature of the error in the 'data' field".
-        evt = self.get_event_from_name("error.execution")
+        evt = self.get_event_from_name(event_name)
         if evt is not None:
             engine.raise_internal(
-                evt, EventMetadata(data=message, event_type="platform")
+                evt, _platform_error(reason, message, send_id=send_id),
+                rests_on=rests_on,
             )
 
     def _declare_data(self, engine, var_id: str, value) -> None:
@@ -61,7 +72,7 @@
             engine._script_engine.declare_variable(self._session_id, var_id, value)
         except _ScriptError:
             self._raise_error_execution(
-                engine, f"<data id='{var_id}'> could not be stored"
+                engine, _ErrorReason.DATA_INIT_FAILED, f"<data id='{var_id}'> could not be stored"
             )
 
     def _exec(self, engine, lua_script: str) -> None:
@@ -75,7 +86,7 @@
         try:
             engine._script_engine.execute_script(self._session_id, lua_script)
         except _ScriptError:
-            self._raise_error_execution(engine, "<script> failed to execute")
+            self._raise_error_execution(engine, _ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             raise _ActionAbort
 
     def _guard(self, engine, lua_expr: str) -> bool:
@@ -112,7 +123,7 @@
                 self._session_id, lua_expr
             )
         except _ScriptError:
-            self._raise_error_execution(engine, reason)
+            self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, reason)
             return None
         return result.to_bool()
 
@@ -133,12 +144,13 @@
         if not location or location in _READONLY_SYSTEM_VARS:
             self._raise_error_execution(
                 engine,
+                _ErrorReason.LOCATION_INVALID,
                 f"<assign> has an invalid or read-only location '{location}'",
             )
             raise _ActionAbort
         if not lua_expr:
             self._raise_error_execution(
-                engine, f"<assign> to '{location}' has no expr to evaluate"
+                engine, _ErrorReason.EXPRESSION_FAILED, f"<assign> to '{location}' has no expr to evaluate"
             )
             raise _ActionAbort
         try:
@@ -146,7 +158,7 @@
                 self._session_id, f"{location} = {lua_expr}"
             )
         except _ScriptError:
-            self._raise_error_execution(engine, f"<assign> to '{location}' failed")
+            self._raise_error_execution(engine, _ErrorReason.ASSIGNMENT_FAILED, f"<assign> to '{location}' failed")
             raise _ActionAbort
 
     def _assign_runtime(self, engine, location: str, value) -> None:
@@ -163,7 +175,7 @@
             or not self._is_legal_identifier(location)
         ):
             self._raise_error_execution(
-                engine, f"<foreach item='{location}'> is not a legal variable name"
+                engine, _ErrorReason.FOREACH_INVALID, f"<foreach item='{location}'> is not a legal variable name"
             )
             raise _ActionAbort
         engine._script_engine.set_variable(
@@ -246,7 +258,7 @@
         except _ScriptError:
             # W3C SCXML 5.9: an expression that fails raises error.execution,
             # and (W3C SCXML 4.9) the error ends the block.
-            self._raise_error_execution(engine, "<log> expr failed to evaluate")
+            self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
             raise _ActionAbort
         self.log_hook(label, value)
 
@@ -265,7 +277,7 @@
         array raises `error.execution` and aborts the surrounding
         executable-content block (the test 152 case)."""
         if not lua_array_expr:
-            self._raise_error_execution(engine, "<foreach> has no 'array' attribute")
+            self._raise_error_execution(engine, _ErrorReason.FOREACH_INVALID, "<foreach> has no 'array' attribute")
             raise _ActionAbort
         try:
             collection = engine._script_engine.evaluate_expression(
@@ -273,12 +285,12 @@
             ).to_python()
         except _ScriptError:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> failed to evaluate"
+                engine, _ErrorReason.EXPRESSION_FAILED, f"<foreach array='{lua_array_expr}'> failed to evaluate"
             )
             raise _ActionAbort
         if collection is None:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> is not an array"
+                engine, _ErrorReason.FOREACH_INVALID, f"<foreach array='{lua_array_expr}'> is not an array"
             )
             raise _ActionAbort
         if isinstance(collection, dict):
@@ -287,7 +299,7 @@
             return enumerate(collection)
         except TypeError:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> is not iterable"
+                engine, _ErrorReason.FOREACH_INVALID, f"<foreach array='{lua_array_expr}'> is not iterable"
             )
             raise _ActionAbort
 
@@ -296,7 +308,7 @@
         each value in turn. Invalid array semantics match `_foreach`
         (raises `error.execution` + block-abort)."""
         if not lua_array_expr:
-            self._raise_error_execution(engine, "<foreach> has no 'array' attribute")
+            self._raise_error_execution(engine, _ErrorReason.FOREACH_INVALID, "<foreach> has no 'array' attribute")
             raise _ActionAbort
         try:
             collection = engine._script_engine.evaluate_expression(
@@ -304,19 +316,19 @@
             ).to_python()
         except _ScriptError:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> failed to evaluate"
+                engine, _ErrorReason.EXPRESSION_FAILED, f"<foreach array='{lua_array_expr}'> failed to evaluate"
             )
             raise _ActionAbort
         if collection is None:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> is not an array"
+                engine, _ErrorReason.FOREACH_INVALID, f"<foreach array='{lua_array_expr}'> is not an array"
             )
             raise _ActionAbort
         try:
             return iter(collection)
         except TypeError:
             self._raise_error_execution(
-                engine, f"<foreach array='{lua_array_expr}'> is not iterable"
+                engine, _ErrorReason.FOREACH_INVALID, f"<foreach array='{lua_array_expr}'> is not iterable"
             )
             raise _ActionAbort
 
@@ -334,12 +346,12 @@
                 self._session_id, lua_sendid_expr
             ).to_python()
         except _ScriptError:
-            self._raise_error_execution(engine, "<cancel> sendidexpr failed to evaluate")
+            self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
             raise _ActionAbort
         return "" if value is None else str(value)
 
     def _send_argument_error(
-        self, engine, send_id: str, message: str, rests_on: tuple = ()
+        self, engine, send_id: str, reason: _ErrorReason, message: str, rests_on: tuple = ()
     ) -> None:
         """W3C SCXML 6.2: "If the evaluation of `<send>`'s arguments produces
         an error, the Processor MUST discard the message without attempting
@@ -353,12 +365,9 @@
         send's ROUTE (`typeexpr`, `targetexpr`) passes any: an event name, a
         delay or a namelist that fails is a fault of the document whatever the
         route's data leaves open."""
-        evt = self.get_event_from_name("error.execution")
-        if evt is not None:
-            engine.raise_internal(
-                evt, EventMetadata(data=message, send_id=send_id, event_type="platform"),
-                rests_on=rests_on,
-            )
+        self._raise_platform_error(
+            engine, "error.execution", reason, message, send_id=send_id, rests_on=rests_on
+        )
         raise _ActionAbort
 
     def _eval_send_argument(
@@ -371,7 +380,9 @@
         try:
             return engine._script_engine.evaluate_expression(self._session_id, lua_expr)
         except _ScriptError:
-            self._send_argument_error(engine, send_id, message, rests_on)
+            self._send_argument_error(
+                engine, send_id, _ErrorReason.EXPRESSION_FAILED, message, rests_on
+            )
 
     def _eval_send_namelist(self, engine, send_id: str, namelist: str) -> dict:
         """W3C SCXML 6.2 + B.2 (test553): a `<send namelist>` names locations,
@@ -383,7 +394,7 @@
         for var in namelist.split():
             if not engine._script_engine.has_variable(self._session_id, var):
                 self._send_argument_error(
-                    engine, send_id, f"<send> namelist names '{var}', which is not declared"
+                    engine, send_id, _ErrorReason.LOCATION_INVALID, f"<send> namelist names '{var}', which is not declared"
                 )
             try:
                 values[var] = engine._script_engine.get_variable(
@@ -391,7 +402,7 @@
                 ).to_python()
             except _ScriptError:
                 self._send_argument_error(
-                    engine, send_id, f"<send> namelist entry '{var}' could not be read"
+                    engine, send_id, _ErrorReason.LOCATION_INVALID, f"<send> namelist entry '{var}' could not be read"
                 )
         return values
 
@@ -406,7 +417,9 @@
         ).to_wire_string()
         ms = _parse_delay_ms(text)
         if ms is None:
-            self._send_argument_error(engine, send_id, "<send> delayexpr is not a CSS2 time")
+            self._send_argument_error(
+                engine, send_id, _ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time"
+            )
         return ms
 
     def _build_http_params(
@@ -564,7 +577,7 @@
                 ).to_python()
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, f"{element} contentexpr failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, f"{element} contentexpr failed to evaluate"
                 )
                 if failures is not None:
                     # W3C SCXML 5.6.2: "If the evaluation of 'expr' produces
@@ -602,7 +615,7 @@
                 ).to_python()
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, f"{element} <content> failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, f"{element} <content> failed to evaluate"
                 )
                 raise _ActionAbort
         if not params and not namelist and not namelist_values:
@@ -615,6 +628,7 @@
                 ):
                     self._raise_error_execution(
                         engine,
+                        _ErrorReason.LOCATION_INVALID,
                         f"{element} namelist names '{var}', which is not declared",
                     )
                     raise _ActionAbort
@@ -624,7 +638,7 @@
                     ).to_python()
                 except _ScriptError:
                     self._raise_error_execution(
-                        engine, f"{element} namelist entry '{var}' failed to evaluate"
+                        engine, _ErrorReason.LOCATION_INVALID, f"{element} namelist entry '{var}' failed to evaluate"
                     )
                     raise _ActionAbort
         _repeats: dict = {}
@@ -634,7 +648,7 @@
                 # failure as an expression that will not evaluate, for a
                 # `<send>` and a host-run `<invoke>` alike.
                 self._raise_error_execution(
-                    engine, f"{element} <param name='{name}'> names no location"
+                    engine, _ErrorReason.LOCATION_INVALID, f"{element} <param name='{name}'> names no location"
                 )
                 if failures is not None:
                     failures.append(name)
@@ -650,7 +664,7 @@
                 # nothing at all, so a document that miscomputed one param
                 # lost the whole message and stalled with no event to act on.
                 self._raise_error_execution(
-                    engine, f"{element} <param name='{name}'> expr failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, f"{element} <param name='{name}'> expr failed to evaluate"
                 )
                 if failures is not None:
                     failures.append(name)
@@ -767,7 +781,7 @@
             return True
         except _ScriptError:
             self._raise_error_execution(
-                engine, f"{element} idlocation '{location}' could not take the id"
+                engine, _ErrorReason.LOCATION_INVALID, f"{element} idlocation '{location}' could not take the id"
             )
             return False
 
@@ -879,6 +893,7 @@
             except _ScriptError:
                 self._raise_error_execution(
                     engine,
+                    _ErrorReason.EXPRESSION_FAILED,
                     "<data id='{{ var.id }}'> function expression failed",
                 )
 {% else %}
@@ -889,7 +904,7 @@
             except _ScriptError:
                 _init_val = _ScriptValue.undefined()
                 self._raise_error_execution(
-                    engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, "<data id='{{ var.id }}'> expr failed to evaluate"
                 )
             self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% endif %}
@@ -929,7 +944,7 @@
         except _ScriptError:
             _init_val = _ScriptValue.undefined()
             self._raise_error_execution(
-                engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+                engine, _ErrorReason.EXPRESSION_FAILED, "<data id='{{ var.id }}'> expr failed to evaluate"
             )
         self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% elif var.src %}
@@ -972,7 +987,7 @@
             )
         except _ScriptError:
             self._raise_error_execution(
-                engine, "a top-level <script> failed to execute"
+                engine, _ErrorReason.SCRIPT_FAILED, "a top-level <script> failed to execute"
             )
 {% endfor %}
 {% endif %}
@@ -998,7 +1013,7 @@
             except _ScriptError:
                 _init_val = _ScriptValue.undefined()
                 self._raise_error_execution(
-                    engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, "<data id='{{ var.id }}'> expr failed to evaluate"
                 )
             self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% elif var.src %}

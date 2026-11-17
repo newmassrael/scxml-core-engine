@@ -14325,9 +14325,16 @@ impl StaticTarget for PythonTarget {
     }
     // A call expression, so it is a statement where a block raises it and the
     // body of a `lambda` where a condition does.
-    fn raise_execution_error(&self, _machine: &str, _reason: &str, message: &str) -> String {
+    fn raise_execution_error(&self, _machine: &str, reason: &str, message: &str) -> String {
+        // The machine imports the vocabulary as `_ErrorReason`
+        // (python/state_machine.py.jinja2).
         format!(
-            "self._raise_error_execution(engine, {})",
+            "self._raise_error_execution(engine, _ErrorReason.{}, {})",
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Python,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::py_string_literal(message.to_string())
         )
     }

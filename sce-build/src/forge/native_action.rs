@@ -1956,7 +1956,10 @@ fn guard_payload(
                     .collect::<Vec<_>>()
                     .join("\n");
                 let otherwise = if raises_error {
-                    format!("\nelse:\n    self._raise_error_execution(engine, \"{msg}\")")
+                    format!(
+                        "\nelse:\n    self._raise_error_execution(\
+                         engine, _ErrorReason.PAYLOAD_REFUSED, \"{msg}\")"
+                    )
                 } else {
                     String::new()
                 };
@@ -1973,7 +1976,8 @@ fn guard_payload(
                 // everywhere else Python signals a platform error.
                 format!(
                     "{stmt} if (_p := self._pending_{snake}_payload) is not None \
-                     else self._raise_error_execution(engine, \"{msg}\")"
+                     else self._raise_error_execution(engine, \
+                     _ErrorReason.PAYLOAD_REFUSED, \"{msg}\")"
                 )
             } else {
                 format!("if (_p := self._pending_{snake}_payload) is not None: {stmt}")

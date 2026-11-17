@@ -26,7 +26,15 @@ from .configuration import (
     validate_configuration,
 )
 from .engine import Engine
-from .event import Event, EventMetadata, EventWithMetadata
+from .event import (
+    Event,
+    EventMetadata,
+    EventWithMetadata,
+    error_data,
+    error_name,
+    platform_error,
+)
+from .generated.error_reason import ErrorReason
 from .event_origin import EventOrigin, origin_address_of, origin_processor_of
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
@@ -175,6 +183,7 @@ __all__ = [
     "Engine",
     "EngineInbox",
     "EntryTarget",
+    "ErrorReason",
     "Event",
     "EventMetadata",
     "EventOrigin",
@@ -251,6 +260,9 @@ __all__ = [
     "judge_session",
     "nothing_in_transit",
     "parse_delay_ms",
+    "error_data",
+    "error_name",
+    "platform_error",
     "mesh_event_metadata",
     "mesh_peer",
     "parse_host_invoke_deadline_ms",

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the Python engine runtime is built on, generated for
+# Python into backends/python/runtime/sce_runtime/generated (ADR 0097): the
+# reasons an engine raises `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), imported as
+# `sce_runtime.generated.error_reason`. The runtime writes each reason by the
+# enum's declared-name accessor, so the document is the one spelling of it.
+# The package's `__init__.py` is written by hand and stays beside the tree.
+# Named by its path under stdlib/engine, so it carries the source hash of
+# that directory.
+
+[tree]
+name = "runtime-python"
+roots = ["backends/python/runtime/sce_runtime/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "python", "--output-dir", "{out}"]
+place = "backends/python/runtime/sce_runtime/generated"
+keep = ["*.py"]

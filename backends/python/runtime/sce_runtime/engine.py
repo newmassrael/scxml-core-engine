@@ -49,7 +49,8 @@ from .configuration import (
     ConfigurationVerdict,
     validate_configuration,
 )
-from .event import EventMetadata, EventWithMetadata, is_error_event
+from .event import EventMetadata, EventWithMetadata, is_error_event, platform_error
+from .generated.error_reason import ErrorReason
 from .event_origin import EventOrigin
 from .host_processor import (
     HOST_INVOKE_DEADLINE_PARAM,
@@ -821,9 +822,9 @@ class Engine(Generic[S, E]):
         if event is not None:
             self.raise_internal(
                 event,
-                EventMetadata(
-                    event_type="platform",
-                    data=failure.child_start_refusal(invoked_as),
+                platform_error(
+                    ErrorReason.INVOKE_CHILD_INIT_FAILED,
+                    failure.child_start_refusal(invoked_as),
                 ),
             )
 
@@ -1976,12 +1977,10 @@ class Engine(Generic[S, E]):
             if event is not None:
                 self.raise_internal(
                     event,
-                    EventMetadata(
-                        event_type="platform",
-                        data=(
-                            f"<invoke type='{request.processor_type}' "
-                            f"id='{request.invoke_id}'>: {unreadable}"
-                        ),
+                    platform_error(
+                        ErrorReason.PARAM_UNFIT,
+                        f"<invoke type='{request.processor_type}' "
+                        f"id='{request.invoke_id}'>: {unreadable}",
                     ),
                 )
             return True
@@ -2036,6 +2035,10 @@ class Engine(Generic[S, E]):
             self._scheduler.drop_host_invoke_deadline(token)
             event = self._policy.get_event_from_name("error.execution")
             if event is not None:
+                # The host's refusal is the event's data as the host wrote it:
+                # the host owns the shape of what it refuses with, as a peer
+                # owns the status of its reply (docs/adr/0106 #111), so it is
+                # not wrapped in a code of the engine's vocabulary.
                 self.raise_internal(
                     event, EventMetadata(event_type="platform", data=response.refusal)
                 )
@@ -2084,9 +2087,9 @@ class Engine(Generic[S, E]):
                     if event is not None:
                         self.raise_internal(
                             event,
-                            EventMetadata(
-                                event_type="platform",
-                                data="<invoke> names an invoker the host declared but never registered",
+                            platform_error(
+                                ErrorReason.PROCESSOR_UNREGISTERED,
+                                "<invoke> names an invoker the host declared but never registered",
                             ),
                         )
                     continue
@@ -2550,7 +2553,11 @@ class Engine(Generic[S, E]):
         if communication_error is not None:
             self.raise_internal(
                 communication_error,
-                EventMetadata(send_id=sendid, event_type="platform"),
+                platform_error(
+                    ErrorReason.TARGET_UNREACHABLE,
+                    "<send> named a target that was no longer there when its delay elapsed",
+                    send_id=sendid,
+                ),
                 rests_on=rests_on,
             )
 
@@ -2775,7 +2782,12 @@ class Engine(Generic[S, E]):
         # one — the scheduler needed it to be cancellable.
         self.raise_internal(
             event,
-            EventMetadata(send_id=request.send_id, event_type="platform"),
+            platform_error(
+                ErrorReason.PROCESSOR_UNREGISTERED,
+                f"<send type='{request.processor_type}'> names a processor the host "
+                "declared but never registered",
+                send_id=request.send_id,
+            ),
             rests_on=rests_on,
         )
 
@@ -3105,7 +3117,7 @@ class Engine(Generic[S, E]):
         if error is None:
             return None
         replacement = EventWithMetadata(
-            event=error, metadata=EventMetadata(data=refusal, event_type="platform")
+            event=error, metadata=platform_error(ErrorReason.PAYLOAD_REFUSED, refusal)
         )
         # The replacement carries no typed payload, so its own door clears the
         # view the refused delivery left half read.

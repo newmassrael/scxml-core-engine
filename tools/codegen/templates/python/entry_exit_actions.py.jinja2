@@ -109,14 +109,14 @@
             except sce_algorithm.AlgorithmFailure:
                 self._raise_error_execution(
                     engine,
-                    "<donedata> <param name='{{ param.name }}'> failed to evaluate",
+                    _ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='{{ param.name }}'> failed to evaluate",
                 )
 {% elif not _pexpr %}
             # §scxml-5.7: an empty location names no location —
             # error.execution, and this pair is ignored.
             self._raise_error_execution(
                 engine,
-                "<donedata> <param name='{{ param.name }}'> has an empty location",
+                _ErrorReason.LOCATION_INVALID, "<donedata> <param name='{{ param.name }}'> has an empty location",
             )
 {% else %}
             try:
@@ -130,7 +130,7 @@
             except _ScriptError:
                 self._raise_error_execution(
                     engine,
-                    "<donedata> <param name='{{ param.name }}'> failed to evaluate",
+                    _ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='{{ param.name }}'> failed to evaluate",
                 )
 {% endif %}
 {% endfor %}
@@ -155,7 +155,7 @@
             try:
                 _done_data = ({{ state.donedata.native_content_value }}).to_json_literal()
             except sce_algorithm.AlgorithmFailure:
-                self._raise_error_execution(engine, "<donedata> <content expr> failed to evaluate")
+                self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate")
                 _done_data = '""'
 {% else %}
             _done_data = ({{ state.donedata.native_content_value }}).to_json_literal()
@@ -184,7 +184,7 @@
             except _ScriptError:
                 # §scxml-5.6.2: the data stays empty.
                 self._raise_error_execution(
-                    engine, "<donedata> <content expr> failed to evaluate"
+                    engine, _ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate"
                 )
 {% endif %}
 {% if state.parent and ('done.state.' ~ state.parent) in model.events %}

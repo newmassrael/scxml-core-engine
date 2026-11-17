@@ -104,14 +104,14 @@ PY
 
 mutation_case "an invocation gone at the deadline is reported without the questions" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "                EventMetadata(send_id=sendid, event_type=\"platform\"),\n                rests_on=rests_on,\n",
-     "                EventMetadata(send_id=sendid, event_type=\"platform\"),\n")
+     "                    send_id=sendid,\n                ),\n                rests_on=rests_on,\n",
+     "                    send_id=sendid,\n                ),\n")
 PY
 
 mutation_case "a host act nobody performed is reported without the questions" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "            EventMetadata(send_id=request.send_id, event_type=\"platform\"),\n            rests_on=rests_on,\n",
-     "            EventMetadata(send_id=request.send_id, event_type=\"platform\"),\n")
+     "                send_id=request.send_id,\n            ),\n            rests_on=rests_on,\n",
+     "                send_id=request.send_id,\n            ),\n")
 PY
 
 # ── How long it is held ─────────────────────────────────────────────

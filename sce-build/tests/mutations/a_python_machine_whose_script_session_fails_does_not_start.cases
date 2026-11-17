@@ -153,6 +153,6 @@ PY
 
 mutation_case "the child whose start was refused raises no error.execution" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "        event = self._policy.get_event_from_name(\"error.execution\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                EventMetadata(\n                    event_type=\"platform\",\n                    data=failure.child_start_refusal(invoked_as),\n",
-     "        event = self._policy.get_event_from_name(\"error.no-such-event\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                EventMetadata(\n                    event_type=\"platform\",\n                    data=failure.child_start_refusal(invoked_as),\n")
+     "        event = self._policy.get_event_from_name(\"error.execution\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                platform_error(\n                    ErrorReason.INVOKE_CHILD_INIT_FAILED,\n                    failure.child_start_refusal(invoked_as),\n",
+     "        event = self._policy.get_event_from_name(\"error.no-such-event\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                platform_error(\n                    ErrorReason.INVOKE_CHILD_INIT_FAILED,\n                    failure.child_start_refusal(invoked_as),\n")
 PY

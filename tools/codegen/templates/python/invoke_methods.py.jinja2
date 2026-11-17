@@ -93,7 +93,7 @@
                 except sce_algorithm.AlgorithmFailure:
                     self._raise_error_execution(
                         engine,
-                        "<invoke srcexpr> could not be evaluated",
+                        _ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr> could not be evaluated",
                     )
                     continue
 {% elif inv.srcexpr or inv.contentexpr %}
@@ -124,7 +124,7 @@
                 except _ScriptError:
                     self._raise_error_execution(
                         engine,
-                        "<invoke {{ 'srcexpr' if inv.srcexpr else 'contentexpr' }}='{{ (inv.srcexpr or inv.contentexpr) | escape_python }}'> could not be evaluated",
+                        _ErrorReason.EXPRESSION_FAILED, "<invoke {{ 'srcexpr' if inv.srcexpr else 'contentexpr' }}='{{ (inv.srcexpr or inv.contentexpr) | escape_python }}'> could not be evaluated",
                     )
                     continue
 {% endif %}
@@ -144,7 +144,7 @@
                 if _child_module_{{ inv.field_suffix | to_python_const }} is None:
                     self._raise_error_execution(
                         engine,
-                        "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr }}'{% endif %}> evaluated to a document it did not declare",
+                        _ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr }}'{% endif %}> evaluated to a document it did not declare",
                     )
                     continue
 {% endif %}
@@ -165,7 +165,7 @@
                 if not _namelist_ok:
                     self._raise_error_execution(
                         engine,
-                        "<invoke> namelist names a location that cannot be read",
+                        _ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read",
                     )
                     continue
 {% endif %}
@@ -254,7 +254,7 @@
                     # child still starts, one value short.
                     self._raise_error_execution(
                         engine,
-                        {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                        _ErrorReason.LOCATION_INVALID, {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
                     )
 {% endif %}
 {% endfor %}
@@ -282,7 +282,7 @@
                         # child still starts, one value short.
                         self._raise_error_execution(
                             engine,
-                            {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                            _ErrorReason.LOCATION_INVALID, {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
                         )
 {% endif %}
 {% endfor %}
@@ -299,7 +299,7 @@
                     except sce_algorithm.AlgorithmFailure:
                         self._raise_error_execution(
                             engine,
-                            {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                            _ErrorReason.LOCATION_INVALID, {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
                         )
 {% endif %}
 {% endfor %}
@@ -337,7 +337,7 @@
 {% if not param_source %}
                 self._raise_error_execution(
                     engine,
-                    {{ ("<invoke> <param name='" ~ param.name ~ "'> names no location") | py_string_literal }},
+                    _ErrorReason.LOCATION_INVALID, {{ ("<invoke> <param name='" ~ param.name ~ "'> names no location") | py_string_literal }},
                 )
 {% else %}
                 try:
@@ -363,7 +363,7 @@
                     # one pair short, and no `_ActionAbort` is raised here.
                     self._raise_error_execution(
                         engine,
-                        {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
+                        _ErrorReason.LOCATION_INVALID, {{ ("<invoke> <param name='" ~ param.name ~ "'> could not be read") | py_string_literal }},
                     )
 {% endif %}
 {% endfor %}
@@ -467,7 +467,7 @@
                 # on the internal queue and start nothing.
                 self._raise_error_execution(
                     engine,
-                    {{ ("<invoke type='" ~ inv.invoke_type ~ "'> names an external service this platform does not support") | py_string_literal }},
+                    _ErrorReason.INVOKE_TYPE_UNSUPPORTED, {{ ("<invoke type='" ~ inv.invoke_type ~ "'> names an external service this platform does not support") | py_string_literal }},
                 )
                 continue
 {% endfor %}
@@ -504,7 +504,7 @@
                 try:
                     _host_src = {{ inv.native_src }}
                 except sce_algorithm.AlgorithmFailure:
-                    self._raise_error_execution(engine, "<invoke> srcexpr failed to evaluate")
+                    self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<invoke> srcexpr failed to evaluate")
                     continue
 {% else %}
                 _host_src = {{ inv.native_src }}
@@ -520,7 +520,7 @@
                 try:
                     _host_content = {{ inv.native_content }}
                 except sce_algorithm.AlgorithmFailure:
-                    self._raise_error_execution(engine, "<invoke> content expr failed to evaluate")
+                    self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<invoke> content expr failed to evaluate")
                     continue
 {% else %}
                 _host_content = {{ inv.native_content }}
@@ -545,7 +545,7 @@
                         ).to_wire_string()
                     except _ScriptError:
                         self._raise_error_execution(
-                            engine, "<invoke> {{ attr }}expr failed to evaluate"
+                            engine, _ErrorReason.EXPRESSION_FAILED, "<invoke> {{ attr }}expr failed to evaluate"
                         )
                         _host_failed = True
 {% endif %}
@@ -588,7 +588,7 @@
                     except (_ScriptError, _RequestRefusal) as _refusal:
                         self._raise_error_execution(
                             engine,
-                            "<invoke> <param name='{{ param.name }}'> cannot be its request field: " + str(_refusal),
+                            _ErrorReason.PARAM_UNFIT, "<invoke> <param name='{{ param.name }}'> cannot be its request field: " + str(_refusal),
                         )
                         _request_refused = True
 {% else %}
@@ -649,12 +649,12 @@
                 except sce_algorithm.AlgorithmFailure:
 {% if inv.invoke_id in host_invoke_request_checks %}
                     self._raise_error_execution(
-                        engine, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> cannot be its request field: it failed to evaluate"
+                        engine, _ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> cannot be its request field: it failed to evaluate"
                     )
                     _request_refused = True
 {% else %}
                     self._raise_error_execution(
-                        engine, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate"
+                        engine, _ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate"
                     )
 {% endif %}
                 else:
@@ -689,7 +689,7 @@
                     # same event, rather than a silence that reads as started.
                     self._raise_error_execution(
                         engine,
-                        "<invoke> names an invoker the host declared but never registered",
+                        _ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered",
                     )
                 continue
 {% endfor %}
@@ -803,7 +803,7 @@
                 )
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, "<finalize> failed to execute"
+                    engine, _ErrorReason.SCRIPT_FAILED, "<finalize> failed to execute"
                 )
             return
 {% endif %}

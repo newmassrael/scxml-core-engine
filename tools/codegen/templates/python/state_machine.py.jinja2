@@ -45,6 +45,7 @@ from sce_runtime import (
 {% endif %}
     EnabledTransition,
     Engine,
+    ErrorReason as _ErrorReason,
     EventMetadata,
 {% if model.history_states %}
     HistoryTarget,
@@ -63,6 +64,7 @@ from sce_runtime import (
     origin_address_of as _origin_address_of,
     origin_processor_of as _origin_processor_of,
     parse_delay_ms as _parse_delay_ms,
+    platform_error as _platform_error,
     session_id_from_scxml_location as _session_id_from_scxml_location,
 )
 {% if model.host_processor_types %}

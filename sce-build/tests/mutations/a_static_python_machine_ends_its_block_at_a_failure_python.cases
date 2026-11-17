@@ -78,7 +78,7 @@ PY
 
 mutation_case "a donedata pair that failed is carried anyway" <<'PY'
 edit("tools/codegen/templates/python/entry_exit_actions.py.jinja2",
-     "            except sce_algorithm.AlgorithmFailure:\n                self._raise_error_execution(\n                    engine,\n                    \"<donedata> <param name='{{ param.name }}'> failed to evaluate\",\n                )\n{% elif not _pexpr %}",
+     "            except sce_algorithm.AlgorithmFailure:\n                self._raise_error_execution(\n                    engine,\n                    _ErrorReason.EXPRESSION_FAILED, \"<donedata> <param name='{{ param.name }}'> failed to evaluate\",\n                )\n{% elif not _pexpr %}",
      "            except sce_algorithm.AlgorithmFailure:\n                _done_parts.append('\"{{ param.name | escape_json_string }}\":0')\n{% elif not _pexpr %}")
 PY
 
@@ -187,13 +187,13 @@ PY
 
 mutation_case "a delay that failed to compute is delivered at once" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    self._send_argument_error(engine, _sid, \"<send> delayexpr could not be evaluated\")\n",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    self._send_argument_error(engine, _sid, _ErrorReason.EXPRESSION_FAILED, \"<send> delayexpr could not be evaluated\")\n",
      "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    _delay_text = \"0ms\"\n")
 PY
 
 mutation_case "a delay that is no CSS2 time is delivered at once" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}if _delay_ms is None:\n{{ indent }}    self._send_argument_error(engine, _sid, \"<send> delayexpr is not a CSS2 time\")\n{% elif action.delayexpr %}",
+     "{{ indent }}if _delay_ms is None:\n{{ indent }}    self._send_argument_error(engine, _sid, _ErrorReason.SEND_DELAY_INVALID, \"<send> delayexpr is not a CSS2 time\")\n{% elif action.delayexpr %}",
      "{{ indent }}if _delay_ms is None:\n{{ indent }}    _delay_ms = 0\n{% elif action.delayexpr %}")
 PY
 
@@ -218,7 +218,7 @@ PY
 
 mutation_case "an empty event name is delivered" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}if not _evt_name:\n{{ indent }}    self._send_argument_error(engine, _sid, \"<send> eventexpr could not be evaluated to an event name\")\n{% elif action.eventexpr %}",
+     "{{ indent }}if not _evt_name:\n{{ indent }}    self._send_argument_error(engine, _sid, _ErrorReason.EXPRESSION_FAILED, \"<send> eventexpr could not be evaluated to an event name\")\n{% elif action.eventexpr %}",
      "{{ indent }}if not _evt_name:\n{{ indent }}    pass\n{% elif action.eventexpr %}")
 PY
 
@@ -237,7 +237,7 @@ PY
 
 mutation_case "a cancel id that failed to compute is not reported" <<'PY'
 edit("tools/codegen/templates/python/actions/cancel.py.jinja2",
-     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    self._raise_error_execution(engine, \"<cancel> sendidexpr failed to evaluate\")\n{{ indent }}    raise _ActionAbort\n",
+     "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, \"<cancel> sendidexpr failed to evaluate\")\n{{ indent }}    raise _ActionAbort\n",
      "{{ indent }}except sce_algorithm.AlgorithmFailure:\n{{ indent }}    _cancel_id = \"\"\n")
 PY
 

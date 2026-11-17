@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Optional, TypeVar
 
 from .event_origin import EventOrigin
+from .generated.error_reason import ErrorReason
+from .saved_json import write_json
 from .scripting.i_script_engine import ScriptValue
 
 E = TypeVar("E")
@@ -118,6 +120,42 @@ def event_data_text(data: Any) -> str:
         # same payload differed byte for byte from the one another backend sent.
         return ScriptValue.of(data).to_json_literal()
     return str(data)
+
+
+def error_name(reason: ErrorReason) -> str:
+    """The `errorName` of an `error.*` event raised for `reason` (SCE_MESH.md
+    section 10.7.1): `"execution"` or `"communication"`, by the range the
+    vocabulary gives the code (1 to 63, 64 to 127; docs/adr/0106 #111), so a
+    code and the event it is raised as cannot disagree."""
+    return "execution" if reason.to_underlying() < 64 else "communication"
+
+
+def error_data(reason: ErrorReason, detail: str) -> str:
+    """The `_event.data` of an `error.*` event raised for `reason`, as JSON
+    text: `{"errorName":…,"reason":…,"detail":…}` (SCE_MESH.md section
+    10.7.1), in that order on every engine, the code spelled by the
+    vocabulary's declared name and `detail` written as every engine writes a
+    JSON string (ARCHITECTURE.md, "JSON Text")."""
+    return (
+        '{"errorName":"'
+        + error_name(reason)
+        + '","reason":"'
+        + reason.declared_name()
+        + '","detail":'
+        + write_json(detail)
+        + "}"
+    )
+
+
+def platform_error(reason: ErrorReason, detail: str, send_id: str = "") -> EventMetadata:
+    """The metadata of an `error.*` event this engine itself raised: a
+    platform event whose data is the record of :func:`error_data`, and the
+    send id of the `<send>` it reports, if any (test 332). The one way the
+    runtime and the generated machines fill it; the processor's own failures
+    are signalled as `error.*` (:func:`is_error_event` cites the clause)."""
+    return EventMetadata(
+        data=error_data(reason, detail), send_id=send_id, event_type="platform"
+    )
 
 
 def is_error_event(event_name: str) -> bool:

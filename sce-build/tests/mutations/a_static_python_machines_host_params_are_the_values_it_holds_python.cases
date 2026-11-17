@@ -44,6 +44,6 @@ PY
 
 mutation_case "a param whose value failed is left out without a word" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "{% else %}\n                    self._raise_error_execution(\n                        engine, \"<invoke> <param name='\" + {{ param.name | py_string_literal }} + \"'> expr failed to evaluate\"\n                    )\n{% endif %}",
+     "{% else %}\n                    self._raise_error_execution(\n                        engine, _ErrorReason.EXPRESSION_FAILED, \"<invoke> <param name='\" + {{ param.name | py_string_literal }} + \"'> expr failed to evaluate\"\n                    )\n{% endif %}",
      "{% else %}\n                    pass\n{% endif %}")
 PY

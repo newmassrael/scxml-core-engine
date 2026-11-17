@@ -300,7 +300,8 @@ def test_a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_
         InboxMeshDelivery(MeshRaise("tick", EventMetadata()), session_id=_CHILD)
     ), "the child whose start was refused is not kept as a session of the tree"
     # The invoke ends without a child, with error.execution, which no
-    # transition of `s0` takes, and whose data names the invoke and the step.
+    # transition of `s0` takes, and whose data is the record of its code and
+    # the sentence naming the invoke and the step (docs/adr/0106 #111).
     error_execution = engine.policy.get_event_from_name("error.execution")
     assert error_execution is not None, "the document names error.execution"
     assert engine.last_unhandled_error() == error_execution, (
@@ -310,7 +311,8 @@ def test_a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_
     assert (
         _ROOT,
         "error.execution",
-        "<invoke id='chatty'> did not start: its child's script session failed at step 'create'",
+        '{"errorName":"execution","reason":"invokeChildInitFailed","detail":'
+        "\"<invoke id='chatty'> did not start: its child's script session failed at step 'create'\"}",
     ) in double.bound, f"the error's data names the invoke and the step: {double.bound}"
     # No child ran, so no `tick` and no `done.invoke` ever arrived.
     assert engine.policy.ticks() == 0, "no child ran, so no tick arrived"

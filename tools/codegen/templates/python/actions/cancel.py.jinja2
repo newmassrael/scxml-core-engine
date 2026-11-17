@@ -19,7 +19,7 @@
 {{ indent }}try:
 {{ indent }}    _cancel_id = {{ action.native_sendid }}
 {{ indent }}except sce_algorithm.AlgorithmFailure:
-{{ indent }}    self._raise_error_execution(engine, "<cancel> sendidexpr failed to evaluate")
+{{ indent }}    self._raise_error_execution(engine, _ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
 {{ indent }}    raise _ActionAbort
 {{ indent }}engine.cancel_send(_cancel_id)
 {% else %}

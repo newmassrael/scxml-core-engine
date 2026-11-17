@@ -107,7 +107,7 @@ const BACKENDS: &[Backend] = &[
     Backend {
         dir: "python",
         bypass: &["_raise_error_execution(engine)"],
-        entry_point: "self._raise_error_execution(engine, message)",
+        entry_point: "self._raise_error_execution(engine, reason, message)",
     },
     Backend {
         dir: "c",
