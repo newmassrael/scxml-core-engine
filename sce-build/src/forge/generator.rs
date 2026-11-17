@@ -13982,7 +13982,8 @@ fn render_codec(
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
         match (c11_source::unlowered(&plan, imports), plan) {
             (None, crate::forge::encode_plan::CodecPlan::Positional(p)) => {
-                let printed = c11_source::render(&p, &l, &filters::to_snake_case(m.name.clone()));
+                let printed =
+                    c11_source::render(&p, &l, imports, &filters::to_snake_case(m.name.clone()));
                 Some((p, printed))
             }
             _ => None,
@@ -16108,8 +16109,9 @@ fn render_codec(
         // C11 emits a tagged-union body struct, which needs a per-arm
         // kind enum constant and a per-arm union field name. Computed
         // alongside the cross-backend arm fields so the same arm_ctx
-        // entry serves every emitter.
-        let c_parent_upper = to_upper_snake(&m.name);
+        // entry serves every emitter, and named as the C11 printer names
+        // them (`c11_source::arm_kind`, `arm_member`), so the struct and a
+        // source of it hold the arm by one name.
         let arm_ctx: Vec<serde_json::Value> = v
             .arms
             .iter()
@@ -16122,7 +16124,7 @@ fn render_codec(
                 let body_encoder = resolve_variant_arm_encoder(&arm.body_alias, lang);
                 let arm_snake = filters::to_snake_case(arm.body_alias.clone());
                 let arm_upper = to_upper_snake(&arm.body_alias);
-                let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_{arm_upper}");
+                let c_kind_constant = c11_source::arm_kind(&m.name, Some(&arm.body_alias));
                 // C11 arm body's encoded-bytes typedef — used by the
                 // splice loop in encode() so `_sub` carries the body's
                 // own `<snake>_encoded_t` shape, not the parent's.
@@ -16229,7 +16231,10 @@ fn render_codec(
                 obj.insert("body_decoder".into(), body_decoder.into());
                 obj.insert("body_encoder".into(), body_encoder.into());
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
-                obj.insert("c_union_field".into(), arm_snake.into());
+                obj.insert(
+                    "c_union_field".into(),
+                    c11_source::arm_member(Some(&arm.body_alias)).into(),
+                );
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
                 // RFC flag inversion — combined arg ctx keys for the
                 // 6-backend variant arm dispatchers. Templates consume
@@ -16338,7 +16343,7 @@ fn render_codec(
                     resolve_variant_arm_body_type(&m.name, &d.body_alias, imports, lang)?;
                 let body_decoder = resolve_variant_arm_decoder(&d.body_alias, lang);
                 let body_encoder = resolve_variant_arm_encoder(&d.body_alias, lang);
-                let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_DEFAULT");
+                let c_kind_constant = c11_source::arm_kind(&m.name, None);
                 let d_snake = filters::to_snake_case(d.body_alias.clone());
                 let c_body_encoded_type = format!("{d_snake}_encoded_t");
                 // RFC flag inversion — per-arm flag-bind threading
@@ -16421,7 +16426,7 @@ fn render_codec(
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
                 // `default_body` field name avoids any collision with an
                 // enumerated arm whose body alias happens to be `default`.
-                obj.insert("c_union_field".into(), "default_body".to_string().into());
+                obj.insert("c_union_field".into(), c11_source::arm_member(None).into());
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
                 obj.insert(
                     "body_decode_args_after_cursor".into(),
@@ -16546,7 +16551,15 @@ fn render_codec(
             (None, crate::generator::Language::Cpp) => (carrier_id.clone(), carrier_id.clone()),
             (None, crate::generator::Language::Go) => (carrier_id.clone(), carrier_id.clone()),
             (None, crate::generator::Language::C11) => {
-                let qualified = format!("{c11_carrier_qualifier}{carrier_id}");
+                // docs/adr/0081 §3: a tag the encode printed from its plan
+                // derives is no member of the value, and the decode reads it
+                // into a local of its own.
+                let qualified = match &v.tag_field {
+                    Some(id) if !peek_mode && !caller_tag && c11_derived(id) => {
+                        c11_source::derived_local(id)
+                    }
+                    _ => format!("{c11_carrier_qualifier}{carrier_id}"),
+                };
                 (qualified.clone(), qualified)
             }
             (None, crate::generator::Language::Python) => (carrier_id.clone(), carrier_id.clone()),
@@ -16672,7 +16685,7 @@ fn render_codec(
             let snake = filters::to_snake_case(m.name.clone());
             variant_obj.insert(
                 "c_kind_typedef".into(),
-                format!("{snake}_body_kind_t").into(),
+                c11_source::kind_type(&snake).into(),
             );
             variant_obj.insert("c_body_typedef".into(), format!("{snake}_variant_t").into());
         }
