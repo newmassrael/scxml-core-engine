@@ -546,6 +546,46 @@ fn a_chain_sets_its_entries_end_flag_by_the_entry_codecs_overrides() {
     );
 }
 
+/// A chain hands each entry, for an input it binds to the entry before,
+/// whether that entry was of the kind the input waits for, clear for the
+/// first, both where it counts the entries for their refusal and where it
+/// writes them.
+///
+/// Turns red where `positional_forms` names a walk that hands its entries a
+/// flag, where `walk_entries` stops keeping the entry before's kind or keeps
+/// it before the entry is written, where `entry_identifier` reads the
+/// identifier other than off the entry's carrier, or where `body_encode`
+/// hands an input bound to nothing other than the walk's local.
+#[test]
+fn a_chain_hands_each_entry_what_the_one_before_it_was() {
+    assert!(unlowered("codec_chain_handed_entry").is_empty());
+    assert!(unlowered("codec_chain_handed").is_empty());
+    let text = resource_go("codec_chain_handed");
+    holds(
+        "codec_chain_handed",
+        &text,
+        &[
+            "\t{\n\
+             \t\t_prevAfterMarker := byte(0)\n\
+             \t\t_leftEntries := src.Entries().Len()\n\
+             \t\tfor _e := range src.Entries().All() {\n\
+             \t\t\t_leftEntries--\n\
+             \t\t\tif err := codec_chain_handed_entry.EncodeSourceOverriding(_e, w, \
+             _prevAfterMarker, codec_chain_handed_entry.CodecChainHandedEntryOverrides{HeaderZ: \
+             optional.Some(_leftEntries != 0)}); err != nil {\n\
+             \t\t\t\treturn err\n\
+             \t\t\t}\n\
+             \t\t\t_prevAfterMarker = 0\n\
+             \t\t\tif ((uint64(_e.Header()) >> 0) & 0xF) == 0x4 {\n\
+             \t\t\t\t_prevAfterMarker = 1\n\
+             \t\t\t}\n\
+             \t\t}\n\
+             \t}\n",
+            "codec_chain_handed_entry.EncodeSourceOverriding(_e, &_kEntries, _prevAfterMarker, ",
+        ],
+    );
+}
+
 /// A procedure over `codec_length_ref` that assigns `location` from `expr`,
 /// its input `blob` a byte string of at most 32 bytes and `n` an integer.
 fn length_ref_procedure(location: &str, expr: &str) -> String {
@@ -964,6 +1004,8 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_tlv_chain_basic",
         "codec_chain_depth_entry",
         "codec_chain_depth_plain",
+        "codec_chain_handed_entry",
+        "codec_chain_handed",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

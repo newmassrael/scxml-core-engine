@@ -54,8 +54,8 @@ use super::*;
 use crate::forge::codec_roles::ElementId;
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    Absent, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, HandedFrom, ListWrite, Measure,
-    Measured, Narrow, Number, NumberInto, Offset, Presence, PresenceFlag, Value, Write,
+    Absent, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId, Guard, HandedFrom, ListWrite,
+    Measure, Measured, Narrow, Number, NumberInto, Offset, Presence, PresenceFlag, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -164,6 +164,22 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 if !law.is_none() {
                     forms.push(format!("field '{id}': a list held to a law"));
                 }
+                // An input its parent binds nothing to is one the walk of a
+                // chain hands each entry from the entry before.
+                let supplied = |input: &str| {
+                    list_walk(plan, id)
+                        .is_some_and(|walk| walk.previous.iter().any(|(i, _)| i == input))
+                };
+                if plan.handed.get(*codec).is_some_and(|handed| {
+                    handed
+                        .iter()
+                        .any(|h| h.from.is_none() && !supplied(&h.input))
+                }) {
+                    forms.push(format!(
+                        "field '{id}': a list handed an input neither its parent nor its walk \
+                         binds"
+                    ));
+                }
             }
         }
     }
@@ -226,13 +242,14 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.extend(gate_form(plan, field));
                 }
                 // A walk of each entry in turn, which sets on each entry but
-                // the last the flag the chain ends on; a chain that hands an
-                // entry what the one before it was, holds a bare entry's
-                // place or is held to a law is not printed yet.
+                // the last the flag the chain ends on and hands each entry
+                // what the one before it was; a chain that holds a bare
+                // entry's place or is held to a law is not printed yet.
                 if let Some(walk) = list {
-                    if !walk.previous.is_empty() || walk.slots.is_some() || walk.lawful {
+                    if walk.slots.is_some() || walk.lawful {
                         forms.push(format!(
-                            "field '{}': a chain whose walk hands its entries a flag",
+                            "field '{}': a chain that holds a bare entry's place or is held \
+                             to a law",
                             field.id
                         ));
                     }
@@ -952,7 +969,10 @@ fn body_encode(
                 format!(", byte(({} >> {bit}) & 0x{mask:X})", carrier(c))
             }
             Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
-            None => unreachable!("`unlowered` prints no body handed an input bound to nothing"),
+            // What the entry before was, which the walk of a chain keeps as
+            // it writes each entry; `unlowered` prints no other input bound to
+            // nothing.
+            None => format!(", {}", previous_local(&h.input)),
         })
         .collect();
     match overrides {
@@ -997,8 +1017,24 @@ fn walk_entries(
     let name = l.codec_field_id(&field.id);
     let mut before = String::new();
     let mut each = String::new();
+    let mut after = String::new();
     let mut overrides = None;
-    if let Some((flag_carrier, flag)) = list_walk(plan, &field.id).and_then(|w| w.ends.as_ref()) {
+    let walk = list_walk(plan, &field.id);
+    // Each input the chain hands an entry from the entry before
+    // (`<sce:entry-flag-bind>`): clear for the first, and after each entry
+    // whether it is of the kind the input waits for.
+    for (input, kind) in walk.map(|w| w.previous.as_slice()).unwrap_or_default() {
+        let local = previous_local(input);
+        before.push_str(&format!("{local} := byte(0)\n"));
+        after.push_str(&format!(
+            "\t{local} = 0\n\
+             \tif {} == 0x{kind:X} {{\n\
+             \t\t{local} = 1\n\
+             \t}}\n",
+            entry_identifier(reads, &field.id, "_e")
+        ));
+    }
+    if let Some((flag_carrier, flag)) = walk.and_then(|w| w.ends.as_ref()) {
         let import = printed_import(imports, alias)
             .expect("`unlowered` prints a chain of a codec the Go backend prints");
         let left = format!("_left{name}");
@@ -1026,6 +1062,7 @@ fn walk_entries(
          \tif err := {call}; err != nil {{\n\
          \t\treturn err\n\
          \t}}\n\
+         {after}\
          }}\n"
     );
     // The walk's own locals are its own, as the list is walked once to count
@@ -1034,6 +1071,41 @@ fn walk_entries(
         walked
     } else {
         format!("{{\n{}}}\n", indented(&walked))
+    }
+}
+
+/// The local the walk of a chain keeps the input `input` of its entries in:
+/// whether the entry it wrote last is of the kind the input waits for, 0
+/// before the first.
+fn previous_local(input: &str) -> String {
+    format!("_prev{}", filters::to_pascal_case(input.to_string()))
+}
+
+/// The identifier of `entry`, a source of the entries of the chain `chain`,
+/// as a `uint64`: the flag or the field the chain's `entry-id` names, read off
+/// the entry by its method, less the flags it leaves out.
+fn entry_identifier(reads: &SourceReads<'_, '_>, chain: &str, entry: &str) -> String {
+    let l = reads.l;
+    match reads
+        .plan
+        .entry_ids
+        .get(chain)
+        .expect("a chain that hands an entry what the one before was declares entry-id")
+    {
+        EntryId::Flag { carrier, bit, mask } => format!(
+            "((uint64({entry}.{}()) >> {bit}) & 0x{mask:X})",
+            l.codec_field_id(carrier)
+        ),
+        EntryId::Whole {
+            field,
+            mask: Some(mask),
+        } => format!(
+            "(uint64({entry}.{}()) & 0x{mask:X})",
+            l.codec_field_id(field)
+        ),
+        EntryId::Whole { field, mask: None } => {
+            format!("uint64({entry}.{}())", l.codec_field_id(field))
+        }
     }
 }
 
