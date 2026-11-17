@@ -1104,6 +1104,68 @@ fn a_group_holds_a_body_in_place_beside_its_stated_encoded_length() {
     holds_none(name, &text, &["out->ts", "self->ts", "out->ext_size"]);
 }
 
+/// A list whose entries say the input it hands them is held to its law: the
+/// list's type holds the start every entry says, its maker takes the start and
+/// refuses an entry that says another, the value holds the start beside the
+/// list, which the decode sets from the flag it handed the entries and the
+/// value's check holds the entries to by the maker, and the encode derives the
+/// flag bound to the input from the start.
+///
+/// Turns red where `c11_source::positional_forms` names a list held to a law
+/// again, where `law_text` stops holding an entry to the start, where
+/// `start_members` or `decoded` stops holding the start in the value, or where
+/// `measure_text` reads `Measured::Start` other than off the list.
+#[test]
+fn a_list_held_to_a_law_is_made_from_its_start() {
+    let name = "codec_repeat_flag_carrier";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_header(name);
+    holds(
+        name,
+        &text,
+        &[
+            "    size_t count;\n    uint8_t start_wide;\n} codec_repeat_flag_carrier_entries_list_t;\n",
+            "static inline sce_forge_codec_status_t codec_repeat_flag_carrier_entries_list_make(\
+             codec_repeat_flag_carrier_entries_list_t *out, const sce_forge_walk_t *walk, \
+             const void *ctx, const codec_chain_flag_entry_source_t *entry, uint8_t start_wide) {\n",
+            "        if (((codec_chain_flag_entry_input_wide(entry, at)) != 0) != (start_wide != 0)) {\n            \
+             return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;\n        }\n",
+            "    out->start_wide = start_wide;\n",
+            "    uint8_t entries_start_wide;\n",
+            "    list.start_wide = self->entries_start_wide;\n",
+            "    _f_head = (_f_head & ~0x1ull) | (uint64_t)((size_t)_e_entries.start_wide);\n",
+            "out->entries_start_wide = (uint8_t)(((((uint64_t)out->head >> 0) & 1u) != 0) ? 1u : 0u);",
+            "SCE_FORGE_TRY_WRITE(codec_repeat_flag_carrier_entries_list_make(&_made, _l.walk, \
+             _l.ctx, _l.entry, _l.start_wide));\n",
+        ],
+    );
+}
+
+/// A chain that hands its entries an input nothing binds hands each whether
+/// the entry before it was of the kind the input waits for, the first entry's
+/// clear, read off the kind the entry before presents.
+///
+/// Turns red where `c11_source::positional_forms` names a chain handed an
+/// input nothing binds again, where `handed_args` stops passing the walk's
+/// local, or where the walk stops setting it from the entry it wrote.
+#[test]
+fn a_chain_hands_each_entry_what_the_entry_before_was() {
+    let name = "codec_chain_handed";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_header(name);
+    holds(
+        name,
+        &text,
+        &[
+            "        uint8_t _p_after_marker = 0;\n",
+            "SCE_FORGE_TRY_WRITE(codec_chain_handed_entry_encode_source_overriding(\
+             _e_entries.entry, _at, w, _p_after_marker, _o));\n",
+            "            _p_after_marker = (uint8_t)(((((uint64_t)_e_entries.entry->header(_at)) \
+             >> 0) & 0xFull) == 0x4ull);\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a group of a chain's memberships and a CBOR map
 /// each name their form, and neither has an encode over a source.
@@ -1231,6 +1293,8 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_init_syn_envelope",
         "codec_present_if_length_ref",
         "codec_present_if_length_from",
+        "codec_repeat_flag_carrier",
+        "codec_chain_handed",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
