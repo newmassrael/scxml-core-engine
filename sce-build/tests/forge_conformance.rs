@@ -18875,6 +18875,10 @@ fn chain_flag_python_program() -> String {
 from flag_pkg.codec_chain_flag_forward import CodecChainFlagForward
 from flag_pkg.codec_repeat_flag_carrier import CodecRepeatFlagCarrier
 from flag_pkg.codec_repeat_flag_gated import CodecRepeatFlagGated
+from flag_pkg.codec_chain_flag_entry import (
+    CodecChainFlagEntryWideNotWide as NotWide,
+    CodecChainFlagEntryWideWide as Wide,
+)
 from sce_forge_runtime.codec import SceCursor
 
 NARROW = bytes([@NARROW@])
@@ -18887,18 +18891,21 @@ GATED_NARROW = bytes([@GATED_NARROW@])
 GATED_WIDE = bytes([@GATED_WIDE@])
 GATED_ABSENT = bytes([@GATED_ABSENT@])
 
+# A refused frame raises the CodecError that names why (docs/adr/0099,
+# amendment of 2026-11-16).
 def carrier(frame):
-    v = CodecChainFlagCarrier.decode(SceCursor(frame))
-    assert v is not None, "carrier decode"
-    return v
+    return CodecChainFlagCarrier.decode(SceCursor(frame))
 
 def forward(frame, wide):
-    v = CodecChainFlagForward.decode(SceCursor(frame), wide)
-    assert v is not None, "forward decode"
-    return v
+    return CodecChainFlagForward.decode(SceCursor(frame), wide)
 
 def shape(e):
-    return (e.header, e.short_value, e.long_value)
+    # The short value or the long one, the two arms of the one sum `wide`
+    # decides (docs/adr/0065 section 6, R4b).
+    if isinstance(e.wide, Wide):
+        return (e.header, None, e.wide.long_value)
+    assert isinstance(e.wide, NotWide), type(e.wide).__name__
+    return (e.header, e.wide.short_value, None)
 
 v = carrier(NARROW)
 assert [shape(e) for e in v.entries] == [(0x83, 0x11, None), (0x05, 0x22, None)], "carrier narrow"
@@ -18910,26 +18917,26 @@ assert v.encode_to_bytes() == WIDE, "carrier wide round trip"
 
 v = forward(FWD_NARROW, 0)
 assert [shape(e) for e in v.entries] == [(0x83, 0x11, None), (0x05, 0x22, None)], "forward narrow"
-assert v.encode_to_bytes(0) == FWD_NARROW, "forward narrow round trip"
+assert v.encode_to_bytes() == FWD_NARROW, "forward narrow round trip"
 
+# The encode is not handed `wide`: the value says it, by the list's start
+# (docs/adr/0065 section 6, R4a).
 v = forward(WIDE, 1)
 assert [shape(e) for e in v.entries] == [(0x83, None, 0x1234), (0x05, None, 0xABCD)], "forward wide"
-assert v.encode_to_bytes(1) == WIDE, "forward wide round trip"
+assert v.encode_to_bytes() == WIDE, "forward wide round trip"
 
 # The same bytes under the other answer: the value the caller gave reached the
 # entries, and they are not read as wide.
 v = forward(WIDE, 0)
-assert v.entries[0].long_value is None and v.entries[0].short_value == 0x12, "forward flag ignored"
+assert shape(v.entries[0]) == (0x83, 0x12, None), "forward flag ignored"
 
 v = forward(FWD_ABSENT, 1)
 assert v.entries is None, "forward chain without its gate"
-assert v.encode_to_bytes(1) == FWD_ABSENT, "forward absent round trip"
+assert v.encode_to_bytes() == FWD_ABSENT, "forward absent round trip"
 
 # A repeat hands its elements the same value, plain and gated.
 def repeat(codec, frame):
-    v = codec.decode(SceCursor(frame))
-    assert v is not None, "repeat decode"
-    return v
+    return codec.decode(SceCursor(frame))
 
 NARROW_SHAPES = [(0x83, 0x11, None), (0x05, 0x22, None)]
 WIDE_SHAPES = [(0x83, None, 0x1234), (0x05, None, 0xABCD)]
