@@ -530,6 +530,62 @@ here:
   `materialize --script-engine <language>` of each Kotlin tree into it, and each suite module replaces its own part
   (`gradle/sce-kotlin-suite.gradle.kts`, `scripts/gates/w3c-kotlin.sh`).
 
+## Amendment (2026-11-17): the Rust runtime's engine tree is the generator's bootstrap
+
+Decided under the owner's standing rule (the most long-term correct structure, without asking).
+
+**What was wrong.** ADR 0106 (#111) declared the tree `runtime-rust` (`tools/codegen/trees/runtime-rust.toml`): every
+document of `stdlib/engine` generated for Rust into the runtime crate, the reasons an engine raises `error.*` for. Its
+two files were written by hand with the commit that declared it, and no step of `scripts/regen_all_committed_trees.sh`,
+no `[actions.regen-*]` of `bx.toml` and no entry of `sce_regen_steps` wrote it. So `bx --actions` never regenerated
+it, and a template or generator change left it stale until the bridge test of landing 0 read it.
+
+**Why it is not a build-script tree.** Section 4 makes a Rust tree the output of its crate's `build.rs`, with
+`sce-build` as a build-dependency, as landing 1 does for the Rust test trees. The runtime crate cannot: `sce-build`
+depends on `sce-rust-runtime` (the TTCN-3 export runs the runtime's Appendix D core, the trace check reads with its
+reader, `sce-build/Cargo.toml` `[dependencies]`), so a build-dependency of the runtime on `sce-build` is a cycle Cargo
+refuses. The cycle is not an accident of the manifests: the generator is compiled from this tree, so no action whose
+tool is that generator can be the only source of it. That is a bootstrap, and its textbook answer is the one a
+self-hosting compiler gives its generated sources: the stage-0 copy is committed, the build of the tool uses it, and a
+regeneration writes the next copy, which is held to be a fixed point. A second reason points the same way: the runtime
+is the crate a bare-metal consumer builds alone for its target (ADR 0053), and a build-dependency would make every such
+build compile the generator.
+
+**Decision.**
+
+1. Section 8 gains a row: *a generated tree the generator is itself compiled from stays committed*, as its bootstrap.
+   It is still declared, still materialized by its actions, and still judged by them: the bridge test
+   (`a_declared_tree_reproduces_its_committed_tree`) and `regen-reproduces` compare it byte for byte, and
+   `b9_drift_detection::verify_passes_on_real_committed_runtime_rust_tree` holds its `source-hash`. Today it is the
+   Rust runtime's tree alone. A runtime tree of another language (the Kotlin, Python, Go, C++, C11 and Swift engines
+   ADR 0106 leaves for later) is not compiled into the generator and follows sections 1 to 4.
+2. It is written by a step of its own, `runtime-rust`, the first of `sce_regen_steps`, which is
+   `sce-codegen materialize runtime-rust --replace`, and by the action `[actions.regen-runtime-rust]`, whose output is
+   the tree. First, because a later step that builds the generator, or a `regen-reproduces` run that began by deleting
+   a sample of generated files, needs it in place before anything compiles. The step sets nothing aside before it
+   runs (`sce_generated_trees` names no tree for it): a stash taken before the generator is resolved would take away
+   a module the generator's build compiles whenever the binary is stale. `materialize --replace` removes what no
+   action writes any more, after the generator has run.
+3. The tree moves from `backends/rust/runtime/src/generated` (with its index `src/generated.rs`) to
+   `backends/rust/runtime/generated`, its index `generated/mod.rs`, which `lib.rs` names by `#[path]`. bx judges two
+   patterns by their components (`a_regeneration_removes_what_it_no_longer_writes`, `may_overlap`), and every action
+   that builds the generator read `backends/rust/runtime/**`, which would put each of them in the chain of the action
+   that writes the tree: one machine, nothing kept. No pattern can name the crate's hand-written `src/*.rs` without
+   also naming `src/generated.rs`, so the two are made two directories, and every such action reads
+   `backends/rust/runtime/src/**` instead.
+4. The generated directory is compiled into every generator but is not an input of the other actions. Its bytes are a
+   function of what each of them declares already (`stdlib/**`, `sce-build/**`, `tools/codegen/**`), and no byte any
+   other step writes depends on them. A traced run (`bx-fleet action learn`) will report the read; it is this
+   bootstrap read, recorded here, and not an input left out.
+5. Every declared tree is an output of a regen action. `every_declared_tree_is_an_output_of_a_regen_action` holds each
+   committed generated file under a manifest's roots, and each index file a manifest writes, to the outputs of the
+   actions of `bx.toml`, so a tree declared without a step that writes it fails there and not when it goes stale.
+
+**What it costs.** A change that adds an engine reason and names it in the runtime's hand-written code is made in that
+order: the document first, regenerated with the generator of the tree before it, then the code that names the new
+reason, since a generator whose runtime names a reason its committed tree lacks does not compile. The tree leaves
+version control only if the generator stops depending on the runtime crate; that is no landing of this ADR.
+
 ## References
 
 - `scripts/regen_all_committed_trees.sh`, `scripts/lib/sce_generated_tree.sh`, `bx.toml` `[actions.regen-*]` and
